@@ -4,8 +4,7 @@ import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
 import com.polygon_wallet.polygon_kotlin_sdk.models.CompleteAuthResponse
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceSessionSnapshot
-import com.polygon_wallet.polygon_kotlin_sdk.storage.SequencePrivateKeyStore
-import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSessionStore
+import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -90,6 +89,8 @@ class SequenceWalletClientTest {
         )
         assertEquals(session, store.snapshot)
         assertEquals(FIXED_PRIVATE_KEY_HEX, store.privateKeyHex)
+        assertEquals(1, store.saveCalls)
+        assertEquals(FIXED_PRIVATE_KEY_HEX, store.savedPrivateKeyHex)
     }
 
     @Test
@@ -386,7 +387,7 @@ class SequenceWalletClientTest {
 
         assertEquals("0xsigned", result.signature)
         assertEquals(1, store.withPrivateKeyCalls)
-        assertEquals(0, store.savePrivateKeyCalls)
+        assertEquals(0, store.saveCalls)
         assertTrue(requireNotNull(store.lastProvidedPrivateKey).all { it == 0.toByte() })
     }
 
@@ -444,23 +445,25 @@ class SequenceWalletClientTest {
     private class InMemorySessionStore(
         var snapshot: SequenceSessionSnapshot? = null,
         var privateKeyHex: String? = null,
-    ) : SequenceSessionStore, SequencePrivateKeyStore {
+    ) : SequenceSecureSessionStore {
+        var saveCalls: Int = 0
+            private set
+        var savedPrivateKeyHex: String? = null
+            private set
+
         override fun load(): SequenceSessionSnapshot? = snapshot
 
-        override fun save(snapshot: SequenceSessionSnapshot) {
+        override fun save(snapshot: SequenceSessionSnapshot, privateKey: ByteArray?) {
+            saveCalls += 1
             this.snapshot = snapshot
-        }
-
-        override fun savePrivateKey(privateKey: ByteArray) {
-            privateKeyHex = Numeric.toHexString(privateKey)
+            if (privateKey != null) {
+                privateKeyHex = Numeric.toHexString(privateKey)
+                savedPrivateKeyHex = privateKeyHex
+            }
         }
 
         override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
             block(Numeric.hexStringToByteArray(requireNotNull(privateKeyHex)))
-
-        override fun clearPrivateKey() {
-            privateKeyHex = null
-        }
 
         override fun clear() {
             snapshot = null
@@ -471,21 +474,21 @@ class SequenceWalletClientTest {
     private class TrackingPrivateKeyStore(
         private val snapshot: SequenceSessionSnapshot,
         private var privateKeyHex: String,
-    ) : SequenceSessionStore, SequencePrivateKeyStore {
+    ) : SequenceSecureSessionStore {
         var withPrivateKeyCalls: Int = 0
             private set
-        var savePrivateKeyCalls: Int = 0
+        var saveCalls: Int = 0
             private set
         var lastProvidedPrivateKey: ByteArray? = null
             private set
 
         override fun load(): SequenceSessionSnapshot = snapshot
 
-        override fun save(snapshot: SequenceSessionSnapshot) = Unit
-
-        override fun savePrivateKey(privateKey: ByteArray) {
-            savePrivateKeyCalls += 1
-            privateKeyHex = Numeric.toHexString(privateKey)
+        override fun save(snapshot: SequenceSessionSnapshot, privateKey: ByteArray?) {
+            saveCalls += 1
+            if (privateKey != null) {
+                privateKeyHex = Numeric.toHexString(privateKey)
+            }
         }
 
         override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {
@@ -499,10 +502,8 @@ class SequenceWalletClientTest {
             }
         }
 
-        override fun clearPrivateKey() {
+        override fun clear() {
             privateKeyHex = ""
         }
-
-        override fun clear() = Unit
     }
 }

@@ -17,7 +17,7 @@ class AndroidKeystoreSessionStore(
     context: Context,
     private val alias: String = DEFAULT_KEY_ALIAS,
     private val fileName: String = DEFAULT_FILE_NAME,
-) : SequenceSessionStore, SequencePrivateKeyStore {
+) : SequenceSecureSessionStore {
     private val sessionFile = File(context.noBackupFilesDir, fileName)
 
     override fun load(): SequenceSessionSnapshot? {
@@ -27,6 +27,9 @@ class AndroidKeystoreSessionStore(
             }
 
             val persisted = PersistedSessionEnvelope.fromJson(sessionFile.readText())
+            if (!persisted.isRestorable()) {
+                return null
+            }
             SequenceSessionSnapshot(
                 challenge = persisted.challenge,
                 verifier = persisted.verifier,
@@ -36,35 +39,24 @@ class AndroidKeystoreSessionStore(
         }.getOrNull()
     }
 
-    override fun save(snapshot: SequenceSessionSnapshot) {
+    override fun save(snapshot: SequenceSessionSnapshot, privateKey: ByteArray?) {
         sessionFile.parentFile?.mkdirs()
-        val persisted = readPersistedEnvelope()?.copy(
+        val existing = readPersistedEnvelope()
+        val encryptedPrivateKey = when {
+            privateKey != null -> encryptPrivateKey(privateKey)
+            existing?.hasEncryptedPrivateKey() == true -> EncryptedPrivateKey(
+                ciphertext = requireNotNull(existing.encryptedPrivateKey),
+                iv = requireNotNull(existing.iv),
+            )
+            else -> throw IllegalStateException("Cannot persist Sequence session metadata without a private key")
+        }
+        val persisted = PersistedSessionEnvelope(
+            encryptedPrivateKey = encryptedPrivateKey.ciphertext,
+            iv = encryptedPrivateKey.iv,
             challenge = snapshot.challenge,
             verifier = snapshot.verifier,
             walletAddress = snapshot.walletAddress,
             signerAddress = snapshot.signerAddress,
-        ) ?: PersistedSessionEnvelope(
-            encryptedPrivateKey = null,
-            iv = null,
-            challenge = snapshot.challenge,
-            verifier = snapshot.verifier,
-            walletAddress = snapshot.walletAddress,
-            signerAddress = snapshot.signerAddress,
-        )
-        sessionFile.writeText(persisted.toJson())
-    }
-
-    override fun savePrivateKey(privateKey: ByteArray) {
-        sessionFile.parentFile?.mkdirs()
-        val encryptedPrivateKey = encryptPrivateKey(privateKey)
-        val persisted = readPersistedEnvelope()?.copy(
-            encryptedPrivateKey = encryptedPrivateKey.ciphertext,
-            iv = encryptedPrivateKey.iv,
-        ) ?: PersistedSessionEnvelope(
-            encryptedPrivateKey = encryptedPrivateKey.ciphertext,
-            iv = encryptedPrivateKey.iv,
-            challenge = "",
-            verifier = "",
         )
         sessionFile.writeText(persisted.toJson())
     }
@@ -83,10 +75,6 @@ class AndroidKeystoreSessionStore(
         if (sessionFile.exists()) {
             sessionFile.delete()
         }
-    }
-
-    override fun clearPrivateKey() {
-        clear()
     }
 
     private fun encryptPrivateKey(privateKey: ByteArray): EncryptedPrivateKey {
@@ -149,6 +137,12 @@ class AndroidKeystoreSessionStore(
         val walletAddress: String? = null,
         val signerAddress: String? = null,
     ) {
+        fun hasEncryptedPrivateKey(): Boolean =
+            !encryptedPrivateKey.isNullOrBlank() && !iv.isNullOrBlank()
+
+        fun isRestorable(): Boolean =
+            hasEncryptedPrivateKey() && challenge.isNotBlank() && verifier.isNotBlank()
+
         fun toJson(): String = JSONObject().apply {
             put("encryptedPrivateKey", encryptedPrivateKey)
             put("iv", iv)

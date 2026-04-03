@@ -7,7 +7,7 @@ import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceWalletSession
 import com.polygon_wallet.polygon_kotlin_sdk.storage.AndroidKeystoreSessionStore
-import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSessionStore
+import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
 import com.polygon_wallet.polygon_kotlin_sdk.wallet.SequenceWalletClient
 import okhttp3.OkHttpClient
 
@@ -16,7 +16,7 @@ class SequenceSdk(
     environment: SequenceEnvironment = SequenceEnvironment.demoDefaults(),
     okHttpClient: OkHttpClient = OkHttpClient(),
     walletSession: SequenceWalletSession = SequenceWalletSession(),
-    sessionStore: SequenceSessionStore? = null,
+    sessionStore: SequenceSecureSessionStore? = null,
 ) {
     private val transport = SequenceHttpClient(okHttpClient)
 
@@ -46,7 +46,7 @@ class SequenceSdk(
         environment: SequenceEnvironment = SequenceEnvironment.demoDefaults(),
         okHttpClient: OkHttpClient = OkHttpClient(),
         walletSession: SequenceWalletSession = SequenceWalletSession(),
-        sessionStore: SequenceSessionStore? = null,
+        sessionStore: SequenceSecureSessionStore? = null,
     ) : this(
         projectAccessKey = projectAccessKey,
         environment = environment,

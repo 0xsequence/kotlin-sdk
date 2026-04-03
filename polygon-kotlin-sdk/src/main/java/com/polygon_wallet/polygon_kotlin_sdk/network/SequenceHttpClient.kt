@@ -15,7 +15,7 @@ data class SequenceHttpResponse(
 class SequenceHttpException(
     val statusCode: Int,
     val responseBody: String,
-) : IllegalStateException("Sequence request failed with status $statusCode: $responseBody")
+) : IllegalStateException("Sequence request failed with status $statusCode")
 
 class SequenceHttpClient(
     private val okHttpClient: OkHttpClient = OkHttpClient(),

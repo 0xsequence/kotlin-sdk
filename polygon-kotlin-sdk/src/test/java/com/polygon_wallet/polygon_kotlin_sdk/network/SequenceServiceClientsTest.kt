@@ -7,6 +7,7 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -132,5 +133,35 @@ class SequenceServiceClientsTest {
 
         assertEquals(null, response.page)
         assertTrue(response.balances.isEmpty())
+    }
+
+    @Test
+    fun httpExceptionMessageIsSanitizedButRetainsResponseBodyField() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(400)
+                .body("""{"detail":"sensitive backend context"}""")
+                .build(),
+        )
+
+        val client = SequenceApiClient(
+            "test-access-key",
+            SequenceEnvironment(apiRpcUrl = server.url("/rpc/API/").toString()),
+            SequenceHttpClient(),
+        )
+
+        val failure = runCatching {
+            client.isValidMessageSignature(
+                chainId = "80002",
+                walletAddress = "0xabc",
+                message = "hello",
+                signature = "0xsig",
+            )
+        }.exceptionOrNull() as? SequenceHttpException
+
+        requireNotNull(failure)
+        assertEquals("Sequence request failed with status 400", failure.message)
+        assertEquals("""{"detail":"sensitive backend context"}""", failure.responseBody)
+        assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
     }
 }

@@ -16,8 +16,7 @@ import com.polygon_wallet.polygon_kotlin_sdk.network.parseJsonObject
 import com.polygon_wallet.polygon_kotlin_sdk.network.string
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceSessionSnapshot
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceWalletSession
-import com.polygon_wallet.polygon_kotlin_sdk.storage.SequencePrivateKeyStore
-import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSessionStore
+import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
 import com.polygon_wallet.polygon_kotlin_sdk.utils.SequenceTimestamps
 
 data class SequenceWalletState(
@@ -33,12 +32,12 @@ class SequenceWalletClient(
     private val environment: SequenceEnvironment,
     private val transport: SequenceHttpClient = SequenceHttpClient(),
     private val session: SequenceWalletSession = SequenceWalletSession(),
-    private val sessionStore: SequenceSessionStore? = null,
+    private val sessionStore: SequenceSecureSessionStore? = null,
     private val nonceGenerator: () -> Long = SequenceTimestamps::nextNonce,
     private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
 ) {
-    private val privateKeyStore: SequencePrivateKeyStore =
-        (sessionStore as? SequencePrivateKeyStore) ?: InMemoryPrivateKeyStore()
+    private val privateKeyStore: SequenceSecureSessionStore =
+        sessionStore ?: InMemoryPrivateKeyStore()
 
     val hasSession: Boolean
         get() = session.snapshot() != null
@@ -65,7 +64,6 @@ class SequenceWalletClient(
 
     internal fun restoreSession(snapshot: SequenceSessionSnapshot) {
         session.restore(snapshot)
-        sessionStore?.save(snapshot)
     }
 
     internal fun snapshotSession(): SequenceSessionSnapshot? = session.snapshot()
@@ -78,8 +76,7 @@ class SequenceWalletClient(
 
     fun clearSession() {
         session.clear()
-        sessionStore?.clear()
-        privateKeyStore.clearPrivateKey()
+        privateKeyStore.clear()
     }
 
     fun requireWalletAddress(): String =
@@ -105,8 +102,7 @@ class SequenceWalletClient(
             verifier = verifier,
             signerAddress = signerAddress,
         )
-        persistCurrentSession()
-        privateKeyStore.savePrivateKey(privateKey)
+        persistCurrentSession(privateKey)
         privateKey.fill(0)
 
         return response
@@ -188,9 +184,9 @@ class SequenceWalletClient(
         return wallet
     }
 
-    private fun persistCurrentSession() {
+    private fun persistCurrentSession(privateKey: ByteArray? = null) {
         val snapshot = session.snapshot() ?: return
-        sessionStore?.save(snapshot)
+        privateKeyStore.save(snapshot, privateKey)
     }
 
     suspend fun signMessage(chainId: String, message: String): SignMessageResult {
@@ -322,10 +318,17 @@ class SequenceWalletClient(
         )
     }
 
-    private class InMemoryPrivateKeyStore : SequencePrivateKeyStore {
+    private class InMemoryPrivateKeyStore : SequenceSecureSessionStore {
+        private var snapshot: SequenceSessionSnapshot? = null
         private var privateKey: ByteArray? = null
 
-        override fun savePrivateKey(privateKey: ByteArray) {
+        override fun load(): SequenceSessionSnapshot? = snapshot
+
+        override fun save(snapshot: SequenceSessionSnapshot, privateKey: ByteArray?) {
+            this.snapshot = snapshot
+            if (privateKey == null) {
+                return
+            }
             this.privateKey?.fill(0)
             this.privateKey = privateKey.copyOf()
         }
@@ -339,7 +342,8 @@ class SequenceWalletClient(
             }
         }
 
-        override fun clearPrivateKey() {
+        override fun clear() {
+            snapshot = null
             privateKey?.fill(0)
             privateKey = null
         }

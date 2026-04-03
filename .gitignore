@@ -2,6 +2,7 @@
 .gradle
 .gradle-user
 .android-user
+.npm-cache/
 .kotlin
 /local.properties
 .idea
