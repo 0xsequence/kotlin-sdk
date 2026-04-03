@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="slate_900">#12212F</color>
+    <color name="slate_800">#22384A</color>
+    <color name="slate_700">#284356</color>
+    <color name="slate_500">#6E8190</color>
+    <color name="sand_50">#F7F4EE</color>
+    <color name="sand_100">#EFE8DE</color>
+    <color name="sand_200">#DED5C7</color>
+    <color name="sand_300">#CFC3B1</color>
+    <color name="amber_500">#E59A2F</color>
+    <color name="amber_700">#A7650D</color>
+    <color name="forest_600">#236A50</color>
+    <color name="forest_700">#1E5945</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
