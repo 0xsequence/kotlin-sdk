@@ -109,6 +109,22 @@ val txResult = polygonSdk.wallet.sendTransaction(
 )
 ```
 
+For contract calls or transaction parameters beyond `to` and `value`, use the request overload:
+
+```kotlin
+val txResult = polygonSdk.wallet.sendTransaction(
+    chainId = "80002",
+    request = SendTransactionRequest(
+        to = "0xContractAddress",
+        value = "0",
+        data = "0x1234",
+        mode = TransactionMode.Native,
+        feeCeiling = "1000000",
+        nonce = "42",
+    ),
+)
+```
+
 If your app may need to choose between multiple wallets, use the selector overload:
 
 ```kotlin

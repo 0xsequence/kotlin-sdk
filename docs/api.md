@@ -67,6 +67,13 @@ suspend fun wallet.sendTransaction(
 ): SendTransactionResult
 ```
 
+```kotlin
+suspend fun wallet.sendTransaction(
+    chainId: String,
+    request: SendTransactionRequest,
+): SendTransactionResult
+```
+
 ## API Service
 
 ```kotlin
@@ -141,6 +148,24 @@ data class SignMessageResult(
 ```
 
 ```kotlin
+enum class TransactionMode {
+    Native,
+    Relayer,
+}
+```
+
+```kotlin
+data class SendTransactionRequest(
+    val to: String,
+    val value: String,
+    val data: String? = null,
+    val mode: TransactionMode = TransactionMode.Relayer,
+    val feeCeiling: String? = null,
+    val nonce: String? = null,
+)
+```
+
+```kotlin
 data class SendTransactionResult(
     val txHash: String,
 )
@@ -203,4 +228,20 @@ If your app needs to choose between multiple wallets:
 val wallet = polygonSdk.wallet.completeEmailSignIn("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets)
 }
+```
+
+For contract calls or transaction parameters beyond `to` and `value`:
+
+```kotlin
+val txResult = polygonSdk.wallet.sendTransaction(
+    chainId = "80002",
+    request = SendTransactionRequest(
+        to = "0xContractAddress",
+        value = "0",
+        data = "0x1234",
+        mode = TransactionMode.Native,
+        feeCeiling = "1000000",
+        nonce = "42",
+    ),
+)
 ```

@@ -1,5 +1,7 @@
 package com.polygon_wallet.polygon_kotlin_sdk.wallet
 
+import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionRequest
+import com.polygon_wallet.polygon_kotlin_sdk.models.TransactionMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -57,6 +59,25 @@ class WalletPayloadBuilderTest {
         assertEquals(
             "{\"params\":{\"walletType\":\"Ethereum_EOA\"}}",
             WalletPayloadBuilder.buildCreateWalletPayload(WalletApi.defaultWalletType),
+        )
+    }
+
+    @Test
+    fun sendTransactionPayloadMatchesWaasRequestShape() {
+        assertEquals(
+            "{\"params\":{\"mode\":\"Native\",\"wallet\":\"0xwallet\",\"network\":\"amoy\",\"to\":\"0xabc\",\"value\":\"0\",\"data\":\"0x1234\",\"feeCeiling\":\"1000000\",\"nonce\":\"42\"}}",
+            WalletPayloadBuilder.buildSendTransactionPayload(
+                wallet = "0xwallet",
+                network = "amoy",
+                request = SendTransactionRequest(
+                    to = "0xabc",
+                    value = "0",
+                    data = "0x1234",
+                    mode = TransactionMode.Native,
+                    feeCeiling = "1000000",
+                    nonce = "42",
+                ),
+            ),
         )
     }
 
