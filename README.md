@@ -119,11 +119,11 @@ val wallet = polygonSdk.wallet.completeEmailSignIn("123456") { wallets ->
 
 ## API Reference
 
-The full public API surface is documented in [docs/api.md](/Users/tarikan/Development/0xsequence/kotlin-sdk/docs/api.md).
+The full public API surface is documented in [docs/api.md](docs/api.md).
 
 ## Sample App
 
-This repository includes an Android sample app in [`app/`](/Users/tarikan/Development/0xsequence/kotlin-sdk/app) that demonstrates:
+This repository includes an Android sample app in [`app/`](app/) that demonstrates:
 
 - email sign-in
 - wallet recovery/selection flow
