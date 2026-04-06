@@ -28,6 +28,20 @@ data class SignMessageResult(
     val signature: String,
 )
 
+enum class TransactionMode {
+    Native,
+    Relayer,
+}
+
+data class SendTransactionRequest(
+    val to: String,
+    val value: String,
+    val data: String? = null,
+    val mode: TransactionMode = TransactionMode.Relayer,
+    val feeCeiling: String? = null,
+    val nonce: String? = null,
+)
+
 data class SendTransactionResult(
     val txHash: String,
 )

@@ -4,6 +4,7 @@ import com.polygon_wallet.polygon_kotlin_sdk.chains.SequenceChains
 import com.polygon_wallet.polygon_kotlin_sdk.models.CommitVerifierResponse
 import com.polygon_wallet.polygon_kotlin_sdk.models.CompleteAuthResponse
 import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionResult
+import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionRequest
 import com.polygon_wallet.polygon_kotlin_sdk.models.SequenceIdentity
 import com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet
 import com.polygon_wallet.polygon_kotlin_sdk.models.SignMessageResult
@@ -262,13 +263,23 @@ class SequenceWalletClient internal constructor(
         chainId: String,
         to: String,
         value: String,
+    ): SendTransactionResult = sendTransaction(
+        chainId = chainId,
+        request = SendTransactionRequest(
+            to = to,
+            value = value,
+        ),
+    )
+
+    suspend fun sendTransaction(
+        chainId: String,
+        request: SendTransactionRequest,
     ): SendTransactionResult {
         session.requireSnapshot()
         val payload = WalletPayloadBuilder.buildSendTransactionPayload(
             wallet = requireWalletAddress(),
             network = SequenceChains.chainNameFor(chainId),
-            to = to,
-            value = value,
+            request = request,
         )
 
         val body = withPrivateKey { privateKey ->

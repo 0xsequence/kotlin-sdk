@@ -1,5 +1,6 @@
 package com.polygon_wallet.polygon_kotlin_sdk.wallet
 
+import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionRequest
 import java.nio.charset.StandardCharsets
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -32,18 +33,34 @@ internal object WalletPayloadBuilder {
     fun buildSendTransactionPayload(
         wallet: String,
         network: String,
-        to: String,
-        value: String,
+        request: SendTransactionRequest,
     ): String = encode(
         buildJsonObject {
             putJsonObject("params") {
-                put("mode", "Relayer")
+                put("mode", request.mode.name)
                 put("wallet", wallet)
                 put("network", network)
-                put("to", to)
-                put("value", value)
+                put("to", request.to)
+                put("value", request.value)
+                request.data?.let { put("data", it) }
+                request.feeCeiling?.let { put("feeCeiling", it) }
+                request.nonce?.let { put("nonce", it) }
             }
         }
+    )
+
+    fun buildSendTransactionPayload(
+        wallet: String,
+        network: String,
+        to: String,
+        value: String,
+    ): String = buildSendTransactionPayload(
+        wallet = wallet,
+        network = network,
+        request = SendTransactionRequest(
+            to = to,
+            value = value,
+        ),
     )
 
     fun buildCommitVerifierPayload(email: String): String = encode(

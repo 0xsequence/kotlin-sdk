@@ -3,7 +3,9 @@ package com.polygon_wallet.polygon_kotlin_sdk.wallet
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
 import com.polygon_wallet.polygon_kotlin_sdk.models.CompleteAuthResponse
+import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionRequest
 import com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet
+import com.polygon_wallet.polygon_kotlin_sdk.models.TransactionMode
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceSessionSnapshot
 import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
 import kotlinx.coroutines.runBlocking
@@ -608,6 +610,56 @@ class SequenceWalletClientTest {
         assertEquals(
             "SendTransaction response missing response.txHash",
             failure?.message,
+        )
+    }
+
+    @Test
+    fun sendTransactionMatchesWaasRequestShape() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"response":{"txHash":"0xdeadbeef"}}""")
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = SequenceSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    walletAddress = "0xwallet",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000107L },
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val result = client.sendTransaction(
+            chainId = "80002",
+            request = SendTransactionRequest(
+                to = "0xabc",
+                value = "0",
+                data = "0x1234",
+                mode = TransactionMode.Native,
+                feeCeiling = "1000000",
+                nonce = "42",
+            ),
+        )
+        val request = requireNotNull(server.takeRequest())
+
+        assertEquals("0xdeadbeef", result.txHash)
+        assertEquals("/rpc/Wallet/SendTransaction", request.target)
+        assertEquals(
+            "{\"params\":{\"mode\":\"Native\",\"wallet\":\"0xwallet\",\"network\":\"amoy\",\"to\":\"0xabc\",\"value\":\"0\",\"data\":\"0x1234\",\"feeCeiling\":\"1000000\",\"nonce\":\"42\"}}",
+            requireNotNull(request.body).utf8(),
         )
     }
 
