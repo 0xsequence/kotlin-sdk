@@ -13,7 +13,7 @@ import okhttp3.OkHttpClient
 
 class SequenceSdk(
     projectAccessKey: String,
-    environment: SequenceEnvironment = SequenceEnvironment.demoDefaults(),
+    environment: SequenceEnvironment = SequenceEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
     walletSession: SequenceWalletSession = SequenceWalletSession(),
     sessionStore: SequenceSecureSessionStore? = null,
@@ -43,7 +43,7 @@ class SequenceSdk(
     constructor(
         context: Context,
         projectAccessKey: String,
-        environment: SequenceEnvironment = SequenceEnvironment.demoDefaults(),
+        environment: SequenceEnvironment = SequenceEnvironment(),
         okHttpClient: OkHttpClient = OkHttpClient(),
         walletSession: SequenceWalletSession = SequenceWalletSession(),
         sessionStore: SequenceSecureSessionStore? = null,

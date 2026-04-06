@@ -226,14 +226,18 @@ These tests do not replace live integration tests, but they are the correct cros
 
 ## Current public SDK shape
 
-- `SequenceSdk(context, projectAccessKey, environment = SequenceEnvironment.demoDefaults())`
+- `SequenceSdk(context, projectAccessKey, environment = SequenceEnvironment())`
   - Android-friendly constructor
   - defaults to Keystore-backed persisted session storage
-- `SequenceSdk(projectAccessKey, environment = SequenceEnvironment.demoDefaults(), ...)`
+- `SequenceSdk(projectAccessKey, environment = SequenceEnvironment(), ...)`
   - lower-level constructor for tests or custom wiring
 - `SequenceEnvironment`
   - endpoint configuration only
   - does not store `projectAccessKey`
+
+Demo or staging usage should be explicit, for example:
+
+- `SequenceEnvironment.demoDefaults()`
 - wallet public state is intentionally sanitized:
   - `hasSession`
   - `hasPendingSignIn`

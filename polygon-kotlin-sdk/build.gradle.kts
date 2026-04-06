@@ -85,7 +85,7 @@ publishing {
                 developers {
                     developer {
                         id.set(providers.gradleProperty("POM_DEVELOPER_ID").orElse("0xsequence"))
-                        name.set(providers.gradleProperty("POM_DEVELOPER_NAME").orElse("Sequence"))
+                        name.set(providers.gradleProperty("POM_DEVELOPER_NAME").orElse("Polygon"))
                     }
                 }
                 scm {
