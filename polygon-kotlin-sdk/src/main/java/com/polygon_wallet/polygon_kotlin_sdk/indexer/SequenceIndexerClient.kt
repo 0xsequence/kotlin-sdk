@@ -16,7 +16,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-class SequenceIndexerClient(
+class SequenceIndexerClient internal constructor(
     private val projectAccessKey: String,
     private val environment: SequenceEnvironment,
     private val transport: SequenceHttpClient = SequenceHttpClient(),

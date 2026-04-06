@@ -7,17 +7,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-data class SequenceHttpResponse(
+internal data class SequenceHttpResponse(
     val statusCode: Int,
     val body: String,
 )
 
-class SequenceHttpException(
+internal class SequenceHttpException(
     val statusCode: Int,
     val responseBody: String,
 ) : IllegalStateException("Sequence request failed with status $statusCode")
 
-class SequenceHttpClient(
+internal class SequenceHttpClient(
     private val okHttpClient: OkHttpClient = OkHttpClient(),
 ) {
     suspend fun postJson(

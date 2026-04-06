@@ -9,7 +9,7 @@ import kotlinx.serialization.json.putJsonObject
 import org.web3j.crypto.Hash
 import org.web3j.utils.Numeric
 
-object WalletPayloadBuilder {
+internal object WalletPayloadBuilder {
     private val json = Json {
         prettyPrint = false
         explicitNulls = false

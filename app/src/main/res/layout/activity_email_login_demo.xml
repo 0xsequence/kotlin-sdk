@@ -80,27 +80,34 @@
                     android:textColor="@color/slate_700"
                     android:textSize="13sp" />
 
-                <com.google.android.material.textfield.TextInputLayout
-                    style="@style/Widget.Kotlinsdk.TextInputLayout"
+                <LinearLayout
+                    android:id="@+id/emailStepContainer"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:hint="Email">
+                    android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/emailInput"
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Kotlinsdk.TextInputLayout"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="textEmailAddress" />
-                </com.google.android.material.textfield.TextInputLayout>
+                        android:layout_marginTop="16dp"
+                        android:hint="Email">
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/startEmailSignInButton"
-                    style="@style/Widget.Kotlinsdk.Button"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:text="Send Login Code" />
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/emailInput"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textEmailAddress" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/startEmailSignInButton"
+                        style="@style/Widget.Kotlinsdk.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:text="Send Login Code" />
+                </LinearLayout>
 
                 <LinearLayout
                     android:id="@+id/codeStepContainer"
@@ -131,13 +138,33 @@
                             android:inputType="number" />
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/confirmCodeButton"
-                        style="@style/Widget.Kotlinsdk.Button.Outline"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
-                        android:text="Confirm Code" />
+                        android:baselineAligned="false"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/cancelCodeStepButton"
+                            style="@style/Widget.Kotlinsdk.Button.Outline"
+                            android:layout_width="0dp"
+                            android:layout_height="52dp"
+                            android:layout_weight="1"
+                            android:text="Cancel" />
+
+                        <Space
+                            android:layout_width="12dp"
+                            android:layout_height="1dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/confirmCodeButton"
+                            style="@style/Widget.Kotlinsdk.Button"
+                            android:layout_width="0dp"
+                            android:layout_height="52dp"
+                            android:layout_weight="1"
+                            android:text="Send" />
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

@@ -3,6 +3,7 @@ package com.polygon_wallet.polygon_kotlin_sdk.wallet
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
 import com.polygon_wallet.polygon_kotlin_sdk.models.CompleteAuthResponse
+import com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceSessionSnapshot
 import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
 import kotlinx.coroutines.runBlocking
@@ -216,12 +217,10 @@ class SequenceWalletClientTest {
 
         assertTrue(restored)
         assertEquals(snapshot, client.snapshotSession())
-        assertTrue(client.hasSession)
-        assertTrue(client.isSignedIn)
-        assertEquals("0xabc", client.currentWalletAddress)
+        assertEquals("0xabc", client.walletAddress)
         assertEquals(
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-            client.currentSignerAddress,
+            client.signerAddress,
         )
     }
 
@@ -257,7 +256,7 @@ class SequenceWalletClientTest {
             CompleteAuthResponse(
                 identity = null,
                 wallets = listOf(
-                    com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet(
+                    SequenceWallet(
                         type = environment.defaultWalletType,
                         address = "0xdef",
                         index = 3,
@@ -280,6 +279,188 @@ class SequenceWalletClientTest {
     }
 
     @Test
+    fun completeEmailSignInConfirmsAndResolvesWallet() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","sub":"sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"wallet":{"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}}""")
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = SequenceSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000110L },
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val resolved = client.completeEmailSignIn("123456")
+        val completeAuthRequest = requireNotNull(server.takeRequest())
+        val useWalletRequest = requireNotNull(server.takeRequest())
+
+        assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+        assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+        assertEquals(
+            WalletPayloadBuilder.buildUseWalletPayload(
+                walletType = environment.defaultWalletType,
+                walletIndex = 3,
+            ),
+            requireNotNull(useWalletRequest.body).utf8(),
+        )
+        assertEquals("0xdef", resolved.address)
+        assertEquals(3, resolved.index)
+        assertEquals("0xdef", client.walletAddress)
+        assertFalse(client.hasPendingSignIn)
+    }
+
+    @Test
+    fun completeEmailSignInReturnsWalletSelectionRequiredForMultipleWallets() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","sub":"sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xaaa","index":1,"comment":"first"},
+                        {"type":"Ethereum_EOA","address":"0xbbb","index":4,"comment":"second"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"wallet":{"type":"Ethereum_EOA","address":"0xbbb","index":4,"comment":"second"}}""")
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = SequenceSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000111L },
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val failure = runCatching {
+            client.completeEmailSignIn("123456")
+        }.exceptionOrNull()
+        val completeAuthRequest = requireNotNull(server.takeRequest())
+
+        assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+        assertEquals(
+            "Multiple wallets are available. Call completeEmailSignIn(code, selectWallet) to choose one.",
+            failure?.message,
+        )
+        assertNull(client.walletAddress)
+    }
+
+    @Test
+    fun completeEmailSignInUsesSelectorWhenMultipleWalletsAreAvailable() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","sub":"sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xaaa","index":1,"comment":"first"},
+                        {"type":"Ethereum_EOA","address":"0xbbb","index":4,"comment":"second"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"wallet":{"type":"Ethereum_EOA","address":"0xbbb","index":4,"comment":"second"}}""")
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = SequenceSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000112L },
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val selectedWallet = client.completeEmailSignIn("123456") { wallets ->
+            wallets[1]
+        }
+        val completeAuthRequest = requireNotNull(server.takeRequest())
+        val useWalletRequest = requireNotNull(server.takeRequest())
+
+        assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+        assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+        assertEquals(
+            WalletPayloadBuilder.buildUseWalletPayload(
+                walletType = environment.defaultWalletType,
+                walletIndex = 4,
+            ),
+            requireNotNull(useWalletRequest.body).utf8(),
+        )
+        assertEquals("0xbbb", selectedWallet.address)
+        assertEquals("0xbbb", client.walletAddress)
+    }
+
+    @Test
     fun clearSessionClearsPersistedStore() {
         val snapshot = SequenceSessionSnapshot(
             challenge = "challenge",
@@ -299,15 +480,13 @@ class SequenceWalletClientTest {
 
         assertNull(client.snapshotSession())
         assertNull(store.snapshot)
-        assertFalse(client.hasSession)
-        assertFalse(client.isSignedIn)
-        assertNull(client.currentWalletAddress)
-        assertNull(client.currentSignerAddress)
+        assertNull(client.walletAddress)
+        assertNull(client.signerAddress)
         assertNull(store.privateKeyHex)
     }
 
     @Test
-    fun requireWalletAddressReturnsSelectedWallet() {
+    fun walletAddressReturnsSelectedWallet() {
         val client = SequenceWalletClient(
             projectAccessKey = "test-access-key",
             environment = SequenceEnvironment(),
@@ -323,7 +502,7 @@ class SequenceWalletClientTest {
         )
         assertTrue(client.restorePersistedSession())
 
-        assertEquals("0xwallet", client.requireWalletAddress())
+        assertEquals("0xwallet", client.walletAddress)
         assertFalse(client.hasPendingSignIn)
     }
 
@@ -343,10 +522,8 @@ class SequenceWalletClientTest {
         )
         assertTrue(client.restorePersistedSession())
 
-        assertTrue(client.hasSession)
         assertTrue(client.hasPendingSignIn)
-        assertFalse(client.isSignedIn)
-        assertNull(client.currentWalletAddress)
+        assertNull(client.walletAddress)
     }
 
     @Test

@@ -19,15 +19,13 @@ import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceWalletSession
 import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
 import com.polygon_wallet.polygon_kotlin_sdk.utils.SequenceTimestamps
 
-data class SequenceWalletState(
-    val hasSession: Boolean,
+internal data class SequenceWalletState(
     val hasPendingSignIn: Boolean,
-    val isSignedIn: Boolean,
     val walletAddress: String?,
     val signerAddress: String?,
 )
 
-class SequenceWalletClient(
+class SequenceWalletClient internal constructor(
     private val projectAccessKey: String,
     private val environment: SequenceEnvironment,
     private val transport: SequenceHttpClient = SequenceHttpClient(),
@@ -39,27 +37,22 @@ class SequenceWalletClient(
     private val privateKeyStore: SequenceSecureSessionStore =
         sessionStore ?: InMemoryPrivateKeyStore()
 
-    val hasSession: Boolean
-        get() = session.snapshot() != null
-
     val hasPendingSignIn: Boolean
-        get() = hasSession && !isSignedIn
+        get() {
+            val snapshot = session.snapshot() ?: return false
+            return snapshot.walletAddress.isNullOrBlank()
+        }
 
-    val isSignedIn: Boolean
-        get() = !currentWalletAddress.isNullOrBlank()
-
-    val currentWalletAddress: String?
+    val walletAddress: String?
         get() = session.snapshot()?.walletAddress
 
-    val currentSignerAddress: String?
+    val signerAddress: String?
         get() = session.snapshot()?.signerAddress
 
-    fun currentState(): SequenceWalletState = SequenceWalletState(
-        hasSession = hasSession,
+    internal fun currentState(): SequenceWalletState = SequenceWalletState(
         hasPendingSignIn = hasPendingSignIn,
-        isSignedIn = isSignedIn,
-        walletAddress = currentWalletAddress,
-        signerAddress = currentSignerAddress,
+        walletAddress = walletAddress,
+        signerAddress = signerAddress,
     )
 
     internal fun restoreSession(snapshot: SequenceSessionSnapshot) {
@@ -68,7 +61,7 @@ class SequenceWalletClient(
 
     internal fun snapshotSession(): SequenceSessionSnapshot? = session.snapshot()
 
-    fun restorePersistedSession(): Boolean {
+    internal fun restorePersistedSession(): Boolean {
         val snapshot = sessionStore?.load() ?: return false
         session.restore(snapshot)
         return true
@@ -79,8 +72,8 @@ class SequenceWalletClient(
         privateKeyStore.clear()
     }
 
-    fun requireWalletAddress(): String =
-        requireNotNull(currentWalletAddress) { "No wallet selected" }
+    private fun requireWalletAddress(): String =
+        requireNotNull(walletAddress) { "No wallet selected" }
 
     suspend fun signInWithEmail(email: String): CommitVerifierResponse {
         val privateKey = privateKeyFactory()
@@ -108,7 +101,7 @@ class SequenceWalletClient(
         return response
     }
 
-    suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
+    internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
         val snapshot = session.requireSnapshot()
         val payload = WalletPayloadBuilder.buildCompleteAuthPayloadFromCode(
             verifier = snapshot.verifier,
@@ -127,7 +120,61 @@ class SequenceWalletClient(
         }
     }
 
-    suspend fun resolveWallet(
+    suspend fun completeEmailSignIn(
+        code: String,
+        walletType: String = environment.defaultWalletType,
+    ): SequenceWallet = completeEmailSignIn(
+        code = code,
+        walletType = walletType,
+        selectWallet = { wallets ->
+            require(wallets.size == 1) {
+                "Multiple wallets are available. Call completeEmailSignIn(code, selectWallet) to choose one."
+            }
+            wallets.single()
+        },
+    )
+
+    /**
+     * Completes the email OTP flow and returns the selected wallet.
+     *
+     * If multiple wallets are available for the requested type, [selectWallet]
+     * is called so the app can choose the wallet to use.
+     */
+    suspend fun completeEmailSignIn(
+        code: String,
+        walletType: String = environment.defaultWalletType,
+        selectWallet: suspend (List<SequenceWallet>) -> SequenceWallet,
+    ): SequenceWallet {
+        val auth = confirmEmailSignIn(code)
+        val candidateWallets = auth.wallets.filter { it.type == walletType }
+
+        return when {
+            candidateWallets.isEmpty() -> createWallet(walletType)
+            candidateWallets.size == 1 -> {
+                val selected = candidateWallets.single()
+                useWallet(
+                    walletType = requireNotNull(selected.type) {
+                        "CompleteAuth wallet missing type"
+                    },
+                    walletIndex = selected.index ?: 0,
+                )
+            }
+            else -> {
+                val selected = selectWallet(candidateWallets)
+                require(candidateWallets.contains(selected)) {
+                    "Selected wallet is not one of the available options"
+                }
+                useWallet(
+                    walletType = requireNotNull(selected.type) {
+                        "Selected wallet is missing type"
+                    },
+                    walletIndex = selected.index ?: 0,
+                )
+            }
+        }
+    }
+
+    internal suspend fun resolveWallet(
         completeAuth: CompleteAuthResponse,
         walletType: String = environment.defaultWalletType,
     ): SequenceWallet {
@@ -142,7 +189,7 @@ class SequenceWalletClient(
         }
     }
 
-    suspend fun useWallet(
+    internal suspend fun useWallet(
         walletType: String = environment.defaultWalletType,
         walletIndex: Int = 0,
     ): SequenceWallet {
@@ -166,7 +213,7 @@ class SequenceWalletClient(
         return wallet
     }
 
-    suspend fun createWallet(walletType: String = environment.defaultWalletType): SequenceWallet {
+    internal suspend fun createWallet(walletType: String = environment.defaultWalletType): SequenceWallet {
         session.requireSnapshot()
         val payload = WalletPayloadBuilder.buildCreateWalletPayload(walletType)
         val wallet = parseWallet(

@@ -2,7 +2,7 @@ package com.polygon_wallet.polygon_kotlin_sdk.utils
 
 import java.time.Instant
 
-object SequenceTimestamps {
+internal object SequenceTimestamps {
     private val defaultNonceGenerator = MonotonicNonceGenerator()
 
     fun nowSeconds(): Long = Instant.now().epochSecond

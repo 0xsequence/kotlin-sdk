@@ -9,7 +9,7 @@ import org.web3j.crypto.Keys
 import org.web3j.crypto.Sign
 import org.web3j.utils.Numeric
 
-data class SignedWalletRequest(
+internal data class SignedWalletRequest(
     val payload: String,
     val preimage: String,
     val digestHex: String,
@@ -18,7 +18,7 @@ data class SignedWalletRequest(
     val authorizationHeader: String,
 )
 
-object WalletRequestSigner {
+internal object WalletRequestSigner {
     fun generatePrivateKeyBytes(): ByteArray =
         try {
             Numeric.toBytesPadded(Keys.createEcKeyPair().privateKey, PRIVATE_KEY_SIZE_BYTES)

@@ -1,6 +1,6 @@
 package com.polygon_wallet.polygon_kotlin_sdk.chains
 
-object SequenceChains {
+internal object SequenceChains {
     private val bindings = linkedMapOf(
         "137" to "polygon",
         "80002" to "amoy",

@@ -1,6 +1,6 @@
 package com.polygon_wallet.polygon_kotlin_sdk.wallet
 
-object WalletApi {
+internal object WalletApi {
     const val defaultWalletType: String = "Ethereum_EOA"
 
     object Endpoints {

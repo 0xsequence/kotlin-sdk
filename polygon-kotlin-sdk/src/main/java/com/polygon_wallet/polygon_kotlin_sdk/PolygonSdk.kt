@@ -10,8 +10,10 @@ import com.polygon_wallet.polygon_kotlin_sdk.storage.AndroidKeystoreSessionStore
 import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
 import com.polygon_wallet.polygon_kotlin_sdk.wallet.SequenceWalletClient
 import okhttp3.OkHttpClient
+import java.security.MessageDigest
+import java.net.URI
 
-class SequenceSdk(
+class PolygonSdk internal constructor(
     projectAccessKey: String,
     environment: SequenceEnvironment = SequenceEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
@@ -40,18 +42,61 @@ class SequenceSdk(
         transport = transport,
     )
 
+    init {
+        wallet.restorePersistedSession()
+    }
+
     constructor(
         context: Context,
         projectAccessKey: String,
         environment: SequenceEnvironment = SequenceEnvironment(),
         okHttpClient: OkHttpClient = OkHttpClient(),
-        walletSession: SequenceWalletSession = SequenceWalletSession(),
-        sessionStore: SequenceSecureSessionStore? = null,
     ) : this(
         projectAccessKey = projectAccessKey,
         environment = environment,
         okHttpClient = okHttpClient,
-        walletSession = walletSession,
-        sessionStore = sessionStore ?: AndroidKeystoreSessionStore(context.applicationContext),
+        walletSession = SequenceWalletSession(),
+        sessionStore = AndroidKeystoreSessionStore(
+            context = context.applicationContext,
+            alias = scopedSessionKeyAlias(environment),
+            fileName = scopedSessionFileName(environment),
+        ),
     )
+
+    companion object {
+        internal fun scopedSessionKeyAlias(
+            environment: SequenceEnvironment,
+        ): String = "polygon-wallet-session-${scopedSessionSuffix(environment)}"
+
+        internal fun scopedSessionFileName(
+            environment: SequenceEnvironment,
+        ): String = "polygon-wallet-session-${scopedSessionSuffix(environment)}.json"
+
+        private fun scopedSessionSuffix(
+            environment: SequenceEnvironment,
+        ): String {
+            val source = buildString {
+                append(normalizedWalletApiUrl(environment.walletApiUrl))
+                append('\u0000')
+                append(environment.authorizationScope)
+            }
+            return MessageDigest.getInstance("SHA-256")
+                .digest(source.toByteArray(Charsets.UTF_8))
+                .joinToString(separator = "") { "%02x".format(it) }
+        }
+
+        private fun normalizedWalletApiUrl(walletApiUrl: String): String {
+            val uri = URI(walletApiUrl)
+            val normalizedPath = uri.path.orEmpty().ifBlank { "/" }.trimEnd('/')
+            return URI(
+                uri.scheme?.lowercase(),
+                uri.userInfo,
+                uri.host?.lowercase(),
+                uri.port,
+                if (normalizedPath.isEmpty()) "/" else normalizedPath,
+                uri.query,
+                null,
+            ).toString()
+        }
+    }
 }

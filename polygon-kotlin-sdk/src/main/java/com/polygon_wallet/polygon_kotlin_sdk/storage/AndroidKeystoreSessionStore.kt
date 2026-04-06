@@ -13,7 +13,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-class AndroidKeystoreSessionStore(
+internal class AndroidKeystoreSessionStore(
     context: Context,
     private val alias: String = DEFAULT_KEY_ALIAS,
     private val fileName: String = DEFAULT_FILE_NAME,

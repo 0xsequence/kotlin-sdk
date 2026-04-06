@@ -19,7 +19,7 @@ data class SequenceWallet(
     val comment: String?,
 )
 
-data class CompleteAuthResponse(
+internal data class CompleteAuthResponse(
     val identity: SequenceIdentity?,
     val wallets: List<SequenceWallet>,
 )

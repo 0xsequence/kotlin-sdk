@@ -1,13 +1,13 @@
 package com.polygon_wallet.polygon_kotlin_sdk.session
 
-data class SequenceSessionSnapshot(
+internal data class SequenceSessionSnapshot(
     val challenge: String,
     val verifier: String,
     val walletAddress: String? = null,
     val signerAddress: String? = null,
 )
 
-class SequenceWalletSession(
+internal class SequenceWalletSession(
     initialSnapshot: SequenceSessionSnapshot? = null,
 ) {
     private var snapshot: SequenceSessionSnapshot? = initialSnapshot

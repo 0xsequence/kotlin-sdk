@@ -5,8 +5,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
-import com.polygon_wallet.polygon_kotlin_sdk.SequenceSdk
-import com.polygon_wallet.polygon_kotlin_sdk.models.CompleteAuthResponse
+import com.polygon_wallet.polygon_kotlin_sdk.PolygonSdk
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -118,12 +117,12 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.confirmCodeButton).setOnClickListener {
             launchAction("Confirm email code and resolve wallet") { sdk ->
-                val response = sdk.wallet.confirmEmailSignIn(requireText(codeInput, "Verification code"))
-                val wallet = sdk.wallet.resolveWallet(response)
-                balancesWalletAddressInput.setText(wallet.address.orEmpty())
-                appendLog(
-                    buildAuthSummary(response, wallet.address.orEmpty()),
+                val wallet = sdk.wallet.completeEmailSignIn(
+                    code = requireText(codeInput, "Verification code"),
+                    selectWallet = { wallets -> wallets.first() },
                 )
+                balancesWalletAddressInput.setText(wallet.address.orEmpty())
+                appendLog(buildAuthSummary(wallet.address.orEmpty()))
                 renderSession()
             }
         }
@@ -145,7 +144,7 @@ class TestbedActivity : AppCompatActivity() {
             launchAction("Verify last signature") { sdk ->
                 val result = sdk.api.isValidMessageSignature(
                     chainId = requireText(messageChainIdInput, "Message chain ID"),
-                    walletAddress = sdk.wallet.requireWalletAddress(),
+                    walletAddress = requireNotNull(sdk.wallet.walletAddress) { "No wallet selected" },
                     message = requireNotNull(lastSignedMessage) { "No signed message available" },
                     signature = requireNotNull(lastSignedSignature) { "No signature available" },
                 )
@@ -165,7 +164,7 @@ class TestbedActivity : AppCompatActivity() {
         }
     }
 
-    private fun launchAction(label: String, action: suspend (SequenceSdk) -> Unit) {
+    private fun launchAction(label: String, action: suspend (PolygonSdk) -> Unit) {
         uiScope.launch {
             appendLog(">> $label")
             runCatching {
@@ -176,7 +175,7 @@ class TestbedActivity : AppCompatActivity() {
         }
     }
 
-    private fun requireSdk(): SequenceSdk {
+    private fun requireSdk(): PolygonSdk {
         val projectAccessKey = currentProjectAccessKey()
         val environment = currentEnvironment()
         val existing = runtime
@@ -184,7 +183,8 @@ class TestbedActivity : AppCompatActivity() {
             runtime = DemoRuntime(
                 projectAccessKey = projectAccessKey,
                 environment = environment,
-                sdk = SequenceSdk(
+                sdk = PolygonSdk(
+                    context = this,
                     projectAccessKey = projectAccessKey,
                     environment = environment,
                 ),
@@ -209,14 +209,14 @@ class TestbedActivity : AppCompatActivity() {
 
     private fun renderSession() {
         val wallet = runtime?.sdk?.wallet
-        if (wallet == null || !wallet.hasSession) {
+        if (wallet == null || (wallet.signerAddress == null && wallet.walletAddress == null)) {
             currentSignerView.text = "Signer: none"
             currentWalletView.text = "Wallet: none"
             return
         }
 
-        currentSignerView.text = "Signer: ${wallet.currentSignerAddress ?: "none"}"
-        currentWalletView.text = "Wallet: ${wallet.currentWalletAddress ?: "pending selection"}"
+        currentSignerView.text = "Signer: ${wallet.signerAddress ?: "none"}"
+        currentWalletView.text = "Wallet: ${wallet.walletAddress ?: "pending selection"}"
     }
 
     private fun appendLog(message: String) {
@@ -228,12 +228,9 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun buildAuthSummary(
-        response: CompleteAuthResponse,
         resolvedWalletAddress: String,
     ): String = buildString {
         append("Auth confirmed")
-        response.identity?.email?.let { append(" email=$it") }
-        append(" wallets=${response.wallets.size}")
         append(" selected=$resolvedWalletAddress")
     }
 
@@ -246,6 +243,6 @@ class TestbedActivity : AppCompatActivity() {
     private data class DemoRuntime(
         val projectAccessKey: String,
         val environment: SequenceEnvironment,
-        val sdk: SequenceSdk,
+        val sdk: PolygonSdk,
     )
 }

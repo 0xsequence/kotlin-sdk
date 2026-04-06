@@ -2,7 +2,7 @@ package com.polygon_wallet.polygon_kotlin_sdk.utils
 
 import java.util.concurrent.atomic.AtomicLong
 
-class MonotonicNonceGenerator(
+internal class MonotonicNonceGenerator(
     private val currentTimeMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val lastNonce = AtomicLong(0)

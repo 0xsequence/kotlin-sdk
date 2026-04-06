@@ -4,19 +4,19 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
-import com.polygon_wallet.polygon_kotlin_sdk.SequenceSdk
+import com.polygon_wallet.polygon_kotlin_sdk.PolygonSdk
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val sdk = SequenceSdk(
+        val sdk = PolygonSdk(
             context = this,
             projectAccessKey = DemoConfig.demoProjectAccessKey,
+            environment = SequenceEnvironment.demoDefaults(),
         )
-        sdk.wallet.restorePersistedSession()
-        if (sdk.wallet.isSignedIn) {
+        if (sdk.wallet.walletAddress != null) {
             startActivity(Intent(this, EmailLoginDemoActivity::class.java))
             finish()
             return

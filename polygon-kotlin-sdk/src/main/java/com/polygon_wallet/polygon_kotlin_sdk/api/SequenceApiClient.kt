@@ -8,7 +8,7 @@ import com.polygon_wallet.polygon_kotlin_sdk.network.parseJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-class SequenceApiClient(
+class SequenceApiClient internal constructor(
     private val projectAccessKey: String,
     private val environment: SequenceEnvironment,
     private val transport: SequenceHttpClient = SequenceHttpClient(),

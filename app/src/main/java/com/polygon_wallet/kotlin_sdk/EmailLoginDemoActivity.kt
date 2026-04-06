@@ -8,7 +8,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
-import com.polygon_wallet.polygon_kotlin_sdk.SequenceSdk
+import com.polygon_wallet.polygon_kotlin_sdk.PolygonSdk
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 class EmailLoginDemoActivity : AppCompatActivity() {
     private val uiScope = MainScope()
     private val sdk by lazy {
-        SequenceSdk(
+        PolygonSdk(
             context = this,
             projectAccessKey = DemoConfig.demoProjectAccessKey,
             environment = SequenceEnvironment.demoDefaults(),
@@ -38,10 +38,12 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     private lateinit var transactionStatusView: TextView
     private lateinit var logView: TextView
     private lateinit var authCard: View
+    private lateinit var emailStepContainer: View
     private lateinit var codeStepContainer: View
     private lateinit var walletActionsContainer: View
     private lateinit var logoutButton: MaterialButton
     private lateinit var openExplorerButton: MaterialButton
+    private lateinit var cancelCodeStepButton: MaterialButton
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
@@ -54,7 +56,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
         bindViews()
         populateDefaults()
         bindActions()
-        restorePersistedSession()
+        renderSessionState()
     }
 
     override fun onDestroy() {
@@ -77,10 +79,12 @@ class EmailLoginDemoActivity : AppCompatActivity() {
         transactionStatusView = findViewById(R.id.transactionStatusView)
         logView = findViewById(R.id.logView)
         authCard = findViewById(R.id.authCard)
+        emailStepContainer = findViewById(R.id.emailStepContainer)
         codeStepContainer = findViewById(R.id.codeStepContainer)
         walletActionsContainer = findViewById(R.id.walletActionsContainer)
         logoutButton = findViewById(R.id.resetSessionButton)
         openExplorerButton = findViewById(R.id.openExplorerButton)
+        cancelCodeStepButton = findViewById(R.id.cancelCodeStepButton)
     }
 
     private fun populateDefaults() {
@@ -102,12 +106,16 @@ class EmailLoginDemoActivity : AppCompatActivity() {
                     append("Code requested for ")
                     append(response.loginHint ?: requireText(emailInput, "Email"))
                 }
-                signerAddressView.text = "Signer address: ${sdk.wallet.currentSignerAddress ?: "none"}"
-                authCard.visibility = View.VISIBLE
-                codeStepContainer.visibility = View.VISIBLE
-                walletActionsContainer.visibility = View.GONE
+                signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
+                showPendingCodeStep()
                 appendLog("Verifier committed: verifier=${response.verifier ?: "?"}")
             }
+        }
+
+        cancelCodeStepButton.setOnClickListener {
+            sdk.wallet.clearSession()
+            codeInput.text?.clear()
+            showEmailStep()
         }
 
         findViewById<MaterialButton>(R.id.confirmCodeButton).setOnClickListener {
@@ -116,16 +124,11 @@ class EmailLoginDemoActivity : AppCompatActivity() {
                 onStart = { authStatusView.text = "Confirming code and resolving wallet..." },
                 onFailure = { authStatusView.text = "Code confirmation failed: ${it.message ?: "Unknown error"}" },
             ) {
-                val response = sdk.wallet.confirmEmailSignIn(requireText(codeInput, "Verification code"))
-                val wallet = sdk.wallet.resolveWallet(response)
-                authStatusView.text = "Email login complete"
-                walletAddressView.text = "Wallet address: ${wallet.address ?: "unknown"}"
-                authCard.visibility = View.GONE
-                codeStepContainer.visibility = View.GONE
-                walletActionsContainer.visibility = View.VISIBLE
-                signatureStatusView.text = "Signature status: ready to sign."
-                transactionStatusView.text = "Transaction status: ready to send."
-                appendLog("Wallet ready: ${wallet.address ?: "unknown"}")
+                val wallet = sdk.wallet.completeEmailSignIn(
+                    code = requireText(codeInput, "Verification code"),
+                    selectWallet = { wallets -> wallets.first() },
+                )
+                renderSignedInWallet(wallet)
             }
         }
 
@@ -165,7 +168,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
             ) {
                 val result = sdk.api.isValidMessageSignature(
                     chainId = MESSAGE_CHAIN_ID,
-                    walletAddress = sdk.wallet.requireWalletAddress(),
+                    walletAddress = requireNotNull(sdk.wallet.walletAddress) { "No wallet selected" },
                     message = requireNotNull(lastSignedMessage) { "No signed message available" },
                     signature = requireNotNull(lastSignedSignature) { "No signature available" },
                 )
@@ -240,20 +243,29 @@ class EmailLoginDemoActivity : AppCompatActivity() {
         return value
     }
 
-    private fun restorePersistedSession() {
-        sdk.wallet.restorePersistedSession()
-        renderSessionState()
+    private fun renderSignedInWallet(
+        wallet: com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet,
+    ) {
+        authStatusView.text = "Email login complete"
+        walletAddressView.text = "Wallet address: ${wallet.address ?: "unknown"}"
+        logoutButton.visibility = View.VISIBLE
+        authCard.visibility = View.GONE
+        emailStepContainer.visibility = View.GONE
+        codeStepContainer.visibility = View.GONE
+        walletActionsContainer.visibility = View.VISIBLE
+        signatureStatusView.text = "Signature status: ready to sign."
+        transactionStatusView.text = "Transaction status: ready to send."
+        appendLog("Wallet ready: ${wallet.address ?: "unknown"}")
     }
 
     private fun renderSessionState() {
-        if (!sdk.wallet.hasSession) {
+        if (sdk.wallet.signerAddress == null && sdk.wallet.walletAddress == null) {
             resetUiForNoSession()
             return
         }
 
-        val state = sdk.wallet.currentState()
         logoutButton.visibility = View.VISIBLE
-        signerAddressView.text = "Signer address: ${sdk.wallet.currentSignerAddress ?: "none"}"
+        signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: ready to sign."
         lastTransactionHashView.text = "Last tx hash: none"
@@ -264,13 +276,15 @@ class EmailLoginDemoActivity : AppCompatActivity() {
             authStatusView.text = "Pending email verification"
             walletAddressView.text = "Wallet address: pending"
             authCard.visibility = View.VISIBLE
+            emailStepContainer.visibility = View.GONE
             codeStepContainer.visibility = View.VISIBLE
             walletActionsContainer.visibility = View.GONE
+            focusCodeInput()
             return
         }
 
         authStatusView.text = "Restored persisted wallet session"
-        walletAddressView.text = "Wallet address: ${state.walletAddress}"
+        walletAddressView.text = "Wallet address: ${sdk.wallet.walletAddress}"
         authCard.visibility = View.GONE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
@@ -286,9 +300,41 @@ class EmailLoginDemoActivity : AppCompatActivity() {
         transactionStatusView.text = "Transaction status: waiting to send."
         logoutButton.visibility = View.GONE
         authCard.visibility = View.VISIBLE
+        emailStepContainer.visibility = View.VISIBLE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.GONE
         openExplorerButton.visibility = View.GONE
+    }
+
+    private fun showEmailStep() {
+        authStatusView.text = "Waiting for email sign-in."
+        signerAddressView.text = "Signer address: none"
+        logoutButton.visibility = View.GONE
+        authCard.visibility = View.VISIBLE
+        emailStepContainer.visibility = View.VISIBLE
+        codeStepContainer.visibility = View.GONE
+        walletActionsContainer.visibility = View.GONE
+        codeInput.text?.clear()
+        emailInput.post {
+            emailInput.requestFocus()
+            emailInput.setSelection(emailInput.text?.length ?: 0)
+        }
+    }
+
+    private fun showPendingCodeStep() {
+        logoutButton.visibility = View.VISIBLE
+        authCard.visibility = View.VISIBLE
+        emailStepContainer.visibility = View.GONE
+        codeStepContainer.visibility = View.VISIBLE
+        walletActionsContainer.visibility = View.GONE
+        focusCodeInput()
+    }
+
+    private fun focusCodeInput() {
+        codeInput.post {
+            codeInput.requestFocus()
+            codeInput.setSelection(codeInput.text?.length ?: 0)
+        }
     }
 
     companion object {

@@ -226,11 +226,10 @@ These tests do not replace live integration tests, but they are the correct cros
 
 ## Current public SDK shape
 
-- `SequenceSdk(context, projectAccessKey, environment = SequenceEnvironment())`
+- `PolygonSdk(context, projectAccessKey, environment = SequenceEnvironment())`
   - Android-friendly constructor
   - defaults to Keystore-backed persisted session storage
-- `SequenceSdk(projectAccessKey, environment = SequenceEnvironment(), ...)`
-  - lower-level constructor for tests or custom wiring
+  - restores persisted session metadata automatically on initialization
 - `SequenceEnvironment`
   - endpoint configuration only
   - does not store `projectAccessKey`
@@ -239,12 +238,15 @@ Demo or staging usage should be explicit, for example:
 
 - `SequenceEnvironment.demoDefaults()`
 - wallet public state is intentionally sanitized:
-  - `hasSession`
   - `hasPendingSignIn`
-  - `isSignedIn`
-  - `currentWalletAddress`
-  - `currentSignerAddress`
-  - `currentState()`
+  - `walletAddress`
+  - `signerAddress`
+- intended high-level auth flow is:
+  - `signInWithEmail(email)`
+  - `completeEmailSignIn(code)`
+    - returns the selected wallet directly when one usable wallet exists
+    - creates a wallet when none exist yet
+    - if multiple wallets are possible, use `completeEmailSignIn(code, selectWallet)`
 
 The raw private key is not part of the public session API. It is decrypted on demand through the private-key store only when a signing operation needs it.
 
