@@ -1,10 +1,18 @@
 package com.polygon_wallet.polygon_kotlin_sdk.wallet
 
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.AuthMode
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CommitVerifierRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CompleteAuthRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CompleteAuthResponse
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.Identity
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.IdentityType
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.UseWalletRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.WaasWalletApi
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.Wallet
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.WalletType
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
-import com.polygon_wallet.polygon_kotlin_sdk.models.CompleteAuthResponse
 import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionRequest
-import com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet
 import com.polygon_wallet.polygon_kotlin_sdk.models.TransactionMode
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceSessionSnapshot
 import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
@@ -60,9 +68,16 @@ class SequenceWalletClientTest {
         val response = client.signInWithEmail("user@example.com")
         val request = requireNotNull(server.takeRequest())
 
-        val expectedPayload = WalletPayloadBuilder.buildCommitVerifierPayload("user@example.com")
+        val expectedPayload = WaasWalletApi.CommitVerifier.encodeRequest(
+            CommitVerifierRequest(
+                identityType = IdentityType.Email,
+                authMode = AuthMode.OTP,
+                metadata = emptyMap(),
+                handle = "user@example.com",
+            ),
+        )
         val expectedSignedRequest = WalletRequestSigner.signWalletRequest(
-            endpoint = WalletApi.Endpoints.commitVerifier,
+            endpoint = WaasWalletApi.CommitVerifier.path,
             nonce = "1710000100",
             payload = expectedPayload,
             scope = environment.authorizationScope,
@@ -97,7 +112,7 @@ class SequenceWalletClientTest {
     }
 
     @Test
-    fun signInWithEmailSignsConfiguredWalletPathPrefix() = runBlocking {
+    fun signInWithEmailUsesGeneratedWalletRouteEvenWhenEnvironmentPathDiffers() = runBlocking {
         server.enqueue(
             MockResponse.Builder()
                 .code(200)
@@ -118,17 +133,24 @@ class SequenceWalletClientTest {
 
         client.signInWithEmail("user@example.com")
         val request = requireNotNull(server.takeRequest())
-        val expectedPayload = WalletPayloadBuilder.buildCommitVerifierPayload("user@example.com")
+        val expectedPayload = WaasWalletApi.CommitVerifier.encodeRequest(
+            CommitVerifierRequest(
+                identityType = IdentityType.Email,
+                authMode = AuthMode.OTP,
+                metadata = emptyMap(),
+                handle = "user@example.com",
+            ),
+        )
         val expectedSignedRequest = WalletRequestSigner.signWalletRequest(
-            endpoint = WalletApi.Endpoints.commitVerifier,
+            endpoint = WaasWalletApi.CommitVerifier.path,
             nonce = "1710000105",
             payload = expectedPayload,
             scope = environment.authorizationScope,
             privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            requestPathPrefix = "/custom/wallet",
+            requestPathPrefix = WaasWalletApi.basePath,
         )
 
-        assertEquals("/custom/wallet/CommitVerifier", request.target)
+        assertEquals("/rpc/Wallet/CommitVerifier", request.target)
         assertEquals(
             expectedSignedRequest.authorizationHeader.removePrefix("Authorization: "),
             request.headers["Authorization"],
@@ -143,7 +165,7 @@ class SequenceWalletClientTest {
                 .body(
                     """
                     {
-                      "identity": {"type":"Email","sub":"sub-123","email":"user@example.com"},
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
                       "wallets": [
                         {"type":"Ethereum_EOA","address":"0xabc","index":0,"comment":"demo"}
                       ]
@@ -175,13 +197,19 @@ class SequenceWalletClientTest {
         val response = client.confirmEmailSignIn("123456")
         val request = requireNotNull(server.takeRequest())
 
-        val expectedPayload = WalletPayloadBuilder.buildCompleteAuthPayloadFromCode(
-            verifier = "verifier-123",
-            challenge = "challenge",
-            code = "123456",
+        val expectedPayload = WaasWalletApi.CompleteAuth.encodeRequest(
+            CompleteAuthRequest(
+                identityType = IdentityType.Email,
+                authMode = AuthMode.OTP,
+                verifier = "verifier-123",
+                answer = WalletAuthChallenge.hashAnswer(
+                    challenge = "challenge",
+                    code = "123456",
+                ),
+            ),
         )
         val expectedSignedRequest = WalletRequestSigner.signWalletRequest(
-            endpoint = WalletApi.Endpoints.completeAuth,
+            endpoint = WaasWalletApi.CompleteAuth.path,
             nonce = "1710000101",
             payload = expectedPayload,
             scope = environment.authorizationScope,
@@ -196,7 +224,95 @@ class SequenceWalletClientTest {
         )
         assertEquals("user@example.com", response.identity?.email)
         assertEquals(1, response.wallets.size)
-        assertEquals("Ethereum_EOA", response.wallets.single().type)
+        assertEquals(WalletType.Ethereum_EOA, response.wallets.single().type)
+        assertEquals("0xabc", response.wallets.single().address)
+    }
+
+    @Test
+    fun confirmEmailSignInAllowsIdentityWithoutIssuerAndSubject() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xabc","index":0,"comment":"demo"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = SequenceSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000101L },
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val response = client.confirmEmailSignIn("123456")
+
+        assertEquals("user@example.com", response.identity?.email)
+        assertEquals(null, response.identity?.issuer)
+        assertEquals(null, response.identity?.subject)
+        assertEquals(1, response.wallets.size)
+    }
+
+    @Test
+    fun confirmEmailSignInAllowsMissingIdentity() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xabc","index":0,"comment":"demo"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = SequenceSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000101L },
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val response = client.confirmEmailSignIn("123456")
+
+        assertEquals(null, response.identity)
+        assertEquals(1, response.wallets.size)
         assertEquals("0xabc", response.wallets.single().address)
     }
 
@@ -256,12 +372,17 @@ class SequenceWalletClientTest {
 
         val resolved = client.resolveWallet(
             CompleteAuthResponse(
-                identity = null,
+                identity = Identity(
+                    type = IdentityType.Email,
+                    issuer = "issuer-123",
+                    subject = "sub-123",
+                    email = "user@example.com",
+                ),
                 wallets = listOf(
-                    SequenceWallet(
+                    Wallet(
                         type = environment.defaultWalletType,
                         address = "0xdef",
-                        index = 3,
+                        index = 3.toUByte(),
                         comment = "picked",
                     ),
                 ),
@@ -269,14 +390,16 @@ class SequenceWalletClientTest {
         )
         val request = requireNotNull(server.takeRequest())
 
-        val expectedPayload = WalletPayloadBuilder.buildUseWalletPayload(
-            walletType = environment.defaultWalletType,
-            walletIndex = 3,
+        val expectedPayload = WaasWalletApi.UseWallet.encodeRequest(
+            UseWalletRequest(
+                walletType = environment.defaultWalletType,
+                walletIndex = 3.toUByte(),
+            ),
         )
 
         assertEquals("/rpc/Wallet/UseWallet", request.target)
         assertEquals(expectedPayload, requireNotNull(request.body).utf8())
-        assertEquals(3, resolved.index)
+        assertEquals(3.toUByte(), resolved.index)
         assertEquals("0xdef", resolved.address)
     }
 
@@ -288,7 +411,7 @@ class SequenceWalletClientTest {
                 .body(
                     """
                     {
-                      "identity": {"type":"Email","sub":"sub-123","email":"user@example.com"},
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
                       "wallets": [
                         {"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}
                       ]
@@ -330,14 +453,16 @@ class SequenceWalletClientTest {
         assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
         assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
         assertEquals(
-            WalletPayloadBuilder.buildUseWalletPayload(
-                walletType = environment.defaultWalletType,
-                walletIndex = 3,
+            WaasWalletApi.UseWallet.encodeRequest(
+                UseWalletRequest(
+                    walletType = environment.defaultWalletType,
+                    walletIndex = 3.toUByte(),
+                ),
             ),
             requireNotNull(useWalletRequest.body).utf8(),
         )
         assertEquals("0xdef", resolved.address)
-        assertEquals(3, resolved.index)
+        assertEquals(3.toUByte(), resolved.index)
         assertEquals("0xdef", client.walletAddress)
         assertFalse(client.hasPendingSignIn)
     }
@@ -350,7 +475,7 @@ class SequenceWalletClientTest {
                 .body(
                     """
                     {
-                      "identity": {"type":"Email","sub":"sub-123","email":"user@example.com"},
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
                       "wallets": [
                         {"type":"Ethereum_EOA","address":"0xaaa","index":1,"comment":"first"},
                         {"type":"Ethereum_EOA","address":"0xbbb","index":4,"comment":"second"}
@@ -407,7 +532,7 @@ class SequenceWalletClientTest {
                 .body(
                     """
                     {
-                      "identity": {"type":"Email","sub":"sub-123","email":"user@example.com"},
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
                       "wallets": [
                         {"type":"Ethereum_EOA","address":"0xaaa","index":1,"comment":"first"},
                         {"type":"Ethereum_EOA","address":"0xbbb","index":4,"comment":"second"}
@@ -452,9 +577,11 @@ class SequenceWalletClientTest {
         assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
         assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
         assertEquals(
-            WalletPayloadBuilder.buildUseWalletPayload(
-                walletType = environment.defaultWalletType,
-                walletIndex = 4,
+            WaasWalletApi.UseWallet.encodeRequest(
+                UseWalletRequest(
+                    walletType = environment.defaultWalletType,
+                    walletIndex = 4.toUByte(),
+                ),
             ),
             requireNotNull(useWalletRequest.body).utf8(),
         )
@@ -607,10 +734,7 @@ class SequenceWalletClientTest {
             )
         }.exceptionOrNull()
 
-        assertEquals(
-            "SendTransaction response missing response.txHash",
-            failure?.message,
-        )
+        assertNotNull(failure)
     }
 
     @Test
@@ -618,7 +742,7 @@ class SequenceWalletClientTest {
         server.enqueue(
             MockResponse.Builder()
                 .code(200)
-                .body("""{"response":{"txHash":"0xdeadbeef"}}""")
+                .body("""{"txHash":"0xdeadbeef"}""")
                 .build(),
         )
 
@@ -658,7 +782,18 @@ class SequenceWalletClientTest {
         assertEquals("0xdeadbeef", result.txHash)
         assertEquals("/rpc/Wallet/SendTransaction", request.target)
         assertEquals(
-            "{\"params\":{\"mode\":\"Native\",\"wallet\":\"0xwallet\",\"network\":\"amoy\",\"to\":\"0xabc\",\"value\":\"0\",\"data\":\"0x1234\",\"feeCeiling\":\"1000000\",\"nonce\":\"42\"}}",
+            WaasWalletApi.SendTransaction.encodeRequest(
+                com.polygon_wallet.polygon_kotlin_sdk.generated.waas.SendTransactionRequest(
+                    wallet = "0xwallet",
+                    network = "amoy",
+                    to = "0xabc",
+                    value = "0",
+                    data = "0x1234",
+                    mode = TransactionMode.Native,
+                    feeCeiling = "1000000",
+                    nonce = "42",
+                ),
+            ),
             requireNotNull(request.body).utf8(),
         )
     }

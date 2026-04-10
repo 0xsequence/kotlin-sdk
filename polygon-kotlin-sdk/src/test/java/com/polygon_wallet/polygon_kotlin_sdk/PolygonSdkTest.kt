@@ -46,7 +46,7 @@ class PolygonSdkTest {
         val defaultEnvironment = SequenceEnvironment()
         val demoEnvironment = SequenceEnvironment.demoDefaults()
         val differentWalletEnvironment = SequenceEnvironment(
-            walletApiUrl = "https://wallet.example.com/rpc/Wallet",
+            walletApiUrl = "https://wallet-2.example.com/rpc/Wallet",
             apiRpcUrl = defaultEnvironment.apiRpcUrl,
             indexerUrlTemplate = defaultEnvironment.indexerUrlTemplate,
         )
@@ -70,12 +70,18 @@ class PolygonSdkTest {
     }
 
     @Test
-    fun scopedSessionStorageTreatsEquivalentWalletUrlsAsSameScope() {
+    fun scopedSessionStorageTreatsEquivalentWalletOriginsAsSameScope() {
         val withoutTrailingSlash = SequenceEnvironment(
             walletApiUrl = "https://wallet.example.com/rpc/Wallet",
         )
         val withTrailingSlash = SequenceEnvironment(
             walletApiUrl = "https://wallet.example.com/rpc/Wallet/",
+        )
+        val withDifferentPath = SequenceEnvironment(
+            walletApiUrl = "https://wallet.example.com/custom/wallet",
+        )
+        val withQuery = SequenceEnvironment(
+            walletApiUrl = "https://wallet.example.com/rpc/Wallet?foo=bar",
         )
 
         assertEquals(
@@ -85,6 +91,22 @@ class PolygonSdkTest {
         assertEquals(
             PolygonSdk.scopedSessionFileName(withoutTrailingSlash),
             PolygonSdk.scopedSessionFileName(withTrailingSlash),
+        )
+        assertEquals(
+            PolygonSdk.scopedSessionKeyAlias(withoutTrailingSlash),
+            PolygonSdk.scopedSessionKeyAlias(withDifferentPath),
+        )
+        assertEquals(
+            PolygonSdk.scopedSessionFileName(withoutTrailingSlash),
+            PolygonSdk.scopedSessionFileName(withDifferentPath),
+        )
+        assertEquals(
+            PolygonSdk.scopedSessionKeyAlias(withoutTrailingSlash),
+            PolygonSdk.scopedSessionKeyAlias(withQuery),
+        )
+        assertEquals(
+            PolygonSdk.scopedSessionFileName(withoutTrailingSlash),
+            PolygonSdk.scopedSessionFileName(withQuery),
         )
     }
 

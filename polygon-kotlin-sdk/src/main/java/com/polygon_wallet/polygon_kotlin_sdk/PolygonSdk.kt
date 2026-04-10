@@ -76,7 +76,7 @@ class PolygonSdk internal constructor(
             environment: SequenceEnvironment,
         ): String {
             val source = buildString {
-                append(normalizedWalletApiUrl(environment.walletApiUrl))
+                append(normalizedWalletApiOrigin(environment.walletApiUrl))
                 append('\u0000')
                 append(environment.authorizationScope)
             }
@@ -85,16 +85,15 @@ class PolygonSdk internal constructor(
                 .joinToString(separator = "") { "%02x".format(it) }
         }
 
-        private fun normalizedWalletApiUrl(walletApiUrl: String): String {
+        private fun normalizedWalletApiOrigin(walletApiUrl: String): String {
             val uri = URI(walletApiUrl)
-            val normalizedPath = uri.path.orEmpty().ifBlank { "/" }.trimEnd('/')
             return URI(
                 uri.scheme?.lowercase(),
                 uri.userInfo,
                 uri.host?.lowercase(),
                 uri.port,
-                if (normalizedPath.isEmpty()) "/" else normalizedPath,
-                uri.query,
+                null,
+                null,
                 null,
             ).toString()
         }
