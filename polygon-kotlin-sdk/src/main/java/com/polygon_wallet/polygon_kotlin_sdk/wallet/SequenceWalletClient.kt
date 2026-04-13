@@ -1,20 +1,24 @@
 package com.polygon_wallet.polygon_kotlin_sdk.wallet
 
 import com.polygon_wallet.polygon_kotlin_sdk.chains.SequenceChains
-import com.polygon_wallet.polygon_kotlin_sdk.models.CommitVerifierResponse
-import com.polygon_wallet.polygon_kotlin_sdk.models.CompleteAuthResponse
-import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionResult
-import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionRequest
-import com.polygon_wallet.polygon_kotlin_sdk.models.SequenceIdentity
-import com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet
-import com.polygon_wallet.polygon_kotlin_sdk.models.SignMessageResult
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.AuthMode
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CommitVerifierRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CommitVerifierResponse
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CompleteAuthRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CompleteAuthResponse
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.CreateWalletRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.IdentityType
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.SendTransactionRequest as WaasSendTransactionRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.SendTransactionResponse
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.SignMessageRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.SignMessageResponse
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.UseWalletRequest
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.WaasWalletClient
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.Wallet
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.WalletType
+import com.polygon_wallet.polygon_kotlin_sdk.models.SendTransactionRequest as SequenceSendTransactionRequest
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
-import com.polygon_wallet.polygon_kotlin_sdk.network.arrayOrEmpty
-import com.polygon_wallet.polygon_kotlin_sdk.network.int
-import com.polygon_wallet.polygon_kotlin_sdk.network.objectOrNull
-import com.polygon_wallet.polygon_kotlin_sdk.network.parseJsonObject
-import com.polygon_wallet.polygon_kotlin_sdk.network.string
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceSessionSnapshot
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceWalletSession
 import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
@@ -79,21 +83,18 @@ class SequenceWalletClient internal constructor(
     suspend fun signInWithEmail(email: String): CommitVerifierResponse {
         val privateKey = privateKeyFactory()
         val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
-        val payload = WalletPayloadBuilder.buildCommitVerifierPayload(email)
-        val response = parseCommitVerifier(
-            postSignedWalletRequest(
-                endpoint = WalletApi.Endpoints.commitVerifier,
-                payload = payload,
-                privateKey = privateKey,
+        val response = waasClient(privateKey).commitVerifier(
+            CommitVerifierRequest(
+                identityType = IdentityType.Email,
+                authMode = AuthMode.OTP,
+                metadata = emptyMap(),
+                handle = email,
             ),
         )
 
-        val challenge = requireNotNull(response.challenge) { "CommitVerifier response missing challenge" }
-        val verifier = requireNotNull(response.verifier) { "CommitVerifier response missing verifier" }
-
         session.replaceForPendingAuth(
-            challenge = challenge,
-            verifier = verifier,
+            challenge = response.challenge,
+            verifier = response.verifier,
             signerAddress = signerAddress,
         )
         persistCurrentSession(privateKey)
@@ -104,18 +105,13 @@ class SequenceWalletClient internal constructor(
 
     internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
         val snapshot = session.requireSnapshot()
-        val payload = WalletPayloadBuilder.buildCompleteAuthPayloadFromCode(
-            verifier = snapshot.verifier,
-            challenge = snapshot.challenge,
-            code = code,
-        )
-
         return withPrivateKey { privateKey ->
-            parseCompleteAuth(
-                postSignedWalletRequest(
-                    endpoint = WalletApi.Endpoints.completeAuth,
-                    payload = payload,
-                    privateKey = privateKey,
+            waasClient(privateKey).completeAuth(
+                CompleteAuthRequest(
+                    identityType = IdentityType.Email,
+                    authMode = AuthMode.OTP,
+                    verifier = snapshot.verifier,
+                    answer = WalletAuthChallenge.hashAnswer(snapshot.challenge, code),
                 ),
             )
         }
@@ -123,8 +119,8 @@ class SequenceWalletClient internal constructor(
 
     suspend fun completeEmailSignIn(
         code: String,
-        walletType: String = environment.defaultWalletType,
-    ): SequenceWallet = completeEmailSignIn(
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet = completeEmailSignIn(
         code = code,
         walletType = walletType,
         selectWallet = { wallets ->
@@ -143,9 +139,9 @@ class SequenceWalletClient internal constructor(
      */
     suspend fun completeEmailSignIn(
         code: String,
-        walletType: String = environment.defaultWalletType,
-        selectWallet: suspend (List<SequenceWallet>) -> SequenceWallet,
-    ): SequenceWallet {
+        walletType: WalletType = environment.defaultWalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet {
         val auth = confirmEmailSignIn(code)
         val candidateWallets = auth.wallets.filter { it.type == walletType }
 
@@ -154,10 +150,8 @@ class SequenceWalletClient internal constructor(
             candidateWallets.size == 1 -> {
                 val selected = candidateWallets.single()
                 useWallet(
-                    walletType = requireNotNull(selected.type) {
-                        "CompleteAuth wallet missing type"
-                    },
-                    walletIndex = selected.index ?: 0,
+                    walletType = selected.type,
+                    walletIndex = selected.index.toInt(),
                 )
             }
             else -> {
@@ -166,10 +160,8 @@ class SequenceWalletClient internal constructor(
                     "Selected wallet is not one of the available options"
                 }
                 useWallet(
-                    walletType = requireNotNull(selected.type) {
-                        "Selected wallet is missing type"
-                    },
-                    walletIndex = selected.index ?: 0,
+                    walletType = selected.type,
+                    walletIndex = selected.index.toInt(),
                 )
             }
         }
@@ -177,13 +169,13 @@ class SequenceWalletClient internal constructor(
 
     internal suspend fun resolveWallet(
         completeAuth: CompleteAuthResponse,
-        walletType: String = environment.defaultWalletType,
-    ): SequenceWallet {
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet {
         val existingWallet = completeAuth.wallets.firstOrNull { it.type == walletType }
         return if (existingWallet != null) {
             useWallet(
                 walletType = walletType,
-                walletIndex = existingWallet.index ?: 0,
+                walletIndex = existingWallet.index.toInt(),
             )
         } else {
             createWallet(walletType)
@@ -191,43 +183,33 @@ class SequenceWalletClient internal constructor(
     }
 
     internal suspend fun useWallet(
-        walletType: String = environment.defaultWalletType,
+        walletType: WalletType = environment.defaultWalletType,
         walletIndex: Int = 0,
-    ): SequenceWallet {
+    ): Wallet {
         session.requireSnapshot()
-        val payload = WalletPayloadBuilder.buildUseWalletPayload(
-            walletType = walletType,
-            walletIndex = walletIndex,
-        )
-        val wallet = parseWallet(
-            withPrivateKey { privateKey ->
-                postSignedWalletRequest(
-                    endpoint = WalletApi.Endpoints.useWallet,
-                    payload = payload,
-                    privateKey = privateKey,
-                )
-            },
-        )
+        val wallet = withPrivateKey { privateKey ->
+            waasClient(privateKey).useWallet(
+                UseWalletRequest(
+                    walletType = walletType,
+                    walletIndex = walletIndex.toCheckedUByte(),
+                ),
+            ).wallet
+        }
 
-        session.updateWalletAddress(requireNotNull(wallet.address) { "UseWallet response missing address" })
+        session.updateWalletAddress(wallet.address)
         persistCurrentSession()
         return wallet
     }
 
-    internal suspend fun createWallet(walletType: String = environment.defaultWalletType): SequenceWallet {
+    internal suspend fun createWallet(walletType: WalletType = environment.defaultWalletType): Wallet {
         session.requireSnapshot()
-        val payload = WalletPayloadBuilder.buildCreateWalletPayload(walletType)
-        val wallet = parseWallet(
-            withPrivateKey { privateKey ->
-                postSignedWalletRequest(
-                    endpoint = WalletApi.Endpoints.createWallet,
-                    payload = payload,
-                    privateKey = privateKey,
-                )
-            },
-        )
+        val wallet = withPrivateKey { privateKey ->
+            waasClient(privateKey).createWallet(
+                CreateWalletRequest(walletType = walletType),
+            ).wallet
+        }
 
-        session.updateWalletAddress(requireNotNull(wallet.address) { "CreateWallet response missing address" })
+        session.updateWalletAddress(wallet.address)
         persistCurrentSession()
         return wallet
     }
@@ -237,35 +219,26 @@ class SequenceWalletClient internal constructor(
         privateKeyStore.save(snapshot, privateKey)
     }
 
-    suspend fun signMessage(chainId: String, message: String): SignMessageResult {
+    suspend fun signMessage(chainId: String, message: String): SignMessageResponse {
         session.requireSnapshot()
-        val payload = WalletPayloadBuilder.buildSignMessagePayload(
-            wallet = requireWalletAddress(),
-            network = SequenceChains.chainNameFor(chainId),
-            message = message,
-        )
-
-        val body = withPrivateKey { privateKey ->
-            postSignedWalletRequest(
-                endpoint = WalletApi.Endpoints.signMessage,
-                payload = payload,
-                privateKey = privateKey,
+        return withPrivateKey { privateKey ->
+            waasClient(privateKey).signMessage(
+                SignMessageRequest(
+                    wallet = requireWalletAddress(),
+                    network = SequenceChains.chainNameFor(chainId),
+                    message = message,
+                ),
             )
         }
-        return SignMessageResult(
-            signature = requireNotNull(parseJsonObject(body).string("signature")) {
-                "SignMessage response missing signature"
-            },
-        )
     }
 
     suspend fun sendTransaction(
         chainId: String,
         to: String,
         value: String,
-    ): SendTransactionResult = sendTransaction(
+    ): SendTransactionResponse = sendTransaction(
         chainId = chainId,
-        request = SendTransactionRequest(
+        request = SequenceSendTransactionRequest(
             to = to,
             value = value,
         ),
@@ -273,107 +246,44 @@ class SequenceWalletClient internal constructor(
 
     suspend fun sendTransaction(
         chainId: String,
-        request: SendTransactionRequest,
-    ): SendTransactionResult {
+        request: SequenceSendTransactionRequest,
+    ): SendTransactionResponse {
         session.requireSnapshot()
-        val payload = WalletPayloadBuilder.buildSendTransactionPayload(
-            wallet = requireWalletAddress(),
-            network = SequenceChains.chainNameFor(chainId),
-            request = request,
-        )
-
-        val body = withPrivateKey { privateKey ->
-            postSignedWalletRequest(
-                endpoint = WalletApi.Endpoints.sendTransaction,
-                payload = payload,
-                privateKey = privateKey,
+        return withPrivateKey { privateKey ->
+            waasClient(privateKey).sendTransaction(
+                WaasSendTransactionRequest(
+                    wallet = requireWalletAddress(),
+                    network = SequenceChains.chainNameFor(chainId),
+                    to = request.to,
+                    value = request.value,
+                    data = request.data,
+                    mode = request.mode,
+                    feeCeiling = request.feeCeiling,
+                    nonce = request.nonce,
+                ),
             )
         }
-        val responseObject = parseJsonObject(body).objectOrNull("response")
-        return SendTransactionResult(
-            txHash = requireNotNull(responseObject?.string("txHash")) {
-                "SendTransaction response missing response.txHash"
-            },
-        )
-    }
-
-    private suspend fun postSignedWalletRequest(
-        endpoint: String,
-        payload: String,
-        privateKey: ByteArray,
-    ): String {
-        val signedRequest = WalletRequestSigner.signWalletRequest(
-            endpoint = endpoint,
-            nonce = nonceGenerator().toString(),
-            payload = payload,
-            scope = environment.authorizationScope,
-            privateKey = privateKey,
-            requestPathPrefix = environment.walletRequestPathPrefix(),
-        )
-
-        val response = transport.postJson(
-            baseUrl = environment.walletApiUrl,
-            path = endpoint,
-            body = payload,
-            headers = mapOf(
-                SequenceEnvironment.accessKeyHeaderName to projectAccessKey,
-                "Origin" to "http://localhost:3000",
-                "Accept" to "application/json",
-                "Authorization" to authorizationHeaderValue(signedRequest.authorizationHeader),
-            ),
-        )
-        return response.body
     }
 
     private suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
         privateKeyStore.withPrivateKey(block)
 
-    private fun authorizationHeaderValue(headerLine: String): String =
-        headerLine.removePrefix(SequenceEnvironment.authorizationHeaderPrefix)
+    private fun waasClient(privateKey: ByteArray): WaasWalletClient = WaasWalletClient(
+        baseUrl = environment.walletApiBaseUrl(),
+        transport = SequenceSignedWaasTransport(
+            projectAccessKey = projectAccessKey,
+            environment = environment,
+            httpClient = transport,
+            nonceGenerator = nonceGenerator,
+            privateKey = privateKey,
+        ),
+    )
 
-    private fun parseCommitVerifier(body: String): CommitVerifierResponse {
-        val root = parseJsonObject(body)
-        return CommitVerifierResponse(
-            verifier = root.string("verifier"),
-            loginHint = root.string("loginHint"),
-            challenge = root.string("challenge"),
-        )
-    }
-
-    private fun parseCompleteAuth(body: String): CompleteAuthResponse {
-        val root = parseJsonObject(body)
-        val identityObject = root.objectOrNull("identity")
-        val identity = identityObject?.let {
-            SequenceIdentity(
-                type = it.string("type"),
-                sub = it.string("sub"),
-                email = it.string("email"),
-            )
+    private fun Int.toCheckedUByte(): UByte {
+        require(this in 0..UByte.MAX_VALUE.toInt()) {
+            "walletIndex must be between 0 and ${UByte.MAX_VALUE.toInt()}"
         }
-
-        val wallets = root.arrayOrEmpty("wallets").mapNotNull { element ->
-            val objectValue = element as? kotlinx.serialization.json.JsonObject ?: return@mapNotNull null
-            SequenceWallet(
-                type = objectValue.string("type"),
-                address = objectValue.string("address"),
-                index = objectValue.int("index"),
-                comment = objectValue.string("comment"),
-            )
-        }
-
-        return CompleteAuthResponse(identity = identity, wallets = wallets)
-    }
-
-    private fun parseWallet(body: String): SequenceWallet {
-        val walletObject = requireNotNull(parseJsonObject(body).objectOrNull("wallet")) {
-            "Wallet response missing wallet"
-        }
-        return SequenceWallet(
-            type = walletObject.string("type"),
-            address = walletObject.string("address"),
-            index = walletObject.int("index"),
-            comment = walletObject.string("comment"),
-        )
+        return toUByte()
     }
 
     private class InMemoryPrivateKeyStore : SequenceSecureSessionStore {

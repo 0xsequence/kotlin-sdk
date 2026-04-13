@@ -1,7 +1,7 @@
 package com.polygon_wallet.polygon_kotlin_sdk.network
 
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.WalletType
 import com.polygon_wallet.polygon_kotlin_sdk.chains.SequenceChains
-import com.polygon_wallet.polygon_kotlin_sdk.wallet.WalletApi
 import java.net.URI
 
 class SequenceEnvironment(
@@ -10,25 +10,27 @@ class SequenceEnvironment(
     val indexerUrlTemplate: String = indexerUrlTemplateDefault,
 ) {
     internal val authorizationScope: String = authorizationScopeDefault
-    internal val defaultWalletType: String = WalletApi.defaultWalletType
+    internal val defaultWalletType: WalletType = WalletType.Ethereum_EOA
 
     fun indexerUrlForChainId(chainId: String): String =
         indexerUrlTemplate.replace("{value}", SequenceChains.chainNameFor(chainId))
 
-    internal fun walletRequestPathPrefix(): String =
-        URI(walletApiUrl).path.ifBlank { walletApiPathDefault }.trimEnd('/')
+    internal fun walletApiBaseUrl(): String {
+        val uri = URI(walletApiUrl)
+        return "${uri.scheme}://${uri.rawAuthority}"
+    }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is SequenceEnvironment) return false
 
-        return walletApiUrl == other.walletApiUrl &&
+        return walletApiBaseUrl() == other.walletApiBaseUrl() &&
             apiRpcUrl == other.apiRpcUrl &&
             indexerUrlTemplate == other.indexerUrlTemplate
     }
 
     override fun hashCode(): Int {
-        var result = walletApiUrl.hashCode()
+        var result = walletApiBaseUrl().hashCode()
         result = 31 * result + apiRpcUrl.hashCode()
         result = 31 * result + indexerUrlTemplate.hashCode()
         return result
@@ -41,7 +43,6 @@ class SequenceEnvironment(
         internal const val accessKeyHeaderName: String = "X-Access-Key"
         internal const val authorizationHeaderPrefix: String = "Authorization: "
         internal const val authorizationScopeDefault: String = "@1:test"
-        internal const val walletApiPathDefault: String = "/rpc/Wallet"
         const val walletApiUrlDefault: String = "https://d1sctl7y41hot5.cloudfront.net/rpc/Wallet"
         const val apiRpcUrlDefault: String = "https://api.sequence.app/rpc/API"
         const val indexerUrlTemplateDefault: String = "https://{value}-indexer.sequence.app/rpc/Indexer/"

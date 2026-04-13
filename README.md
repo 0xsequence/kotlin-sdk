@@ -153,3 +153,26 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 ./gradlew :polygon-kotlin-sdk:testDebugUnitTest
 ./gradlew :app:assembleDebug
 ```
+
+## Temporary Generated WAAS Patch
+
+The generated waas client under `polygon-kotlin-sdk/src/main/java/com/polygon_wallet/polygon_kotlin_sdk/generated/waas/WaasWalletClient.kt`
+currently carries a temporary local patch for `CompleteAuth` responses.
+
+Until the API/schema are aligned upstream, keep these generated fields nullable after regeneration:
+
+```kotlin
+data class Identity(
+    @SerialName("issuer")
+    val issuer: String? = null,
+    @SerialName("subject")
+    val subject: String? = null,
+)
+
+data class CompleteAuthResponse(
+    @SerialName("identity")
+    val identity: Identity? = null,
+)
+```
+
+This is temporary and is expected to be fixed on the API side. If `WaasWalletClient.kt` is regenerated before that happens, re-apply this patch.

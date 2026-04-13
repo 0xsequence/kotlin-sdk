@@ -109,7 +109,7 @@ class TestbedActivity : AppCompatActivity() {
             launchAction("Start email sign-in") { sdk ->
                 val response = sdk.wallet.signInWithEmail(requireText(emailInput, "Email"))
                 appendLog(
-                    "Verifier committed: verifier=${response.verifier ?: "?"} challenge=${response.challenge ?: "?"}",
+                    "Verifier committed: verifier=${response.verifier} challenge=${response.challenge}",
                 )
                 renderSession()
             }
@@ -121,8 +121,8 @@ class TestbedActivity : AppCompatActivity() {
                     code = requireText(codeInput, "Verification code"),
                     selectWallet = { wallets -> wallets.first() },
                 )
-                balancesWalletAddressInput.setText(wallet.address.orEmpty())
-                appendLog(buildAuthSummary(wallet.address.orEmpty()))
+                balancesWalletAddressInput.setText(wallet.address)
+                appendLog(buildAuthSummary(wallet.address))
                 renderSession()
             }
         }

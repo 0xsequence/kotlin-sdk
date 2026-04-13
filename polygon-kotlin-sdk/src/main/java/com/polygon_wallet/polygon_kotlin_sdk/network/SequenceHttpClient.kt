@@ -25,6 +25,24 @@ internal class SequenceHttpClient(
         path: String,
         body: String,
         headers: Map<String, String>,
+    ): SequenceHttpResponse {
+        val response = postJsonWithStatus(
+            baseUrl = baseUrl,
+            path = path,
+            body = body,
+            headers = headers,
+        )
+        if (response.statusCode !in 200..299) {
+            throw SequenceHttpException(response.statusCode, response.body)
+        }
+        return response
+    }
+
+    suspend fun postJsonWithStatus(
+        baseUrl: String,
+        path: String,
+        body: String,
+        headers: Map<String, String>,
     ): SequenceHttpResponse = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url(joinUrl(baseUrl, path))
@@ -36,9 +54,6 @@ internal class SequenceHttpClient(
 
         okHttpClient.newCall(request).execute().use { response ->
             val responseBody = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw SequenceHttpException(response.code, responseBody)
-            }
             SequenceHttpResponse(
                 statusCode = response.code,
                 body = responseBody,

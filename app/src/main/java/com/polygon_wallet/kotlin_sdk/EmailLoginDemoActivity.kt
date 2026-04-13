@@ -9,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.polygon_wallet.polygon_kotlin_sdk.PolygonSdk
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.Wallet
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -108,7 +109,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
                 }
                 signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
                 showPendingCodeStep()
-                appendLog("Verifier committed: verifier=${response.verifier ?: "?"}")
+                appendLog("Verifier committed: verifier=${response.verifier}")
             }
         }
 
@@ -244,10 +245,10 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     }
 
     private fun renderSignedInWallet(
-        wallet: com.polygon_wallet.polygon_kotlin_sdk.models.SequenceWallet,
+        wallet: Wallet,
     ) {
         authStatusView.text = "Email login complete"
-        walletAddressView.text = "Wallet address: ${wallet.address ?: "unknown"}"
+        walletAddressView.text = "Wallet address: ${wallet.address}"
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.GONE
         emailStepContainer.visibility = View.GONE
@@ -255,7 +256,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
         walletActionsContainer.visibility = View.VISIBLE
         signatureStatusView.text = "Signature status: ready to sign."
         transactionStatusView.text = "Transaction status: ready to send."
-        appendLog("Wallet ready: ${wallet.address ?: "unknown"}")
+        appendLog("Wallet ready: ${wallet.address}")
     }
 
     private fun renderSessionState() {
