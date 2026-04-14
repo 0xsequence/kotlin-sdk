@@ -95,7 +95,7 @@ val signResult = polygonSdk.wallet.signMessage(
     message = "hello from android",
 )
 
-val verifyResult = polygonSdk.api.isValidMessageSignature(
+val verifyResult = polygonSdk.utils.verifySignature(
     chainId = "80002",
     walletAddress = walletAddress,
     message = "hello from android",

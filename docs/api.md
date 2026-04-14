@@ -15,7 +15,7 @@ PolygonSdk(
 
 ```kotlin
 val polygonSdk.wallet: SequenceWalletClient
-val polygonSdk.api: SequenceApiClient
+val polygonSdk.utils: PolygonSdkUtils
 val polygonSdk.indexer: SequenceIndexerClient
 ```
 
@@ -74,15 +74,15 @@ suspend fun wallet.sendTransaction(
 ): SendTransactionResponse
 ```
 
-## API Service
+## Utils
 
 ```kotlin
-suspend fun api.isValidMessageSignature(
+suspend fun utils.verifySignature(
     chainId: String,
     walletAddress: String,
     message: String,
     signature: String,
-): IsValidMessageSignatureResult
+): VerifySignatureResult
 ```
 
 ## Indexer Service
@@ -134,7 +134,7 @@ data class SendTransactionRequest(
 ```
 
 ```kotlin
-data class IsValidMessageSignatureResult(
+data class VerifySignatureResult(
     val status: Int,
     val isValid: Boolean,
 )

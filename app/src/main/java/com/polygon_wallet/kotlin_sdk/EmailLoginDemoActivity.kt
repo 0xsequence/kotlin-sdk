@@ -167,7 +167,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
                 onStart = { signatureStatusView.text = "Signature status: verification in progress..." },
                 onFailure = { signatureStatusView.text = "Signature status: verification failed." },
             ) {
-                val result = sdk.api.isValidMessageSignature(
+                val result = sdk.utils.verifySignature(
                     chainId = MESSAGE_CHAIN_ID,
                     walletAddress = requireNotNull(sdk.wallet.walletAddress) { "No wallet selected" },
                     message = requireNotNull(lastSignedMessage) { "No signed message available" },

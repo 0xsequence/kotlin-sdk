@@ -142,7 +142,7 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.verifySignatureButton).setOnClickListener {
             launchAction("Verify last signature") { sdk ->
-                val result = sdk.api.isValidMessageSignature(
+                val result = sdk.utils.verifySignature(
                     chainId = requireText(messageChainIdInput, "Message chain ID"),
                     walletAddress = requireNotNull(sdk.wallet.walletAddress) { "No wallet selected" },
                     message = requireNotNull(lastSignedMessage) { "No signed message available" },

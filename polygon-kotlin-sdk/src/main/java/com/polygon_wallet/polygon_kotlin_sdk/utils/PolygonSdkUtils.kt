@@ -1,6 +1,6 @@
-package com.polygon_wallet.polygon_kotlin_sdk.api
+package com.polygon_wallet.polygon_kotlin_sdk.utils
 
-import com.polygon_wallet.polygon_kotlin_sdk.models.IsValidMessageSignatureResult
+import com.polygon_wallet.polygon_kotlin_sdk.models.VerifySignatureResult
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
 import com.polygon_wallet.polygon_kotlin_sdk.network.boolean
@@ -8,17 +8,17 @@ import com.polygon_wallet.polygon_kotlin_sdk.network.parseJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-class SequenceApiClient internal constructor(
+class PolygonSdkUtils internal constructor(
     private val projectAccessKey: String,
     private val environment: SequenceEnvironment,
     private val transport: SequenceHttpClient = SequenceHttpClient(),
 ) {
-    suspend fun isValidMessageSignature(
+    suspend fun verifySignature(
         chainId: String,
         walletAddress: String,
         message: String,
         signature: String,
-    ): IsValidMessageSignatureResult {
+    ): VerifySignatureResult {
         val response = transport.postJson(
             baseUrl = environment.apiRpcUrl,
             path = "/IsValidMessageSignature",
@@ -31,7 +31,7 @@ class SequenceApiClient internal constructor(
             headers = defaultHeaders(),
         )
 
-        return IsValidMessageSignatureResult(
+        return VerifySignatureResult(
             status = response.statusCode,
             isValid = parseJsonObject(response.body).boolean("isValid") == true,
         )
