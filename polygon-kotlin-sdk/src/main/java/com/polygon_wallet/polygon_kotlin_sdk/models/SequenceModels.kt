@@ -11,7 +11,7 @@ data class SendTransactionRequest(
     val nonce: String? = null,
 )
 
-data class IsValidMessageSignatureResult(
+data class VerifySignatureResult(
     val status: Int,
     val isValid: Boolean,
 )

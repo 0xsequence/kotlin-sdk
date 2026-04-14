@@ -1,13 +1,13 @@
 package com.polygon_wallet.polygon_kotlin_sdk
 
 import android.content.Context
-import com.polygon_wallet.polygon_kotlin_sdk.api.SequenceApiClient
 import com.polygon_wallet.polygon_kotlin_sdk.indexer.SequenceIndexerClient
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceHttpClient
 import com.polygon_wallet.polygon_kotlin_sdk.session.SequenceWalletSession
 import com.polygon_wallet.polygon_kotlin_sdk.storage.AndroidKeystoreSessionStore
 import com.polygon_wallet.polygon_kotlin_sdk.storage.SequenceSecureSessionStore
+import com.polygon_wallet.polygon_kotlin_sdk.utils.PolygonSdkUtils
 import com.polygon_wallet.polygon_kotlin_sdk.wallet.SequenceWalletClient
 import okhttp3.OkHttpClient
 import java.security.MessageDigest
@@ -30,7 +30,7 @@ class PolygonSdk internal constructor(
         sessionStore = sessionStore,
     )
 
-    val api: SequenceApiClient = SequenceApiClient(
+    val utils: PolygonSdkUtils = PolygonSdkUtils(
         projectAccessKey = projectAccessKey,
         environment = environment,
         transport = transport,

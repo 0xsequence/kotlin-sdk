@@ -1,7 +1,7 @@
 package com.polygon_wallet.polygon_kotlin_sdk.network
 
-import com.polygon_wallet.polygon_kotlin_sdk.api.SequenceApiClient
 import com.polygon_wallet.polygon_kotlin_sdk.indexer.SequenceIndexerClient
+import com.polygon_wallet.polygon_kotlin_sdk.utils.PolygonSdkUtils
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -38,9 +38,9 @@ class SequenceServiceClientsTest {
         val environment = SequenceEnvironment(
             apiRpcUrl = server.url("/rpc/API/").toString(),
         )
-        val client = SequenceApiClient("test-access-key", environment, SequenceHttpClient())
+        val client = PolygonSdkUtils("test-access-key", environment, SequenceHttpClient())
 
-        val response = client.isValidMessageSignature(
+        val response = client.verifySignature(
             chainId = "80002",
             walletAddress = "0xabc",
             message = "hello",
@@ -144,14 +144,14 @@ class SequenceServiceClientsTest {
                 .build(),
         )
 
-        val client = SequenceApiClient(
+        val client = PolygonSdkUtils(
             "test-access-key",
             SequenceEnvironment(apiRpcUrl = server.url("/rpc/API/").toString()),
             SequenceHttpClient(),
         )
 
         val failure = runCatching {
-            client.isValidMessageSignature(
+            client.verifySignature(
                 chainId = "80002",
                 walletAddress = "0xabc",
                 message = "hello",
