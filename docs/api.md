@@ -40,23 +40,23 @@ suspend fun wallet.signInWithEmail(
 ```kotlin
 suspend fun wallet.completeEmailSignIn(
     code: String,
-    walletType: String = "Ethereum_EOA",
-): SequenceWallet
+    walletType: WalletType = WalletType.Ethereum_EOA,
+): Wallet
 ```
 
 ```kotlin
 suspend fun wallet.completeEmailSignIn(
     code: String,
-    walletType: String = "Ethereum_EOA",
-    selectWallet: suspend (List<SequenceWallet>) -> SequenceWallet,
-): SequenceWallet
+    walletType: WalletType = WalletType.Ethereum_EOA,
+    selectWallet: suspend (List<Wallet>) -> Wallet,
+): Wallet
 ```
 
 ```kotlin
 suspend fun wallet.signMessage(
     chainId: String,
     message: String,
-): SignMessageResult
+): SignMessageResponse
 ```
 
 ```kotlin
@@ -64,14 +64,14 @@ suspend fun wallet.sendTransaction(
     chainId: String,
     to: String,
     value: String,
-): SendTransactionResult
+): SendTransactionResponse
 ```
 
 ```kotlin
 suspend fun wallet.sendTransaction(
     chainId: String,
     request: SendTransactionRequest,
-): SendTransactionResult
+): SendTransactionResponse
 ```
 
 ## API Service
@@ -106,6 +106,8 @@ class SequenceEnvironment(
 )
 ```
 
+`walletApiUrl` should be treated as the Wallet API base URL/origin. Wallet RPC method paths come from the generated waas schema.
+
 ```kotlin
 fun environment.indexerUrlForChainId(chainId: String): String
 ```
@@ -117,41 +119,7 @@ fun SequenceEnvironment.Companion.demoDefaults(): SequenceEnvironment
 ## Public Models
 
 ```kotlin
-data class CommitVerifierResponse(
-    val verifier: String?,
-    val loginHint: String?,
-    val challenge: String?,
-)
-```
-
-```kotlin
-data class SequenceIdentity(
-    val type: String?,
-    val sub: String?,
-    val email: String?,
-)
-```
-
-```kotlin
-data class SequenceWallet(
-    val type: String?,
-    val address: String?,
-    val index: Int?,
-    val comment: String?,
-)
-```
-
-```kotlin
-data class SignMessageResult(
-    val signature: String,
-)
-```
-
-```kotlin
-enum class TransactionMode {
-    Native,
-    Relayer,
-}
+typealias TransactionMode = com.polygon_wallet.polygon_kotlin_sdk.generated.waas.TransactionMode
 ```
 
 ```kotlin
@@ -162,12 +130,6 @@ data class SendTransactionRequest(
     val mode: TransactionMode = TransactionMode.Relayer,
     val feeCeiling: String? = null,
     val nonce: String? = null,
-)
-```
-
-```kotlin
-data class SendTransactionResult(
-    val txHash: String,
 )
 ```
 
@@ -207,6 +169,43 @@ data class TokenBalancesResult(
 )
 ```
 
+Wallet auth, wallet selection, signing, and transaction result models now come from the generated waas package:
+
+```kotlin
+com.polygon_wallet.polygon_kotlin_sdk.generated.waas
+```
+
+Common public return types from that package include:
+
+```kotlin
+data class CommitVerifierResponse(
+    val verifier: String,
+    val loginHint: String? = null,
+    val challenge: String,
+)
+```
+
+```kotlin
+data class Wallet(
+    val type: WalletType,
+    val address: String,
+    val index: UByte,
+    val comment: String? = null,
+)
+```
+
+```kotlin
+data class SignMessageResponse(
+    val signature: String,
+)
+```
+
+```kotlin
+data class SendTransactionResponse(
+    val txHash: String,
+)
+```
+
 ## Recommended Usage
 
 ```kotlin
@@ -226,7 +225,7 @@ If your app needs to choose between multiple wallets:
 
 ```kotlin
 val wallet = polygonSdk.wallet.completeEmailSignIn("123456") { wallets ->
-    showWalletPickerAndWaitForChoice(wallets)
+    showWalletPickerAndWaitForChoice(wallets) // wallets: List<Wallet>
 }
 ```
 
