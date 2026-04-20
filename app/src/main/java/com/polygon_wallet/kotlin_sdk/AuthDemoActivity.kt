@@ -24,6 +24,8 @@ import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.security.SecureRandom
+import java.util.Base64
 
 class AuthDemoActivity : AppCompatActivity() {
     private val uiScope = MainScope()
@@ -290,11 +292,14 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private suspend fun requestGoogleIdToken(): String {
+        val nonce = generateSecureRandomNonce()
         val request = GetCredentialRequest.Builder()
             .addCredentialOption(
                 GetSignInWithGoogleOption.Builder(
                     serverClientId = DemoConfig.demoGoogleWebClientId,
-                ).build(),
+                )
+                    .setNonce(nonce)
+                    .build(),
             )
             .build()
 
@@ -370,6 +375,7 @@ class AuthDemoActivity : AppCompatActivity() {
     ) {
         authStatusView.text = status
         walletAddressView.text = "Wallet address: ${wallet.address}"
+        signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.GONE
         emailStepContainer.visibility = View.GONE
@@ -462,6 +468,12 @@ class AuthDemoActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "AuthDemoActivity"
         private const val MESSAGE_CHAIN_ID = "80002"
+
+        private fun generateSecureRandomNonce(byteLength: Int = 32): String {
+            val randomBytes = ByteArray(byteLength)
+            SecureRandom().nextBytes(randomBytes)
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes)
+        }
 
         private fun explorerUrlFor(chainId: String, txHash: String): String = when (chainId) {
             "80002" -> "https://amoy.polygonscan.com/tx/$txHash"

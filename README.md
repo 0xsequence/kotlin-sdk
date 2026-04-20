@@ -41,6 +41,8 @@ val polygonSdk = PolygonSdk(
 ```
 
 That constructor uses secure persisted session storage by default.
+Only completed wallet sessions are restored automatically. Pending auth state is
+kept in memory for the current app run and is not persisted across restarts.
 
 If you need a custom environment:
 
@@ -88,6 +90,11 @@ val wallet = polygonSdk.wallet.signInWithOidcIdToken(
 )
 ```
 
+The current Wallet API expects the OIDC verifier handle derived from the full ID
+token as `keccak256 -> 0x...` hex. This is a temporary compatibility path in the
+SDK. Once the API is updated, the SDK is expected to switch that handle back to
+`SHA-256 -> base64`.
+
 Useful state checks:
 
 ```kotlin
@@ -95,6 +102,12 @@ val walletAddress = polygonSdk.wallet.walletAddress
 val signerAddress = polygonSdk.wallet.signerAddress
 val hasPendingSignIn = polygonSdk.wallet.hasPendingSignIn
 ```
+
+`hasPendingSignIn` only reflects in-memory state in the current process. A fresh
+SDK instance restores completed wallet sessions, not interrupted pending logins.
+If auth completes but wallet selection, wallet creation, or session persistence
+fails, the SDK clears the in-memory auth session instead of retaining an
+unrecoverable transient signer.
 
 Use the selected wallet:
 

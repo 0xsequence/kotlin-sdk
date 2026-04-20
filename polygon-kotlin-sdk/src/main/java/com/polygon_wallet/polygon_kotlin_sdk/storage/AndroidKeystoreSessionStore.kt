@@ -31,8 +31,6 @@ internal class AndroidKeystoreSessionStore(
                 return null
             }
             SequenceSessionSnapshot(
-                challenge = persisted.challenge,
-                verifier = persisted.verifier,
                 walletAddress = persisted.walletAddress,
                 signerAddress = persisted.signerAddress,
             )
@@ -40,6 +38,9 @@ internal class AndroidKeystoreSessionStore(
     }
 
     override fun save(snapshot: SequenceSessionSnapshot, privateKey: ByteArray?) {
+        require(!snapshot.walletAddress.isNullOrBlank()) {
+            "Cannot persist pending Sequence auth state"
+        }
         sessionFile.parentFile?.mkdirs()
         val existing = readPersistedEnvelope()
         val encryptedPrivateKey = when {
@@ -53,8 +54,6 @@ internal class AndroidKeystoreSessionStore(
         val persisted = PersistedSessionEnvelope(
             encryptedPrivateKey = encryptedPrivateKey.ciphertext,
             iv = encryptedPrivateKey.iv,
-            challenge = snapshot.challenge,
-            verifier = snapshot.verifier,
             walletAddress = snapshot.walletAddress,
             signerAddress = snapshot.signerAddress,
         )
@@ -132,8 +131,8 @@ internal class AndroidKeystoreSessionStore(
     private data class PersistedSessionEnvelope(
         val encryptedPrivateKey: String? = null,
         val iv: String? = null,
-        val challenge: String,
-        val verifier: String,
+        val challenge: String? = null,
+        val verifier: String? = null,
         val walletAddress: String? = null,
         val signerAddress: String? = null,
     ) {
@@ -141,7 +140,7 @@ internal class AndroidKeystoreSessionStore(
             !encryptedPrivateKey.isNullOrBlank() && !iv.isNullOrBlank()
 
         fun isRestorable(): Boolean =
-            hasEncryptedPrivateKey() && challenge.isNotBlank() && verifier.isNotBlank()
+            hasEncryptedPrivateKey() && !walletAddress.isNullOrBlank()
 
         fun toJson(): String = JSONObject().apply {
             put("encryptedPrivateKey", encryptedPrivateKey)
@@ -158,8 +157,8 @@ internal class AndroidKeystoreSessionStore(
                 return PersistedSessionEnvelope(
                     encryptedPrivateKey = jsonObject.optString("encryptedPrivateKey").ifBlank { null },
                     iv = jsonObject.optString("iv").ifBlank { null },
-                    challenge = jsonObject.getString("challenge"),
-                    verifier = jsonObject.getString("verifier"),
+                    challenge = jsonObject.optString("challenge").ifBlank { null },
+                    verifier = jsonObject.optString("verifier").ifBlank { null },
                     walletAddress = jsonObject.optString("walletAddress").ifBlank { null },
                     signerAddress = jsonObject.optString("signerAddress").ifBlank { null },
                 )

@@ -27,6 +27,11 @@ val wallet.walletAddress: String?
 val wallet.signerAddress: String?
 ```
 
+`hasPendingSignIn` reflects an in-memory auth flow that has not resolved to a
+wallet yet. Persisted session restore only revives completed wallet sessions.
+If auth completes but wallet resolution or session persistence fails, the SDK
+clears the in-memory auth session instead of leaving a transient signer active.
+
 ```kotlin
 fun wallet.clearSession()
 ```
@@ -249,6 +254,11 @@ val wallet = polygonSdk.wallet.signInWithOidcIdToken(
     audience = "YOUR_WEB_CLIENT_ID",
 )
 ```
+
+Current compatibility note: the Wallet API currently expects the OIDC verifier
+handle derived from the full ID token as `keccak256 -> 0x...` hex. The SDK uses
+that format today for parity. Once the API is updated, the intended handle
+format is `SHA-256 -> base64`.
 
 If your app needs to choose between multiple wallets:
 

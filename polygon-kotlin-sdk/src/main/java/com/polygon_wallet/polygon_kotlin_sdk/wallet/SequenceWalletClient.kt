@@ -39,6 +39,8 @@ class SequenceWalletClient internal constructor(
     private val nonceGenerator: () -> Long = SequenceTimestamps::nextNonce,
     private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
 ) {
+    private var transientPrivateKey: ByteArray? = null
+
     private val privateKeyStore: SequenceSecureSessionStore =
         sessionStore ?: InMemoryPrivateKeyStore()
 
@@ -68,12 +70,16 @@ class SequenceWalletClient internal constructor(
 
     internal fun restorePersistedSession(): Boolean {
         val snapshot = sessionStore?.load() ?: return false
+        if (snapshot.walletAddress.isNullOrBlank()) {
+            return false
+        }
         session.restore(snapshot)
         return true
     }
 
     fun clearSession() {
         session.clear()
+        clearTransientPrivateKey()
         privateKeyStore.clear()
     }
 
@@ -82,25 +88,28 @@ class SequenceWalletClient internal constructor(
 
     suspend fun signInWithEmail(email: String): CommitVerifierResponse {
         val privateKey = privateKeyFactory()
-        val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
-        val response = waasClient(privateKey).commitVerifier(
-            CommitVerifierRequest(
-                identityType = IdentityType.Email,
-                authMode = AuthMode.OTP,
-                metadata = emptyMap(),
-                handle = email,
-            ),
-        )
+        return try {
+            val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
+            val response = waasClient(privateKey).commitVerifier(
+                CommitVerifierRequest(
+                    identityType = IdentityType.Email,
+                    authMode = AuthMode.OTP,
+                    metadata = emptyMap(),
+                    handle = email,
+                ),
+            )
 
-        session.replaceForPendingAuth(
-            challenge = response.challenge,
-            verifier = response.verifier,
-            signerAddress = signerAddress,
-        )
-        persistCurrentSession(privateKey)
-        privateKey.fill(0)
+            session.replaceForPendingAuth(
+                challenge = response.challenge,
+                verifier = response.verifier,
+                signerAddress = signerAddress,
+            )
+            replaceTransientPrivateKey(privateKey)
 
-        return response
+            response
+        } finally {
+            privateKey.fill(0)
+        }
     }
 
     suspend fun signInWithOidcIdToken(
@@ -129,60 +138,42 @@ class SequenceWalletClient internal constructor(
         selectWallet: suspend (List<Wallet>) -> Wallet,
     ): Wallet {
         val privateKey = privateKeyFactory()
-        val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
-        val response = waasClient(privateKey).commitVerifier(
-            CommitVerifierRequest(
-                identityType = IdentityType.OIDC,
-                authMode = AuthMode.IDToken,
-                metadata = mapOf(
-                    "iss" to issuer,
-                    "aud" to audience,
-                    "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
+        try {
+            val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
+            val response = waasClient(privateKey).commitVerifier(
+                CommitVerifierRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    metadata = mapOf(
+                        "iss" to issuer,
+                        "aud" to audience,
+                        "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
+                    ),
+                    handle = OidcIdToken.handleHash(idToken),
                 ),
-                handle = OidcIdToken.handleHash(idToken),
-            ),
-        )
+            )
 
-        session.replaceForPendingAuth(
-            challenge = response.challenge,
-            verifier = response.verifier,
-            signerAddress = signerAddress,
-        )
-        persistCurrentSession(privateKey)
-        privateKey.fill(0)
+            session.replaceForPendingAuth(
+                challenge = response.challenge,
+                verifier = response.verifier,
+                signerAddress = signerAddress,
+            )
+            replaceTransientPrivateKey(privateKey)
 
-        val auth = try {
-            confirmOidcIdTokenSignIn(idToken)
-        } catch (throwable: Throwable) {
-            clearSession()
-            throw throwable
-        }
-        val candidateWallets = auth.wallets.filter { it.type == walletType }
-
-        return when {
-            candidateWallets.isEmpty() -> createWallet(walletType)
-            candidateWallets.size == 1 -> {
-                val selected = candidateWallets.single()
-                useWallet(
-                    walletType = selected.type,
-                    walletIndex = selected.index.toInt(),
-                )
+            val auth = try {
+                confirmOidcIdTokenSignIn(idToken)
+            } catch (throwable: Throwable) {
+                clearSession()
+                throw throwable
             }
-            else -> {
-                val selected = selectWallet(candidateWallets)
-                require(candidateWallets.contains(selected)) {
-                    "Selected wallet is not one of the available options"
-                }
-                useWallet(
-                    walletType = selected.type,
-                    walletIndex = selected.index.toInt(),
-                )
-            }
+            return resolveAuthenticatedWallet(auth, walletType, selectWallet)
+        } finally {
+            privateKey.fill(0)
         }
     }
 
     internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
-        val snapshot = session.requireSnapshot()
+        val snapshot = session.requirePendingAuth()
         return withPrivateKey { privateKey ->
             waasClient(privateKey).completeAuth(
                 CompleteAuthRequest(
@@ -196,7 +187,7 @@ class SequenceWalletClient internal constructor(
     }
 
     internal suspend fun confirmOidcIdTokenSignIn(idToken: String): CompleteAuthResponse {
-        val snapshot = session.requireSnapshot()
+        val snapshot = session.requirePendingAuth()
         return withPrivateKey { privateKey ->
             waasClient(privateKey).completeAuth(
                 CompleteAuthRequest(
@@ -235,43 +226,23 @@ class SequenceWalletClient internal constructor(
         selectWallet: suspend (List<Wallet>) -> Wallet,
     ): Wallet {
         val auth = confirmEmailSignIn(code)
-        val candidateWallets = auth.wallets.filter { it.type == walletType }
-
-        return when {
-            candidateWallets.isEmpty() -> createWallet(walletType)
-            candidateWallets.size == 1 -> {
-                val selected = candidateWallets.single()
-                useWallet(
-                    walletType = selected.type,
-                    walletIndex = selected.index.toInt(),
-                )
-            }
-            else -> {
-                val selected = selectWallet(candidateWallets)
-                require(candidateWallets.contains(selected)) {
-                    "Selected wallet is not one of the available options"
-                }
-                useWallet(
-                    walletType = selected.type,
-                    walletIndex = selected.index.toInt(),
-                )
-            }
-        }
+        return resolveAuthenticatedWallet(auth, walletType, selectWallet)
     }
 
     internal suspend fun resolveWallet(
         completeAuth: CompleteAuthResponse,
         walletType: WalletType = environment.defaultWalletType,
     ): Wallet {
-        val existingWallet = completeAuth.wallets.firstOrNull { it.type == walletType }
-        return if (existingWallet != null) {
-            useWallet(
-                walletType = walletType,
-                walletIndex = existingWallet.index.toInt(),
-            )
-        } else {
-            createWallet(walletType)
-        }
+        return resolveAuthenticatedWallet(
+            completeAuth = completeAuth,
+            walletType = walletType,
+            selectWallet = { wallets ->
+                require(wallets.size == 1) {
+                    "Multiple wallets are available. Call resolveWallet with an explicit selector to choose one."
+                }
+                wallets.single()
+            },
+        )
     }
 
     internal suspend fun useWallet(
@@ -288,8 +259,9 @@ class SequenceWalletClient internal constructor(
             ).wallet
         }
 
-        session.updateWalletAddress(wallet.address)
+        session.activateWallet(wallet.address)
         persistCurrentSession()
+        clearTransientPrivateKey()
         return wallet
     }
 
@@ -301,14 +273,49 @@ class SequenceWalletClient internal constructor(
             ).wallet
         }
 
-        session.updateWalletAddress(wallet.address)
+        session.activateWallet(wallet.address)
         persistCurrentSession()
+        clearTransientPrivateKey()
         return wallet
+    }
+
+    private suspend fun resolveAuthenticatedWallet(
+        completeAuth: CompleteAuthResponse,
+        walletType: WalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet {
+        session.markAuthVerified()
+        return try {
+            val candidateWallets = completeAuth.wallets.filter { it.type == walletType }
+            when {
+                candidateWallets.isEmpty() -> createWallet(walletType)
+                candidateWallets.size == 1 -> {
+                    val selected = candidateWallets.single()
+                    useWallet(
+                        walletType = selected.type,
+                        walletIndex = selected.index.toInt(),
+                    )
+                }
+                else -> {
+                    val selected = selectWallet(candidateWallets)
+                    require(candidateWallets.contains(selected)) {
+                        "Selected wallet is not one of the available options"
+                    }
+                    useWallet(
+                        walletType = selected.type,
+                        walletIndex = selected.index.toInt(),
+                    )
+                }
+            }
+        } catch (throwable: Throwable) {
+            clearSession()
+            throw throwable
+        }
     }
 
     private fun persistCurrentSession(privateKey: ByteArray? = null) {
         val snapshot = session.snapshot() ?: return
-        privateKeyStore.save(snapshot, privateKey)
+        privateKeyStore.save(snapshot, privateKey ?: transientPrivateKey)
     }
 
     suspend fun signMessage(chainId: String, message: String): SignMessageResponse {
@@ -357,8 +364,28 @@ class SequenceWalletClient internal constructor(
         }
     }
 
-    private suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
-        privateKeyStore.withPrivateKey(block)
+    private suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {
+        val inMemoryKey = transientPrivateKey
+        if (inMemoryKey != null) {
+            val privateKey = inMemoryKey.copyOf()
+            return try {
+                block(privateKey)
+            } finally {
+                privateKey.fill(0)
+            }
+        }
+        return privateKeyStore.withPrivateKey(block)
+    }
+
+    private fun replaceTransientPrivateKey(privateKey: ByteArray) {
+        clearTransientPrivateKey()
+        transientPrivateKey = privateKey.copyOf()
+    }
+
+    private fun clearTransientPrivateKey() {
+        transientPrivateKey?.fill(0)
+        transientPrivateKey = null
+    }
 
     private fun waasClient(privateKey: ByteArray): WaasWalletClient = WaasWalletClient(
         baseUrl = environment.walletApiBaseUrl(),
