@@ -143,13 +143,15 @@ class AuthDemoActivity : AppCompatActivity() {
                 onStart = { authStatusView.text = "Requesting email code..." },
                 onFailure = { authStatusView.text = "Email sign-in failed: ${it.message ?: "Unknown error"}" },
             ) {
-                val response = sdk.wallet.signInWithEmail(requireText(emailInput, "Email"))
+                val email = requireText(emailInput, "Email")
+                val response = sdk.wallet.signInWithEmail(email)
                 authStatusView.text = buildString {
                     append("Code requested for ")
-                    append(response.loginHint ?: requireText(emailInput, "Email"))
+                    append(response.loginHint ?: email)
                 }
                 signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
                 showPendingCodeStep()
+                emailInput.text?.clear()
                 appendLog("Verifier committed: verifier=${response.verifier}")
             }
         }
@@ -170,6 +172,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     code = requireText(codeInput, "Verification code"),
                     selectWallet = { wallets -> wallets.first() },
                 )
+                codeInput.text?.clear()
                 renderSignedInWallet(wallet, "Email login complete")
             }
         }
