@@ -3,20 +3,31 @@ package com.polygon_wallet.kotlin_sdk
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.credentials.ClearCredentialStateRequest
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.polygon_wallet.polygon_kotlin_sdk.PolygonSdk
+import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.WebRpcError
 import com.polygon_wallet.polygon_kotlin_sdk.generated.waas.Wallet
 import com.polygon_wallet.polygon_kotlin_sdk.network.SequenceEnvironment
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-class EmailLoginDemoActivity : AppCompatActivity() {
+class AuthDemoActivity : AppCompatActivity() {
     private val uiScope = MainScope()
+    private val credentialManager by lazy { CredentialManager.create(this) }
     private val sdk by lazy {
         PolygonSdk(
             context = this,
@@ -45,6 +56,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     private lateinit var logoutButton: MaterialButton
     private lateinit var openExplorerButton: MaterialButton
     private lateinit var cancelCodeStepButton: MaterialButton
+    private lateinit var startGoogleSignInButton: MaterialButton
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
@@ -52,8 +64,8 @@ class EmailLoginDemoActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_email_login_demo)
-        findViewById<View>(R.id.emailLoginDemoRoot).applySafeDrawingInsets()
+        setContentView(R.layout.activity_auth_demo)
+        findViewById<View>(R.id.authDemoRoot).applySafeDrawingInsets()
         bindViews()
         populateDefaults()
         bindActions()
@@ -86,6 +98,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
         logoutButton = findViewById(R.id.resetSessionButton)
         openExplorerButton = findViewById(R.id.openExplorerButton)
         cancelCodeStepButton = findViewById(R.id.cancelCodeStepButton)
+        startGoogleSignInButton = findViewById(R.id.startGoogleSignInButton)
     }
 
     private fun populateDefaults() {
@@ -96,6 +109,32 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     }
 
     private fun bindActions() {
+        startGoogleSignInButton.setOnClickListener {
+            launchAction(
+                label = "Sign in with Google",
+                onStart = { authStatusView.text = "Requesting Google ID token..." },
+                onFailure = {
+                    authStatusView.text = "Google sign-in failed: ${it.message ?: "Unknown error"}"
+                    appendLog("Google sign-in error: ${describeThrowable(it)}")
+                },
+            ) {
+                val wallet = try {
+                    val idToken = requestGoogleIdToken()
+                    sdk.wallet.signInWithOidcIdToken(
+                        idToken = idToken,
+                        issuer = DemoConfig.googleIssuer,
+                        audience = DemoConfig.demoGoogleWebClientId,
+                        selectWallet = { wallets -> wallets.first() },
+                    )
+                } catch (throwable: Throwable) {
+                    sdk.wallet.clearSession()
+                    throw throwable
+                }
+                renderSignedInWallet(wallet, "Google login complete")
+                appendLog("Google sign-in complete: ${wallet.address}")
+            }
+        }
+
         findViewById<MaterialButton>(R.id.startEmailSignInButton).setOnClickListener {
             launchAction(
                 label = "Start email sign-in",
@@ -129,7 +168,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
                     code = requireText(codeInput, "Verification code"),
                     selectWallet = { wallets -> wallets.first() },
                 )
-                renderSignedInWallet(wallet)
+                renderSignedInWallet(wallet, "Email login complete")
             }
         }
 
@@ -140,6 +179,13 @@ class EmailLoginDemoActivity : AppCompatActivity() {
             lastTransactionHash = null
             renderSessionState()
             appendLog("Logged out.")
+            uiScope.launch {
+                runCatching {
+                    credentialManager.clearCredentialState(ClearCredentialStateRequest())
+                }.onFailure { throwable ->
+                    appendLog("!! Failed to clear credential state: ${throwable.message ?: throwable::class.java.simpleName}")
+                }
+            }
         }
 
         findViewById<MaterialButton>(R.id.signMessageButton).setOnClickListener {
@@ -231,11 +277,85 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     }
 
     private fun appendLog(message: String) {
+        if (message.startsWith("!!")) {
+            Log.e(TAG, message)
+        } else {
+            Log.d(TAG, message)
+        }
         logView.text = buildString {
             append(logView.text)
             append("\n")
             append(message)
         }.trim()
+    }
+
+    private suspend fun requestGoogleIdToken(): String {
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(
+                GetSignInWithGoogleOption.Builder(
+                    serverClientId = DemoConfig.demoGoogleWebClientId,
+                ).build(),
+            )
+            .build()
+
+        val result = try {
+            credentialManager.getCredential(
+                context = this,
+                request = request,
+            )
+        } catch (error: GetCredentialException) {
+            appendLog("Credential Manager error: ${describeThrowable(error)}")
+            throw error
+        }
+        val credential = result.credential
+        require(credential is CustomCredential) {
+            "Unexpected credential type: ${credential::class.java.simpleName}"
+        }
+        require(credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+            "Unexpected Google credential type: ${credential.type}"
+        }
+
+        return try {
+            GoogleIdTokenCredential.createFrom(credential.data).idToken
+        } catch (error: GoogleIdTokenParsingException) {
+            appendLog("Google ID token parsing error: ${describeThrowable(error)}")
+            throw IllegalStateException("Failed to parse Google ID token", error)
+        }
+    }
+
+    private fun describeThrowable(throwable: Throwable): String = buildString {
+        if (throwable is WebRpcError) {
+            append("WebRpcError(")
+            append("error=")
+            append(throwable.error)
+            append(", code=")
+            append(throwable.code)
+            append(", status=")
+            append(throwable.status)
+            append(", kind=")
+            append(throwable.errorKind.name)
+            append(", message=")
+            append(throwable.message)
+            if (throwable.causeString.isNotBlank()) {
+                append(", cause=")
+                append(throwable.causeString)
+            }
+            append(")")
+            return@buildString
+        }
+        append(throwable::class.java.simpleName)
+        throwable.message?.takeIf { it.isNotBlank() }?.let {
+            append(": ")
+            append(it)
+        }
+        throwable.cause?.let { cause ->
+            append(" | cause=")
+            append(cause::class.java.simpleName)
+            cause.message?.takeIf { it.isNotBlank() }?.let { message ->
+                append(": ")
+                append(message)
+            }
+        }
     }
 
     private fun requireText(input: TextInputEditText, label: String): String {
@@ -246,8 +366,9 @@ class EmailLoginDemoActivity : AppCompatActivity() {
 
     private fun renderSignedInWallet(
         wallet: Wallet,
+        status: String,
     ) {
-        authStatusView.text = "Email login complete"
+        authStatusView.text = status
         walletAddressView.text = "Wallet address: ${wallet.address}"
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.GONE
@@ -274,7 +395,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
         openExplorerButton.visibility = View.GONE
 
         if (sdk.wallet.hasPendingSignIn) {
-            authStatusView.text = "Pending email verification"
+            authStatusView.text = "Pending sign-in verification"
             walletAddressView.text = "Wallet address: pending"
             authCard.visibility = View.VISIBLE
             emailStepContainer.visibility = View.GONE
@@ -292,7 +413,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     }
 
     private fun resetUiForNoSession() {
-        authStatusView.text = "Waiting for email sign-in."
+        authStatusView.text = "Waiting for sign-in."
         walletAddressView.text = "Wallet address: pending"
         signerAddressView.text = "Signer address: none"
         lastSignatureView.text = "Last signature: none"
@@ -308,7 +429,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     }
 
     private fun showEmailStep() {
-        authStatusView.text = "Waiting for email sign-in."
+        authStatusView.text = "Waiting for sign-in."
         signerAddressView.text = "Signer address: none"
         logoutButton.visibility = View.GONE
         authCard.visibility = View.VISIBLE
@@ -339,6 +460,7 @@ class EmailLoginDemoActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "AuthDemoActivity"
         private const val MESSAGE_CHAIN_ID = "80002"
 
         private fun explorerUrlFor(chainId: String, txHash: String): String = when (chainId) {

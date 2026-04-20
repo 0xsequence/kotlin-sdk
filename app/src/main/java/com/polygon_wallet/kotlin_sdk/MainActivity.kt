@@ -17,7 +17,7 @@ class MainActivity : AppCompatActivity() {
             environment = SequenceEnvironment.demoDefaults(),
         )
         if (sdk.wallet.walletAddress != null) {
-            startActivity(Intent(this, EmailLoginDemoActivity::class.java))
+            startActivity(Intent(this, AuthDemoActivity::class.java))
             finish()
             return
         }
@@ -29,8 +29,8 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, TestbedActivity::class.java))
         }
 
-        findViewById<MaterialButton>(R.id.openEmailLoginDemoButton).setOnClickListener {
-            startActivity(Intent(this, EmailLoginDemoActivity::class.java))
+        findViewById<MaterialButton>(R.id.openAuthDemoButton).setOnClickListener {
+            startActivity(Intent(this, AuthDemoActivity::class.java))
         }
     }
 }

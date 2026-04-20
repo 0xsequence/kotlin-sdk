@@ -14,7 +14,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Kotlinsdk">
 
-        <activity android:name=".EmailLoginDemoActivity" />
+        <activity android:name=".AuthDemoActivity" />
         <activity android:name=".TestbedActivity" />
 
         <activity

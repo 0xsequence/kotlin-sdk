@@ -38,6 +38,25 @@ suspend fun wallet.signInWithEmail(
 ```
 
 ```kotlin
+suspend fun wallet.signInWithOidcIdToken(
+    idToken: String,
+    issuer: String,
+    audience: String,
+    walletType: WalletType = WalletType.Ethereum_EOA,
+): Wallet
+```
+
+```kotlin
+suspend fun wallet.signInWithOidcIdToken(
+    idToken: String,
+    issuer: String,
+    audience: String,
+    walletType: WalletType = WalletType.Ethereum_EOA,
+    selectWallet: suspend (List<Wallet>) -> Wallet,
+): Wallet
+```
+
+```kotlin
 suspend fun wallet.completeEmailSignIn(
     code: String,
     walletType: WalletType = WalletType.Ethereum_EOA,
@@ -219,6 +238,16 @@ if (polygonSdk.wallet.walletAddress == null) {
     // A one-time code is sent to the user's email inbox.
     val wallet = polygonSdk.wallet.completeEmailSignIn("123456")
 }
+```
+
+For OIDC ID-token flows:
+
+```kotlin
+val wallet = polygonSdk.wallet.signInWithOidcIdToken(
+    idToken = googleIdToken,
+    issuer = "https://accounts.google.com",
+    audience = "YOUR_WEB_CLIENT_ID",
+)
 ```
 
 If your app needs to choose between multiple wallets:

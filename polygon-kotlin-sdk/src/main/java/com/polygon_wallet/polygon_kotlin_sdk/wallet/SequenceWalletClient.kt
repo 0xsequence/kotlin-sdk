@@ -103,6 +103,84 @@ class SequenceWalletClient internal constructor(
         return response
     }
 
+    suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet = signInWithOidcIdToken(
+        idToken = idToken,
+        issuer = issuer,
+        audience = audience,
+        walletType = walletType,
+        selectWallet = { wallets ->
+            require(wallets.size == 1) {
+                "Multiple wallets are available. Call signInWithOidcIdToken(idToken, issuer, audience, walletType, selectWallet) to choose one."
+            }
+            wallets.single()
+        },
+    )
+
+    suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        walletType: WalletType = environment.defaultWalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet {
+        val privateKey = privateKeyFactory()
+        val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
+        val response = waasClient(privateKey).commitVerifier(
+            CommitVerifierRequest(
+                identityType = IdentityType.OIDC,
+                authMode = AuthMode.IDToken,
+                metadata = mapOf(
+                    "iss" to issuer,
+                    "aud" to audience,
+                    "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
+                ),
+                handle = OidcIdToken.handleHash(idToken),
+            ),
+        )
+
+        session.replaceForPendingAuth(
+            challenge = response.challenge,
+            verifier = response.verifier,
+            signerAddress = signerAddress,
+        )
+        persistCurrentSession(privateKey)
+        privateKey.fill(0)
+
+        val auth = try {
+            confirmOidcIdTokenSignIn(idToken)
+        } catch (throwable: Throwable) {
+            clearSession()
+            throw throwable
+        }
+        val candidateWallets = auth.wallets.filter { it.type == walletType }
+
+        return when {
+            candidateWallets.isEmpty() -> createWallet(walletType)
+            candidateWallets.size == 1 -> {
+                val selected = candidateWallets.single()
+                useWallet(
+                    walletType = selected.type,
+                    walletIndex = selected.index.toInt(),
+                )
+            }
+            else -> {
+                val selected = selectWallet(candidateWallets)
+                require(candidateWallets.contains(selected)) {
+                    "Selected wallet is not one of the available options"
+                }
+                useWallet(
+                    walletType = selected.type,
+                    walletIndex = selected.index.toInt(),
+                )
+            }
+        }
+    }
+
     internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
         val snapshot = session.requireSnapshot()
         return withPrivateKey { privateKey ->
@@ -112,6 +190,20 @@ class SequenceWalletClient internal constructor(
                     authMode = AuthMode.OTP,
                     verifier = snapshot.verifier,
                     answer = WalletAuthChallenge.hashAnswer(snapshot.challenge, code),
+                ),
+            )
+        }
+    }
+
+    internal suspend fun confirmOidcIdTokenSignIn(idToken: String): CompleteAuthResponse {
+        val snapshot = session.requireSnapshot()
+        return withPrivateKey { privateKey ->
+            waasClient(privateKey).completeAuth(
+                CompleteAuthRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    verifier = snapshot.verifier,
+                    answer = idToken,
                 ),
             )
         }

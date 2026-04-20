@@ -15,6 +15,7 @@ Until the package is published, use the source directly from this repository.
 ## What It Provides
 
 - email sign-in flow against the wallet API
+- OIDC ID-token sign-in flow against the wallet API
 - persisted wallet session storage backed by Android Keystore
 - wallet selection and wallet creation flows
 - message signing
@@ -75,6 +76,16 @@ if (polygonSdk.wallet.walletAddress == null) {
     // A one-time code is sent to the user's email inbox.
     polygonSdk.wallet.completeEmailSignIn("123456")
 }
+```
+
+For OIDC ID-token flows such as Google Sign-In with Credential Manager:
+
+```kotlin
+val wallet = polygonSdk.wallet.signInWithOidcIdToken(
+    idToken = googleIdToken,
+    issuer = "https://accounts.google.com",
+    audience = "YOUR_WEB_CLIENT_ID",
+)
 ```
 
 Useful state checks:
@@ -141,8 +152,9 @@ The full public API surface is documented in [docs/api.md](docs/api.md).
 
 This repository includes an Android sample app in [`app/`](app/) that demonstrates:
 
+- Google sign-in with Android Credential Manager
 - email sign-in
-- wallet recovery/selection flow
+- wallet selection after sign-in
 - message signing and verification
 - transaction sending
 - a lower-level testbed for manual endpoint/config testing

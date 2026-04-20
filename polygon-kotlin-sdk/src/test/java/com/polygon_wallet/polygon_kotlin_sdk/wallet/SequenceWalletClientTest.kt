@@ -28,6 +28,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.web3j.utils.Numeric
+import java.util.Base64
 
 class SequenceWalletClientTest {
     private lateinit var server: MockWebServer
@@ -155,6 +156,155 @@ class SequenceWalletClientTest {
             expectedSignedRequest.authorizationHeader.removePrefix("Authorization: "),
             request.headers["Authorization"],
         )
+    }
+
+    @Test
+    fun signInWithOidcIdTokenCommitsCompletesAndResolvesWallet() = runBlocking {
+        val idToken = fakeJwt(exp = 1910000100L)
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":""}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"OIDC","issuer":"https://accounts.google.com","subject":"google-sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"wallet":{"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}}""")
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000112L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+
+        val wallet = client.signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = "https://accounts.google.com",
+            audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+        )
+        val commitRequest = requireNotNull(server.takeRequest())
+        val completeAuthRequest = requireNotNull(server.takeRequest())
+        val useWalletRequest = requireNotNull(server.takeRequest())
+
+        assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
+        assertEquals(
+            WaasWalletApi.CommitVerifier.encodeRequest(
+                CommitVerifierRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    metadata = mapOf(
+                        "iss" to "https://accounts.google.com",
+                        "aud" to "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+                        "exp" to "1910000100",
+                    ),
+                    handle = OidcIdToken.handleHash(idToken),
+                ),
+            ),
+            requireNotNull(commitRequest.body).utf8(),
+        )
+        assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+        assertEquals(
+            WaasWalletApi.CompleteAuth.encodeRequest(
+                CompleteAuthRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    verifier = "oidc-verifier-123",
+                    answer = idToken,
+                ),
+            ),
+            requireNotNull(completeAuthRequest.body).utf8(),
+        )
+        assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+        assertEquals(
+            WaasWalletApi.UseWallet.encodeRequest(
+                UseWalletRequest(
+                    walletType = WalletType.Ethereum_EOA,
+                    walletIndex = 3.toUByte(),
+                ),
+            ),
+            requireNotNull(useWalletRequest.body).utf8(),
+        )
+        assertEquals("0xdef", wallet.address)
+        assertEquals("0xdef", client.walletAddress)
+        assertFalse(client.hasPendingSignIn)
+        assertEquals("oidc-verifier-123", store.snapshot?.verifier)
+        assertEquals(FIXED_PRIVATE_KEY_HEX, store.privateKeyHex)
+    }
+
+    @Test
+    fun signInWithOidcIdTokenClearsPersistedSessionWhenCompleteAuthFails() = runBlocking {
+        val idToken = fakeJwt(exp = 1910000100L)
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":""}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(500)
+                .body("""{"error":"IdentityProviderError","code":7104,"msg":"Identity provider error","status":500}""")
+                .build(),
+        )
+
+        val environment = SequenceEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000112L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+
+        val failure = runCatching {
+            client.signInWithOidcIdToken(
+                idToken = idToken,
+                issuer = "https://accounts.google.com",
+                audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+            )
+        }.exceptionOrNull()
+
+        val commitRequest = requireNotNull(server.takeRequest())
+        val completeAuthRequest = requireNotNull(server.takeRequest())
+
+        assertNotNull(failure)
+        assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
+        assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+        assertNull(client.snapshotSession())
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.walletAddress)
+        assertNull(client.signerAddress)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
     }
 
     @Test
@@ -801,6 +951,17 @@ class SequenceWalletClientTest {
     companion object {
         private const val FIXED_PRIVATE_KEY_HEX =
             "0x1111111111111111111111111111111111111111111111111111111111111111"
+
+        private fun fakeJwt(exp: Long): String {
+            val encoder = Base64.getUrlEncoder().withoutPadding()
+            val header = encoder.encodeToString("""{"alg":"RS256","typ":"JWT"}""".toByteArray())
+            val payload = encoder.encodeToString(
+                """
+                {"iss":"https://accounts.google.com","aud":"demo-web-client-id","sub":"google-sub-123","email":"user@example.com","exp":$exp}
+                """.trimIndent().toByteArray()
+            )
+            return "$header.$payload.signature"
+        }
 
         private fun fixedPrivateKeyBytes(): ByteArray =
             Numeric.hexStringToByteArray(FIXED_PRIVATE_KEY_HEX)

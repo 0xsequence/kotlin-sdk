@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/emailLoginDemoRoot"
+    android:id="@+id/authDemoRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true">
@@ -27,7 +27,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Email Login Demo"
+                    android:text="Auth Demo"
                     android:textColor="@color/slate_900"
                     android:textSize="30sp"
                     android:textStyle="bold" />
@@ -36,7 +36,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="A direct email sign-in flow with wallet recovery, signing, and transaction actions."
+                    android:text="Google ID-token and email OTP sign-in with signing and transaction actions."
                     android:textColor="@color/slate_700"
                     android:textSize="14sp" />
             </LinearLayout>
@@ -66,7 +66,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Email Sign-In"
+                    android:text="Sign-In"
                     android:textColor="@color/slate_900"
                     android:textSize="20sp"
                     android:textStyle="bold" />
@@ -76,7 +76,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="Waiting for email sign-in."
+                    android:text="Waiting for sign-in."
                     android:textColor="@color/slate_700"
                     android:textSize="13sp" />
 
@@ -85,6 +85,23 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/startGoogleSignInButton"
+                        style="@style/Widget.Kotlinsdk.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="Continue with Google" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:gravity="center"
+                        android:text="or continue with email"
+                        android:textColor="@color/slate_700"
+                        android:textSize="13sp" />
 
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Kotlinsdk.TextInputLayout"
