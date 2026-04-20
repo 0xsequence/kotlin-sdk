@@ -12,8 +12,6 @@ class PolygonSdkTest {
     @Test
     fun constructorRestoresPersistedSessionAutomatically() {
         val snapshot = SequenceSessionSnapshot(
-            challenge = "challenge",
-            verifier = "verifier-123",
             walletAddress = "0xwallet",
             signerAddress = "0xsigner",
         )
@@ -25,20 +23,6 @@ class PolygonSdkTest {
 
         assertEquals("0xwallet", sdk.wallet.walletAddress)
         assertEquals("0xsigner", sdk.wallet.signerAddress)
-    }
-
-    @Test
-    fun scopedSessionStorageUsesSameScopeForSameConfig() {
-        val environment = SequenceEnvironment.demoDefaults()
-
-        assertEquals(
-            PolygonSdk.scopedSessionKeyAlias(environment),
-            PolygonSdk.scopedSessionKeyAlias(environment),
-        )
-        assertEquals(
-            PolygonSdk.scopedSessionFileName(environment),
-            PolygonSdk.scopedSessionFileName(environment),
-        )
     }
 
     @Test

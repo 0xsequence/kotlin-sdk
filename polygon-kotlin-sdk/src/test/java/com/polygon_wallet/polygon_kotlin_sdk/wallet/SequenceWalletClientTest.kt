@@ -45,7 +45,7 @@ class SequenceWalletClientTest {
     }
 
     @Test
-    fun signInWithEmailSendsCanonicalSignedRequestAndStoresSession() = runBlocking {
+    fun signInWithEmailSendsCanonicalSignedRequestAndKeepsPendingSessionInMemory() = runBlocking {
         server.enqueue(
             MockResponse.Builder()
                 .code(200)
@@ -106,10 +106,10 @@ class SequenceWalletClientTest {
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             session?.signerAddress,
         )
-        assertEquals(session, store.snapshot)
-        assertEquals(FIXED_PRIVATE_KEY_HEX, store.privateKeyHex)
-        assertEquals(1, store.saveCalls)
-        assertEquals(FIXED_PRIVATE_KEY_HEX, store.savedPrivateKeyHex)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
+        assertEquals(0, store.saveCalls)
+        assertNull(store.savedPrivateKeyHex)
     }
 
     @Test
@@ -156,6 +156,45 @@ class SequenceWalletClientTest {
             expectedSignedRequest.authorizationHeader.removePrefix("Authorization: "),
             request.headers["Authorization"],
         )
+    }
+
+    @Test
+    fun signInWithEmailClearsStateWhenCommitVerifierFails() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(500)
+                .body("""{"error":"InternalError","code":5000,"msg":"commit verifier failed","status":500}""")
+                .build(),
+        )
+
+        val generatedKey = fixedPrivateKeyBytes()
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000106L },
+            privateKeyFactory = { generatedKey },
+        )
+
+        val failure = runCatching {
+            client.signInWithEmail("user@example.com")
+        }.exceptionOrNull()
+
+        val request = requireNotNull(server.takeRequest())
+        assertNotNull(failure)
+        assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+        assertNull(client.snapshotSession())
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
+        assertNull(client.walletAddress)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
+        assertEquals(0, store.saveCalls)
+        assertTrue(generatedKey.all { it == 0.toByte() })
     }
 
     @Test
@@ -252,8 +291,11 @@ class SequenceWalletClientTest {
         assertEquals("0xdef", wallet.address)
         assertEquals("0xdef", client.walletAddress)
         assertFalse(client.hasPendingSignIn)
-        assertEquals("oidc-verifier-123", store.snapshot?.verifier)
+        assertEquals("0xdef", store.snapshot?.walletAddress)
+        assertNull(store.snapshot?.verifier)
+        assertNull(store.snapshot?.challenge)
         assertEquals(FIXED_PRIVATE_KEY_HEX, store.privateKeyHex)
+        assertEquals(1, store.saveCalls)
     }
 
     @Test
@@ -305,6 +347,51 @@ class SequenceWalletClientTest {
         assertNull(client.signerAddress)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
+        assertEquals(0, store.saveCalls)
+    }
+
+    @Test
+    fun signInWithOidcIdTokenClearsStateWhenCommitVerifierFails() = runBlocking {
+        val idToken = fakeJwt(exp = 1910000100L)
+        server.enqueue(
+            MockResponse.Builder()
+                .code(500)
+                .body("""{"error":"InternalError","code":5000,"msg":"commit verifier failed","status":500}""")
+                .build(),
+        )
+
+        val generatedKey = fixedPrivateKeyBytes()
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000111L },
+            privateKeyFactory = { generatedKey },
+        )
+
+        val failure = runCatching {
+            client.signInWithOidcIdToken(
+                idToken = idToken,
+                issuer = "https://accounts.google.com",
+                audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+            )
+        }.exceptionOrNull()
+
+        val request = requireNotNull(server.takeRequest())
+        assertNotNull(failure)
+        assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+        assertNull(client.snapshotSession())
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
+        assertNull(client.walletAddress)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
+        assertEquals(0, store.saveCalls)
+        assertTrue(generatedKey.all { it == 0.toByte() })
     }
 
     @Test
@@ -332,17 +419,16 @@ class SequenceWalletClientTest {
             projectAccessKey = "test-access-key",
             environment = environment,
             transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
+            sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000101L },
         )
-        assertTrue(client.restorePersistedSession())
+        client.restoreSession(
+            SequenceSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            ),
+        )
 
         val response = client.confirmEmailSignIn("123456")
         val request = requireNotNull(server.takeRequest())
@@ -403,17 +489,16 @@ class SequenceWalletClientTest {
             projectAccessKey = "test-access-key",
             environment = environment,
             transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
+            sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000101L },
         )
-        assertTrue(client.restorePersistedSession())
+        client.restoreSession(
+            SequenceSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            ),
+        )
 
         val response = client.confirmEmailSignIn("123456")
 
@@ -447,17 +532,16 @@ class SequenceWalletClientTest {
             projectAccessKey = "test-access-key",
             environment = environment,
             transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
+            sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000101L },
         )
-        assertTrue(client.restorePersistedSession())
+        client.restoreSession(
+            SequenceSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            ),
+        )
 
         val response = client.confirmEmailSignIn("123456")
 
@@ -469,8 +553,6 @@ class SequenceWalletClientTest {
     @Test
     fun restorePersistedSessionLoadsFromStore() {
         val snapshot = SequenceSessionSnapshot(
-            challenge = "challenge",
-            verifier = "verifier-123",
             walletAddress = "0xabc",
             signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
         )
@@ -508,17 +590,16 @@ class SequenceWalletClientTest {
             projectAccessKey = "test-access-key",
             environment = environment,
             transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
+            sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000102L },
         )
-        assertTrue(client.restorePersistedSession())
+        client.restoreSession(
+            SequenceSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            ),
+        )
 
         val resolved = client.resolveWallet(
             CompleteAuthResponse(
@@ -558,6 +639,12 @@ class SequenceWalletClientTest {
         server.enqueue(
             MockResponse.Builder()
                 .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
                 .body(
                     """
                     {
@@ -584,22 +671,18 @@ class SequenceWalletClientTest {
             projectAccessKey = "test-access-key",
             environment = environment,
             transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
+            sessionStore = InMemorySessionStore(),
             nonceGenerator = { 1710000110L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
-        assertTrue(client.restorePersistedSession())
+        client.signInWithEmail("user@example.com")
 
         val resolved = client.completeEmailSignIn("123456")
+        val commitRequest = requireNotNull(server.takeRequest())
         val completeAuthRequest = requireNotNull(server.takeRequest())
         val useWalletRequest = requireNotNull(server.takeRequest())
 
+        assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
         assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
         assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
         assertEquals(
@@ -615,6 +698,87 @@ class SequenceWalletClientTest {
         assertEquals(3.toUByte(), resolved.index)
         assertEquals("0xdef", client.walletAddress)
         assertFalse(client.hasPendingSignIn)
+    }
+
+    @Test
+    fun completeEmailSignInKeepsPendingStateWhenCompleteAuthFailsAndAllowsRetry() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(401)
+                .body("""{"error":"Unauthorized","code":4001,"msg":"invalid code","status":401}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"wallet":{"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}}""")
+                .build(),
+        )
+
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000110L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+        client.signInWithEmail("user@example.com")
+
+        val firstFailure = runCatching {
+            client.completeEmailSignIn("000000")
+        }.exceptionOrNull()
+        val afterFailure = client.snapshotSession()
+
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        assertNotNull(firstFailure)
+        assertTrue(client.hasPendingSignIn)
+        assertEquals("challenge", afterFailure?.challenge)
+        assertEquals("verifier-123", afterFailure?.verifier)
+        assertEquals(
+            WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            client.signerAddress,
+        )
+        assertNull(client.walletAddress)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
+        assertEquals(0, store.saveCalls)
+
+        val wallet = client.completeEmailSignIn("123456")
+
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        assertEquals("0xdef", wallet.address)
+        assertEquals("0xdef", client.walletAddress)
+        assertFalse(client.hasPendingSignIn)
+        assertEquals("0xdef", store.snapshot?.walletAddress)
+        assertEquals(FIXED_PRIVATE_KEY_HEX, store.privateKeyHex)
+        assertEquals(1, store.saveCalls)
     }
 
     @Test
@@ -649,17 +813,16 @@ class SequenceWalletClientTest {
             projectAccessKey = "test-access-key",
             environment = environment,
             transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
+            sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000111L },
         )
-        assertTrue(client.restorePersistedSession())
+        client.restoreSession(
+            SequenceSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            ),
+        )
 
         val failure = runCatching {
             client.completeEmailSignIn("123456")
@@ -671,6 +834,8 @@ class SequenceWalletClientTest {
             "Multiple wallets are available. Call completeEmailSignIn(code, selectWallet) to choose one.",
             failure?.message,
         )
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
         assertNull(client.walletAddress)
     }
 
@@ -706,17 +871,16 @@ class SequenceWalletClientTest {
             projectAccessKey = "test-access-key",
             environment = environment,
             transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
+            sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000112L },
         )
-        assertTrue(client.restorePersistedSession())
+        client.restoreSession(
+            SequenceSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            ),
+        )
 
         val selectedWallet = client.completeEmailSignIn("123456") { wallets ->
             wallets[1]
@@ -740,10 +904,235 @@ class SequenceWalletClientTest {
     }
 
     @Test
+    fun completeEmailSignInClearsSessionWhenSelectorThrows() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xaaa","index":1,"comment":"first"},
+                        {"type":"Ethereum_EOA","address":"0xbbb","index":4,"comment":"second"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000113L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+        client.signInWithEmail("user@example.com")
+
+        val failure = runCatching {
+            client.completeEmailSignIn("123456") { error("selector failed") }
+        }.exceptionOrNull()
+
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        assertEquals("selector failed", failure?.message)
+        assertNull(client.snapshotSession())
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
+        assertNull(client.walletAddress)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
+    }
+
+    @Test
+    fun completeEmailSignInClearsSessionWhenUseWalletFails() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(500)
+                .body("""{"error":"InternalError","code":5000,"msg":"use wallet failed","status":500}""")
+                .build(),
+        )
+
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000114L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+        client.signInWithEmail("user@example.com")
+
+        val failure = runCatching {
+            client.completeEmailSignIn("123456")
+        }.exceptionOrNull()
+
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        assertNotNull(failure)
+        assertNull(client.snapshotSession())
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
+        assertNull(client.walletAddress)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
+    }
+
+    @Test
+    fun completeEmailSignInClearsSessionWhenCreateWalletFails() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
+                      "wallets": []
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(500)
+                .body("""{"error":"InternalError","code":5001,"msg":"create wallet failed","status":500}""")
+                .build(),
+        )
+
+        val store = InMemorySessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000115L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+        client.signInWithEmail("user@example.com")
+
+        val failure = runCatching {
+            client.completeEmailSignIn("123456")
+        }.exceptionOrNull()
+
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        assertNotNull(failure)
+        assertNull(client.snapshotSession())
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
+        assertNull(client.walletAddress)
+        assertNull(store.snapshot)
+        assertNull(store.privateKeyHex)
+    }
+
+    @Test
+    fun completeEmailSignInClearsSessionWhenPersistFails() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "identity": {"type":"Email","issuer":"issuer-123","subject":"sub-123","email":"user@example.com"},
+                      "wallets": [
+                        {"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"wallet":{"type":"Ethereum_EOA","address":"0xdef","index":3,"comment":"picked"}}""")
+                .build(),
+        )
+
+        val store = FailingSaveSessionStore()
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = SequenceHttpClient(),
+            sessionStore = store,
+            nonceGenerator = { 1710000116L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+        client.signInWithEmail("user@example.com")
+
+        val failure = runCatching {
+            client.completeEmailSignIn("123456")
+        }.exceptionOrNull()
+
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        requireNotNull(server.takeRequest())
+        assertEquals("save failed", failure?.message)
+        assertNull(client.snapshotSession())
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
+        assertNull(client.walletAddress)
+        assertTrue(store.clearCalls > 0)
+    }
+
+    @Test
     fun clearSessionClearsPersistedStore() {
         val snapshot = SequenceSessionSnapshot(
-            challenge = "challenge",
-            verifier = "verifier-123",
             walletAddress = "0xabc",
             signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
         )
@@ -771,8 +1160,6 @@ class SequenceWalletClientTest {
             environment = SequenceEnvironment(),
             sessionStore = InMemorySessionStore(
                 snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
                     walletAddress = "0xwallet",
                     signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
                 ),
@@ -786,7 +1173,7 @@ class SequenceWalletClientTest {
     }
 
     @Test
-    fun hasPendingSignInIsTrueBeforeWalletSelection() {
+    fun restorePersistedSessionIgnoresPendingSnapshots() {
         val client = SequenceWalletClient(
             projectAccessKey = "test-access-key",
             environment = SequenceEnvironment(),
@@ -799,9 +1186,33 @@ class SequenceWalletClientTest {
                 privateKeyHex = FIXED_PRIVATE_KEY_HEX,
             ),
         )
-        assertTrue(client.restorePersistedSession())
+        assertFalse(client.restorePersistedSession())
+
+        assertFalse(client.hasPendingSignIn)
+        assertNull(client.signerAddress)
+        assertNull(client.walletAddress)
+    }
+
+    @Test
+    fun hasPendingSignInIsTrueForInMemoryPendingAuth() {
+        val client = SequenceWalletClient(
+            projectAccessKey = "test-access-key",
+            environment = SequenceEnvironment(),
+            sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
+        )
+        client.restoreSession(
+            SequenceSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            ),
+        )
 
         assertTrue(client.hasPendingSignIn)
+        assertEquals(
+            WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            client.signerAddress,
+        )
         assertNull(client.walletAddress)
     }
 
@@ -816,8 +1227,6 @@ class SequenceWalletClientTest {
 
         val store = TrackingPrivateKeyStore(
             snapshot = SequenceSessionSnapshot(
-                challenge = "challenge",
-                verifier = "verifier-123",
                 walletAddress = "0xwallet",
                 signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             ),
@@ -848,46 +1257,6 @@ class SequenceWalletClientTest {
     }
 
     @Test
-    fun sendTransactionWithNullResponseFailsGracefully() = runBlocking {
-        server.enqueue(
-            MockResponse.Builder()
-                .code(200)
-                .body("""{"response":null}""")
-                .build(),
-        )
-
-        val environment = SequenceEnvironment(
-            walletApiUrl = server.url("/rpc/Wallet/").toString(),
-        )
-        val client = SequenceWalletClient(
-            projectAccessKey = "test-access-key",
-            environment = environment,
-            transport = SequenceHttpClient(),
-            sessionStore = InMemorySessionStore(
-                snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    walletAddress = "0xwallet",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                ),
-                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-            ),
-            nonceGenerator = { 1710000106L },
-        )
-        assertTrue(client.restorePersistedSession())
-
-        val failure = runCatching {
-            client.sendTransaction(
-                chainId = "80002",
-                to = "0xabc",
-                value = "0",
-            )
-        }.exceptionOrNull()
-
-        assertNotNull(failure)
-    }
-
-    @Test
     fun sendTransactionMatchesWaasRequestShape() = runBlocking {
         server.enqueue(
             MockResponse.Builder()
@@ -905,8 +1274,6 @@ class SequenceWalletClientTest {
             transport = SequenceHttpClient(),
             sessionStore = InMemorySessionStore(
                 snapshot = SequenceSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
                     walletAddress = "0xwallet",
                     signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
                 ),
@@ -1029,6 +1396,24 @@ class SequenceWalletClientTest {
 
         override fun clear() {
             privateKeyHex = ""
+        }
+    }
+
+    private class FailingSaveSessionStore : SequenceSecureSessionStore {
+        var clearCalls: Int = 0
+            private set
+
+        override fun load(): SequenceSessionSnapshot? = null
+
+        override fun save(snapshot: SequenceSessionSnapshot, privateKey: ByteArray?) {
+            throw IllegalStateException("save failed")
+        }
+
+        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
+            error("Persisted private key should not be needed before save succeeds")
+
+        override fun clear() {
+            clearCalls += 1
         }
     }
 }
