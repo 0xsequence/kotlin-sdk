@@ -34,13 +34,3 @@ jobs:
           report_paths: oms-wallet-kotlin-sdk/build/test-results/testDebugUnitTest/TEST-*.xml
           detailed_summary: true
           fail_on_failure: true
-
-      - name: Upload SDK test artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: oms-wallet-kotlin-sdk-test-report
-          path: |
-            oms-wallet-kotlin-sdk/build/test-results/testDebugUnitTest
-            oms-wallet-kotlin-sdk/build/reports/tests/testDebugUnitTest
-          if-no-files-found: warn
