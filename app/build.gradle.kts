@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-    namespace = "com.polygon_wallet.kotlin_sdk"
+    namespace = "com.omswallet.kotlin_sdk_samples"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -11,7 +11,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.polygon_wallet.kotlin_sdk"
+        applicationId = "com.omswallet.kotlin_sdk_samples"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -36,7 +36,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":polygon-kotlin-sdk"))
+    implementation(project(":oms-wallet-kotlin-sdk"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.credentials)
