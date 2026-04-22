@@ -16,7 +16,7 @@ class WalletRequestSignerVectorTest {
     private val privateKeyHex =
         "0x1111111111111111111111111111111111111111111111111111111111111111"
     private val derivedAddress = "0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a"
-    private val scope = "@1:test"
+    private val scope = "proj_1"
 
     @Test
     fun signMessageVectorMatchesCSdk() {
@@ -42,7 +42,7 @@ class WalletRequestSignerVectorTest {
         assertTrue(digest.startsWith("0x"))
         assertEquals(derivedAddress, WalletRequestSigner.walletAddressFromPrivateKeyHex(privateKeyHex))
         assertTrue(signature.startsWith("0x"))
-        assertTrue(header.contains("scope=\"@1:test\""))
+        assertTrue(header.contains("scope=\"proj_1\""))
 
         val signedRequest = WalletRequestSigner.signWalletRequest(
             endpoint = endpoint,
