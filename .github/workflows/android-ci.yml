@@ -25,7 +25,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Run Android CI checks
-        run: ./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :app:assembleDebug
+        run: ./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug
 
       - name: Publish SDK unit test report
         if: always()

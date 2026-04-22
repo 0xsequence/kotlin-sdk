@@ -18,6 +18,9 @@ The matching Kotlin test coverage lives in:
 
 Current Kotlin parity coverage:
 
+- `CommitVerifier` (`OIDC`)
+  - full payload parity for ID-token metadata plus `handle = base64url(sha256(full JWT string))`
+  - tested in `WalletPayloadBuilderTest.oidcCommitVerifierPayloadMatchesParityVector()`
 - `SignMessage`
   - full payload / preimage / digest / signature / authorization header vector
   - tested in `WalletRequestSignerVectorTest.signMessageVectorMatchesCSdk()`
@@ -27,12 +30,25 @@ Current Kotlin parity coverage:
 - `CompleteAuth`
   - full payload / preimage / digest / signature / authorization header vector
   - tested in `WalletRequestSignerVectorTest.completeAuthVectorMatchesCSdk()`
-  - answer-hash parity vector for `challenge + code -> sha256 -> base64url(no padding) -> params.answer`
+  - answer-hash parity vector for `challenge + code -> sha256 -> base64url(no padding) -> answer`
   - tested in `WalletPayloadBuilderTest.completeAuthPayloadFromCodeMatchesParityVector()`
 
 The `CompleteAuth` sections below stay documented here because they include the
 non-obvious answer-hash step that is easy to break independently of the generic
 request-signing flow.
+
+## CommitVerifier OIDC Handle Hash Vector
+
+- id token:
+  `eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiJkZW1vLXdlYi1jbGllbnQtaWQiLCJzdWIiOiJnb29nbGUtc3ViLTEyMyIsImVtYWlsIjoidXNlckBleGFtcGxlLmNvbSIsImV4cCI6MTkxMDAwMDEwMH0.signature`
+- expected handle hash:
+  `nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY`
+
+- expected payload:
+
+```json
+{"identityType":"oidc","authMode":"id-token","metadata":{"iss":"https://accounts.google.com","aud":"demo-web-client-id","exp":"1910000100"},"handle":"nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY"}
+```
 
 Reference C SDK behavior:
 
@@ -41,7 +57,7 @@ Reference C SDK behavior:
   1. concatenate `challenge + code`
   2. compute `sha256` over the UTF-8 bytes
   3. URL-safe base64-encode the digest without padding
-  4. pass that value as `params.answer` into `CompleteAuth`
+  4. pass that value as `answer` into `CompleteAuth`
 
 ## CompleteAuth Answer Hash Vector
 
@@ -55,7 +71,7 @@ Reference C SDK behavior:
 - expected payload:
 
 ```json
-{"params":{"identityType":"Email","authMode":"OTP","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}}
+{"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
 ## CompleteAuth Full Request-Signing Vector
@@ -69,7 +85,7 @@ Reference C SDK behavior:
 - expected payload:
 
 ```json
-{"params":{"identityType":"Email","authMode":"OTP","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}}
+{"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
 - expected preimage:
@@ -78,7 +94,7 @@ Reference C SDK behavior:
 POST /rpc/Wallet/CompleteAuth
 nonce: 1710000002
 
-{"params":{"identityType":"Email","authMode":"OTP","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}}
+{"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
 - expected digest / signature / authorization header:

@@ -15,6 +15,35 @@ import org.junit.Test
 
 class WalletPayloadBuilderTest {
     @Test
+    fun oidcCommitVerifierPayloadMatchesParityVector() {
+        val idToken =
+            "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9." +
+                "eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiJkZW1vLXdlYi1jbGllbnQtaWQiLCJzdWIiOiJnb29nbGUtc3ViLTEyMyIsImVtYWlsIjoidXNlckBleGFtcGxlLmNvbSIsImV4cCI6MTkxMDAwMDEwMH0." +
+                "signature"
+        val handle = OidcIdToken.handleHash(idToken)
+
+        assertEquals(
+            "nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY",
+            handle,
+        )
+        assertEquals(
+            "{\"identityType\":\"oidc\",\"authMode\":\"id-token\",\"metadata\":{\"iss\":\"https://accounts.google.com\",\"aud\":\"demo-web-client-id\",\"exp\":\"1910000100\"},\"handle\":\"nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY\"}",
+            WaasWalletApi.CommitVerifier.encodeRequest(
+                CommitVerifierRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    metadata = mapOf(
+                        "iss" to "https://accounts.google.com",
+                        "aud" to "demo-web-client-id",
+                        "exp" to "1910000100",
+                    ),
+                    handle = handle,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun commitVerifierPayloadMatchesCSdk() {
         assertEquals(
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"metadata\":{},\"handle\":\"user@example.com\"}",

@@ -171,5 +171,7 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 
 ```sh
 ./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest
+./gradlew :oms-wallet-kotlin-sdk:lintDebug
+./gradlew :app:lintDebug
 ./gradlew :app:assembleDebug
 ```

@@ -9,6 +9,7 @@ internal object WalletAuthChallenge {
         challenge: String,
         code: String,
     ): String {
+        // WAAS expects the exact byte sequence challenge + code before hashing.
         val digest = MessageDigest.getInstance("SHA-256")
             .digest((challenge + code).toByteArray(StandardCharsets.UTF_8))
         return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
