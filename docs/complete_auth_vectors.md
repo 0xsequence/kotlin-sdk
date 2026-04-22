@@ -13,11 +13,14 @@ The matching C test coverage lives in:
 
 The matching Kotlin test coverage lives in:
 
-- `polygon-kotlin-sdk/src/test/java/com/polygon_wallet/polygon_kotlin_sdk/wallet/WalletRequestSignerVectorTest.kt`
-- `polygon-kotlin-sdk/src/test/java/com/polygon_wallet/polygon_kotlin_sdk/wallet/WalletPayloadBuilderTest.kt`
+- `oms-wallet-kotlin-sdk/src/test/java/com/omswallet/kotlin_sdk/wallet/WalletRequestSignerVectorTest.kt`
+- `oms-wallet-kotlin-sdk/src/test/java/com/omswallet/kotlin_sdk/wallet/WalletPayloadBuilderTest.kt`
 
 Current Kotlin parity coverage:
 
+- `CommitVerifier` (`OIDC`)
+  - full payload parity for ID-token metadata plus `handle = base64url(sha256(full JWT string))`
+  - tested in `WalletPayloadBuilderTest.oidcCommitVerifierPayloadMatchesParityVector()`
 - `SignMessage`
   - full payload / preimage / digest / signature / authorization header vector
   - tested in `WalletRequestSignerVectorTest.signMessageVectorMatchesCSdk()`
@@ -27,30 +30,34 @@ Current Kotlin parity coverage:
 - `CompleteAuth`
   - full payload / preimage / digest / signature / authorization header vector
   - tested in `WalletRequestSignerVectorTest.completeAuthVectorMatchesCSdk()`
-  - answer-hash parity vector for `challenge + code -> keccak256 -> params.answer`
+  - answer-hash parity vector for `challenge + code -> sha256 -> base64url(no padding) -> answer`
   - tested in `WalletPayloadBuilderTest.completeAuthPayloadFromCodeMatchesParityVector()`
 
 The `CompleteAuth` sections below stay documented here because they include the
 non-obvious answer-hash step that is easy to break independently of the generic
 request-signing flow.
 
+## CommitVerifier OIDC Handle Hash Vector
+
+- id token (dummy fixture used only for deterministic hashing/parity tests):
+  `eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiJkZW1vLXdlYi1jbGllbnQtaWQiLCJzdWIiOiJnb29nbGUtc3ViLTEyMyIsImVtYWlsIjoidXNlckBleGFtcGxlLmNvbSIsImV4cCI6MTkxMDAwMDEwMH0.signature`
+- expected handle hash:
+  `nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY`
+
+- expected payload:
+
+```json
+{"identityType":"oidc","authMode":"id-token","metadata":{"iss":"https://accounts.google.com","aud":"demo-web-client-id","exp":"1910000100"},"handle":"nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY"}
+```
+
 Reference C SDK behavior:
 
 - `https://github.com/0xsequence/c-sdk/blob/master/lib/wallet/sequence_connector.c`
 - current logic:
   1. concatenate `challenge + code`
-  2. compute `keccak256` over the UTF-8 bytes
-  3. lowercase hex-encode the digest as `0x...`
-  4. pass that value as `params.answer` into `CompleteAuth`
-
-Relevant C code:
-
-```c
-const char* preHashAnswer = concat_malloc(cur_challenge, code);
-keccak256((const uint8_t*)preHashAnswer, strlen(preHashAnswer), hashed_to_sign);
-const char* hashedAnswerHex = bytes_to_hex(hashed_to_sign, 32);
-const char* complete_auth_json = sequence_build_complete_auth_json(cur_verifier, hashedAnswerHex);
-```
+  2. compute `sha256` over the UTF-8 bytes
+  3. URL-safe base64-encode the digest without padding
+  4. pass that value as `answer` into `CompleteAuth`
 
 ## CompleteAuth Answer Hash Vector
 
@@ -59,12 +66,12 @@ const char* complete_auth_json = sequence_build_complete_auth_json(cur_verifier,
 - verifier: `verifier-123`
 
 - expected answer hash:
-  `0x752c0acc530a06ddbccae9295f7fd287037f7e2c19272c7506adce3175075fdd`
+  `2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M`
 
 - expected payload:
 
 ```json
-{"params":{"identityType":"Email","authMode":"OTP","verifier":"verifier-123","answer":"0x752c0acc530a06ddbccae9295f7fd287037f7e2c19272c7506adce3175075fdd"}}
+{"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
 ## CompleteAuth Full Request-Signing Vector
@@ -78,7 +85,7 @@ const char* complete_auth_json = sequence_build_complete_auth_json(cur_verifier,
 - expected payload:
 
 ```json
-{"params":{"identityType":"Email","authMode":"OTP","verifier":"verifier-123","answer":"0x752c0acc530a06ddbccae9295f7fd287037f7e2c19272c7506adce3175075fdd"}}
+{"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
 - expected preimage:
@@ -87,17 +94,8 @@ const char* complete_auth_json = sequence_build_complete_auth_json(cur_verifier,
 POST /rpc/Wallet/CompleteAuth
 nonce: 1710000002
 
-{"params":{"identityType":"Email","authMode":"OTP","verifier":"verifier-123","answer":"0x752c0acc530a06ddbccae9295f7fd287037f7e2c19272c7506adce3175075fdd"}}
+{"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
-- expected digest hex:
-  `0x6fe84a6372290cd1e3b68276e1822dbb6021d7576bd6845387c62ee938e1274c`
-
-- expected signature:
-  `0x051552b05b0ab8b4cf948803519e2dc63e8d7d0bc9a5637e59253d52eb6b1ca3301234e34441d67963f58015b40e8c43710a5edb1f2db451abbaa90b51a8c7871c`
-
-- expected authorization header:
-
-```text
-Authorization: Ethereum_Secp256k1 scope="@1:test",cred="0x19e7e376e7c213b7e7e7e46cc70a5dd086daff2a",nonce=1710000002,sig="0x051552b05b0ab8b4cf948803519e2dc63e8d7d0bc9a5637e59253d52eb6b1ca3301234e34441d67963f58015b40e8c43710a5edb1f2db451abbaa90b51a8c7871c"
-```
+- expected digest / signature / authorization header:
+  derived by `WalletRequestSignerVectorTest.completeAuthVectorMatchesCSdk()`

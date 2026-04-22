@@ -1,66 +1,84 @@
 # Public API
 
-This document describes the intended public API for external consumers of the Polygon Kotlin SDK.
+This document describes the intended public API for external consumers of the OMS Wallet Kotlin SDK.
 
 ## Entry Point
 
 ```kotlin
-PolygonSdk(
+OmsWallet(
     context: Context,
     projectAccessKey: String,
-    environment: SequenceEnvironment = SequenceEnvironment(),
+    environment: OmsWalletEnvironment = OmsWalletEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
 )
 ```
 
 ```kotlin
-val polygonSdk.wallet: SequenceWalletClient
-val polygonSdk.utils: PolygonSdkUtils
-val polygonSdk.indexer: SequenceIndexerClient
+val omsWallet.hasPendingSignIn: Boolean
+val omsWallet.walletAddress: String?
+val omsWallet.signerAddress: String?
+val omsWallet.utils: OmsWalletUtils
+val omsWallet.indexer: OmsWalletIndexerClient
 ```
 
-## Wallet
+`hasPendingSignIn` reflects an in-memory auth flow that has not resolved to a
+wallet yet. Persisted session restore only revives completed wallet sessions.
+If auth completes but wallet resolution or session persistence fails, the SDK
+clears the in-memory auth session instead of leaving a transient signer active.
 
 ```kotlin
-val wallet.hasPendingSignIn: Boolean
-val wallet.walletAddress: String?
-val wallet.signerAddress: String?
+fun omsWallet.clearSession()
 ```
 
 ```kotlin
-fun wallet.clearSession()
-```
-
-```kotlin
-suspend fun wallet.signInWithEmail(
+suspend fun omsWallet.signInWithEmail(
     email: String,
 ): CommitVerifierResponse
 ```
 
 ```kotlin
-suspend fun wallet.completeEmailSignIn(
-    code: String,
-    walletType: WalletType = WalletType.Ethereum_EOA,
+suspend fun omsWallet.signInWithOidcIdToken(
+    idToken: String,
+    issuer: String,
+    audience: String,
+    walletType: WalletType = WalletType.Ethereum,
 ): Wallet
 ```
 
 ```kotlin
-suspend fun wallet.completeEmailSignIn(
-    code: String,
-    walletType: WalletType = WalletType.Ethereum_EOA,
+suspend fun omsWallet.signInWithOidcIdToken(
+    idToken: String,
+    issuer: String,
+    audience: String,
+    walletType: WalletType = WalletType.Ethereum,
     selectWallet: suspend (List<Wallet>) -> Wallet,
 ): Wallet
 ```
 
 ```kotlin
-suspend fun wallet.signMessage(
+suspend fun omsWallet.completeEmailSignIn(
+    code: String,
+    walletType: WalletType = WalletType.Ethereum,
+): Wallet
+```
+
+```kotlin
+suspend fun omsWallet.completeEmailSignIn(
+    code: String,
+    walletType: WalletType = WalletType.Ethereum,
+    selectWallet: suspend (List<Wallet>) -> Wallet,
+): Wallet
+```
+
+```kotlin
+suspend fun omsWallet.signMessage(
     chainId: String,
     message: String,
 ): SignMessageResponse
 ```
 
 ```kotlin
-suspend fun wallet.sendTransaction(
+suspend fun omsWallet.sendTransaction(
     chainId: String,
     to: String,
     value: String,
@@ -68,7 +86,7 @@ suspend fun wallet.sendTransaction(
 ```
 
 ```kotlin
-suspend fun wallet.sendTransaction(
+suspend fun omsWallet.sendTransaction(
     chainId: String,
     request: SendTransactionRequest,
 ): SendTransactionResponse
@@ -99,10 +117,10 @@ suspend fun indexer.getTokenBalances(
 ## Environment
 
 ```kotlin
-class SequenceEnvironment(
-    val walletApiUrl: String = SequenceEnvironment.walletApiUrlDefault,
-    val apiRpcUrl: String = SequenceEnvironment.apiRpcUrlDefault,
-    val indexerUrlTemplate: String = SequenceEnvironment.indexerUrlTemplateDefault,
+class OmsWalletEnvironment(
+    val walletApiUrl: String = OmsWalletEnvironment.walletApiUrlDefault,
+    val apiRpcUrl: String = OmsWalletEnvironment.apiRpcUrlDefault,
+    val indexerUrlTemplate: String = OmsWalletEnvironment.indexerUrlTemplateDefault,
 )
 ```
 
@@ -113,13 +131,13 @@ fun environment.indexerUrlForChainId(chainId: String): String
 ```
 
 ```kotlin
-fun SequenceEnvironment.Companion.demoDefaults(): SequenceEnvironment
+fun OmsWalletEnvironment.Companion.demoDefaults(): OmsWalletEnvironment
 ```
 
 ## Public Models
 
 ```kotlin
-typealias TransactionMode = com.polygon_wallet.polygon_kotlin_sdk.generated.waas.TransactionMode
+typealias TransactionMode = com.omswallet.kotlin_sdk.generated.waas.TransactionMode
 ```
 
 ```kotlin
@@ -172,7 +190,7 @@ data class TokenBalancesResult(
 Wallet auth, wallet selection, signing, and transaction result models now come from the generated waas package:
 
 ```kotlin
-com.polygon_wallet.polygon_kotlin_sdk.generated.waas
+com.omswallet.kotlin_sdk.generated.waas
 ```
 
 Common public return types from that package include:
@@ -187,10 +205,10 @@ data class CommitVerifierResponse(
 
 ```kotlin
 data class Wallet(
+    val id: String,
     val type: WalletType,
     val address: String,
-    val index: UByte,
-    val comment: String? = null,
+    val reference: String? = null,
 )
 ```
 
@@ -209,22 +227,32 @@ data class SendTransactionResponse(
 ## Recommended Usage
 
 ```kotlin
-val polygonSdk = PolygonSdk(
+val omsWallet = OmsWallet(
     context = context,
     projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
 )
 
-if (polygonSdk.wallet.walletAddress == null) {
-    polygonSdk.wallet.signInWithEmail("user@example.com")
+if (omsWallet.walletAddress == null) {
+    omsWallet.signInWithEmail("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    val wallet = polygonSdk.wallet.completeEmailSignIn("123456")
+    val wallet = omsWallet.completeEmailSignIn("123456")
 }
+```
+
+For OIDC ID-token flows:
+
+```kotlin
+val wallet = omsWallet.signInWithOidcIdToken(
+    idToken = googleIdToken,
+    issuer = "https://accounts.google.com",
+    audience = "YOUR_WEB_CLIENT_ID",
+)
 ```
 
 If your app needs to choose between multiple wallets:
 
 ```kotlin
-val wallet = polygonSdk.wallet.completeEmailSignIn("123456") { wallets ->
+val wallet = omsWallet.completeEmailSignIn("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets) // wallets: List<Wallet>
 }
 ```
@@ -232,7 +260,7 @@ val wallet = polygonSdk.wallet.completeEmailSignIn("123456") { wallets ->
 For contract calls or transaction parameters beyond `to` and `value`:
 
 ```kotlin
-val txResult = polygonSdk.wallet.sendTransaction(
+val txResult = omsWallet.sendTransaction(
     chainId = "80002",
     request = SendTransactionRequest(
         to = "0xContractAddress",

@@ -25,7 +25,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Sequence Android Samples"
+                android:text="OMS Wallet Kotlin SDK Samples"
                 android:textColor="@color/slate_900"
                 android:textSize="30sp"
                 android:textStyle="bold" />
@@ -34,17 +34,17 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Pick the rough testbed or the guided email-login flow. The testbed stays as-is for low-level iteration."
+                android:text="Pick the rough testbed or the guided auth flow. The testbed stays as-is for low-level iteration."
                 android:textColor="@color/slate_700"
                 android:textSize="15sp" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/openEmailLoginDemoButton"
+                android:id="@+id/openAuthDemoButton"
                 style="@style/Widget.Kotlinsdk.Button"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
-                android:text="Open Email Login Demo"
+                android:text="Open Auth Demo"
                 app:cornerRadius="18dp" />
 
             <com.google.android.material.button.MaterialButton
