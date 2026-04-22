@@ -39,7 +39,7 @@ request-signing flow.
 
 ## CommitVerifier OIDC Handle Hash Vector
 
-- id token:
+- id token (dummy fixture used only for deterministic hashing/parity tests):
   `eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiJkZW1vLXdlYi1jbGllbnQtaWQiLCJzdWIiOiJnb29nbGUtc3ViLTEyMyIsImVtYWlsIjoidXNlckBleGFtcGxlLmNvbSIsImV4cCI6MTkxMDAwMDEwMH0.signature`
 - expected handle hash:
   `nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY`
