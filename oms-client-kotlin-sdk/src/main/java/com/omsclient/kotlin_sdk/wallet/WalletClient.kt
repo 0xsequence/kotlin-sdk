@@ -1,0 +1,443 @@
+package com.omsclient.kotlin_sdk.wallet
+
+import com.omsclient.kotlin_sdk.Network
+import com.omsclient.kotlin_sdk.generated.waas.AuthMode
+import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
+import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
+import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
+import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
+import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
+import com.omsclient.kotlin_sdk.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.generated.waas.SendTransactionRequest as WaasSendTransactionRequest
+import com.omsclient.kotlin_sdk.generated.waas.SendTransactionResponse
+import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
+import com.omsclient.kotlin_sdk.generated.waas.SignMessageResponse
+import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
+import com.omsclient.kotlin_sdk.generated.waas.WaasWalletClient
+import com.omsclient.kotlin_sdk.generated.waas.Wallet
+import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
+import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
+import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
+import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
+import com.omsclient.kotlin_sdk.session.OMSClientSession
+import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
+
+internal data class WalletState(
+    val hasPendingSignIn: Boolean,
+    val walletAddress: String?,
+    val signerAddress: String?,
+)
+
+class WalletClient internal constructor(
+    private val projectAccessKey: String,
+    private val environment: OMSClientEnvironment,
+    private val transport: OMSClientHttpClient = OMSClientHttpClient(),
+    private val session: OMSClientSession = OMSClientSession(),
+    private val sessionStore: OMSClientSecureSessionStore? = null,
+    private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
+    private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
+) {
+    private var transientPrivateKey: ByteArray? = null
+
+    private val privateKeyStore: OMSClientSecureSessionStore =
+        sessionStore ?: InMemoryPrivateKeyStore()
+
+    internal val hasPendingSignIn: Boolean
+        get() {
+            val snapshot = session.snapshot() ?: return false
+            return snapshot.walletAddress.isNullOrBlank()
+        }
+
+    /**
+     * Address of the currently selected wallet, or null when no wallet is selected.
+     */
+    val address: String?
+        get() = session.snapshot()?.walletAddress
+
+    internal val signerAddress: String?
+        get() = session.snapshot()?.signerAddress
+
+    internal fun currentState(): WalletState = WalletState(
+        hasPendingSignIn = hasPendingSignIn,
+        walletAddress = address,
+        signerAddress = signerAddress,
+    )
+
+    internal fun restoreSession(snapshot: OMSClientSessionSnapshot) {
+        session.restore(snapshot)
+    }
+
+    internal fun snapshotSession(): OMSClientSessionSnapshot? = session.snapshot()
+
+    internal fun restorePersistedSession(): Boolean {
+        val snapshot = sessionStore?.load() ?: return false
+        if (snapshot.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
+            return false
+        }
+        session.restore(snapshot)
+        return true
+    }
+
+    internal fun signOut() {
+        session.clear()
+        clearTransientPrivateKey()
+        privateKeyStore.clear()
+    }
+
+    private fun requireWalletId(): String =
+        requireNotNull(session.snapshot()?.walletId) { "No wallet selected" }
+
+    private fun requireWalletAddress(): String =
+        requireNotNull(address) { "No wallet selected" }
+
+    internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
+        val privateKey = privateKeyFactory()
+        return try {
+            val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
+            val response = waasClient(privateKey).commitVerifier(
+                CommitVerifierRequest(
+                    identityType = IdentityType.Email,
+                    authMode = AuthMode.OTP,
+                    metadata = emptyMap(),
+                    handle = email,
+                ),
+            )
+
+            session.replaceForPendingAuth(
+                challenge = response.challenge,
+                verifier = response.verifier,
+                signerAddress = signerAddress,
+            )
+            replaceTransientPrivateKey(privateKey)
+
+            response
+        } finally {
+            privateKey.fill(0)
+        }
+    }
+
+    internal suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet = signInWithOidcIdToken(
+        idToken = idToken,
+        issuer = issuer,
+        audience = audience,
+        walletType = walletType,
+        selectWallet = { wallets ->
+            require(wallets.size == 1) {
+                "Multiple wallets are available. Call signInWithOidcIdToken(idToken, issuer, audience, walletType, selectWallet) to choose one."
+            }
+            wallets.single()
+        },
+    )
+
+    internal suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        walletType: WalletType = environment.defaultWalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet {
+        val privateKey = privateKeyFactory()
+        try {
+            val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
+            val response = waasClient(privateKey).commitVerifier(
+                CommitVerifierRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    metadata = mapOf(
+                        "iss" to issuer,
+                        "aud" to audience,
+                        "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
+                    ),
+                    handle = OidcIdToken.handleHash(idToken),
+                ),
+            )
+
+            session.replaceForPendingAuth(
+                challenge = response.challenge,
+                verifier = response.verifier,
+                signerAddress = signerAddress,
+            )
+            replaceTransientPrivateKey(privateKey)
+
+            val auth = try {
+                confirmOidcIdTokenSignIn(idToken)
+            } catch (throwable: Throwable) {
+                signOut()
+                throw throwable
+            }
+            return resolveAuthenticatedWallet(auth, walletType, selectWallet)
+        } finally {
+            privateKey.fill(0)
+        }
+    }
+
+    internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
+        val snapshot = session.requirePendingAuth()
+        return withPrivateKey { privateKey ->
+            waasClient(privateKey).completeAuth(
+                CompleteAuthRequest(
+                    identityType = IdentityType.Email,
+                    authMode = AuthMode.OTP,
+                    verifier = snapshot.verifier,
+                    answer = WalletAuthChallenge.hashAnswer(snapshot.challenge, code),
+                ),
+            )
+        }
+    }
+
+    internal suspend fun confirmOidcIdTokenSignIn(idToken: String): CompleteAuthResponse {
+        val snapshot = session.requirePendingAuth()
+        return withPrivateKey { privateKey ->
+            waasClient(privateKey).completeAuth(
+                CompleteAuthRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    verifier = snapshot.verifier,
+                    answer = idToken,
+                ),
+            )
+        }
+    }
+
+    internal suspend fun completeEmailAuth(
+        code: String,
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet = completeEmailAuth(
+        code = code,
+        walletType = walletType,
+        selectWallet = { wallets ->
+            require(wallets.size == 1) {
+                "Multiple wallets are available. Call completeEmailAuth(code, selectWallet) to choose one."
+            }
+            wallets.single()
+        },
+    )
+
+    /**
+     * Completes the email OTP flow and returns the selected wallet.
+     *
+     * If multiple wallets are available for the requested type, [selectWallet]
+     * is called so the app can choose the wallet to use.
+     */
+    internal suspend fun completeEmailAuth(
+        code: String,
+        walletType: WalletType = environment.defaultWalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet {
+        val auth = confirmEmailSignIn(code)
+        return resolveAuthenticatedWallet(auth, walletType, selectWallet)
+    }
+
+    internal suspend fun resolveWallet(
+        completeAuth: CompleteAuthResponse,
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet {
+        return resolveAuthenticatedWallet(
+            completeAuth = completeAuth,
+            walletType = walletType,
+            selectWallet = { wallets ->
+                require(wallets.size == 1) {
+                    "Multiple wallets are available. Call resolveWallet with an explicit selector to choose one."
+                }
+                wallets.single()
+            },
+        )
+    }
+
+    internal suspend fun useWallet(walletId: String): Wallet {
+        session.requireSnapshot()
+        val wallet = withPrivateKey { privateKey ->
+            waasClient(privateKey).useWallet(
+                UseWalletRequest(
+                    walletId = walletId,
+                ),
+            ).wallet
+        }
+
+        session.activateWallet(
+            walletId = wallet.id,
+            walletAddress = wallet.address,
+        )
+        persistCurrentSession()
+        clearTransientPrivateKey()
+        return wallet
+    }
+
+    internal suspend fun createWallet(walletType: WalletType = environment.defaultWalletType): Wallet {
+        session.requireSnapshot()
+        val wallet = withPrivateKey { privateKey ->
+            waasClient(privateKey).createWallet(
+                CreateWalletRequest(type = walletType),
+            ).wallet
+        }
+
+        session.activateWallet(
+            walletId = wallet.id,
+            walletAddress = wallet.address,
+        )
+        persistCurrentSession()
+        clearTransientPrivateKey()
+        return wallet
+    }
+
+    private suspend fun resolveAuthenticatedWallet(
+        completeAuth: CompleteAuthResponse,
+        walletType: WalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet {
+        session.markAuthVerified()
+        return try {
+            val candidateWallets = completeAuth.wallets.filter { it.type == walletType }
+            when {
+                candidateWallets.isEmpty() -> createWallet(walletType)
+                candidateWallets.size == 1 -> {
+                    val selected = candidateWallets.single()
+                    useWallet(selected.id)
+                }
+                else -> {
+                    val selected = selectWallet(candidateWallets)
+                    require(candidateWallets.contains(selected)) {
+                        "Selected wallet is not one of the available options"
+                    }
+                    useWallet(selected.id)
+                }
+            }
+        } catch (throwable: Throwable) {
+            signOut()
+            throw throwable
+        }
+    }
+
+    private fun persistCurrentSession(privateKey: ByteArray? = null) {
+        val snapshot = session.snapshot() ?: return
+        privateKeyStore.save(snapshot, privateKey ?: transientPrivateKey)
+    }
+
+    /**
+     * Signs [message] with the currently selected wallet on [network].
+     */
+    suspend fun signMessage(network: Network, message: String): SignMessageResponse {
+        session.requireSnapshot()
+        return withPrivateKey { privateKey ->
+            waasClient(privateKey).signMessage(
+                SignMessageRequest(
+                    walletId = requireWalletId(),
+                    network = network.waasName,
+                    message = message,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Sends a native-value transaction from the currently selected wallet on
+     * [network].
+     */
+    suspend fun sendTransaction(
+        network: Network,
+        to: String,
+        value: String,
+    ): SendTransactionResponse = sendTransaction(
+        network = network,
+        request = ClientSendTransactionRequest(
+            to = to,
+            value = value,
+        ),
+    )
+
+    /**
+     * Sends a transaction from the currently selected wallet on [network].
+     */
+    suspend fun sendTransaction(
+        network: Network,
+        request: ClientSendTransactionRequest,
+    ): SendTransactionResponse {
+        session.requireSnapshot()
+        return withPrivateKey { privateKey ->
+            waasClient(privateKey).sendTransaction(
+                WaasSendTransactionRequest(
+                    walletId = requireWalletId(),
+                    network = network.waasName,
+                    to = request.to,
+                    value = request.value,
+                    data = request.data,
+                    mode = request.mode,
+                    feeCeiling = request.feeCeiling,
+                    nonce = request.nonce,
+                ),
+            )
+        }
+    }
+
+    private suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {
+        val inMemoryKey = transientPrivateKey
+        if (inMemoryKey != null) {
+            val privateKey = inMemoryKey.copyOf()
+            return try {
+                block(privateKey)
+            } finally {
+                privateKey.fill(0)
+            }
+        }
+        return privateKeyStore.withPrivateKey(block)
+    }
+
+    private fun replaceTransientPrivateKey(privateKey: ByteArray) {
+        clearTransientPrivateKey()
+        transientPrivateKey = privateKey.copyOf()
+    }
+
+    private fun clearTransientPrivateKey() {
+        transientPrivateKey?.fill(0)
+        transientPrivateKey = null
+    }
+
+    private fun waasClient(privateKey: ByteArray): WaasWalletClient = WaasWalletClient(
+        baseUrl = environment.walletApiBaseUrl(),
+        transport = WalletSignedWaasTransport(
+            projectAccessKey = projectAccessKey,
+            environment = environment,
+            httpClient = transport,
+            nonceGenerator = nonceGenerator,
+            privateKey = privateKey,
+        ),
+    )
+
+    private class InMemoryPrivateKeyStore : OMSClientSecureSessionStore {
+        private var snapshot: OMSClientSessionSnapshot? = null
+        private var privateKey: ByteArray? = null
+
+        override fun load(): OMSClientSessionSnapshot? = snapshot
+
+        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) {
+            this.snapshot = snapshot
+            if (privateKey == null) {
+                return
+            }
+            this.privateKey?.fill(0)
+            this.privateKey = privateKey.copyOf()
+        }
+
+        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {
+            val keyCopy = requireNotNull(privateKey) { "No active OMS Client signing key" }.copyOf()
+            return try {
+                block(keyCopy)
+            } finally {
+                keyCopy.fill(0)
+            }
+        }
+
+        override fun clear() {
+            snapshot = null
+            privateKey?.fill(0)
+            privateKey = null
+        }
+    }
+}

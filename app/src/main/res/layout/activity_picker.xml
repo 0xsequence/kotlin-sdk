@@ -25,7 +25,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="OMS Wallet Kotlin SDK Samples"
+                android:text="OMS Client Kotlin SDK Samples"
                 android:textColor="@color/slate_900"
                 android:textSize="30sp"
                 android:textStyle="bold" />

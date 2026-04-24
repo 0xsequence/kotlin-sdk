@@ -24,4 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "kotlin-sdk"
 include(":app")
-include(":oms-wallet-kotlin-sdk")
+include(":oms-client-kotlin-sdk")

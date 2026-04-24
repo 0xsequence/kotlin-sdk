@@ -1,4 +1,4 @@
-# OMS Wallet Kotlin SDK
+# OMS Client Kotlin SDK
 
 Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 
@@ -7,7 +7,7 @@ Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 Planned Maven coordinates:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.0.1")
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.0.1")
 ```
 
 Until the package is published, use the source directly from this repository.
@@ -34,7 +34,7 @@ Until the package is published, use the source directly from this repository.
 Create the SDK with the Android-friendly constructor:
 
 ```kotlin
-val omsWallet = OmsWallet(
+val client = OMSClient(
     context = context,
     projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
 )
@@ -47,10 +47,10 @@ kept in memory for the current app run and is not persisted across restarts.
 If you need a custom environment:
 
 ```kotlin
-val omsWallet = OmsWallet(
+val client = OMSClient(
     context = context,
     projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
-    environment = OmsWalletEnvironment(
+    environment = OMSClientEnvironment(
         walletApiUrl = "https://...",
         apiRpcUrl = "https://...",
         indexerUrlTemplate = "https://{value}-indexer.example.com/rpc/Indexer/",
@@ -61,29 +61,29 @@ val omsWallet = OmsWallet(
 For demo or staging-style defaults:
 
 ```kotlin
-val omsWallet = OmsWallet(
+val client = OMSClient(
     context = context,
     projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
-    environment = OmsWalletEnvironment.demoDefaults(),
+    environment = OMSClientEnvironment.demoDefaults(),
 )
 ```
 
 ## Example Flow
 
-`OmsWallet` restores a persisted session automatically when it is created. Start email sign-in only if no wallet is currently selected:
+`OMSClient` restores a persisted session automatically when it is created. Start email sign-in only if no wallet is currently selected:
 
 ```kotlin
-if (omsWallet.walletAddress == null) {
-    omsWallet.signInWithEmail("user@example.com")
+if (client.wallet.address == null) {
+    client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    omsWallet.completeEmailSignIn("123456")
+    client.completeEmailAuth("123456")
 }
 ```
 
 For OIDC ID-token flows such as Google Sign-In with Credential Manager:
 
 ```kotlin
-val wallet = omsWallet.signInWithOidcIdToken(
+val wallet = client.signInWithOidcIdToken(
     idToken = googleIdToken,
     issuer = "https://accounts.google.com",
     audience = "YOUR_WEB_CLIENT_ID",
@@ -93,9 +93,9 @@ val wallet = omsWallet.signInWithOidcIdToken(
 Useful state checks:
 
 ```kotlin
-val walletAddress = omsWallet.walletAddress
-val signerAddress = omsWallet.signerAddress
-val hasPendingSignIn = omsWallet.hasPendingSignIn
+val walletAddress = client.session.walletAddress
+val signerAddress = client.session.signerAddress
+val hasPendingSignIn = client.session.hasPendingSignIn
 ```
 
 `hasPendingSignIn` only reflects in-memory state in the current process. A fresh
@@ -107,22 +107,23 @@ unrecoverable transient signer.
 Use the selected wallet:
 
 ```kotlin
-val walletAddress = requireNotNull(omsWallet.walletAddress)
+val network = Network.POLYGON_AMOY
+val walletAddress = requireNotNull(client.wallet.address)
 
-val signResult = omsWallet.signMessage(
-    chainId = "80002",
+val signResult = client.wallet.signMessage(
+    network = network,
     message = "hello from android",
 )
 
-val verifyResult = omsWallet.utils.verifySignature(
-    chainId = "80002",
+val verifyResult = client.utils.verifySignature(
+    network = network,
     walletAddress = walletAddress,
     message = "hello from android",
     signature = signResult.signature,
 )
 
-val txResult = omsWallet.sendTransaction(
-    chainId = "80002",
+val txResult = client.wallet.sendTransaction(
+    network = network,
     to = "0xE5E8B483FfC05967FcFed58cc98D053265af6D99",
     value = "0",
 )
@@ -131,8 +132,10 @@ val txResult = omsWallet.sendTransaction(
 For contract calls or transaction parameters beyond `to` and `value`, use the request overload:
 
 ```kotlin
-val txResult = omsWallet.sendTransaction(
-    chainId = "80002",
+val network = Network.POLYGON_AMOY
+
+val txResult = client.wallet.sendTransaction(
+    network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
         value = "0",
@@ -147,7 +150,7 @@ val txResult = omsWallet.sendTransaction(
 If your app may need to choose between multiple wallets, use the selector overload:
 
 ```kotlin
-val wallet = omsWallet.completeEmailSignIn("123456") { wallets ->
+val wallet = client.completeEmailAuth("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets)
 }
 ```
@@ -170,8 +173,8 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 ## Build From Source
 
 ```sh
-./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest
-./gradlew :oms-wallet-kotlin-sdk:lintDebug
+./gradlew :oms-client-kotlin-sdk:testDebugUnitTest
+./gradlew :oms-client-kotlin-sdk:lintDebug
 ./gradlew :app:lintDebug
 ./gradlew :app:assembleDebug
 ```

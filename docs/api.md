@@ -1,43 +1,56 @@
 # Public API
 
-This document describes the intended public API for external consumers of the OMS Wallet Kotlin SDK.
+This document describes the intended public API for external consumers of the OMS Client Kotlin SDK.
 
 ## Entry Point
 
 ```kotlin
-OmsWallet(
+OMSClient(
     context: Context,
     projectAccessKey: String,
-    environment: OmsWalletEnvironment = OmsWalletEnvironment(),
+    environment: OMSClientEnvironment = OMSClientEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
 )
 ```
 
 ```kotlin
-val omsWallet.hasPendingSignIn: Boolean
-val omsWallet.walletAddress: String?
-val omsWallet.signerAddress: String?
-val omsWallet.utils: OmsWalletUtils
-val omsWallet.indexer: OmsWalletIndexerClient
+val client.wallet: WalletClient
+val client.utils: OMSClientUtils
+val client.indexer: IndexerClient
 ```
 
-`hasPendingSignIn` reflects an in-memory auth flow that has not resolved to a
-wallet yet. Persisted session restore only revives completed wallet sessions.
-If auth completes but wallet resolution or session persistence fails, the SDK
-clears the in-memory auth session instead of leaving a transient signer active.
+## Auth and Session
 
 ```kotlin
-fun omsWallet.clearSession()
+val client.session: OMSClientSessionState
 ```
 
 ```kotlin
-suspend fun omsWallet.signInWithEmail(
+data class OMSClientSessionState(
+    val hasPendingSignIn: Boolean,
+    val walletAddress: String?,
+    val signerAddress: String?,
+)
+```
+
+`client.session.hasPendingSignIn` reflects an in-memory auth flow that has not
+resolved to a wallet yet. Persisted session restore only revives completed
+wallet sessions. If auth completes but wallet resolution or session persistence
+fails, the SDK clears the in-memory auth session instead of leaving a transient
+signer active.
+
+```kotlin
+fun client.signOut()
+```
+
+```kotlin
+suspend fun client.startEmailAuth(
     email: String,
 ): CommitVerifierResponse
 ```
 
 ```kotlin
-suspend fun omsWallet.signInWithOidcIdToken(
+suspend fun client.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
@@ -46,7 +59,7 @@ suspend fun omsWallet.signInWithOidcIdToken(
 ```
 
 ```kotlin
-suspend fun omsWallet.signInWithOidcIdToken(
+suspend fun client.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
@@ -56,47 +69,69 @@ suspend fun omsWallet.signInWithOidcIdToken(
 ```
 
 ```kotlin
-suspend fun omsWallet.completeEmailSignIn(
+suspend fun client.completeEmailAuth(
     code: String,
     walletType: WalletType = WalletType.Ethereum,
 ): Wallet
 ```
 
 ```kotlin
-suspend fun omsWallet.completeEmailSignIn(
+suspend fun client.completeEmailAuth(
     code: String,
     walletType: WalletType = WalletType.Ethereum,
     selectWallet: suspend (List<Wallet>) -> Wallet,
 ): Wallet
 ```
 
+## Wallet
+
 ```kotlin
-suspend fun omsWallet.signMessage(
-    chainId: String,
+val client.wallet.address: String?
+```
+
+```kotlin
+suspend fun client.wallet.signMessage(
+    network: Network,
     message: String,
 ): SignMessageResponse
 ```
 
 ```kotlin
-suspend fun omsWallet.sendTransaction(
-    chainId: String,
+suspend fun client.wallet.sendTransaction(
+    network: Network,
     to: String,
     value: String,
 ): SendTransactionResponse
 ```
 
 ```kotlin
-suspend fun omsWallet.sendTransaction(
-    chainId: String,
+suspend fun client.wallet.sendTransaction(
+    network: Network,
     request: SendTransactionRequest,
 ): SendTransactionResponse
 ```
+
+## Networks
+
+```kotlin
+val client.supportedNetworks: List<Network>
+fun client.network(chainId: String): Network?
+```
+
+```kotlin
+enum class Network {
+    POLYGON,
+    POLYGON_AMOY,
+}
+```
+
+Each entry exposes `chainId` and `displayName`.
 
 ## Utils
 
 ```kotlin
 suspend fun utils.verifySignature(
-    chainId: String,
+    network: Network,
     walletAddress: String,
     message: String,
     signature: String,
@@ -107,7 +142,7 @@ suspend fun utils.verifySignature(
 
 ```kotlin
 suspend fun indexer.getTokenBalances(
-    chainId: String,
+    network: Network,
     contractAddress: String,
     walletAddress: String,
     includeMetadata: Boolean,
@@ -117,27 +152,23 @@ suspend fun indexer.getTokenBalances(
 ## Environment
 
 ```kotlin
-class OmsWalletEnvironment(
-    val walletApiUrl: String = OmsWalletEnvironment.walletApiUrlDefault,
-    val apiRpcUrl: String = OmsWalletEnvironment.apiRpcUrlDefault,
-    val indexerUrlTemplate: String = OmsWalletEnvironment.indexerUrlTemplateDefault,
+class OMSClientEnvironment(
+    val walletApiUrl: String = OMSClientEnvironment.walletApiUrlDefault,
+    val apiRpcUrl: String = OMSClientEnvironment.apiRpcUrlDefault,
+    val indexerUrlTemplate: String = OMSClientEnvironment.indexerUrlTemplateDefault,
 )
 ```
 
 `walletApiUrl` should be treated as the Wallet API base URL/origin. Wallet RPC method paths come from the generated waas schema.
 
 ```kotlin
-fun environment.indexerUrlForChainId(chainId: String): String
-```
-
-```kotlin
-fun OmsWalletEnvironment.Companion.demoDefaults(): OmsWalletEnvironment
+fun OMSClientEnvironment.Companion.demoDefaults(): OMSClientEnvironment
 ```
 
 ## Public Models
 
 ```kotlin
-typealias TransactionMode = com.omswallet.kotlin_sdk.generated.waas.TransactionMode
+typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
 ```
 
 ```kotlin
@@ -190,7 +221,7 @@ data class TokenBalancesResult(
 Wallet auth, wallet selection, signing, and transaction result models now come from the generated waas package:
 
 ```kotlin
-com.omswallet.kotlin_sdk.generated.waas
+com.omsclient.kotlin_sdk.generated.waas
 ```
 
 Common public return types from that package include:
@@ -227,22 +258,22 @@ data class SendTransactionResponse(
 ## Recommended Usage
 
 ```kotlin
-val omsWallet = OmsWallet(
+val client = OMSClient(
     context = context,
     projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
 )
 
-if (omsWallet.walletAddress == null) {
-    omsWallet.signInWithEmail("user@example.com")
+if (client.wallet.address == null) {
+    client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    val wallet = omsWallet.completeEmailSignIn("123456")
+    val wallet = client.completeEmailAuth("123456")
 }
 ```
 
 For OIDC ID-token flows:
 
 ```kotlin
-val wallet = omsWallet.signInWithOidcIdToken(
+val wallet = client.signInWithOidcIdToken(
     idToken = googleIdToken,
     issuer = "https://accounts.google.com",
     audience = "YOUR_WEB_CLIENT_ID",
@@ -252,7 +283,7 @@ val wallet = omsWallet.signInWithOidcIdToken(
 If your app needs to choose between multiple wallets:
 
 ```kotlin
-val wallet = omsWallet.completeEmailSignIn("123456") { wallets ->
+val wallet = client.completeEmailAuth("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets) // wallets: List<Wallet>
 }
 ```
@@ -260,8 +291,10 @@ val wallet = omsWallet.completeEmailSignIn("123456") { wallets ->
 For contract calls or transaction parameters beyond `to` and `value`:
 
 ```kotlin
-val txResult = omsWallet.sendTransaction(
-    chainId = "80002",
+val network = Network.POLYGON_AMOY
+
+val txResult = client.wallet.sendTransaction(
+    network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
         value = "0",

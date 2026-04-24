@@ -13,8 +13,8 @@ The matching C test coverage lives in:
 
 The matching Kotlin test coverage lives in:
 
-- `oms-wallet-kotlin-sdk/src/test/java/com/omswallet/kotlin_sdk/wallet/WalletRequestSignerVectorTest.kt`
-- `oms-wallet-kotlin-sdk/src/test/java/com/omswallet/kotlin_sdk/wallet/WalletPayloadBuilderTest.kt`
+- `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/WalletRequestSignerVectorTest.kt`
+- `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/WalletPayloadBuilderTest.kt`
 
 Current Kotlin parity coverage:
 
