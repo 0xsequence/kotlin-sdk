@@ -22,13 +22,22 @@ val client.indexer: IndexerClient
 ## Auth and Session
 
 ```kotlin
-val client.hasPendingSignIn: Boolean
+val client.session: OMSClientSessionState
 ```
 
-`hasPendingSignIn` reflects an in-memory auth flow that has not resolved to a
-wallet yet. Persisted session restore only revives completed wallet sessions.
-If auth completes but wallet resolution or session persistence fails, the SDK
-clears the in-memory auth session instead of leaving a transient signer active.
+```kotlin
+data class OMSClientSessionState(
+    val hasPendingSignIn: Boolean,
+    val walletAddress: String?,
+    val signerAddress: String?,
+)
+```
+
+`client.session.hasPendingSignIn` reflects an in-memory auth flow that has not
+resolved to a wallet yet. Persisted session restore only revives completed
+wallet sessions. If auth completes but wallet resolution or session persistence
+fails, the SDK clears the in-memory auth session instead of leaving a transient
+signer active.
 
 ```kotlin
 fun client.signOut()
@@ -77,20 +86,19 @@ suspend fun client.completeEmailAuth(
 ## Wallet
 
 ```kotlin
-val client.wallet.walletAddress: String?
-val client.wallet.signerAddress: String?
+val client.wallet.address: String?
 ```
 
 ```kotlin
 suspend fun client.wallet.signMessage(
-    chainId: String,
+    network: Network,
     message: String,
 ): SignMessageResponse
 ```
 
 ```kotlin
 suspend fun client.wallet.sendTransaction(
-    chainId: String,
+    network: Network,
     to: String,
     value: String,
 ): SendTransactionResponse
@@ -98,16 +106,32 @@ suspend fun client.wallet.sendTransaction(
 
 ```kotlin
 suspend fun client.wallet.sendTransaction(
-    chainId: String,
+    network: Network,
     request: SendTransactionRequest,
 ): SendTransactionResponse
 ```
+
+## Networks
+
+```kotlin
+val client.supportedNetworks: List<Network>
+fun client.network(chainId: String): Network?
+```
+
+```kotlin
+enum class Network {
+    POLYGON,
+    POLYGON_AMOY,
+}
+```
+
+Each entry exposes `chainId` and `displayName`.
 
 ## Utils
 
 ```kotlin
 suspend fun utils.verifySignature(
-    chainId: String,
+    network: Network,
     walletAddress: String,
     message: String,
     signature: String,
@@ -118,7 +142,7 @@ suspend fun utils.verifySignature(
 
 ```kotlin
 suspend fun indexer.getTokenBalances(
-    chainId: String,
+    network: Network,
     contractAddress: String,
     walletAddress: String,
     includeMetadata: Boolean,
@@ -136,10 +160,6 @@ class OMSClientEnvironment(
 ```
 
 `walletApiUrl` should be treated as the Wallet API base URL/origin. Wallet RPC method paths come from the generated waas schema.
-
-```kotlin
-fun environment.indexerUrlForChainId(chainId: String): String
-```
 
 ```kotlin
 fun OMSClientEnvironment.Companion.demoDefaults(): OMSClientEnvironment
@@ -243,7 +263,7 @@ val client = OMSClient(
     projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
 )
 
-if (client.wallet.walletAddress == null) {
+if (client.wallet.address == null) {
     client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
     val wallet = client.completeEmailAuth("123456")
@@ -271,8 +291,10 @@ val wallet = client.completeEmailAuth("123456") { wallets ->
 For contract calls or transaction parameters beyond `to` and `value`:
 
 ```kotlin
+val network = Network.POLYGON_AMOY
+
 val txResult = client.wallet.sendTransaction(
-    chainId = "80002",
+    network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
         value = "0",

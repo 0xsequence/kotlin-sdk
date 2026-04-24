@@ -1,7 +1,7 @@
 package com.omsclient.kotlin_sdk.network
 
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
-import com.omsclient.kotlin_sdk.chains.OMSClientChains
 import java.net.URI
 
 class OMSClientEnvironment(
@@ -12,8 +12,8 @@ class OMSClientEnvironment(
 ) {
     internal val defaultWalletType: WalletType = WalletType.Ethereum
 
-    fun indexerUrlForChainId(chainId: String): String =
-        indexerUrlTemplate.replace("{value}", OMSClientChains.chainNameFor(chainId))
+    fun indexerUrlFor(network: Network): String =
+        indexerUrlTemplate.replace("{value}", network.waasName)
 
     internal fun walletApiBaseUrl(): String {
         val uri = URI(walletApiUrl)

@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.indexer
 
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.models.TokenBalancesPage
 import com.omsclient.kotlin_sdk.models.TokenBalancesResult
@@ -21,14 +22,17 @@ class IndexerClient internal constructor(
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
 ) {
+    /**
+     * Gets token balances for [walletAddress] on [network].
+     */
     suspend fun getTokenBalances(
-        chainId: String,
+        network: Network,
         contractAddress: String,
         walletAddress: String,
         includeMetadata: Boolean,
     ): TokenBalancesResult {
         val response = transport.postJson(
-            baseUrl = environment.indexerUrlForChainId(chainId),
+            baseUrl = environment.indexerUrlFor(network),
             path = "/GetTokenBalances",
             body = buildJsonObject {
                 putJsonObject("page") {

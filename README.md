@@ -73,7 +73,7 @@ val client = OMSClient(
 `OMSClient` restores a persisted session automatically when it is created. Start email sign-in only if no wallet is currently selected:
 
 ```kotlin
-if (client.wallet.walletAddress == null) {
+if (client.wallet.address == null) {
     client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
     client.completeEmailAuth("123456")
@@ -93,9 +93,9 @@ val wallet = client.signInWithOidcIdToken(
 Useful state checks:
 
 ```kotlin
-val walletAddress = client.wallet.walletAddress
-val signerAddress = client.wallet.signerAddress
-val hasPendingSignIn = client.hasPendingSignIn
+val walletAddress = client.session.walletAddress
+val signerAddress = client.session.signerAddress
+val hasPendingSignIn = client.session.hasPendingSignIn
 ```
 
 `hasPendingSignIn` only reflects in-memory state in the current process. A fresh
@@ -107,22 +107,23 @@ unrecoverable transient signer.
 Use the selected wallet:
 
 ```kotlin
-val walletAddress = requireNotNull(client.wallet.walletAddress)
+val network = Network.POLYGON_AMOY
+val walletAddress = requireNotNull(client.wallet.address)
 
 val signResult = client.wallet.signMessage(
-    chainId = "80002",
+    network = network,
     message = "hello from android",
 )
 
 val verifyResult = client.utils.verifySignature(
-    chainId = "80002",
+    network = network,
     walletAddress = walletAddress,
     message = "hello from android",
     signature = signResult.signature,
 )
 
 val txResult = client.wallet.sendTransaction(
-    chainId = "80002",
+    network = network,
     to = "0xE5E8B483FfC05967FcFed58cc98D053265af6D99",
     value = "0",
 )
@@ -131,8 +132,10 @@ val txResult = client.wallet.sendTransaction(
 For contract calls or transaction parameters beyond `to` and `value`, use the request overload:
 
 ```kotlin
+val network = Network.POLYGON_AMOY
+
 val txResult = client.wallet.sendTransaction(
-    chainId = "80002",
+    network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
         value = "0",

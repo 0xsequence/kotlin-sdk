@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.chains.OMSClientChains
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
@@ -50,15 +50,18 @@ class WalletClient internal constructor(
             return snapshot.walletAddress.isNullOrBlank()
         }
 
-    val walletAddress: String?
+    /**
+     * Address of the currently selected wallet, or null when no wallet is selected.
+     */
+    val address: String?
         get() = session.snapshot()?.walletAddress
 
-    val signerAddress: String?
+    internal val signerAddress: String?
         get() = session.snapshot()?.signerAddress
 
     internal fun currentState(): WalletState = WalletState(
         hasPendingSignIn = hasPendingSignIn,
-        walletAddress = walletAddress,
+        walletAddress = address,
         signerAddress = signerAddress,
     )
 
@@ -87,7 +90,7 @@ class WalletClient internal constructor(
         requireNotNull(session.snapshot()?.walletId) { "No wallet selected" }
 
     private fun requireWalletAddress(): String =
-        requireNotNull(walletAddress) { "No wallet selected" }
+        requireNotNull(address) { "No wallet selected" }
 
     internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
         val privateKey = privateKeyFactory()
@@ -317,33 +320,43 @@ class WalletClient internal constructor(
         privateKeyStore.save(snapshot, privateKey ?: transientPrivateKey)
     }
 
-    suspend fun signMessage(chainId: String, message: String): SignMessageResponse {
+    /**
+     * Signs [message] with the currently selected wallet on [network].
+     */
+    suspend fun signMessage(network: Network, message: String): SignMessageResponse {
         session.requireSnapshot()
         return withPrivateKey { privateKey ->
             waasClient(privateKey).signMessage(
                 SignMessageRequest(
                     walletId = requireWalletId(),
-                    network = OMSClientChains.chainNameFor(chainId),
+                    network = network.waasName,
                     message = message,
                 ),
             )
         }
     }
 
+    /**
+     * Sends a native-value transaction from the currently selected wallet on
+     * [network].
+     */
     suspend fun sendTransaction(
-        chainId: String,
+        network: Network,
         to: String,
         value: String,
     ): SendTransactionResponse = sendTransaction(
-        chainId = chainId,
+        network = network,
         request = ClientSendTransactionRequest(
             to = to,
             value = value,
         ),
     )
 
+    /**
+     * Sends a transaction from the currently selected wallet on [network].
+     */
     suspend fun sendTransaction(
-        chainId: String,
+        network: Network,
         request: ClientSendTransactionRequest,
     ): SendTransactionResponse {
         session.requireSnapshot()
@@ -351,7 +364,7 @@ class WalletClient internal constructor(
             waasClient(privateKey).sendTransaction(
                 WaasSendTransactionRequest(
                     walletId = requireWalletId(),
-                    network = OMSClientChains.chainNameFor(chainId),
+                    network = network.waasName,
                     to = request.to,
                     value = request.value,
                     data = request.data,

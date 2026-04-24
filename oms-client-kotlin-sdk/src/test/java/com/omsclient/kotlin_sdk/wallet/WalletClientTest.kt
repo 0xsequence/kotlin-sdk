@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.OMSClientNetworks
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
@@ -192,7 +193,7 @@ class WalletClientTest {
         assertNull(client.snapshotSession())
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
         assertEquals(0, store.saveCalls)
@@ -291,7 +292,7 @@ class WalletClientTest {
             requireNotNull(useWalletRequest.body).utf8(),
         )
         assertEquals("0xdef", wallet.address)
-        assertEquals("0xdef", client.walletAddress)
+        assertEquals("0xdef", client.address)
         assertFalse(client.hasPendingSignIn)
         assertEquals("wallet-def", store.snapshot?.walletId)
         assertEquals("0xdef", store.snapshot?.walletAddress)
@@ -346,7 +347,7 @@ class WalletClientTest {
         assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
         assertNull(client.snapshotSession())
         assertFalse(client.hasPendingSignIn)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(client.signerAddress)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
@@ -390,7 +391,7 @@ class WalletClientTest {
         assertNull(client.snapshotSession())
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
         assertEquals(0, store.saveCalls)
@@ -489,7 +490,7 @@ class WalletClientTest {
 
         assertTrue(restored)
         assertEquals(snapshot, client.snapshotSession())
-        assertEquals("0xabc", client.walletAddress)
+        assertEquals("0xabc", client.address)
         assertEquals(
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             client.signerAddress,
@@ -617,7 +618,7 @@ class WalletClientTest {
         )
         assertEquals("0xdef", resolved.address)
         assertEquals("wallet-def", resolved.id)
-        assertEquals("0xdef", client.walletAddress)
+        assertEquals("0xdef", client.address)
         assertFalse(client.hasPendingSignIn)
     }
 
@@ -686,7 +687,7 @@ class WalletClientTest {
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             client.signerAddress,
         )
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
         assertEquals(0, store.saveCalls)
@@ -696,7 +697,7 @@ class WalletClientTest {
         requireNotNull(server.takeRequest())
         requireNotNull(server.takeRequest())
         assertEquals("0xdef", wallet.address)
-        assertEquals("0xdef", client.walletAddress)
+        assertEquals("0xdef", client.address)
         assertFalse(client.hasPendingSignIn)
         assertEquals("wallet-def", store.snapshot?.walletId)
         assertEquals("0xdef", store.snapshot?.walletAddress)
@@ -762,7 +763,7 @@ class WalletClientTest {
         )
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
     }
 
     @Test
@@ -828,7 +829,7 @@ class WalletClientTest {
             requireNotNull(useWalletRequest.body).utf8(),
         )
         assertEquals("0xbbb", selectedWallet.address)
-        assertEquals("0xbbb", client.walletAddress)
+        assertEquals("0xbbb", client.address)
     }
 
     @Test
@@ -882,7 +883,7 @@ class WalletClientTest {
         assertNull(client.snapshotSession())
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
     }
@@ -942,7 +943,7 @@ class WalletClientTest {
         assertNull(client.snapshotSession())
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
     }
@@ -1002,7 +1003,7 @@ class WalletClientTest {
         assertNull(client.snapshotSession())
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
     }
@@ -1062,7 +1063,7 @@ class WalletClientTest {
         assertNull(client.snapshotSession())
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertTrue(store.clearCalls > 0)
     }
 
@@ -1085,13 +1086,13 @@ class WalletClientTest {
 
         assertNull(client.snapshotSession())
         assertNull(store.snapshot)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
         assertNull(client.signerAddress)
         assertNull(store.privateKeyHex)
     }
 
     @Test
-    fun walletAddressReturnsSelectedWallet() {
+    fun addressReturnsSelectedWallet() {
         val client = WalletClient(
             projectAccessKey = "test-access-key",
             environment = OMSClientEnvironment(),
@@ -1106,7 +1107,7 @@ class WalletClientTest {
         )
         assertTrue(client.restorePersistedSession())
 
-        assertEquals("0xwallet", client.walletAddress)
+        assertEquals("0xwallet", client.address)
         assertFalse(client.hasPendingSignIn)
     }
 
@@ -1128,7 +1129,7 @@ class WalletClientTest {
 
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.walletAddress)
+        assertNull(client.address)
     }
 
     @Test
@@ -1151,7 +1152,7 @@ class WalletClientTest {
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             client.signerAddress,
         )
-        assertNull(client.walletAddress)
+        assertNull(client.address)
     }
 
     @Test
@@ -1185,7 +1186,7 @@ class WalletClientTest {
         assertEquals(0, store.withPrivateKeyCalls)
 
         val result = client.signMessage(
-            chainId = "80002",
+            network = OMSClientNetworks.requireSupported("80002"),
             message = "hello",
         )
 
@@ -1224,7 +1225,7 @@ class WalletClientTest {
         assertTrue(client.restorePersistedSession())
 
         val result = client.sendTransaction(
-            chainId = "80002",
+            network = OMSClientNetworks.requireSupported("80002"),
             request = SendTransactionRequest(
                 to = "0xabc",
                 value = "0",

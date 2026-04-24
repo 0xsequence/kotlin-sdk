@@ -5,6 +5,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import kotlinx.coroutines.MainScope
@@ -91,7 +92,7 @@ class TestbedActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.loadBalancesButton).setOnClickListener {
             launchAction("Load token balances") { sdk ->
                 val balances = sdk.indexer.getTokenBalances(
-                    chainId = requireText(balancesChainIdInput, "Balances chain ID"),
+                    network = requireNetwork(sdk, balancesChainIdInput, "Balances chain ID"),
                     contractAddress = requireText(contractAddressInput, "Contract address"),
                     walletAddress = requireText(balancesWalletAddressInput, "Balances wallet address"),
                     includeMetadata = true,
@@ -129,9 +130,9 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.signMessageButton).setOnClickListener {
             launchAction("Sign message") { sdk ->
-                val chainId = requireText(messageChainIdInput, "Message chain ID")
+                val network = requireNetwork(sdk, messageChainIdInput, "Message chain ID")
                 val message = requireText(messageInput, "Message")
-                val result = sdk.wallet.signMessage(chainId = chainId, message = message)
+                val result = sdk.wallet.signMessage(network = network, message = message)
                 lastSignedMessage = message
                 lastSignedSignature = result.signature
                 lastSignatureView.text = "Last signature: ${result.signature}"
@@ -143,8 +144,8 @@ class TestbedActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.verifySignatureButton).setOnClickListener {
             launchAction("Verify last signature") { sdk ->
                 val result = sdk.utils.verifySignature(
-                    chainId = requireText(messageChainIdInput, "Message chain ID"),
-                    walletAddress = requireNotNull(sdk.wallet.walletAddress) { "No wallet selected" },
+                    network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
+                    walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
                     message = requireNotNull(lastSignedMessage) { "No signed message available" },
                     signature = requireNotNull(lastSignedSignature) { "No signature available" },
                 )
@@ -155,7 +156,7 @@ class TestbedActivity : AppCompatActivity() {
         findViewById<MaterialButton>(R.id.sendTransactionButton).setOnClickListener {
             launchAction("Send transaction") { sdk ->
                 val result = sdk.wallet.sendTransaction(
-                    chainId = requireText(messageChainIdInput, "Message chain ID"),
+                    network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
                     to = requireText(transactionToInput, "Transaction destination"),
                     value = requireText(transactionValueInput, "Transaction value"),
                 )
@@ -209,14 +210,14 @@ class TestbedActivity : AppCompatActivity() {
 
     private fun renderSession() {
         val sdk = runtime?.sdk
-        if (sdk == null || (sdk.wallet.signerAddress == null && sdk.wallet.walletAddress == null)) {
+        if (sdk == null || (sdk.session.signerAddress == null && sdk.session.walletAddress == null)) {
             currentSignerView.text = "Signer: none"
             currentWalletView.text = "Wallet: none"
             return
         }
 
-        currentSignerView.text = "Signer: ${sdk.wallet.signerAddress ?: "none"}"
-        currentWalletView.text = "Wallet: ${sdk.wallet.walletAddress ?: "pending selection"}"
+        currentSignerView.text = "Signer: ${sdk.session.signerAddress ?: "none"}"
+        currentWalletView.text = "Wallet: ${sdk.session.walletAddress ?: "pending selection"}"
     }
 
     private fun appendLog(message: String) {
@@ -238,6 +239,15 @@ class TestbedActivity : AppCompatActivity() {
         val value = input.text?.toString()?.trim().orEmpty()
         require(value.isNotEmpty()) { "$label is required" }
         return value
+    }
+
+    private fun requireNetwork(
+        sdk: OMSClient,
+        input: TextInputEditText,
+        label: String,
+    ): Network {
+        val chainId = requireText(input, label)
+        return requireNotNull(sdk.network(chainId)) { "$label is not supported: $chainId" }
     }
 
     private data class DemoRuntime(

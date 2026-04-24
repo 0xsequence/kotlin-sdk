@@ -16,6 +16,12 @@ import okhttp3.OkHttpClient
 import java.security.MessageDigest
 import java.net.URI
 
+/**
+ * Main entry point for OMS Client.
+ *
+ * Auth and session lifecycle methods live on this class. Wallet operations for
+ * the currently selected wallet are available through [wallet].
+ */
 class OMSClient internal constructor(
     projectAccessKey: String,
     private val environment: OMSClientEnvironment = OMSClientEnvironment(),
@@ -49,9 +55,35 @@ class OMSClient internal constructor(
         wallet.restorePersistedSession()
     }
 
-    val hasPendingSignIn: Boolean
-        get() = wallet.hasPendingSignIn
+    /**
+     * Snapshot of the current auth and wallet-selection state.
+     */
+    val session: OMSClientSessionState
+        get() = wallet.currentState().let { state ->
+            OMSClientSessionState(
+                hasPendingSignIn = state.hasPendingSignIn,
+                walletAddress = state.walletAddress,
+                signerAddress = state.signerAddress,
+            )
+        }
 
+    /**
+     * Networks currently supported by this SDK build.
+     */
+    val supportedNetworks: List<Network>
+        get() = OMSClientNetworks.supportedNetworks
+
+    /**
+     * Returns a supported network by chain id, or null when the chain id is not
+     * supported by this SDK build.
+     */
+    fun network(chainId: String): Network? =
+        supportedNetworks.firstOrNull { it.chainId == chainId }
+
+    /**
+     * Creates an Android-backed client with persisted secure storage for
+     * completed wallet sessions.
+     */
     constructor(
         context: Context,
         projectAccessKey: String,
@@ -69,9 +101,19 @@ class OMSClient internal constructor(
         ),
     )
 
+    /**
+     * Starts email OTP authentication.
+     *
+     * The returned verifier response can be shown or inspected by the app, and
+     * the OTP can later be completed with [completeEmailAuth].
+     */
     suspend fun startEmailAuth(email: String): CommitVerifierResponse =
         wallet.startEmailAuth(email)
 
+    /**
+     * Signs in with an OIDC ID token and resolves the only available wallet for
+     * the requested [walletType].
+     */
     suspend fun signInWithOidcIdToken(
         idToken: String,
         issuer: String,
@@ -84,6 +126,10 @@ class OMSClient internal constructor(
         walletType = walletType,
     )
 
+    /**
+     * Signs in with an OIDC ID token and lets the app select from multiple
+     * available wallets when more than one wallet matches [walletType].
+     */
     suspend fun signInWithOidcIdToken(
         idToken: String,
         issuer: String,
@@ -98,6 +144,10 @@ class OMSClient internal constructor(
         selectWallet = selectWallet,
     )
 
+    /**
+     * Completes email OTP authentication and resolves the only available wallet
+     * for the requested [walletType].
+     */
     suspend fun completeEmailAuth(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
@@ -106,6 +156,10 @@ class OMSClient internal constructor(
         walletType = walletType,
     )
 
+    /**
+     * Completes email OTP authentication and lets the app select from multiple
+     * available wallets when more than one wallet matches [walletType].
+     */
     suspend fun completeEmailAuth(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
@@ -116,6 +170,10 @@ class OMSClient internal constructor(
         selectWallet = selectWallet,
     )
 
+    /**
+     * Signs out of the current account and clears all in-memory and persisted
+     * session material.
+     */
     fun signOut() {
         wallet.signOut()
     }

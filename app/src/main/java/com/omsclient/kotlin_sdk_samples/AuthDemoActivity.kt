@@ -17,6 +17,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
@@ -149,7 +150,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     append("Code requested for ")
                     append(response.loginHint ?: email)
                 }
-                signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
+                signerAddressView.text = "Signer address: ${sdk.session.signerAddress ?: "none"}"
                 showPendingCodeStep()
                 emailInput.text?.clear()
                 appendLog("Verifier committed: verifier=${response.verifier}")
@@ -201,7 +202,7 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 val message = requireText(messageInput, "Message")
                 val result = sdk.wallet.signMessage(
-                    chainId = MESSAGE_CHAIN_ID,
+                    network = MESSAGE_NETWORK,
                     message = message,
                 )
                 lastSignedMessage = message
@@ -219,8 +220,8 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { signatureStatusView.text = "Signature status: verification failed." },
             ) {
                 val result = sdk.utils.verifySignature(
-                    chainId = MESSAGE_CHAIN_ID,
-                    walletAddress = requireNotNull(sdk.wallet.walletAddress) { "No wallet selected" },
+                    network = MESSAGE_NETWORK,
+                    walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
                     message = requireNotNull(lastSignedMessage) { "No signed message available" },
                     signature = requireNotNull(lastSignedSignature) { "No signature available" },
                 )
@@ -240,7 +241,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { transactionStatusView.text = "Transaction status: send failed." },
             ) {
                 val result = sdk.wallet.sendTransaction(
-                    chainId = MESSAGE_CHAIN_ID,
+                    network = MESSAGE_NETWORK,
                     to = requireText(transactionToInput, "Transaction destination"),
                     value = requireText(transactionValueInput, "Transaction value"),
                 )
@@ -378,7 +379,7 @@ class AuthDemoActivity : AppCompatActivity() {
     ) {
         authStatusView.text = status
         walletAddressView.text = "Wallet address: ${wallet.address}"
-        signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
+        signerAddressView.text = "Signer address: ${sdk.session.signerAddress ?: "none"}"
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.GONE
         emailStepContainer.visibility = View.GONE
@@ -390,20 +391,20 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun renderSessionState() {
-        if (sdk.wallet.signerAddress == null && sdk.wallet.walletAddress == null) {
+        if (sdk.session.signerAddress == null && sdk.session.walletAddress == null) {
             resetUiForNoSession()
             return
         }
 
         logoutButton.visibility = View.VISIBLE
-        signerAddressView.text = "Signer address: ${sdk.wallet.signerAddress ?: "none"}"
+        signerAddressView.text = "Signer address: ${sdk.session.signerAddress ?: "none"}"
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: ready to sign."
         lastTransactionHashView.text = "Last tx hash: none"
         transactionStatusView.text = "Transaction status: ready to send."
         openExplorerButton.visibility = View.GONE
 
-        if (sdk.hasPendingSignIn) {
+        if (sdk.session.hasPendingSignIn) {
             authStatusView.text = "Pending sign-in verification"
             walletAddressView.text = "Wallet address: pending"
             authCard.visibility = View.VISIBLE
@@ -415,7 +416,7 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         authStatusView.text = "Restored persisted wallet session"
-        walletAddressView.text = "Wallet address: ${sdk.wallet.walletAddress}"
+        walletAddressView.text = "Wallet address: ${sdk.session.walletAddress}"
         authCard.visibility = View.GONE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
@@ -471,6 +472,7 @@ class AuthDemoActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "AuthDemoActivity"
         private const val MESSAGE_CHAIN_ID = "80002"
+        private val MESSAGE_NETWORK = Network.POLYGON_AMOY
 
         private fun generateSecureRandomNonce(byteLength: Int = 32): String {
             val randomBytes = ByteArray(byteLength)

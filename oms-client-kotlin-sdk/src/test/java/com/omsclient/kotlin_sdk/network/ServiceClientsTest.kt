@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.network
 
+import com.omsclient.kotlin_sdk.OMSClientNetworks
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.utils.OMSClientUtils
 import kotlinx.coroutines.runBlocking
@@ -41,7 +42,7 @@ class ServiceClientsTest {
         val client = OMSClientUtils("test-access-key", environment, OMSClientHttpClient())
 
         val response = client.verifySignature(
-            chainId = "80002",
+            network = OMSClientNetworks.requireSupported("80002"),
             walletAddress = "0xabc",
             message = "hello",
             signature = "0xsig",
@@ -88,7 +89,7 @@ class ServiceClientsTest {
         val client = IndexerClient("test-access-key", environment, OMSClientHttpClient())
 
         val response = client.getTokenBalances(
-            chainId = "137",
+            network = OMSClientNetworks.requireSupported("137"),
             contractAddress = "0xcontract",
             walletAddress = "0xwallet",
             includeMetadata = true,
@@ -125,7 +126,7 @@ class ServiceClientsTest {
         val client = IndexerClient("test-access-key", environment, OMSClientHttpClient())
 
         val response = client.getTokenBalances(
-            chainId = "137",
+            network = OMSClientNetworks.requireSupported("137"),
             contractAddress = "0xcontract",
             walletAddress = "0xwallet",
             includeMetadata = true,
@@ -152,7 +153,7 @@ class ServiceClientsTest {
 
         val failure = runCatching {
             client.verifySignature(
-                chainId = "80002",
+                network = OMSClientNetworks.requireSupported("80002"),
                 walletAddress = "0xabc",
                 message = "hello",
                 signature = "0xsig",

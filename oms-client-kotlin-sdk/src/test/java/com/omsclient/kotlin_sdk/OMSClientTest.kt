@@ -23,8 +23,9 @@ class OMSClientTest {
             sessionStore = StubSecureSessionStore(snapshot),
         )
 
-        assertEquals("0xwallet", sdk.wallet.walletAddress)
-        assertEquals("0xsigner", sdk.wallet.signerAddress)
+        assertEquals("0xwallet", sdk.wallet.address)
+        assertEquals("0xwallet", sdk.session.walletAddress)
+        assertEquals("0xsigner", sdk.session.signerAddress)
     }
 
     @Test
@@ -44,10 +45,20 @@ class OMSClientTest {
 
         sdk.signOut()
 
-        assertNull(sdk.wallet.walletAddress)
-        assertNull(sdk.wallet.signerAddress)
+        assertNull(sdk.wallet.address)
+        assertNull(sdk.session.walletAddress)
+        assertNull(sdk.session.signerAddress)
         assertNull(store.snapshot)
         assertEquals(1, store.clearCalls)
+    }
+
+    @Test
+    fun exposesSupportedNetworks() {
+        val sdk = OMSClient(projectAccessKey = "test-access-key")
+
+        assertEquals(listOf("137", "80002"), sdk.supportedNetworks.map { it.chainId })
+        assertEquals("Polygon Amoy", sdk.network("80002")?.displayName)
+        assertNull(sdk.network("1"))
     }
 
     @Test

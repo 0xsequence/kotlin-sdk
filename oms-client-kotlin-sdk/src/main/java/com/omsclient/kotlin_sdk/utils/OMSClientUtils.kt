@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.utils
 
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.models.VerifySignatureResult
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
@@ -13,8 +14,11 @@ class OMSClientUtils internal constructor(
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
 ) {
+    /**
+     * Verifies a signed message for [walletAddress] on [network].
+     */
     suspend fun verifySignature(
-        chainId: String,
+        network: Network,
         walletAddress: String,
         message: String,
         signature: String,
@@ -23,7 +27,7 @@ class OMSClientUtils internal constructor(
             baseUrl = environment.apiRpcUrl,
             path = "/IsValidMessageSignature",
             body = buildJsonObject {
-                put("chainId", chainId)
+                put("chainId", network.chainId)
                 put("walletAddress", walletAddress)
                 put("message", message)
                 put("signature", signature)
