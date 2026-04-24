@@ -74,16 +74,16 @@ val client = OMSClient(
 
 ```kotlin
 if (client.wallet.walletAddress == null) {
-    client.wallet.startEmailAuth("user@example.com")
+    client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    client.wallet.completeEmailAuth("123456")
+    client.completeEmailAuth("123456")
 }
 ```
 
 For OIDC ID-token flows such as Google Sign-In with Credential Manager:
 
 ```kotlin
-val wallet = client.wallet.signInWithOidcIdToken(
+val wallet = client.signInWithOidcIdToken(
     idToken = googleIdToken,
     issuer = "https://accounts.google.com",
     audience = "YOUR_WEB_CLIENT_ID",
@@ -95,7 +95,7 @@ Useful state checks:
 ```kotlin
 val walletAddress = client.wallet.walletAddress
 val signerAddress = client.wallet.signerAddress
-val hasPendingSignIn = client.wallet.hasPendingSignIn
+val hasPendingSignIn = client.hasPendingSignIn
 ```
 
 `hasPendingSignIn` only reflects in-memory state in the current process. A fresh
@@ -147,7 +147,7 @@ val txResult = client.wallet.sendTransaction(
 If your app may need to choose between multiple wallets, use the selector overload:
 
 ```kotlin
-val wallet = client.wallet.completeEmailAuth("123456") { wallets ->
+val wallet = client.completeEmailAuth("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets)
 }
 ```

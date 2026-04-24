@@ -1,6 +1,9 @@
 package com.omsclient.kotlin_sdk
 
 import android.content.Context
+import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
+import com.omsclient.kotlin_sdk.generated.waas.Wallet
+import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
@@ -46,6 +49,9 @@ class OMSClient internal constructor(
         wallet.restorePersistedSession()
     }
 
+    val hasPendingSignIn: Boolean
+        get() = wallet.hasPendingSignIn
+
     constructor(
         context: Context,
         projectAccessKey: String,
@@ -61,6 +67,53 @@ class OMSClient internal constructor(
             alias = scopedSessionKeyAlias(environment),
             fileName = scopedSessionFileName(environment),
         ),
+    )
+
+    suspend fun startEmailAuth(email: String): CommitVerifierResponse =
+        wallet.startEmailAuth(email)
+
+    suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet = wallet.signInWithOidcIdToken(
+        idToken = idToken,
+        issuer = issuer,
+        audience = audience,
+        walletType = walletType,
+    )
+
+    suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        walletType: WalletType = environment.defaultWalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet = wallet.signInWithOidcIdToken(
+        idToken = idToken,
+        issuer = issuer,
+        audience = audience,
+        walletType = walletType,
+        selectWallet = selectWallet,
+    )
+
+    suspend fun completeEmailAuth(
+        code: String,
+        walletType: WalletType = environment.defaultWalletType,
+    ): Wallet = wallet.completeEmailAuth(
+        code = code,
+        walletType = walletType,
+    )
+
+    suspend fun completeEmailAuth(
+        code: String,
+        walletType: WalletType = environment.defaultWalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet = wallet.completeEmailAuth(
+        code = code,
+        walletType = walletType,
+        selectWallet = selectWallet,
     )
 
     fun signOut() {

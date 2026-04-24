@@ -19,12 +19,10 @@ val client.utils: OMSClientUtils
 val client.indexer: IndexerClient
 ```
 
-## Wallet
+## Auth and Session
 
 ```kotlin
-val client.wallet.hasPendingSignIn: Boolean
-val client.wallet.walletAddress: String?
-val client.wallet.signerAddress: String?
+val client.hasPendingSignIn: Boolean
 ```
 
 `hasPendingSignIn` reflects an in-memory auth flow that has not resolved to a
@@ -37,13 +35,13 @@ fun client.signOut()
 ```
 
 ```kotlin
-suspend fun client.wallet.startEmailAuth(
+suspend fun client.startEmailAuth(
     email: String,
 ): CommitVerifierResponse
 ```
 
 ```kotlin
-suspend fun client.wallet.signInWithOidcIdToken(
+suspend fun client.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
@@ -52,7 +50,7 @@ suspend fun client.wallet.signInWithOidcIdToken(
 ```
 
 ```kotlin
-suspend fun client.wallet.signInWithOidcIdToken(
+suspend fun client.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
@@ -62,18 +60,25 @@ suspend fun client.wallet.signInWithOidcIdToken(
 ```
 
 ```kotlin
-suspend fun client.wallet.completeEmailAuth(
+suspend fun client.completeEmailAuth(
     code: String,
     walletType: WalletType = WalletType.Ethereum,
 ): Wallet
 ```
 
 ```kotlin
-suspend fun client.wallet.completeEmailAuth(
+suspend fun client.completeEmailAuth(
     code: String,
     walletType: WalletType = WalletType.Ethereum,
     selectWallet: suspend (List<Wallet>) -> Wallet,
 ): Wallet
+```
+
+## Wallet
+
+```kotlin
+val client.wallet.walletAddress: String?
+val client.wallet.signerAddress: String?
 ```
 
 ```kotlin
@@ -239,16 +244,16 @@ val client = OMSClient(
 )
 
 if (client.wallet.walletAddress == null) {
-    client.wallet.startEmailAuth("user@example.com")
+    client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    val wallet = client.wallet.completeEmailAuth("123456")
+    val wallet = client.completeEmailAuth("123456")
 }
 ```
 
 For OIDC ID-token flows:
 
 ```kotlin
-val wallet = client.wallet.signInWithOidcIdToken(
+val wallet = client.signInWithOidcIdToken(
     idToken = googleIdToken,
     issuer = "https://accounts.google.com",
     audience = "YOUR_WEB_CLIENT_ID",
@@ -258,7 +263,7 @@ val wallet = client.wallet.signInWithOidcIdToken(
 If your app needs to choose between multiple wallets:
 
 ```kotlin
-val wallet = client.wallet.completeEmailAuth("123456") { wallets ->
+val wallet = client.completeEmailAuth("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets) // wallets: List<Wallet>
 }
 ```

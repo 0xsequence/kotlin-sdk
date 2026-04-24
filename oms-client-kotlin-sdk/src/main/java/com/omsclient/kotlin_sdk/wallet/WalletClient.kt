@@ -44,7 +44,7 @@ class WalletClient internal constructor(
     private val privateKeyStore: OMSClientSecureSessionStore =
         sessionStore ?: InMemoryPrivateKeyStore()
 
-    val hasPendingSignIn: Boolean
+    internal val hasPendingSignIn: Boolean
         get() {
             val snapshot = session.snapshot() ?: return false
             return snapshot.walletAddress.isNullOrBlank()
@@ -89,7 +89,7 @@ class WalletClient internal constructor(
     private fun requireWalletAddress(): String =
         requireNotNull(walletAddress) { "No wallet selected" }
 
-    suspend fun startEmailAuth(email: String): CommitVerifierResponse {
+    internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
         val privateKey = privateKeyFactory()
         return try {
             val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
@@ -115,7 +115,7 @@ class WalletClient internal constructor(
         }
     }
 
-    suspend fun signInWithOidcIdToken(
+    internal suspend fun signInWithOidcIdToken(
         idToken: String,
         issuer: String,
         audience: String,
@@ -133,7 +133,7 @@ class WalletClient internal constructor(
         },
     )
 
-    suspend fun signInWithOidcIdToken(
+    internal suspend fun signInWithOidcIdToken(
         idToken: String,
         issuer: String,
         audience: String,
@@ -203,7 +203,7 @@ class WalletClient internal constructor(
         }
     }
 
-    suspend fun completeEmailAuth(
+    internal suspend fun completeEmailAuth(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
     ): Wallet = completeEmailAuth(
@@ -223,7 +223,7 @@ class WalletClient internal constructor(
      * If multiple wallets are available for the requested type, [selectWallet]
      * is called so the app can choose the wallet to use.
      */
-    suspend fun completeEmailAuth(
+    internal suspend fun completeEmailAuth(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
         selectWallet: suspend (List<Wallet>) -> Wallet,

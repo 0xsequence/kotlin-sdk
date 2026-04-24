@@ -122,7 +122,7 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 val wallet = try {
                     val idToken = requestGoogleIdToken()
-                    sdk.wallet.signInWithOidcIdToken(
+                    sdk.signInWithOidcIdToken(
                         idToken = idToken,
                         issuer = DemoConfig.googleIssuer,
                         audience = DemoConfig.demoGoogleWebClientId,
@@ -144,7 +144,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { authStatusView.text = "Email sign-in failed: ${it.message ?: "Unknown error"}" },
             ) {
                 val email = requireText(emailInput, "Email")
-                val response = sdk.wallet.startEmailAuth(email)
+                val response = sdk.startEmailAuth(email)
                 authStatusView.text = buildString {
                     append("Code requested for ")
                     append(response.loginHint ?: email)
@@ -168,7 +168,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 onStart = { authStatusView.text = "Confirming code and resolving wallet..." },
                 onFailure = { authStatusView.text = "Code confirmation failed: ${it.message ?: "Unknown error"}" },
             ) {
-                val wallet = sdk.wallet.completeEmailAuth(
+                val wallet = sdk.completeEmailAuth(
                     code = requireText(codeInput, "Verification code"),
                     selectWallet = { wallets -> wallets.first() },
                 )
@@ -403,7 +403,7 @@ class AuthDemoActivity : AppCompatActivity() {
         transactionStatusView.text = "Transaction status: ready to send."
         openExplorerButton.visibility = View.GONE
 
-        if (sdk.wallet.hasPendingSignIn) {
+        if (sdk.hasPendingSignIn) {
             authStatusView.text = "Pending sign-in verification"
             walletAddressView.text = "Wallet address: pending"
             authCard.visibility = View.VISIBLE

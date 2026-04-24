@@ -107,7 +107,7 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.signInButton).setOnClickListener {
             launchAction("Start email sign-in") { sdk ->
-                val response = sdk.wallet.startEmailAuth(requireText(emailInput, "Email"))
+                val response = sdk.startEmailAuth(requireText(emailInput, "Email"))
                 appendLog(
                     "Verifier committed: verifier=${response.verifier} challenge=${response.challenge}",
                 )
@@ -117,7 +117,7 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.confirmCodeButton).setOnClickListener {
             launchAction("Confirm email code and resolve wallet") { sdk ->
-                val wallet = sdk.wallet.completeEmailAuth(
+                val wallet = sdk.completeEmailAuth(
                     code = requireText(codeInput, "Verification code"),
                     selectWallet = { wallets -> wallets.first() },
                 )
