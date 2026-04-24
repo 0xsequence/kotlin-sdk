@@ -1,0 +1,154 @@
+package com.omsclient.kotlin_sdk
+
+import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
+import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
+import com.omsclient.kotlin_sdk.session.OMSClientSession
+import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class OMSClientTest {
+    @Test
+    fun constructorRestoresPersistedSessionAutomatically() {
+        val snapshot = OMSClientSessionSnapshot(
+            walletId = "wallet-main",
+            walletAddress = "0xwallet",
+            signerAddress = "0xsigner",
+        )
+        val sdk = OMSClient(
+            projectAccessKey = "test-access-key",
+            walletSession = OMSClientSession(),
+            sessionStore = StubSecureSessionStore(snapshot),
+        )
+
+        assertEquals("0xwallet", sdk.wallet.walletAddress)
+        assertEquals("0xsigner", sdk.wallet.signerAddress)
+    }
+
+    @Test
+    fun signOutClearsWalletSessionAndStore() {
+        val store = MutableSecureSessionStore(
+            OMSClientSessionSnapshot(
+                walletId = "wallet-main",
+                walletAddress = "0xwallet",
+                signerAddress = "0xsigner",
+            ),
+        )
+        val sdk = OMSClient(
+            projectAccessKey = "test-access-key",
+            walletSession = OMSClientSession(),
+            sessionStore = store,
+        )
+
+        sdk.signOut()
+
+        assertNull(sdk.wallet.walletAddress)
+        assertNull(sdk.wallet.signerAddress)
+        assertNull(store.snapshot)
+        assertEquals(1, store.clearCalls)
+    }
+
+    @Test
+    fun scopedSessionStorageDiffersAcrossConfigs() {
+        val defaultEnvironment = OMSClientEnvironment()
+        val demoEnvironment = OMSClientEnvironment.demoDefaults()
+        val differentWalletEnvironment = OMSClientEnvironment(
+            walletApiUrl = "https://wallet-2.example.com/rpc/Wallet",
+            apiRpcUrl = defaultEnvironment.apiRpcUrl,
+            indexerUrlTemplate = defaultEnvironment.indexerUrlTemplate,
+        )
+
+        assertNotEquals(
+            OMSClient.scopedSessionKeyAlias(defaultEnvironment),
+            OMSClient.scopedSessionKeyAlias(differentWalletEnvironment),
+        )
+        assertNotEquals(
+            OMSClient.scopedSessionFileName(defaultEnvironment),
+            OMSClient.scopedSessionFileName(differentWalletEnvironment),
+        )
+        assertEquals(
+            OMSClient.scopedSessionKeyAlias(defaultEnvironment),
+            OMSClient.scopedSessionKeyAlias(demoEnvironment),
+        )
+        assertEquals(
+            OMSClient.scopedSessionFileName(defaultEnvironment),
+            OMSClient.scopedSessionFileName(demoEnvironment),
+        )
+    }
+
+    @Test
+    fun scopedSessionStorageTreatsEquivalentWalletOriginsAsSameScope() {
+        val withoutTrailingSlash = OMSClientEnvironment(
+            walletApiUrl = "https://wallet.example.com/rpc/Wallet",
+        )
+        val withTrailingSlash = OMSClientEnvironment(
+            walletApiUrl = "https://wallet.example.com/rpc/Wallet/",
+        )
+        val withDifferentPath = OMSClientEnvironment(
+            walletApiUrl = "https://wallet.example.com/custom/wallet",
+        )
+        val withQuery = OMSClientEnvironment(
+            walletApiUrl = "https://wallet.example.com/rpc/Wallet?foo=bar",
+        )
+
+        assertEquals(
+            OMSClient.scopedSessionKeyAlias(withoutTrailingSlash),
+            OMSClient.scopedSessionKeyAlias(withTrailingSlash),
+        )
+        assertEquals(
+            OMSClient.scopedSessionFileName(withoutTrailingSlash),
+            OMSClient.scopedSessionFileName(withTrailingSlash),
+        )
+        assertEquals(
+            OMSClient.scopedSessionKeyAlias(withoutTrailingSlash),
+            OMSClient.scopedSessionKeyAlias(withDifferentPath),
+        )
+        assertEquals(
+            OMSClient.scopedSessionFileName(withoutTrailingSlash),
+            OMSClient.scopedSessionFileName(withDifferentPath),
+        )
+        assertEquals(
+            OMSClient.scopedSessionKeyAlias(withoutTrailingSlash),
+            OMSClient.scopedSessionKeyAlias(withQuery),
+        )
+        assertEquals(
+            OMSClient.scopedSessionFileName(withoutTrailingSlash),
+            OMSClient.scopedSessionFileName(withQuery),
+        )
+    }
+
+    private class StubSecureSessionStore(
+        private val snapshot: OMSClientSessionSnapshot?,
+    ) : OMSClientSecureSessionStore {
+        override fun load(): OMSClientSessionSnapshot? = snapshot
+
+        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) = Unit
+
+        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
+            error("Not needed for this test")
+
+        override fun clear() = Unit
+    }
+
+    private class MutableSecureSessionStore(
+        var snapshot: OMSClientSessionSnapshot?,
+    ) : OMSClientSecureSessionStore {
+        var clearCalls = 0
+
+        override fun load(): OMSClientSessionSnapshot? = snapshot
+
+        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) {
+            this.snapshot = snapshot
+        }
+
+        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
+            error("Not needed for this test")
+
+        override fun clear() {
+            clearCalls += 1
+            snapshot = null
+        }
+    }
+}
