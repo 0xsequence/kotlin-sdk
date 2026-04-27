@@ -4,7 +4,7 @@ import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.SendTransactionRequest
+import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.models.TransactionMode
@@ -25,7 +25,7 @@ class WalletRequestSignerVectorTest {
         val payload = WaasWalletApi.SignMessage.encodeRequest(
             SignMessageRequest(
                 walletId = "0x1234567890123456789012345678901234567890",
-                network = "amoy",
+                network = "80002",
                 message = "hello",
             ),
         )
@@ -35,7 +35,7 @@ class WalletRequestSignerVectorTest {
         val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
 
         assertEquals(
-            "{\"network\":\"amoy\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"message\":\"hello\"}",
+            "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"message\":\"hello\"}",
             payload,
         )
         assertTrue(preimage.startsWith("POST /rpc/Wallet/SignMessage\nnonce: 1710000000\n\n"))
@@ -56,13 +56,13 @@ class WalletRequestSignerVectorTest {
     }
 
     @Test
-    fun sendTransactionVectorMatchesCSdk() {
-        val endpoint = WaasWalletApi.SendTransaction.path
+    fun prepareEthereumTransactionVectorMatchesCSdk() {
+        val endpoint = WaasWalletApi.PrepareEthereumTransaction.path
         val nonce = "1710000001"
-        val payload = WaasWalletApi.SendTransaction.encodeRequest(
-            SendTransactionRequest(
+        val payload = WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
+            PrepareEthereumTransactionRequest(
                 walletId = "0x1234567890123456789012345678901234567890",
-                network = "amoy",
+                network = "80002",
                 to = "0xE5E8B483FfC05967FcFed58cc98D053265af6D99",
                 value = "1000",
                 mode = TransactionMode.Relayer,
@@ -74,10 +74,10 @@ class WalletRequestSignerVectorTest {
         val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
 
         assertEquals(
-            "{\"network\":\"amoy\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"to\":\"0xE5E8B483FfC05967FcFed58cc98D053265af6D99\",\"value\":\"1000\",\"mode\":\"relayer\"}",
+            "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"to\":\"0xE5E8B483FfC05967FcFed58cc98D053265af6D99\",\"value\":\"1000\",\"mode\":\"relayer\"}",
             payload,
         )
-        assertTrue(preimage.startsWith("POST /rpc/Wallet/SendTransaction\nnonce: 1710000001\n\n"))
+        assertTrue(preimage.startsWith("POST /rpc/Wallet/PrepareEthereumTransaction\nnonce: 1710000001\n\n"))
         assertTrue(digest.startsWith("0x"))
         assertTrue(signature.startsWith("0x"))
         assertTrue(header.contains("nonce=1710000001"))

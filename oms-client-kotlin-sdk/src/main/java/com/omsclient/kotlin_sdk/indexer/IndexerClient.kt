@@ -78,6 +78,35 @@ class IndexerClient internal constructor(
         )
     }
 
+    /**
+     * Gets the native token balance for [walletAddress] on [network].
+     */
+    suspend fun getNativeTokenBalance(
+        network: Network,
+        walletAddress: String,
+    ): TokenBalance? {
+        val response = transport.postJson(
+            baseUrl = environment.indexerUrlFor(network),
+            path = "/GetNativeTokenBalance",
+            body = buildJsonObject {
+                put("accountAddress", walletAddress)
+            }.toString(),
+            headers = defaultHeaders(),
+        )
+
+        val balanceObject = parseJsonObject(response.body).objectOrNull("balance") ?: return null
+        return TokenBalance(
+            contractType = "NATIVE",
+            contractAddress = null,
+            accountAddress = balanceObject.string("accountAddress"),
+            tokenId = null,
+            balance = balanceObject.string("balance") ?: balanceObject.string("balanceWei"),
+            blockHash = null,
+            blockNumber = null,
+            chainId = balanceObject.long("chainId") ?: network.chainId.toLongOrNull(),
+        )
+    }
+
     private fun defaultHeaders(): Map<String, String> = mapOf(
         OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
         "Accept" to "application/json",
