@@ -17,6 +17,16 @@
         <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Kotlinsdk.Field</item>
     </style>
 
+    <style name="Widget.Kotlinsdk.Dropdown" parent="Widget.MaterialComponents.AutoCompleteTextView.OutlinedBox.Dense">
+        <item name="android:layout_height">56dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingStart">16dp</item>
+        <item name="android:paddingEnd">48dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:textColor">@color/slate_900</item>
+        <item name="android:textSize">17sp</item>
+    </style>
+
     <style name="Widget.Kotlinsdk.Button" parent="Widget.MaterialComponents.Button">
         <item name="android:minHeight">52dp</item>
         <item name="android:textAllCaps">false</item>
