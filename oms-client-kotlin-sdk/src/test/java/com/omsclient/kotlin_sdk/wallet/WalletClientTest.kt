@@ -1314,6 +1314,7 @@ class WalletClientTest {
                 privateKeyHex = FIXED_PRIVATE_KEY_HEX,
             ),
             nonceGenerator = { 1710000107L },
+            fastTransactionStatusPollIntervalMillis = 1L,
             transactionStatusPollIntervalMillis = 1L,
             transactionStatusPollTimeoutMillis = 1_000L,
         )
@@ -1399,6 +1400,81 @@ class WalletClientTest {
             ),
             requireNotNull(executedStatusRequest.body).utf8(),
         )
+    }
+
+    @Test
+    fun sendTransactionUsesFastStatusPollsBeforeDefaultInterval() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "txnId": "txn-1",
+                      "status": "quoted",
+                      "feeOptions": [],
+                      "sponsored": true,
+                      "expiresAt": "2026-04-27T00:00:00Z"
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"status":"pending"}""")
+                .build(),
+        )
+        repeat(6) {
+            server.enqueue(
+                MockResponse.Builder()
+                    .code(200)
+                    .body("""{"status":"pending"}""")
+                    .build(),
+            )
+        }
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"status":"executed","txnHash":"0xdeadbeef"}""")
+                .build(),
+        )
+
+        val delays = mutableListOf<Long>()
+        val client = WalletClient(
+            projectAccessKey = "test-access-key",
+            environment = OMSClientEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = OMSClientHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = OMSClientSessionSnapshot(
+                    walletId = "wallet-main",
+                    walletAddress = "0xwallet",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000108L },
+            transactionStatusDelay = { delayMillis -> delays += delayMillis },
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val result = client.sendTransaction(
+            network = OMSClientNetworks.requireSupported("80002"),
+            request = SendTransactionRequest(
+                to = "0xabc",
+                value = "0",
+            ),
+        )
+
+        assertEquals("0xdeadbeef", result.txHash)
+        assertEquals(6, delays.size)
+        assertEquals(400L, delays[0])
+        assertEquals(400L, delays[3])
+        assertEquals(2_000L, delays[4])
+        assertEquals(2_000L, delays[5])
     }
 
     companion object {

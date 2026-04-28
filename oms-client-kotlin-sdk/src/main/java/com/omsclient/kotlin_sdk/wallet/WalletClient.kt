@@ -51,8 +51,11 @@ class WalletClient internal constructor(
     private val sessionStore: OMSClientSecureSessionStore? = null,
     private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
     private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
+    private val fastTransactionStatusPollIntervalMillis: Long = 400L,
+    private val fastTransactionStatusPollCount: Int = 5,
     private val transactionStatusPollIntervalMillis: Long = 2_000L,
     private val transactionStatusPollTimeoutMillis: Long = 60_000L,
+    private val transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
     private var transientPrivateKey: ByteArray? = null
 
@@ -536,9 +539,11 @@ class WalletClient internal constructor(
     ): TransactionStatusResponse {
         val deadline = System.currentTimeMillis() + transactionStatusPollTimeoutMillis
         var lastStatus = TransactionStatusResponse(status = fallbackStatus)
+        var completedStatusPolls = 0
 
         do {
             lastStatus = getTransactionStatus(GetTransactionStatusRequest(txnId = txnId))
+            completedStatusPolls += 1
             if (lastStatus.status == TransactionStatus.Executed || !lastStatus.txnHash.isNullOrBlank()) {
                 return lastStatus
             }
@@ -552,7 +557,12 @@ class WalletClient internal constructor(
             if (remainingMillis <= 0L) {
                 return lastStatus
             }
-            delay(minOf(transactionStatusPollIntervalMillis, remainingMillis))
+            val nextDelayMillis = if (completedStatusPolls < fastTransactionStatusPollCount) {
+                fastTransactionStatusPollIntervalMillis
+            } else {
+                transactionStatusPollIntervalMillis
+            }
+            transactionStatusDelay(minOf(nextDelayMillis, remainingMillis))
         } while (true)
     }
 
