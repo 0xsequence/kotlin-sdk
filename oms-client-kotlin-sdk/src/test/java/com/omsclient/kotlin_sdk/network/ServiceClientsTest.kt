@@ -137,6 +137,50 @@ class ServiceClientsTest {
     }
 
     @Test
+    fun getNativeTokenBalanceParsesIndexerResponse() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(
+                    """
+                    {
+                      "balance": {
+                        "accountAddress": "0xwallet",
+                        "chainId": 137,
+                        "name": "POL",
+                        "symbol": "POL",
+                        "balance": "123",
+                        "balanceUSD": "1"
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .build(),
+        )
+
+        val template = server.url("/polygon/rpc/Indexer/").toString().replace("/polygon/", "/{value}/")
+        val environment = OMSClientEnvironment(
+            indexerUrlTemplate = template,
+        )
+        val client = IndexerClient("test-access-key", environment, OMSClientHttpClient())
+
+        val response = client.getNativeTokenBalance(
+            network = OMSClientNetworks.requireSupported("137"),
+            walletAddress = "0xwallet",
+        )
+        val request = requireNotNull(server.takeRequest())
+
+        assertEquals("/polygon/rpc/Indexer/GetNativeTokenBalance", request.target)
+        assertEquals(
+            "{\"accountAddress\":\"0xwallet\"}",
+            requireNotNull(request.body).utf8(),
+        )
+        assertEquals("NATIVE", response?.contractType)
+        assertEquals("123", response?.balance)
+        assertEquals(137L, response?.chainId)
+    }
+
+    @Test
     fun httpExceptionMessageIsSanitizedButRetainsResponseBodyField() = runBlocking {
         server.enqueue(
             MockResponse.Builder()

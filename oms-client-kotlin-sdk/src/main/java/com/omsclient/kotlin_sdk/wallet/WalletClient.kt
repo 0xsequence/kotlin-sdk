@@ -7,22 +7,35 @@ import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
+import com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest
+import com.omsclient.kotlin_sdk.generated.waas.GetTransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.SendTransactionRequest as WaasSendTransactionRequest
-import com.omsclient.kotlin_sdk.generated.waas.SendTransactionResponse
+import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageResponse
+import com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
+import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletClient
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.indexer.IndexerClient
+import com.omsclient.kotlin_sdk.models.FeeOption
+import com.omsclient.kotlin_sdk.models.FeeOptionSelection
+import com.omsclient.kotlin_sdk.models.FeeOptionSelector
+import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
+import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
+import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
+import kotlinx.coroutines.delay
+import java.math.BigDecimal
+import java.math.BigInteger
 
 internal data class WalletState(
     val hasPendingSignIn: Boolean,
@@ -38,11 +51,21 @@ class WalletClient internal constructor(
     private val sessionStore: OMSClientSecureSessionStore? = null,
     private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
     private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
+    private val fastTransactionStatusPollIntervalMillis: Long = 400L,
+    private val fastTransactionStatusPollCount: Int = 5,
+    private val transactionStatusPollIntervalMillis: Long = 2_000L,
+    private val transactionStatusPollTimeoutMillis: Long = 60_000L,
+    private val transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
     private var transientPrivateKey: ByteArray? = null
 
     private val privateKeyStore: OMSClientSecureSessionStore =
         sessionStore ?: InMemoryPrivateKeyStore()
+    private val indexerClient: IndexerClient = IndexerClient(
+        projectAccessKey = projectAccessKey,
+        environment = environment,
+        transport = transport,
+    )
 
     internal val hasPendingSignIn: Boolean
         get() {
@@ -329,7 +352,7 @@ class WalletClient internal constructor(
             waasClient(privateKey).signMessage(
                 SignMessageRequest(
                     walletId = requireWalletId(),
-                    network = network.waasName,
+                    network = network.chainId,
                     message = message,
                 ),
             )
@@ -344,36 +367,203 @@ class WalletClient internal constructor(
         network: Network,
         to: String,
         value: String,
-    ): SendTransactionResponse = sendTransaction(
+        selectFeeOption: FeeOptionSelector? = null,
+    ): ClientSendTransactionResponse = sendTransaction(
         network = network,
         request = ClientSendTransactionRequest(
             to = to,
             value = value,
         ),
+        selectFeeOption = selectFeeOption,
     )
 
     /**
      * Sends a transaction from the currently selected wallet on [network].
+     *
+     * If the prepared transaction returns fee options, [selectFeeOption] is
+     * called before execution. When no selector is provided, the first required
+     * fee option is used, or no fee option when the transaction is sponsored.
      */
     suspend fun sendTransaction(
         network: Network,
         request: ClientSendTransactionRequest,
-    ): SendTransactionResponse {
-        session.requireSnapshot()
+        selectFeeOption: FeeOptionSelector? = null,
+    ): ClientSendTransactionResponse {
+        val snapshot = session.requireSnapshot()
         return withPrivateKey { privateKey ->
-            waasClient(privateKey).sendTransaction(
-                WaasSendTransactionRequest(
+            val client = waasClient(privateKey)
+            val prepared = client.prepareEthereumTransaction(
+                PrepareEthereumTransactionRequest(
                     walletId = requireWalletId(),
-                    network = network.waasName,
+                    network = network.chainId,
                     to = request.to,
                     value = request.value,
                     data = request.data,
                     mode = request.mode,
-                    feeCeiling = request.feeCeiling,
-                    nonce = request.nonce,
                 ),
             )
+            val feeOption = prepared.feeOptions
+                .takeIf { it.isNotEmpty() }
+                ?.let { feeOptions ->
+                    if (selectFeeOption == null) {
+                        feeOptions.defaultSelection(sponsored = prepared.sponsored)
+                    } else {
+                        selectFeeOption(
+                            enrichFeeOptionsWithBalances(
+                                network = network,
+                                walletAddress = requireNotNull(snapshot.walletAddress) { "No wallet selected" },
+                                feeOptions = feeOptions,
+                            ),
+                        )
+                    }
+                }
+            val executed = client.execute(
+                ExecuteRequest(
+                    txnId = prepared.txnId,
+                    feeOption = feeOption,
+                ),
+            )
+            val status = client.waitForTransactionStatus(
+                txnId = prepared.txnId,
+                fallbackStatus = executed.status,
+            )
+            ClientSendTransactionResponse(
+                txnId = prepared.txnId,
+                status = status.status.takeIf { it != TransactionStatus.UNKNOWN_DEFAULT } ?: executed.status,
+                txHash = status.txnHash,
+            )
         }
+    }
+
+    private suspend fun enrichFeeOptionsWithBalances(
+        network: Network,
+        walletAddress: String,
+        feeOptions: List<FeeOption>,
+    ): List<FeeOptionWithBalance> {
+        val nativeBalance = if (feeOptions.any { it.token.isNativeToken() }) {
+            loadNativeTokenBalance(network = network, walletAddress = walletAddress)
+        } else {
+            null
+        }
+        val balancesByContract = feeOptions
+            .mapNotNull { it.token.contractAddress?.normalizeAddress() }
+            .distinct()
+            .associateWith { contractAddress ->
+                loadTokenBalanceOrZero(
+                    network = network,
+                    contractAddress = contractAddress,
+                    walletAddress = walletAddress,
+                )
+            }
+
+        return feeOptions.map { feeOption ->
+            val balance = if (feeOption.token.isNativeToken()) {
+                nativeBalance
+            } else {
+                feeOption.token.contractAddress
+                    ?.normalizeAddress()
+                    ?.let { balancesByContract[it] }
+            }
+            val decimals = feeOption.token.balanceDecimals()
+            FeeOptionWithBalance(
+                feeOption = feeOption,
+                balance = balance,
+                available = balance?.balance?.formatTokenAmount(decimals),
+                availableRaw = balance?.balance,
+                decimals = decimals,
+            )
+        }
+    }
+
+    private suspend fun loadNativeTokenBalance(
+        network: Network,
+        walletAddress: String,
+    ): TokenBalance? = runCatching {
+        indexerClient.getNativeTokenBalance(
+            network = network,
+            walletAddress = walletAddress,
+        )
+    }.getOrNull()
+
+    private suspend fun loadTokenBalanceOrZero(
+        network: Network,
+        contractAddress: String,
+        walletAddress: String,
+    ): TokenBalance? = runCatching {
+        indexerClient.getTokenBalances(
+            network = network,
+            contractAddress = contractAddress,
+            walletAddress = walletAddress,
+            includeMetadata = false,
+        ).balances.firstOrNull { balance ->
+            balance.contractAddress.normalizeAddress() == contractAddress
+        } ?: TokenBalance(
+            contractType = "ERC20",
+            contractAddress = contractAddress,
+            accountAddress = walletAddress,
+            tokenId = null,
+            balance = "0",
+            blockHash = null,
+            blockNumber = null,
+            chainId = network.chainId.toLongOrNull(),
+        )
+    }.getOrNull()
+
+    private fun String?.normalizeAddress(): String? =
+        this?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.lowercase()
+
+    private fun com.omsclient.kotlin_sdk.generated.waas.FeeToken.isNativeToken(): Boolean =
+        type.equals("native", ignoreCase = true) ||
+            (contractAddress.isNullOrBlank() && tokenId.isNullOrBlank())
+
+    private fun com.omsclient.kotlin_sdk.generated.waas.FeeToken.balanceDecimals(): UInt? =
+        decimals ?: if (isNativeToken()) 18u else null
+
+    private fun String.formatTokenAmount(decimals: UInt?): String =
+        runCatching {
+            val raw = BigInteger(this)
+            val scale = decimals?.toInt() ?: return this
+            BigDecimal(raw, scale)
+                .stripTrailingZeros()
+                .toPlainString()
+        }.getOrDefault(this)
+
+    private fun List<FeeOption>.defaultSelection(sponsored: Boolean): FeeOptionSelection? =
+        if (sponsored) null else firstOrNull()?.let { FeeOptionSelection(token = it.token.symbol) }
+
+    private suspend fun WaasWalletClient.waitForTransactionStatus(
+        txnId: String,
+        fallbackStatus: TransactionStatus,
+    ): TransactionStatusResponse {
+        val deadline = System.currentTimeMillis() + transactionStatusPollTimeoutMillis
+        var lastStatus = TransactionStatusResponse(status = fallbackStatus)
+        var completedStatusPolls = 0
+
+        do {
+            lastStatus = getTransactionStatus(GetTransactionStatusRequest(txnId = txnId))
+            completedStatusPolls += 1
+            if (lastStatus.status == TransactionStatus.Executed || !lastStatus.txnHash.isNullOrBlank()) {
+                return lastStatus
+            }
+            if (lastStatus.status == TransactionStatus.UNKNOWN_DEFAULT) {
+                return lastStatus
+            }
+            if (transactionStatusPollIntervalMillis <= 0L) {
+                return lastStatus
+            }
+            val remainingMillis = deadline - System.currentTimeMillis()
+            if (remainingMillis <= 0L) {
+                return lastStatus
+            }
+            val nextDelayMillis = if (completedStatusPolls < fastTransactionStatusPollCount) {
+                fastTransactionStatusPollIntervalMillis
+            } else {
+                transactionStatusPollIntervalMillis
+            }
+            transactionStatusDelay(minOf(nextDelayMillis, remainingMillis))
+        } while (true)
     }
 
     private suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {

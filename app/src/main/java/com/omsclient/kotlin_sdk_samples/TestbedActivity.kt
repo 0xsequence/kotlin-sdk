@@ -160,7 +160,7 @@ class TestbedActivity : AppCompatActivity() {
                     to = requireText(transactionToInput, "Transaction destination"),
                     value = requireText(transactionValueInput, "Transaction value"),
                 )
-                appendLog("Transaction hash: ${result.txHash}")
+                appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txHash ?: "pending"}")
             }
         }
     }

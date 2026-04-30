@@ -4,11 +4,10 @@ import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.SendTransactionRequest as WaasSendTransactionRequest
+import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
-import com.omsclient.kotlin_sdk.models.SendTransactionRequest
 import com.omsclient.kotlin_sdk.models.TransactionMode
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -122,19 +121,17 @@ class WalletPayloadBuilderTest {
     }
 
     @Test
-    fun sendTransactionPayloadMatchesWaasRequestShape() {
+    fun prepareEthereumTransactionPayloadMatchesWaasRequestShape() {
         assertEquals(
-            "{\"network\":\"amoy\",\"walletId\":\"wallet-0\",\"to\":\"0xabc\",\"value\":\"0\",\"data\":\"0x1234\",\"mode\":\"native\",\"feeCeiling\":\"1000000\",\"nonce\":\"42\"}",
-            WaasWalletApi.SendTransaction.encodeRequest(
-                WaasSendTransactionRequest(
-                    network = "amoy",
+            "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"to\":\"0xabc\",\"value\":\"0\",\"data\":\"0x1234\",\"mode\":\"native\"}",
+            WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
+                PrepareEthereumTransactionRequest(
+                    network = "80002",
                     walletId = "wallet-0",
                     to = "0xabc",
                     value = "0",
                     data = "0x1234",
                     mode = TransactionMode.Native,
-                    feeCeiling = "1000000",
-                    nonce = "42",
                 ),
             ),
         )
@@ -148,6 +145,8 @@ class WalletPayloadBuilderTest {
         assertEquals("/UseWallet", WaasWalletApi.UseWallet.path)
         assertEquals("/CreateWallet", WaasWalletApi.CreateWallet.path)
         assertEquals("/SignMessage", WaasWalletApi.SignMessage.path)
-        assertEquals("/SendTransaction", WaasWalletApi.SendTransaction.path)
+        assertEquals("/PrepareEthereumTransaction", WaasWalletApi.PrepareEthereumTransaction.path)
+        assertEquals("/Execute", WaasWalletApi.Execute.path)
+        assertEquals("/GetTransactionStatus", WaasWalletApi.GetTransactionStatus.path)
     }
 }

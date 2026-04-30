@@ -101,6 +101,7 @@ suspend fun client.wallet.sendTransaction(
     network: Network,
     to: String,
     value: String,
+    selectFeeOption: FeeOptionSelector? = null,
 ): SendTransactionResponse
 ```
 
@@ -108,8 +109,18 @@ suspend fun client.wallet.sendTransaction(
 suspend fun client.wallet.sendTransaction(
     network: Network,
     request: SendTransactionRequest,
+    selectFeeOption: FeeOptionSelector? = null,
 ): SendTransactionResponse
 ```
+
+When a prepared transaction includes fee options, `selectFeeOption` receives the
+available options enriched with the selected wallet's matching token balance
+when available. When no selector is provided, `sendTransaction` uses the first
+required fee option, or no fee option when the transaction is sponsored.
+After execution, `sendTransaction` polls the WaaS status endpoint briefly for an
+executed status or transaction hash. If the transaction remains pending when
+polling times out, the response contains the `txnId`, `status =
+TransactionStatus.Pending`, and `txHash = null`.
 
 ## Networks
 
@@ -169,6 +180,20 @@ fun OMSClientEnvironment.Companion.demoDefaults(): OMSClientEnvironment
 
 ```kotlin
 typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
+typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
+typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
+typealias FeeOptionSelection = com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection
+typealias FeeOptionSelector = suspend (List<FeeOptionWithBalance>) -> FeeOptionSelection?
+```
+
+```kotlin
+data class FeeOptionWithBalance(
+    val feeOption: FeeOption,
+    val balance: TokenBalance?,
+    val available: String?,
+    val availableRaw: String?,
+    val decimals: UInt?,
+)
 ```
 
 ```kotlin
@@ -177,8 +202,14 @@ data class SendTransactionRequest(
     val value: String,
     val data: String? = null,
     val mode: TransactionMode = TransactionMode.Relayer,
-    val feeCeiling: String? = null,
-    val nonce: String? = null,
+)
+```
+
+```kotlin
+data class SendTransactionResponse(
+    val txnId: String,
+    val status: TransactionStatus,
+    val txHash: String?,
 )
 ```
 
@@ -218,7 +249,7 @@ data class TokenBalancesResult(
 )
 ```
 
-Wallet auth, wallet selection, signing, and transaction result models now come from the generated waas package:
+Wallet auth, wallet selection, and signing models now come from the generated waas package:
 
 ```kotlin
 com.omsclient.kotlin_sdk.generated.waas
@@ -246,12 +277,6 @@ data class Wallet(
 ```kotlin
 data class SignMessageResponse(
     val signature: String,
-)
-```
-
-```kotlin
-data class SendTransactionResponse(
-    val txHash: String,
 )
 ```
 
@@ -300,8 +325,23 @@ val txResult = client.wallet.sendTransaction(
         value = "0",
         data = "0x1234",
         mode = TransactionMode.Native,
-        feeCeiling = "1000000",
-        nonce = "42",
     ),
 )
+```
+
+To choose a fee option before execution:
+
+```kotlin
+val txResult = client.wallet.sendTransaction(
+    network = network,
+    request = SendTransactionRequest(
+        to = "0xContractAddress",
+        value = "0",
+        data = "0x1234",
+        mode = TransactionMode.Native,
+    ),
+) { feeOptions ->
+    val selected = showFeePickerAndWaitForChoice(feeOptions)
+    FeeOptionSelection(token = selected.feeOption.token.symbol)
+}
 ```

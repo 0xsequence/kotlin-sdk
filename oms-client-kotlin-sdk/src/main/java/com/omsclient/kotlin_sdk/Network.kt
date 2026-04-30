@@ -9,18 +9,18 @@ package com.omsclient.kotlin_sdk
 enum class Network(
     val chainId: String,
     val displayName: String,
-    internal val waasName: String,
+    internal val indexerName: String,
 ) {
     POLYGON(
         chainId = "137",
         displayName = "Polygon",
-        waasName = "polygon",
+        indexerName = "polygon",
     ),
 
     POLYGON_AMOY(
         chainId = "80002",
         displayName = "Polygon Amoy",
-        waasName = "amoy",
+        indexerName = "amoy",
     );
 
     override fun toString(): String = displayName

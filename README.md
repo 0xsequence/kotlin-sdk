@@ -129,6 +129,11 @@ val txResult = client.wallet.sendTransaction(
 )
 ```
 
+`sendTransaction` prepares and executes the transaction, then polls the WaaS
+status endpoint briefly for an executed status or transaction hash. If the
+transaction is still pending when polling times out, the response keeps the
+`txnId` with `status = TransactionStatus.Pending` and `txHash = null`.
+
 For contract calls or transaction parameters beyond `to` and `value`, use the request overload:
 
 ```kotlin
@@ -141,11 +146,31 @@ val txResult = client.wallet.sendTransaction(
         value = "0",
         data = "0x1234",
         mode = TransactionMode.Native,
-        feeCeiling = "1000000",
-        nonce = "42",
     ),
 )
 ```
+
+If the prepared transaction returns fee options, pass a selector callback:
+
+```kotlin
+val txResult = client.wallet.sendTransaction(
+    network = network,
+    request = SendTransactionRequest(
+        to = "0xContractAddress",
+        value = "0",
+        data = "0x1234",
+        mode = TransactionMode.Native,
+    ),
+) { feeOptions ->
+    val selected = showFeePickerAndWaitForChoice(feeOptions)
+    FeeOptionSelection(token = selected.feeOption.token.symbol)
+}
+```
+
+The selector receives `FeeOptionWithBalance` values. `balance` is the selected
+wallet's raw indexer balance for that fee token when available. `available` is
+formatted with the token decimals, while `availableRaw` keeps the raw integer
+value.
 
 If your app may need to choose between multiple wallets, use the selector overload:
 

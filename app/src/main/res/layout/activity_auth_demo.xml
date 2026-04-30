@@ -4,6 +4,7 @@
     android:id="@+id/authDemoRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:clipToPadding="false"
     android:fillViewport="true">
 
     <LinearLayout
@@ -219,8 +220,17 @@
                         android:layout_marginTop="10dp"
                         android:text="Wallet address: pending"
                         android:textColor="@color/forest_700"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textIsSelectable="true"
+                        android:textSize="13sp"
+                        android:typeface="monospace" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/copyWalletAddressButton"
+                        style="@style/Widget.Kotlinsdk.Button.Outline"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginTop="8dp"
+                        android:text="Copy address" />
 
                     <TextView
                         android:id="@+id/signerAddressView"
@@ -229,8 +239,24 @@
                         android:layout_marginTop="8dp"
                         android:text="Signer address: none"
                         android:textColor="@color/slate_700"
+                        android:textIsSelectable="true"
                         android:textSize="13sp"
                         android:typeface="monospace" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Kotlinsdk.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:hint="Network"
+                        app:endIconMode="dropdown_menu">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/networkInput"
+                            style="@style/Widget.Kotlinsdk.Dropdown"
+                            android:layout_width="match_parent"
+                            android:inputType="none" />
+                    </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

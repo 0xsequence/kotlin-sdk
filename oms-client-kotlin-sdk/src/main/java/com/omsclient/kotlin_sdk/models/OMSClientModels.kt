@@ -1,14 +1,30 @@
 package com.omsclient.kotlin_sdk.models
 
 typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
+typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
+typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
+typealias FeeOptionSelection = com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection
+typealias FeeOptionSelector = suspend (List<FeeOptionWithBalance>) -> FeeOptionSelection?
+
+data class FeeOptionWithBalance(
+    val feeOption: FeeOption,
+    val balance: TokenBalance?,
+    val available: String?,
+    val availableRaw: String?,
+    val decimals: UInt?,
+)
 
 data class SendTransactionRequest(
     val to: String,
     val value: String,
     val data: String? = null,
     val mode: TransactionMode = TransactionMode.Relayer,
-    val feeCeiling: String? = null,
-    val nonce: String? = null,
+)
+
+data class SendTransactionResponse(
+    val txnId: String,
+    val status: TransactionStatus,
+    val txHash: String?,
 )
 
 data class VerifySignatureResult(

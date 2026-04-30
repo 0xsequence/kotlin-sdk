@@ -1,11 +1,17 @@
 package com.omsclient.kotlin_sdk_samples
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
@@ -13,6 +19,7 @@ import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -21,12 +28,17 @@ import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
+import com.omsclient.kotlin_sdk.models.FeeOptionSelection
+import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.security.SecureRandom
 import java.util.Base64
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class AuthDemoActivity : AppCompatActivity() {
     private val uiScope = MainScope()
@@ -44,6 +56,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var authStatusView: TextView
     private lateinit var walletAddressView: TextView
     private lateinit var signerAddressView: TextView
+    private lateinit var networkInput: AutoCompleteTextView
     private lateinit var messageInput: TextInputEditText
     private lateinit var transactionToInput: TextInputEditText
     private lateinit var transactionValueInput: TextInputEditText
@@ -58,12 +71,14 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var walletActionsContainer: View
     private lateinit var logoutButton: MaterialButton
     private lateinit var openExplorerButton: MaterialButton
+    private lateinit var copyWalletAddressButton: MaterialButton
     private lateinit var cancelCodeStepButton: MaterialButton
     private lateinit var startGoogleSignInButton: MaterialButton
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
     private var lastTransactionHash: String? = null
+    private var selectedNetwork: Network = Network.POLYGON_AMOY
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -86,6 +101,7 @@ class AuthDemoActivity : AppCompatActivity() {
         authStatusView = findViewById(R.id.authStatusView)
         walletAddressView = findViewById(R.id.walletAddressView)
         signerAddressView = findViewById(R.id.signerAddressView)
+        networkInput = findViewById(R.id.networkInput)
         messageInput = findViewById(R.id.messageInput)
         transactionToInput = findViewById(R.id.transactionToInput)
         transactionValueInput = findViewById(R.id.transactionValueInput)
@@ -100,6 +116,7 @@ class AuthDemoActivity : AppCompatActivity() {
         walletActionsContainer = findViewById(R.id.walletActionsContainer)
         logoutButton = findViewById(R.id.resetSessionButton)
         openExplorerButton = findViewById(R.id.openExplorerButton)
+        copyWalletAddressButton = findViewById(R.id.copyWalletAddressButton)
         cancelCodeStepButton = findViewById(R.id.cancelCodeStepButton)
         startGoogleSignInButton = findViewById(R.id.startGoogleSignInButton)
     }
@@ -108,6 +125,7 @@ class AuthDemoActivity : AppCompatActivity() {
         messageInput.setText("test")
         transactionToInput.setText("0xE5E8B483FfC05967FcFed58cc98D053265af6D99")
         transactionValueInput.setText("0")
+        configureNetworkPicker()
         resetUiForNoSession()
     }
 
@@ -150,7 +168,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     append("Code requested for ")
                     append(response.loginHint ?: email)
                 }
-                signerAddressView.text = "Signer address: ${sdk.session.signerAddress ?: "none"}"
+                signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
                 showPendingCodeStep()
                 emailInput.text?.clear()
                 appendLog("Verifier committed: verifier=${response.verifier}")
@@ -201,15 +219,16 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { signatureStatusView.text = "Signature status: signing failed." },
             ) {
                 val message = requireText(messageInput, "Message")
+                val network = selectedNetwork
                 val result = sdk.wallet.signMessage(
-                    network = MESSAGE_NETWORK,
+                    network = network,
                     message = message,
                 )
                 lastSignedMessage = message
                 lastSignedSignature = result.signature
                 lastSignatureView.text = "Last signature: ${result.signature}"
                 signatureStatusView.text = "Signature status: signed. Ready to verify."
-                appendLog("Signed message on chain $MESSAGE_CHAIN_ID")
+                appendLog("Signed message on chain ${network.chainId}")
             }
         }
 
@@ -220,13 +239,13 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { signatureStatusView.text = "Signature status: verification failed." },
             ) {
                 val result = sdk.utils.verifySignature(
-                    network = MESSAGE_NETWORK,
+                    network = selectedNetwork,
                     walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
                     message = requireNotNull(lastSignedMessage) { "No signed message available" },
                     signature = requireNotNull(lastSignedSignature) { "No signature available" },
                 )
                 signatureStatusView.text = if (result.isValid) {
-                    "Signature status: valid on chain $MESSAGE_CHAIN_ID."
+                    "Signature status: valid on chain ${selectedNetwork.chainId}."
                 } else {
                     "Signature status: invalid. API status=${result.status}."
                 }
@@ -240,16 +259,18 @@ class AuthDemoActivity : AppCompatActivity() {
                 onStart = { transactionStatusView.text = "Transaction status: sending in progress..." },
                 onFailure = { transactionStatusView.text = "Transaction status: send failed." },
             ) {
+                val network = selectedNetwork
                 val result = sdk.wallet.sendTransaction(
-                    network = MESSAGE_NETWORK,
+                    network = network,
                     to = requireText(transactionToInput, "Transaction destination"),
                     value = requireText(transactionValueInput, "Transaction value"),
+                    selectFeeOption = ::selectFeeOption,
                 )
                 lastTransactionHash = result.txHash
-                lastTransactionHashView.text = "Last tx hash: ${result.txHash}"
-                transactionStatusView.text = "Transaction status: submitted on chain $MESSAGE_CHAIN_ID."
-                openExplorerButton.visibility = View.VISIBLE
-                appendLog("Transaction hash: ${result.txHash}")
+                lastTransactionHashView.text = "Last tx hash: ${result.txHash ?: "pending"}"
+                transactionStatusView.text = "Transaction status: ${result.status} on chain ${network.chainId}."
+                openExplorerButton.visibility = if (result.txHash == null) View.GONE else View.VISIBLE
+                appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txHash ?: "pending"}")
             }
         }
 
@@ -258,9 +279,26 @@ class AuthDemoActivity : AppCompatActivity() {
             startActivity(
                 Intent(
                     Intent.ACTION_VIEW,
-                    Uri.parse(explorerUrlFor(MESSAGE_CHAIN_ID, txHash)),
+                    Uri.parse(explorerUrlFor(selectedNetwork.chainId, txHash)),
                 ),
             )
+        }
+
+        copyWalletAddressButton.setOnClickListener {
+            copyWalletAddress()
+        }
+    }
+
+    private fun configureNetworkPicker() {
+        val networks = listOf(Network.POLYGON_AMOY, Network.POLYGON)
+            .filter { network -> sdk.supportedNetworks.any { it.chainId == network.chainId } }
+        val labels = networks.map(::networkLabel)
+        networkInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
+        networkInput.setText(networkLabel(selectedNetwork), false)
+        networkInput.setOnItemClickListener { _, _, position, _ ->
+            selectedNetwork = networks[position]
+            clearNetworkScopedResults()
+            appendLog("Selected network: ${networkLabel(selectedNetwork)}")
         }
     }
 
@@ -373,18 +411,92 @@ class AuthDemoActivity : AppCompatActivity() {
         return value
     }
 
+    private fun addressLabel(label: String, address: String?): String =
+        "$label:\n${address ?: "none"}"
+
+    private fun copyWalletAddress() {
+        val address = sdk.session.walletAddress
+        if (address.isNullOrBlank()) {
+            Toast.makeText(this, "No wallet address to copy", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Wallet address", address))
+        Toast.makeText(this, "Wallet address copied", Toast.LENGTH_SHORT).show()
+    }
+
+    private suspend fun selectFeeOption(feeOptions: List<FeeOptionWithBalance>): FeeOptionSelection? {
+        if (feeOptions.isEmpty()) return null
+        appendLog("Fee options: ${feeOptions.joinToString { feeOptionLabel(it) }}")
+        return suspendCancellableCoroutine { continuation ->
+            val labels = feeOptions.map(::feeOptionLabel).toTypedArray()
+            val firstAvailable = feeOptions.firstOrNull(::hasEnoughBalance)
+            var resumed = false
+            fun resumeOnce(selection: FeeOptionSelection?) {
+                if (!resumed) {
+                    resumed = true
+                    continuation.resume(selection)
+                }
+            }
+            fun cancelOnce() {
+                if (!resumed) {
+                    resumed = true
+                    continuation.resumeWithException(IllegalStateException("Fee selection cancelled"))
+                }
+            }
+            val builder = MaterialAlertDialogBuilder(this)
+                .setTitle("Select fee")
+                .setItems(labels) { _, index ->
+                    val token = feeOptions[index].feeOption.token.symbol
+                    appendLog("Selected fee token: $token")
+                    resumeOnce(FeeOptionSelection(token = token))
+                }
+                .setOnCancelListener {
+                    appendLog("Fee selection cancelled")
+                    cancelOnce()
+                }
+            firstAvailable?.let { option ->
+                builder.setPositiveButton("Select first available") { _, _ ->
+                    val token = option.feeOption.token.symbol
+                    appendLog("Selected first available fee token: $token")
+                    resumeOnce(FeeOptionSelection(token = token))
+                }
+            }
+            val dialog = builder.show()
+            continuation.invokeOnCancellation { dialog.dismiss() }
+        }
+    }
+
+    private fun hasEnoughBalance(option: FeeOptionWithBalance): Boolean {
+        val balance = option.availableRaw?.toBigIntegerOrNull() ?: return false
+        val fee = option.feeOption.value.toBigIntegerOrNull() ?: return false
+        return balance >= fee
+    }
+
+    private fun clearNetworkScopedResults() {
+        lastSignedMessage = null
+        lastSignedSignature = null
+        lastTransactionHash = null
+        lastSignatureView.text = "Last signature: none"
+        signatureStatusView.text = "Signature status: ready to sign."
+        lastTransactionHashView.text = "Last tx hash: none"
+        transactionStatusView.text = "Transaction status: ready to send."
+        openExplorerButton.visibility = View.GONE
+    }
+
     private fun renderSignedInWallet(
         wallet: Wallet,
         status: String,
     ) {
         authStatusView.text = status
-        walletAddressView.text = "Wallet address: ${wallet.address}"
-        signerAddressView.text = "Signer address: ${sdk.session.signerAddress ?: "none"}"
+        walletAddressView.text = addressLabel("Wallet address", wallet.address)
+        signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.GONE
         emailStepContainer.visibility = View.GONE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
+        copyWalletAddressButton.visibility = View.VISIBLE
         signatureStatusView.text = "Signature status: ready to sign."
         transactionStatusView.text = "Transaction status: ready to send."
         appendLog("Wallet ready: ${wallet.address}")
@@ -397,7 +509,7 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         logoutButton.visibility = View.VISIBLE
-        signerAddressView.text = "Signer address: ${sdk.session.signerAddress ?: "none"}"
+        signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: ready to sign."
         lastTransactionHashView.text = "Last tx hash: none"
@@ -406,26 +518,28 @@ class AuthDemoActivity : AppCompatActivity() {
 
         if (sdk.session.hasPendingSignIn) {
             authStatusView.text = "Pending sign-in verification"
-            walletAddressView.text = "Wallet address: pending"
+            walletAddressView.text = addressLabel("Wallet address", null)
             authCard.visibility = View.VISIBLE
             emailStepContainer.visibility = View.GONE
             codeStepContainer.visibility = View.VISIBLE
             walletActionsContainer.visibility = View.GONE
+            copyWalletAddressButton.visibility = View.GONE
             focusCodeInput()
             return
         }
 
         authStatusView.text = "Restored persisted wallet session"
-        walletAddressView.text = "Wallet address: ${sdk.session.walletAddress}"
+        walletAddressView.text = addressLabel("Wallet address", sdk.session.walletAddress)
         authCard.visibility = View.GONE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
+        copyWalletAddressButton.visibility = View.VISIBLE
     }
 
     private fun resetUiForNoSession() {
         authStatusView.text = "Waiting for sign-in."
-        walletAddressView.text = "Wallet address: pending"
-        signerAddressView.text = "Signer address: none"
+        walletAddressView.text = addressLabel("Wallet address", null)
+        signerAddressView.text = addressLabel("Signer address", null)
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: waiting for a message."
         lastTransactionHashView.text = "Last tx hash: none"
@@ -436,16 +550,18 @@ class AuthDemoActivity : AppCompatActivity() {
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.GONE
         openExplorerButton.visibility = View.GONE
+        copyWalletAddressButton.visibility = View.GONE
     }
 
     private fun showEmailStep() {
         authStatusView.text = "Waiting for sign-in."
-        signerAddressView.text = "Signer address: none"
+        signerAddressView.text = addressLabel("Signer address", null)
         logoutButton.visibility = View.GONE
         authCard.visibility = View.VISIBLE
         emailStepContainer.visibility = View.VISIBLE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.GONE
+        copyWalletAddressButton.visibility = View.GONE
         codeInput.text?.clear()
         emailInput.post {
             emailInput.requestFocus()
@@ -459,6 +575,7 @@ class AuthDemoActivity : AppCompatActivity() {
         emailStepContainer.visibility = View.GONE
         codeStepContainer.visibility = View.VISIBLE
         walletActionsContainer.visibility = View.GONE
+        copyWalletAddressButton.visibility = View.GONE
         focusCodeInput()
     }
 
@@ -471,8 +588,6 @@ class AuthDemoActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "AuthDemoActivity"
-        private const val MESSAGE_CHAIN_ID = "80002"
-        private val MESSAGE_NETWORK = Network.POLYGON_AMOY
 
         private fun generateSecureRandomNonce(byteLength: Int = 32): String {
             val randomBytes = ByteArray(byteLength)
@@ -484,6 +599,30 @@ class AuthDemoActivity : AppCompatActivity() {
             "80002" -> "https://amoy.polygonscan.com/tx/$txHash"
             "137" -> "https://polygonscan.com/tx/$txHash"
             else -> "https://amoy.polygonscan.com/tx/$txHash"
+        }
+
+        private fun networkLabel(network: Network): String =
+            "${network.displayName} (${network.chainId})"
+
+        private fun feeOptionLabel(option: FeeOptionWithBalance): String = buildString {
+            val feeOption = option.feeOption
+            append(feeOption.token.symbol)
+            append(" ")
+            append(feeOption.displayValue)
+            append(" available=")
+            append(option.available ?: "unknown")
+            option.availableRaw?.let { availableRaw ->
+                append(" available_raw=")
+                append(availableRaw)
+            }
+            option.decimals?.let { decimals ->
+                append(" decimals=")
+                append(decimals)
+            }
+            if (feeOption.value.isNotBlank()) {
+                append(" raw=")
+                append(feeOption.value)
+            }
         }
     }
 }
