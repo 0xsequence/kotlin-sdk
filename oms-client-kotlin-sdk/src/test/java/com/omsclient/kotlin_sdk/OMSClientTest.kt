@@ -135,10 +135,7 @@ class OMSClientTest {
     ) : OMSClientSecureSessionStore {
         override fun load(): OMSClientSessionSnapshot? = snapshot
 
-        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) = Unit
-
-        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
-            error("Not needed for this test")
+        override fun save(snapshot: OMSClientSessionSnapshot) = Unit
 
         override fun clear() = Unit
     }
@@ -150,12 +147,9 @@ class OMSClientTest {
 
         override fun load(): OMSClientSessionSnapshot? = snapshot
 
-        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) {
+        override fun save(snapshot: OMSClientSessionSnapshot) {
             this.snapshot = snapshot
         }
-
-        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
-            error("Not needed for this test")
 
         override fun clear() {
             clearCalls += 1

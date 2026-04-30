@@ -10,9 +10,8 @@ internal class WalletSignedWaasTransport(
     private val projectAccessKey: String,
     private val environment: OMSClientEnvironment,
     private val httpClient: OMSClientHttpClient,
-    private val nonceGenerator: () -> Long,
-    private val privateKey: ByteArray,
-    ) : WebRpcTransport {
+    private val signer: CredentialSigner,
+) : WebRpcTransport {
     override suspend fun post(
         baseUrl: String,
         path: String,
@@ -20,20 +19,26 @@ internal class WalletSignedWaasTransport(
         headers: Map<String, String>,
     ): WebRpcHttpResponse {
         val endpoint = resolveEndpoint(path)
-        val signedRequest = WalletRequestSigner.signWalletRequest(
+        val nonce = signer.nextNonce()
+        val preimage = WalletRequestSigner.buildWalletRequestPreimage(
             endpoint = endpoint,
-            nonce = nonceGenerator().toString(),
+            nonce = nonce,
             payload = body,
-            scope = environment.authorizationScope,
-            privateKey = privateKey,
             requestPathPrefix = WaasWalletApi.basePath,
+        )
+        val authorizationHeader = WalletRequestSigner.buildWalletAuthorizationHeader(
+            keyType = signer.keyType,
+            scope = environment.authorizationScope,
+            credentialId = signer.credentialId(),
+            nonce = nonce,
+            signature = signer.sign(preimage),
         )
 
         val response = httpClient.postJsonWithStatus(
             baseUrl = baseUrl,
             path = WaasWalletApi.basePath + endpoint,
             body = body,
-            headers = defaultHeaders(headers, signedRequest.authorizationHeader),
+            headers = defaultHeaders(headers, authorizationHeader),
         )
 
         return WebRpcHttpResponse(

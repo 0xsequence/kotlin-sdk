@@ -39,6 +39,12 @@ wallet sessions. If auth completes but wallet resolution or session persistence
 fails, the SDK clears the in-memory auth session instead of leaving a transient
 signer active.
 
+The Android `OMSClient(context, ...)` constructor signs wallet API requests with
+a non-extractable Android Keystore P-256 credential using the
+`webcrypto-secp256r1` key type. Persisted wallet sessions store wallet metadata
+only; the credential private key remains owned by Android Keystore and is not
+written to SDK session storage.
+
 ```kotlin
 fun client.signOut()
 ```
