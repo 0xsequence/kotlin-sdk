@@ -23,6 +23,7 @@ Until the package is published, use the source directly from this repository.
 - transaction sending
 - signature verification through the API service
 - token balance lookups through the indexer service
+- unit formatting and parsing helpers for raw token amounts
 
 ## Requirements
 
@@ -129,7 +130,7 @@ val verifyResult = client.utils.verifySignature(
 val txResult = client.wallet.sendTransaction(
     network = network,
     to = "0xE5E8B483FfC05967FcFed58cc98D053265af6D99",
-    value = "0",
+    value = parseUnits("0.01", 18),
 )
 ```
 
@@ -137,6 +138,16 @@ val txResult = client.wallet.sendTransaction(
 status endpoint briefly for an executed status or transaction hash. If the
 transaction is still pending when polling times out, the response keeps the
 `txnId` with `status = TransactionStatus.Pending` and `txHash = null`.
+Transaction values are raw base-unit integers. Use `parseUnits` to convert
+human-entered decimal values before sending. Import the helpers from
+`com.omsclient.kotlin_sdk.utils`.
+
+For raw token amount formatting and parsing:
+
+```kotlin
+val rawAmount = parseUnits("1.5", 18)
+val displayAmount = formatUnits(rawAmount, 18)
+```
 
 For contract calls or transaction parameters beyond `to` and `value`, use the request overload:
 
@@ -147,7 +158,7 @@ val txResult = client.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
-        value = "0",
+        value = parseUnits("0", 18),
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
@@ -161,7 +172,7 @@ val txResult = client.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
-        value = "0",
+        value = parseUnits("0", 18),
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
@@ -174,7 +185,7 @@ val txResult = client.wallet.sendTransaction(
 The selector receives `FeeOptionWithBalance` values. `balance` is the selected
 wallet's raw indexer balance for that fee token when available. `available` is
 formatted with the token decimals, while `availableRaw` keeps the raw integer
-value.
+value. `decimals` is exposed as a regular `Int`.
 
 If your app may need to choose between multiple wallets, use the selector overload:
 

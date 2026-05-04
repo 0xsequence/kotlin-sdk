@@ -31,6 +31,7 @@ import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
+import com.omsclient.kotlin_sdk.utils.parseUnits
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -124,7 +125,6 @@ class AuthDemoActivity : AppCompatActivity() {
     private fun populateDefaults() {
         messageInput.setText("test")
         transactionToInput.setText("0xE5E8B483FfC05967FcFed58cc98D053265af6D99")
-        transactionValueInput.setText("0")
         configureNetworkPicker()
         resetUiForNoSession()
     }
@@ -262,8 +262,8 @@ class AuthDemoActivity : AppCompatActivity() {
                 val network = selectedNetwork
                 val result = sdk.wallet.sendTransaction(
                     network = network,
-                    to = requireText(transactionToInput, "Transaction destination"),
-                    value = requireText(transactionValueInput, "Transaction value"),
+                    to = transactionToInput.text.toString().trim(),
+                    value = parseUnits(transactionValueInput.text.toString(), 18),
                     selectFeeOption = ::selectFeeOption,
                 )
                 lastTransactionHash = result.txHash

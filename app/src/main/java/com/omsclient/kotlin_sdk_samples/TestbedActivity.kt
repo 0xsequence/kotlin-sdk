@@ -8,6 +8,7 @@ import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
+import com.omsclient.kotlin_sdk.utils.parseUnits
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -85,7 +86,6 @@ class TestbedActivity : AppCompatActivity() {
         messageChainIdInput.setText("80002")
         messageInput.setText("test")
         transactionToInput.setText("0xE5E8B483FfC05967FcFed58cc98D053265af6D99")
-        transactionValueInput.setText("0")
     }
 
     private fun bindActions() {
@@ -157,8 +157,8 @@ class TestbedActivity : AppCompatActivity() {
             launchAction("Send transaction") { sdk ->
                 val result = sdk.wallet.sendTransaction(
                     network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
-                    to = requireText(transactionToInput, "Transaction destination"),
-                    value = requireText(transactionValueInput, "Transaction value"),
+                    to = transactionToInput.text.toString().trim(),
+                    value = parseUnits(transactionValueInput.text.toString(), 18),
                 )
                 appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txHash ?: "pending"}")
             }
