@@ -11,6 +11,8 @@ import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.storage.AndroidKeystoreSessionStore
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.utils.OMSClientUtils
+import com.omsclient.kotlin_sdk.wallet.AndroidKeystoreP256CredentialSigner
+import com.omsclient.kotlin_sdk.wallet.CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.WalletClient
 import okhttp3.OkHttpClient
 import java.security.MessageDigest
@@ -28,6 +30,7 @@ class OMSClient internal constructor(
     okHttpClient: OkHttpClient = OkHttpClient(),
     walletSession: OMSClientSession = OMSClientSession(),
     sessionStore: OMSClientSecureSessionStore? = null,
+    credentialSigner: CredentialSigner? = null,
 ) {
     private val transport = OMSClientHttpClient(okHttpClient)
 
@@ -37,6 +40,7 @@ class OMSClient internal constructor(
         transport = transport,
         session = walletSession,
         sessionStore = sessionStore,
+        credentialSigner = credentialSigner,
     )
 
     val utils: OMSClientUtils = OMSClientUtils(
@@ -98,6 +102,11 @@ class OMSClient internal constructor(
             context = context.applicationContext,
             alias = scopedSessionKeyAlias(environment),
             fileName = scopedSessionFileName(environment),
+        ),
+        credentialSigner = AndroidKeystoreP256CredentialSigner(
+            context = context.applicationContext,
+            alias = scopedCredentialKeyAlias(environment),
+            nonceStoreName = scopedCredentialNonceStoreName(environment),
         ),
     )
 
@@ -186,6 +195,14 @@ class OMSClient internal constructor(
         internal fun scopedSessionFileName(
             environment: OMSClientEnvironment,
         ): String = "oms-client-session-${scopedSessionSuffix(environment)}.json"
+
+        internal fun scopedCredentialKeyAlias(
+            environment: OMSClientEnvironment,
+        ): String = "oms-client-credential-${scopedSessionSuffix(environment)}"
+
+        internal fun scopedCredentialNonceStoreName(
+            environment: OMSClientEnvironment,
+        ): String = "oms-client-credential-nonces-${scopedSessionSuffix(environment)}"
 
         private fun scopedSessionSuffix(
             environment: OMSClientEnvironment,

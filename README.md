@@ -16,7 +16,8 @@ Until the package is published, use the source directly from this repository.
 
 - email sign-in flow against the wallet API
 - OIDC ID-token sign-in flow against the wallet API
-- persisted wallet session storage backed by Android Keystore
+- non-extractable Android Keystore request credential for wallet API signing
+- persisted wallet session metadata
 - wallet selection and wallet creation flows
 - message signing
 - transaction sending
@@ -41,6 +42,9 @@ val client = OMSClient(
 ```
 
 That constructor uses secure persisted session storage by default.
+Wallet API requests are signed with a non-extractable Android Keystore P-256
+credential (`webcrypto-secp256r1`), so the private credential key is not written
+to app storage.
 Only completed wallet sessions are restored automatically. Pending auth state is
 kept in memory for the current app run and is not persisted across restarts.
 

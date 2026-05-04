@@ -51,16 +51,17 @@ class WalletClient internal constructor(
     private val sessionStore: OMSClientSecureSessionStore? = null,
     private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
     private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
+    private val credentialSigner: CredentialSigner? = null,
     private val fastTransactionStatusPollIntervalMillis: Long = 400L,
     private val fastTransactionStatusPollCount: Int = 5,
     private val transactionStatusPollIntervalMillis: Long = 2_000L,
     private val transactionStatusPollTimeoutMillis: Long = 60_000L,
     private val transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
-    private var transientPrivateKey: ByteArray? = null
-
-    private val privateKeyStore: OMSClientSecureSessionStore =
-        sessionStore ?: InMemoryPrivateKeyStore()
+    private val signer: CredentialSigner = credentialSigner ?: EthereumPrivateKeyCredentialSigner(
+        privateKeyFactory = privateKeyFactory,
+        nonceGenerator = { nonceGenerator().toString() },
+    )
     private val indexerClient: IndexerClient = IndexerClient(
         projectAccessKey = projectAccessKey,
         environment = environment,
@@ -99,14 +100,18 @@ class WalletClient internal constructor(
         if (snapshot.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
             return false
         }
+        if (!signer.hasCredential()) {
+            sessionStore.clear()
+            return false
+        }
         session.restore(snapshot)
         return true
     }
 
     internal fun signOut() {
         session.clear()
-        clearTransientPrivateKey()
-        privateKeyStore.clear()
+        signer.clear()
+        sessionStore?.clear()
     }
 
     private fun requireWalletId(): String =
@@ -116,10 +121,10 @@ class WalletClient internal constructor(
         requireNotNull(address) { "No wallet selected" }
 
     internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
-        val privateKey = privateKeyFactory()
+        requireNoActiveWalletSession()
         return try {
-            val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
-            val response = waasClient(privateKey).commitVerifier(
+            val signerAddress = signer.credentialId()
+            val response = waasClient().commitVerifier(
                 CommitVerifierRequest(
                     identityType = IdentityType.Email,
                     authMode = AuthMode.OTP,
@@ -132,12 +137,13 @@ class WalletClient internal constructor(
                 challenge = response.challenge,
                 verifier = response.verifier,
                 signerAddress = signerAddress,
+                signerKeyType = signer.keyType,
             )
-            replaceTransientPrivateKey(privateKey)
 
             response
-        } finally {
-            privateKey.fill(0)
+        } catch (throwable: Throwable) {
+            signOut()
+            throw throwable
         }
     }
 
@@ -166,10 +172,10 @@ class WalletClient internal constructor(
         walletType: WalletType = environment.defaultWalletType,
         selectWallet: suspend (List<Wallet>) -> Wallet,
     ): Wallet {
-        val privateKey = privateKeyFactory()
+        requireNoActiveWalletSession()
         try {
-            val signerAddress = WalletRequestSigner.walletAddressFromPrivateKey(privateKey)
-            val response = waasClient(privateKey).commitVerifier(
+            val signerAddress = signer.credentialId()
+            val response = waasClient().commitVerifier(
                 CommitVerifierRequest(
                     identityType = IdentityType.OIDC,
                     authMode = AuthMode.IDToken,
@@ -186,8 +192,8 @@ class WalletClient internal constructor(
                 challenge = response.challenge,
                 verifier = response.verifier,
                 signerAddress = signerAddress,
+                signerKeyType = signer.keyType,
             )
-            replaceTransientPrivateKey(privateKey)
 
             val auth = try {
                 confirmOidcIdTokenSignIn(idToken)
@@ -196,37 +202,34 @@ class WalletClient internal constructor(
                 throw throwable
             }
             return resolveAuthenticatedWallet(auth, walletType, selectWallet)
-        } finally {
-            privateKey.fill(0)
+        } catch (throwable: Throwable) {
+            signOut()
+            throw throwable
         }
     }
 
     internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
         val snapshot = session.requirePendingAuth()
-        return withPrivateKey { privateKey ->
-            waasClient(privateKey).completeAuth(
-                CompleteAuthRequest(
-                    identityType = IdentityType.Email,
-                    authMode = AuthMode.OTP,
-                    verifier = snapshot.verifier,
-                    answer = WalletAuthChallenge.hashAnswer(snapshot.challenge, code),
-                ),
-            )
-        }
+        return waasClient().completeAuth(
+            CompleteAuthRequest(
+                identityType = IdentityType.Email,
+                authMode = AuthMode.OTP,
+                verifier = snapshot.verifier,
+                answer = WalletAuthChallenge.hashAnswer(snapshot.challenge, code),
+            ),
+        )
     }
 
     internal suspend fun confirmOidcIdTokenSignIn(idToken: String): CompleteAuthResponse {
         val snapshot = session.requirePendingAuth()
-        return withPrivateKey { privateKey ->
-            waasClient(privateKey).completeAuth(
-                CompleteAuthRequest(
-                    identityType = IdentityType.OIDC,
-                    authMode = AuthMode.IDToken,
-                    verifier = snapshot.verifier,
-                    answer = idToken,
-                ),
-            )
-        }
+        return waasClient().completeAuth(
+            CompleteAuthRequest(
+                identityType = IdentityType.OIDC,
+                authMode = AuthMode.IDToken,
+                verifier = snapshot.verifier,
+                answer = idToken,
+            ),
+        )
     }
 
     internal suspend fun completeEmailAuth(
@@ -276,37 +279,31 @@ class WalletClient internal constructor(
 
     internal suspend fun useWallet(walletId: String): Wallet {
         session.requireSnapshot()
-        val wallet = withPrivateKey { privateKey ->
-            waasClient(privateKey).useWallet(
-                UseWalletRequest(
-                    walletId = walletId,
-                ),
-            ).wallet
-        }
+        val wallet = waasClient().useWallet(
+            UseWalletRequest(
+                walletId = walletId,
+            ),
+        ).wallet
 
         session.activateWallet(
             walletId = wallet.id,
             walletAddress = wallet.address,
         )
         persistCurrentSession()
-        clearTransientPrivateKey()
         return wallet
     }
 
     internal suspend fun createWallet(walletType: WalletType = environment.defaultWalletType): Wallet {
         session.requireSnapshot()
-        val wallet = withPrivateKey { privateKey ->
-            waasClient(privateKey).createWallet(
-                CreateWalletRequest(type = walletType),
-            ).wallet
-        }
+        val wallet = waasClient().createWallet(
+            CreateWalletRequest(type = walletType),
+        ).wallet
 
         session.activateWallet(
             walletId = wallet.id,
             walletAddress = wallet.address,
         )
         persistCurrentSession()
-        clearTransientPrivateKey()
         return wallet
     }
 
@@ -338,9 +335,16 @@ class WalletClient internal constructor(
         }
     }
 
-    private fun persistCurrentSession(privateKey: ByteArray? = null) {
+    private fun persistCurrentSession() {
         val snapshot = session.snapshot() ?: return
-        privateKeyStore.save(snapshot, privateKey ?: transientPrivateKey)
+        sessionStore?.save(snapshot)
+    }
+
+    private fun requireNoActiveWalletSession() {
+        val snapshot = session.snapshot()
+        check(snapshot?.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
+            "Cannot start a new login while a wallet session is active"
+        }
     }
 
     /**
@@ -348,15 +352,14 @@ class WalletClient internal constructor(
      */
     suspend fun signMessage(network: Network, message: String): SignMessageResponse {
         session.requireSnapshot()
-        return withPrivateKey { privateKey ->
-            waasClient(privateKey).signMessage(
-                SignMessageRequest(
-                    walletId = requireWalletId(),
-                    network = network.chainId,
-                    message = message,
-                ),
-            )
-        }
+        requireActiveCredential()
+        return waasClient().signMessage(
+            SignMessageRequest(
+                walletId = requireWalletId(),
+                network = network.chainId,
+                message = message,
+            ),
+        )
     }
 
     /**
@@ -390,48 +393,54 @@ class WalletClient internal constructor(
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse {
         val snapshot = session.requireSnapshot()
-        return withPrivateKey { privateKey ->
-            val client = waasClient(privateKey)
-            val prepared = client.prepareEthereumTransaction(
-                PrepareEthereumTransactionRequest(
-                    walletId = requireWalletId(),
-                    network = network.chainId,
-                    to = request.to,
-                    value = request.value,
-                    data = request.data,
-                    mode = request.mode,
-                ),
-            )
-            val feeOption = prepared.feeOptions
-                .takeIf { it.isNotEmpty() }
-                ?.let { feeOptions ->
-                    if (selectFeeOption == null) {
-                        feeOptions.defaultSelection(sponsored = prepared.sponsored)
-                    } else {
-                        selectFeeOption(
-                            enrichFeeOptionsWithBalances(
-                                network = network,
-                                walletAddress = requireNotNull(snapshot.walletAddress) { "No wallet selected" },
-                                feeOptions = feeOptions,
-                            ),
-                        )
-                    }
+        requireActiveCredential()
+        val client = waasClient()
+        val prepared = client.prepareEthereumTransaction(
+            PrepareEthereumTransactionRequest(
+                walletId = requireWalletId(),
+                network = network.chainId,
+                to = request.to,
+                value = request.value,
+                data = request.data,
+                mode = request.mode,
+            ),
+        )
+        val feeOption = prepared.feeOptions
+            .takeIf { it.isNotEmpty() }
+            ?.let { feeOptions ->
+                if (selectFeeOption == null) {
+                    feeOptions.defaultSelection(sponsored = prepared.sponsored)
+                } else {
+                    selectFeeOption(
+                        enrichFeeOptionsWithBalances(
+                            network = network,
+                            walletAddress = requireNotNull(snapshot.walletAddress) { "No wallet selected" },
+                            feeOptions = feeOptions,
+                        ),
+                    )
                 }
-            val executed = client.execute(
-                ExecuteRequest(
-                    txnId = prepared.txnId,
-                    feeOption = feeOption,
-                ),
-            )
-            val status = client.waitForTransactionStatus(
+            }
+        val executed = client.execute(
+            ExecuteRequest(
                 txnId = prepared.txnId,
-                fallbackStatus = executed.status,
-            )
-            ClientSendTransactionResponse(
-                txnId = prepared.txnId,
-                status = status.status.takeIf { it != TransactionStatus.UNKNOWN_DEFAULT } ?: executed.status,
-                txHash = status.txnHash,
-            )
+                feeOption = feeOption,
+            ),
+        )
+        val status = client.waitForTransactionStatus(
+            txnId = prepared.txnId,
+            fallbackStatus = executed.status,
+        )
+        return ClientSendTransactionResponse(
+            txnId = prepared.txnId,
+            status = status.status.takeIf { it != TransactionStatus.UNKNOWN_DEFAULT } ?: executed.status,
+            txHash = status.txnHash,
+        )
+    }
+
+    private fun requireActiveCredential() {
+        if (!signer.hasCredential()) {
+            signOut()
+            error("No active wallet session")
         }
     }
 
@@ -566,68 +575,13 @@ class WalletClient internal constructor(
         } while (true)
     }
 
-    private suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {
-        val inMemoryKey = transientPrivateKey
-        if (inMemoryKey != null) {
-            val privateKey = inMemoryKey.copyOf()
-            return try {
-                block(privateKey)
-            } finally {
-                privateKey.fill(0)
-            }
-        }
-        return privateKeyStore.withPrivateKey(block)
-    }
-
-    private fun replaceTransientPrivateKey(privateKey: ByteArray) {
-        clearTransientPrivateKey()
-        transientPrivateKey = privateKey.copyOf()
-    }
-
-    private fun clearTransientPrivateKey() {
-        transientPrivateKey?.fill(0)
-        transientPrivateKey = null
-    }
-
-    private fun waasClient(privateKey: ByteArray): WaasWalletClient = WaasWalletClient(
+    private fun waasClient(): WaasWalletClient = WaasWalletClient(
         baseUrl = environment.walletApiBaseUrl(),
         transport = WalletSignedWaasTransport(
             projectAccessKey = projectAccessKey,
             environment = environment,
             httpClient = transport,
-            nonceGenerator = nonceGenerator,
-            privateKey = privateKey,
+            signer = signer,
         ),
     )
-
-    private class InMemoryPrivateKeyStore : OMSClientSecureSessionStore {
-        private var snapshot: OMSClientSessionSnapshot? = null
-        private var privateKey: ByteArray? = null
-
-        override fun load(): OMSClientSessionSnapshot? = snapshot
-
-        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) {
-            this.snapshot = snapshot
-            if (privateKey == null) {
-                return
-            }
-            this.privateKey?.fill(0)
-            this.privateKey = privateKey.copyOf()
-        }
-
-        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {
-            val keyCopy = requireNotNull(privateKey) { "No active OMS Client signing key" }.copyOf()
-            return try {
-                block(keyCopy)
-            } finally {
-                keyCopy.fill(0)
-            }
-        }
-
-        override fun clear() {
-            snapshot = null
-            privateKey?.fill(0)
-            privateKey = null
-        }
-    }
 }

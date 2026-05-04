@@ -7,6 +7,7 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.generated.waas.KeyType
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
@@ -110,10 +111,68 @@ class WalletClientTest {
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             session?.signerAddress,
         )
+        assertEquals(KeyType.Ethereum_Secp256k1, session?.signerKeyType)
         assertNull(store.snapshot)
         assertNull(store.privateKeyHex)
         assertEquals(0, store.saveCalls)
         assertNull(store.savedPrivateKeyHex)
+    }
+
+    @Test
+    fun startEmailAuthRejectsWhenWalletSessionIsActive() = runBlocking {
+        val activeSession = activeSessionSnapshot()
+        val client = WalletClient(
+            projectAccessKey = "test-access-key",
+            environment = OMSClientEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = OMSClientHttpClient(),
+            sessionStore = InMemorySessionStore(),
+            privateKeyFactory = { error("Credential should not be created") },
+        )
+        client.restoreSession(activeSession)
+
+        val failure = runCatching {
+            client.startEmailAuth("user@example.com")
+        }.exceptionOrNull()
+
+        assertEquals("Cannot start a new login while a wallet session is active", failure?.message)
+        assertEquals(activeSession, client.snapshotSession())
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun startEmailAuthUsesWebCryptoCredentialSignerAuthorizationHeader() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+
+        val environment = OMSClientEnvironment(
+            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+        )
+        val signer = MockWebCryptoCredentialSigner()
+        val client = WalletClient(
+            projectAccessKey = "test-access-key",
+            environment = environment,
+            transport = OMSClientHttpClient(),
+            sessionStore = InMemorySessionStore(),
+            credentialSigner = signer,
+        )
+
+        client.startEmailAuth("user@example.com")
+        val request = requireNotNull(server.takeRequest())
+
+        assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+        assertEquals(
+            "webcrypto-secp256r1 scope=\"${environment.authorizationScope}\"," +
+                "cred=\"${signer.credentialIdValue}\",nonce=42,sig=\"${signer.signatureValue}\"",
+            request.headers["Authorization"],
+        )
+        assertEquals(KeyType.WebCrypto_Secp256r1, client.snapshotSession()?.signerKeyType)
+        assertEquals(1, signer.signCalls)
     }
 
     @Test
@@ -297,10 +356,38 @@ class WalletClientTest {
         assertFalse(client.hasPendingSignIn)
         assertEquals("wallet-def", store.snapshot?.walletId)
         assertEquals("0xdef", store.snapshot?.walletAddress)
+        assertEquals(KeyType.Ethereum_Secp256k1, store.snapshot?.signerKeyType)
         assertNull(store.snapshot?.verifier)
         assertNull(store.snapshot?.challenge)
-        assertEquals(FIXED_PRIVATE_KEY_HEX, store.privateKeyHex)
+        assertNull(store.privateKeyHex)
         assertEquals(1, store.saveCalls)
+    }
+
+    @Test
+    fun signInWithOidcIdTokenRejectsWhenWalletSessionIsActive() = runBlocking {
+        val activeSession = activeSessionSnapshot()
+        val client = WalletClient(
+            projectAccessKey = "test-access-key",
+            environment = OMSClientEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = OMSClientHttpClient(),
+            sessionStore = InMemorySessionStore(),
+            privateKeyFactory = { error("Credential should not be created") },
+        )
+        client.restoreSession(activeSession)
+
+        val failure = runCatching {
+            client.signInWithOidcIdToken(
+                idToken = fakeJwt(exp = 1910000100L),
+                issuer = "https://accounts.google.com",
+                audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+            )
+        }.exceptionOrNull()
+
+        assertEquals("Cannot start a new login while a wallet session is active", failure?.message)
+        assertEquals(activeSession, client.snapshotSession())
+        assertEquals(0, server.requestCount)
     }
 
     @Test
@@ -427,6 +514,7 @@ class WalletClientTest {
             transport = OMSClientHttpClient(),
             sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000101L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
         client.restoreSession(
             OMSClientSessionSnapshot(
@@ -485,6 +573,7 @@ class WalletClientTest {
             projectAccessKey = "test-access-key",
             environment = OMSClientEnvironment(),
             sessionStore = store,
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
 
         val restored = client.restorePersistedSession()
@@ -496,6 +585,28 @@ class WalletClientTest {
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             client.signerAddress,
         )
+    }
+
+    @Test
+    fun restorePersistedSessionClearsMetadataWhenCredentialIsMissing() {
+        val snapshot = OMSClientSessionSnapshot(
+            walletId = "wallet-abc",
+            walletAddress = "0xabc",
+            signerAddress = "0x04" + "11".repeat(64),
+        )
+        val store = InMemorySessionStore(snapshot)
+        val client = WalletClient(
+            projectAccessKey = "test-access-key",
+            environment = OMSClientEnvironment(),
+            sessionStore = store,
+            credentialSigner = MockWebCryptoCredentialSigner(available = false),
+        )
+
+        val restored = client.restorePersistedSession()
+
+        assertFalse(restored)
+        assertNull(client.snapshotSession())
+        assertNull(store.snapshot)
     }
 
     @Test
@@ -516,6 +627,7 @@ class WalletClientTest {
             transport = OMSClientHttpClient(),
             sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000102L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
         client.restoreSession(
             OMSClientSessionSnapshot(
@@ -702,7 +814,7 @@ class WalletClientTest {
         assertFalse(client.hasPendingSignIn)
         assertEquals("wallet-def", store.snapshot?.walletId)
         assertEquals("0xdef", store.snapshot?.walletAddress)
-        assertEquals(FIXED_PRIVATE_KEY_HEX, store.privateKeyHex)
+        assertNull(store.privateKeyHex)
         assertEquals(1, store.saveCalls)
     }
 
@@ -743,6 +855,7 @@ class WalletClientTest {
             transport = OMSClientHttpClient(),
             sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000111L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
         client.restoreSession(
             OMSClientSessionSnapshot(
@@ -804,6 +917,7 @@ class WalletClientTest {
             transport = OMSClientHttpClient(),
             sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
             nonceGenerator = { 1710000112L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
         client.restoreSession(
             OMSClientSessionSnapshot(
@@ -1105,6 +1219,7 @@ class WalletClientTest {
                 ),
                 privateKeyHex = FIXED_PRIVATE_KEY_HEX,
             ),
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
         assertTrue(client.restorePersistedSession())
 
@@ -1125,6 +1240,7 @@ class WalletClientTest {
                 ),
                 privateKeyHex = FIXED_PRIVATE_KEY_HEX,
             ),
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
         assertFalse(client.restorePersistedSession())
 
@@ -1139,6 +1255,7 @@ class WalletClientTest {
             projectAccessKey = "test-access-key",
             environment = OMSClientEnvironment(),
             sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
+            privateKeyFactory = ::fixedPrivateKeyBytes,
         )
         client.restoreSession(
             OMSClientSessionSnapshot(
@@ -1157,7 +1274,7 @@ class WalletClientTest {
     }
 
     @Test
-    fun signMessageLoadsPrivateKeyOnDemandAndWipesTransientBuffer() = runBlocking {
+    fun signMessageUsesCredentialSignerForRestoredSession() = runBlocking {
         server.enqueue(
             MockResponse.Builder()
                 .code(200)
@@ -1165,13 +1282,13 @@ class WalletClientTest {
                 .build(),
         )
 
-        val store = TrackingPrivateKeyStore(
+        val signer = TrackingCredentialSigner()
+        val store = InMemorySessionStore(
             snapshot = OMSClientSessionSnapshot(
                 walletId = "wallet-main",
                 walletAddress = "0xwallet",
                 signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             ),
-            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
         )
         val client = WalletClient(
             projectAccessKey = "test-access-key",
@@ -1180,11 +1297,11 @@ class WalletClientTest {
             ),
             transport = OMSClientHttpClient(),
             sessionStore = store,
-            nonceGenerator = { 1710000107L },
+            credentialSigner = signer,
         )
 
         assertTrue(client.restorePersistedSession())
-        assertEquals(0, store.withPrivateKeyCalls)
+        assertEquals(0, signer.signCalls)
 
         val result = client.signMessage(
             network = OMSClientNetworks.requireSupported("80002"),
@@ -1192,9 +1309,8 @@ class WalletClientTest {
         )
 
         assertEquals("0xsigned", result.signature)
-        assertEquals(1, store.withPrivateKeyCalls)
+        assertEquals(1, signer.signCalls)
         assertEquals(0, store.saveCalls)
-        assertTrue(requireNotNull(store.lastProvidedPrivateKey).all { it == 0.toByte() })
     }
 
     @Test
@@ -1314,6 +1430,7 @@ class WalletClientTest {
                 privateKeyHex = FIXED_PRIVATE_KEY_HEX,
             ),
             nonceGenerator = { 1710000107L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
             fastTransactionStatusPollIntervalMillis = 1L,
             transactionStatusPollIntervalMillis = 1L,
             transactionStatusPollTimeoutMillis = 1_000L,
@@ -1457,6 +1574,7 @@ class WalletClientTest {
                 privateKeyHex = FIXED_PRIVATE_KEY_HEX,
             ),
             nonceGenerator = { 1710000108L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
             transactionStatusDelay = { delayMillis -> delays += delayMillis },
         )
         assertTrue(client.restorePersistedSession())
@@ -1535,6 +1653,14 @@ class WalletClientTest {
 
         private fun fixedPrivateKeyBytes(): ByteArray =
             Numeric.hexStringToByteArray(FIXED_PRIVATE_KEY_HEX)
+
+        private fun activeSessionSnapshot(): OMSClientSessionSnapshot =
+            OMSClientSessionSnapshot(
+                walletId = "wallet-active",
+                walletAddress = "0xactive",
+                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                signerKeyType = KeyType.Ethereum_Secp256k1,
+            )
     }
 
     private class InMemorySessionStore(
@@ -1548,57 +1674,14 @@ class WalletClientTest {
 
         override fun load(): OMSClientSessionSnapshot? = snapshot
 
-        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) {
+        override fun save(snapshot: OMSClientSessionSnapshot) {
             saveCalls += 1
             this.snapshot = snapshot
-            if (privateKey != null) {
-                privateKeyHex = Numeric.toHexString(privateKey)
-                savedPrivateKeyHex = privateKeyHex
-            }
         }
-
-        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
-            block(Numeric.hexStringToByteArray(requireNotNull(privateKeyHex)))
 
         override fun clear() {
             snapshot = null
             privateKeyHex = null
-        }
-    }
-
-    private class TrackingPrivateKeyStore(
-        private val snapshot: OMSClientSessionSnapshot,
-        private var privateKeyHex: String,
-    ) : OMSClientSecureSessionStore {
-        var withPrivateKeyCalls: Int = 0
-            private set
-        var saveCalls: Int = 0
-            private set
-        var lastProvidedPrivateKey: ByteArray? = null
-            private set
-
-        override fun load(): OMSClientSessionSnapshot = snapshot
-
-        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) {
-            saveCalls += 1
-            if (privateKey != null) {
-                privateKeyHex = Numeric.toHexString(privateKey)
-            }
-        }
-
-        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T {
-            withPrivateKeyCalls += 1
-            val provided = Numeric.hexStringToByteArray(privateKeyHex)
-            lastProvidedPrivateKey = provided
-            return try {
-                block(provided)
-            } finally {
-                provided.fill(0)
-            }
-        }
-
-        override fun clear() {
-            privateKeyHex = ""
         }
     }
 
@@ -1608,15 +1691,58 @@ class WalletClientTest {
 
         override fun load(): OMSClientSessionSnapshot? = null
 
-        override fun save(snapshot: OMSClientSessionSnapshot, privateKey: ByteArray?) {
+        override fun save(snapshot: OMSClientSessionSnapshot) {
             throw IllegalStateException("save failed")
         }
 
-        override suspend fun <T> withPrivateKey(block: suspend (ByteArray) -> T): T =
-            error("Persisted private key should not be needed before save succeeds")
-
         override fun clear() {
             clearCalls += 1
+        }
+    }
+
+    private class TrackingCredentialSigner : CredentialSigner {
+        override val keyType: KeyType = KeyType.Ethereum_Secp256k1
+        var signCalls: Int = 0
+            private set
+
+        override suspend fun credentialId(): String =
+            WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX)
+
+        override suspend fun nextNonce(): String = "1710000107"
+
+        override suspend fun sign(preimage: String): String {
+            signCalls += 1
+            return WalletRequestSigner.signWalletRequestPreimage(FIXED_PRIVATE_KEY_HEX, preimage)
+        }
+
+        override fun hasCredential(): Boolean = true
+
+        override fun clear() = Unit
+    }
+
+    private class MockWebCryptoCredentialSigner(
+        private var available: Boolean = true,
+    ) : CredentialSigner {
+        override val keyType: KeyType = KeyType.WebCrypto_Secp256r1
+        val credentialIdValue: String = "0x04" + "11".repeat(64)
+        val signatureValue: String = "0x" + "22".repeat(64)
+        var signCalls: Int = 0
+            private set
+
+        override suspend fun credentialId(): String = credentialIdValue
+
+        override suspend fun nextNonce(): String = "42"
+
+        override suspend fun sign(preimage: String): String {
+            signCalls += 1
+            assertTrue(preimage.contains("nonce: 42"))
+            return signatureValue
+        }
+
+        override fun hasCredential(): Boolean = available
+
+        override fun clear() {
+            available = false
         }
     }
 }

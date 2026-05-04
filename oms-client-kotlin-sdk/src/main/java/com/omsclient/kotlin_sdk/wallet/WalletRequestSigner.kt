@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.generated.waas.KeyType
 import java.math.BigInteger
 import java.security.GeneralSecurityException
 import java.nio.charset.StandardCharsets
@@ -80,8 +81,22 @@ internal object WalletRequestSigner {
         address: String,
         nonce: String,
         signature: String,
+    ): String = buildWalletAuthorizationHeader(
+        keyType = KeyType.Ethereum_Secp256k1,
+        scope = scope,
+        credentialId = address,
+        nonce = nonce,
+        signature = signature,
+    )
+
+    fun buildWalletAuthorizationHeader(
+        keyType: KeyType,
+        scope: String,
+        credentialId: String,
+        nonce: String,
+        signature: String,
     ): String =
-        "Authorization: ethereum-secp256k1 scope=\"$scope\",cred=\"$address\",nonce=$nonce,sig=\"$signature\""
+        "Authorization: ${keyType.wireValue} scope=\"$scope\",cred=\"$credentialId\",nonce=$nonce,sig=\"$signature\""
 
     fun signWalletRequest(
         endpoint: String,
