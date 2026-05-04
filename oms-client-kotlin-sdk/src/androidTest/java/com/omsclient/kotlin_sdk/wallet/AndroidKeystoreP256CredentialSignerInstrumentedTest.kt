@@ -26,11 +26,12 @@ class AndroidKeystoreP256CredentialSignerInstrumentedTest {
     @Before
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        signer = AndroidKeystoreP256CredentialSigner(
-            context = context,
-            alias = alias,
-            nonceStoreName = nonceStoreName,
-        )
+        signer =
+            AndroidKeystoreP256CredentialSigner(
+                context = context,
+                alias = alias,
+                nonceStoreName = nonceStoreName,
+            )
         signer.clear()
     }
 
@@ -40,74 +41,81 @@ class AndroidKeystoreP256CredentialSignerInstrumentedTest {
     }
 
     @Test
-    fun createsNonExtractableP256CredentialAndSignsRawWebCryptoSignature() = runBlocking {
-        val preimage = "POST /rpc/Wallet/CommitVerifier\nnonce: 1\n\n{}"
+    fun createsNonExtractableP256CredentialAndSignsRawWebCryptoSignature() =
+        runBlocking {
+            val preimage = "POST /rpc/Wallet/CommitVerifier\nnonce: 1\n\n{}"
 
-        val credentialId = signer.credentialId()
-        val signature = signer.sign(preimage)
-        val rawSignature = Numeric.hexStringToByteArray(signature)
+            val credentialId = signer.credentialId()
+            val signature = signer.sign(preimage)
+            val rawSignature = Numeric.hexStringToByteArray(signature)
 
-        assertTrue(credentialId.matches(Regex("^0x04[0-9a-f]{128}$")))
-        assertTrue(signature.matches(Regex("^0x[0-9a-f]{128}$")))
-        assertTrue(signer.hasCredential())
-        assertNull(privateKey().encoded)
-        assertTrue(verifySignature(preimage, rawSignature))
+            assertTrue(credentialId.matches(Regex("^0x04[0-9a-f]{128}$")))
+            assertTrue(signature.matches(Regex("^0x[0-9a-f]{128}$")))
+            assertTrue(signer.hasCredential())
+            assertNull(privateKey().encoded)
+            assertTrue(verifySignature(preimage, rawSignature))
 
-        signer.clear()
+            signer.clear()
 
-        assertFalse(signer.hasCredential())
-    }
-
-    @Test
-    fun nextNonceIsMonotonic() = runBlocking {
-        signer.credentialId()
-
-        val first = signer.nextNonce().toLong()
-        val second = signer.nextNonce().toLong()
-
-        assertTrue(second > first)
-    }
-
-    @Test
-    fun nextNonceIsUniqueAcrossSignerInstances() = runBlocking {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val secondSigner = AndroidKeystoreP256CredentialSigner(
-            context = context,
-            alias = alias,
-            nonceStoreName = nonceStoreName,
-        )
-        try {
-            signer.credentialId()
-            secondSigner.credentialId()
-
-            val nonces = coroutineScope {
-                (0 until 40).map { index ->
-                    async {
-                        if (index % 2 == 0) {
-                            signer.nextNonce()
-                        } else {
-                            secondSigner.nextNonce()
-                        }
-                    }
-                }.awaitAll()
-            }.map(String::toLong)
-
-            assertEquals(nonces.size, nonces.toSet().size)
-        } finally {
-            secondSigner.clear()
+            assertFalse(signer.hasCredential())
         }
-    }
 
-    private fun privateKey(): PrivateKey =
-        requireNotNull(keyStore().getKey(alias, null) as? PrivateKey)
+    @Test
+    fun nextNonceIsMonotonic() =
+        runBlocking {
+            signer.credentialId()
 
-    private fun verifySignature(preimage: String, rawSignature: ByteArray): Boolean {
+            val first = signer.nextNonce().toLong()
+            val second = signer.nextNonce().toLong()
+
+            assertTrue(second > first)
+        }
+
+    @Test
+    fun nextNonceIsUniqueAcrossSignerInstances() =
+        runBlocking {
+            val context = ApplicationProvider.getApplicationContext<Context>()
+            val secondSigner =
+                AndroidKeystoreP256CredentialSigner(
+                    context = context,
+                    alias = alias,
+                    nonceStoreName = nonceStoreName,
+                )
+            try {
+                signer.credentialId()
+                secondSigner.credentialId()
+
+                val nonces =
+                    coroutineScope {
+                        (0 until 40)
+                            .map { index ->
+                                async {
+                                    if (index % 2 == 0) {
+                                        signer.nextNonce()
+                                    } else {
+                                        secondSigner.nextNonce()
+                                    }
+                                }
+                            }.awaitAll()
+                    }.map(String::toLong)
+
+                assertEquals(nonces.size, nonces.toSet().size)
+            } finally {
+                secondSigner.clear()
+            }
+        }
+
+    private fun privateKey(): PrivateKey = requireNotNull(keyStore().getKey(alias, null) as? PrivateKey)
+
+    private fun verifySignature(
+        preimage: String,
+        rawSignature: ByteArray,
+    ): Boolean {
         val verifier = Signature.getInstance("SHA256withECDSA")
         verifier.initVerify(requireNotNull(keyStore().getCertificate(alias)).publicKey)
         verifier.update(preimage.toByteArray(Charsets.UTF_8))
         return verifier.verify(P256EcdsaSignatureEncoding.rawToDer(rawSignature))
     }
 
-    private fun keyStore(): KeyStore =
-        KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+    private fun keyStore(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 }

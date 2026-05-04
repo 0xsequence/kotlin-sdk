@@ -25,11 +25,12 @@ internal object P256EcdsaSignatureEncoding {
 
     private fun ByteArray.toDerInteger(): ByteArray {
         val trimmed = dropLeadingZeroes()
-        val positive = if (trimmed.first().toInt() and 0x80 != 0) {
-            byteArrayOf(0) + trimmed
-        } else {
-            trimmed
-        }
+        val positive =
+            if (trimmed.first().toInt() and 0x80 != 0) {
+                byteArrayOf(0) + trimmed
+            } else {
+                trimmed
+            }
         return byteArrayOf(INTEGER_TAG) + encodeLength(positive.size) + positive
     }
 
@@ -52,7 +53,9 @@ internal object P256EcdsaSignatureEncoding {
         return byteArrayOf((0x80 or bytes.size).toByte()) + bytes.asReversed().toByteArray()
     }
 
-    private class DerReader(private val source: ByteArray) {
+    private class DerReader(
+        private val source: ByteArray,
+    ) {
         var position: Int = 0
             private set
 
@@ -83,11 +86,12 @@ internal object P256EcdsaSignatureEncoding {
                 "Invalid non-minimal DER ECDSA integer"
             }
 
-            val unsigned = if (encoded.size > 1 && encoded[0] == 0.toByte()) {
-                encoded.copyOfRange(1, encoded.size)
-            } else {
-                encoded
-            }
+            val unsigned =
+                if (encoded.size > 1 && encoded[0] == 0.toByte()) {
+                    encoded.copyOfRange(1, encoded.size)
+                } else {
+                    encoded
+                }
             require(unsigned.size <= P256_FIELD_SIZE_BYTES) {
                 "Invalid oversized P-256 ECDSA integer"
             }

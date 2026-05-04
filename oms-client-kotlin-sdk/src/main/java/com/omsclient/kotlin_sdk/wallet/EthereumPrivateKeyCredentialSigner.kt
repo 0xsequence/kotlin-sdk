@@ -11,13 +11,11 @@ internal class EthereumPrivateKeyCredentialSigner(
     private var privateKey: ByteArray? = null
     private var cleared: Boolean = false
 
-    override suspend fun credentialId(): String =
-        WalletRequestSigner.walletAddressFromPrivateKey(requirePrivateKey())
+    override suspend fun credentialId(): String = WalletRequestSigner.walletAddressFromPrivateKey(requirePrivateKey())
 
     override suspend fun nextNonce(): String = nonceGenerator()
 
-    override suspend fun sign(preimage: String): String =
-        WalletRequestSigner.signWalletRequestPreimage(requirePrivateKey(), preimage)
+    override suspend fun sign(preimage: String): String = WalletRequestSigner.signWalletRequestPreimage(requirePrivateKey(), preimage)
 
     override fun hasCredential(): Boolean = !cleared
 

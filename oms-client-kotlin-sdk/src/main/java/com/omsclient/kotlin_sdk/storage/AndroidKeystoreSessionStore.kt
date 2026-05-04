@@ -37,12 +37,13 @@ internal class AndroidKeystoreSessionStore(
             "Cannot persist pending OMS Client auth state"
         }
         sessionFile.parentFile?.mkdirs()
-        val persisted = PersistedSessionEnvelope(
-            walletId = snapshot.walletId,
-            walletAddress = snapshot.walletAddress,
-            signerAddress = snapshot.signerAddress,
-            signerKeyType = snapshot.signerKeyType,
-        )
+        val persisted =
+            PersistedSessionEnvelope(
+                walletId = snapshot.walletId,
+                walletAddress = snapshot.walletAddress,
+                signerAddress = snapshot.signerAddress,
+                signerKeyType = snapshot.signerKeyType,
+            )
         sessionFile.writeText(persisted.toJson())
     }
 
@@ -58,15 +59,16 @@ internal class AndroidKeystoreSessionStore(
         val signerAddress: String? = null,
         val signerKeyType: KeyType? = null,
     ) {
-        fun isRestorable(): Boolean =
-            !walletId.isNullOrBlank() && !walletAddress.isNullOrBlank()
+        fun isRestorable(): Boolean = !walletId.isNullOrBlank() && !walletAddress.isNullOrBlank()
 
-        fun toJson(): String = JSONObject().apply {
-            put("walletId", walletId)
-            put("walletAddress", walletAddress)
-            put("signerAddress", signerAddress)
-            put("signerKeyType", signerKeyType?.wireValue)
-        }.toString()
+        fun toJson(): String =
+            JSONObject()
+                .apply {
+                    put("walletId", walletId)
+                    put("walletAddress", walletAddress)
+                    put("signerAddress", signerAddress)
+                    put("signerKeyType", signerKeyType?.wireValue)
+                }.toString()
 
         companion object {
             fun fromJson(source: String): PersistedSessionEnvelope {
@@ -75,10 +77,12 @@ internal class AndroidKeystoreSessionStore(
                     walletId = jsonObject.optString("walletId").ifBlank { null },
                     walletAddress = jsonObject.optString("walletAddress").ifBlank { null },
                     signerAddress = jsonObject.optString("signerAddress").ifBlank { null },
-                    signerKeyType = jsonObject.optString("signerKeyType")
-                        .ifBlank { null }
-                        ?.let(KeyType::fromWireValue)
-                        ?.takeIf { it != KeyType.UNKNOWN_DEFAULT },
+                    signerKeyType =
+                        jsonObject
+                            .optString("signerKeyType")
+                            .ifBlank { null }
+                            ?.let(KeyType::fromWireValue)
+                            ?.takeIf { it != KeyType.UNKNOWN_DEFAULT },
                 )
             }
         }

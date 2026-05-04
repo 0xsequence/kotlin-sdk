@@ -19,37 +19,43 @@ class P256EcdsaSignatureEncodingTest {
 
     @Test
     fun derToRawRejectsMalformedSignatures() {
-        assertTrue(runCatching {
-            P256EcdsaSignatureEncoding.derToRaw(byteArrayOf(0x31, 0x00))
-        }.exceptionOrNull() is IllegalArgumentException)
-        assertTrue(runCatching {
-            P256EcdsaSignatureEncoding.derToRaw(
-                byteArrayOf(
-                    0x30,
-                    0x06,
-                    0x02,
-                    0x02,
-                    0x00,
-                    0x01,
-                    0x02,
-                    0x00,
-                ),
-            )
-        }.exceptionOrNull() is IllegalArgumentException)
-        assertTrue(runCatching {
-            P256EcdsaSignatureEncoding.derToRaw(
-                byteArrayOf(
-                    0x30,
-                    0x07,
-                    0x02,
-                    0x01,
-                    0x01,
-                    0x02,
-                    0x01,
-                    0x01,
-                    0x00,
-                ),
-            )
-        }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(
+            runCatching {
+                P256EcdsaSignatureEncoding.derToRaw(byteArrayOf(0x31, 0x00))
+            }.exceptionOrNull() is IllegalArgumentException,
+        )
+        assertTrue(
+            runCatching {
+                P256EcdsaSignatureEncoding.derToRaw(
+                    byteArrayOf(
+                        0x30,
+                        0x06,
+                        0x02,
+                        0x02,
+                        0x00,
+                        0x01,
+                        0x02,
+                        0x00,
+                    ),
+                )
+            }.exceptionOrNull() is IllegalArgumentException,
+        )
+        assertTrue(
+            runCatching {
+                P256EcdsaSignatureEncoding.derToRaw(
+                    byteArrayOf(
+                        0x30,
+                        0x07,
+                        0x02,
+                        0x01,
+                        0x01,
+                        0x02,
+                        0x01,
+                        0x01,
+                        0x00,
+                    ),
+                )
+            }.exceptionOrNull() is IllegalArgumentException,
+        )
     }
 }

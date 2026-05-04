@@ -91,12 +91,13 @@ class TestbedActivity : AppCompatActivity() {
     private fun bindActions() {
         findViewById<MaterialButton>(R.id.loadBalancesButton).setOnClickListener {
             launchAction("Load token balances") { sdk ->
-                val balances = sdk.indexer.getTokenBalances(
-                    network = requireNetwork(sdk, balancesChainIdInput, "Balances chain ID"),
-                    contractAddress = requireText(contractAddressInput, "Contract address"),
-                    walletAddress = requireText(balancesWalletAddressInput, "Balances wallet address"),
-                    includeMetadata = true,
-                )
+                val balances =
+                    sdk.indexer.getTokenBalances(
+                        network = requireNetwork(sdk, balancesChainIdInput, "Balances chain ID"),
+                        contractAddress = requireText(contractAddressInput, "Contract address"),
+                        walletAddress = requireText(balancesWalletAddressInput, "Balances wallet address"),
+                        includeMetadata = true,
+                    )
                 appendLog("Balances status=${balances.status} count=${balances.balances.size}")
                 balances.balances.take(3).forEachIndexed { index, balance ->
                     appendLog(
@@ -118,10 +119,11 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.confirmCodeButton).setOnClickListener {
             launchAction("Confirm email code and resolve wallet") { sdk ->
-                val wallet = sdk.completeEmailAuth(
-                    code = requireText(codeInput, "Verification code"),
-                    selectWallet = { wallets -> wallets.first() },
-                )
+                val wallet =
+                    sdk.completeEmailAuth(
+                        code = requireText(codeInput, "Verification code"),
+                        selectWallet = { wallets -> wallets.first() },
+                    )
                 balancesWalletAddressInput.setText(wallet.address)
                 appendLog(buildAuthSummary(wallet.address))
                 renderSession()
@@ -143,29 +145,34 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.verifySignatureButton).setOnClickListener {
             launchAction("Verify last signature") { sdk ->
-                val result = sdk.utils.verifySignature(
-                    network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
-                    walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
-                    message = requireNotNull(lastSignedMessage) { "No signed message available" },
-                    signature = requireNotNull(lastSignedSignature) { "No signature available" },
-                )
+                val result =
+                    sdk.utils.verifySignature(
+                        network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
+                        walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
+                        message = requireNotNull(lastSignedMessage) { "No signed message available" },
+                        signature = requireNotNull(lastSignedSignature) { "No signature available" },
+                    )
                 appendLog("Verify signature => isValid=${result.isValid} status=${result.status}")
             }
         }
 
         findViewById<MaterialButton>(R.id.sendTransactionButton).setOnClickListener {
             launchAction("Send transaction") { sdk ->
-                val result = sdk.wallet.sendTransaction(
-                    network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
-                    to = transactionToInput.text.toString().trim(),
-                    value = parseUnits(transactionValueInput.text.toString(), 18),
-                )
+                val result =
+                    sdk.wallet.sendTransaction(
+                        network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
+                        to = transactionToInput.text.toString().trim(),
+                        value = parseUnits(transactionValueInput.text.toString(), 18),
+                    )
                 appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txHash ?: "pending"}")
             }
         }
     }
 
-    private fun launchAction(label: String, action: suspend (OMSClient) -> Unit) {
+    private fun launchAction(
+        label: String,
+        action: suspend (OMSClient) -> Unit,
+    ) {
         uiScope.launch {
             appendLog(">> $label")
             runCatching {
@@ -181,15 +188,17 @@ class TestbedActivity : AppCompatActivity() {
         val environment = currentEnvironment()
         val existing = runtime
         if (existing?.projectAccessKey != projectAccessKey || existing.environment != environment) {
-            runtime = DemoRuntime(
-                projectAccessKey = projectAccessKey,
-                environment = environment,
-                sdk = OMSClient(
-                    context = this,
+            runtime =
+                DemoRuntime(
                     projectAccessKey = projectAccessKey,
                     environment = environment,
-                ),
-            )
+                    sdk =
+                        OMSClient(
+                            context = this,
+                            projectAccessKey = projectAccessKey,
+                            environment = environment,
+                        ),
+                )
             lastSignedMessage = null
             lastSignedSignature = null
             lastSignatureView.text = "Last signature: none"
@@ -198,8 +207,7 @@ class TestbedActivity : AppCompatActivity() {
         return requireNotNull(runtime).sdk
     }
 
-    private fun currentProjectAccessKey(): String =
-        requireText(accessKeyInput, "Project access key")
+    private fun currentProjectAccessKey(): String = requireText(accessKeyInput, "Project access key")
 
     private fun currentEnvironment(): OMSClientEnvironment =
         OMSClientEnvironment(
@@ -221,22 +229,29 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun appendLog(message: String) {
-        logView.text = buildString {
-            append(logView.text)
-            append("\n")
-            append(message)
-        }.trim()
+        logView.text =
+            buildString {
+                append(logView.text)
+                append("\n")
+                append(message)
+            }.trim()
     }
 
-    private fun buildAuthSummary(
-        resolvedWalletAddress: String,
-    ): String = buildString {
-        append("Auth confirmed")
-        append(" selected=$resolvedWalletAddress")
-    }
+    private fun buildAuthSummary(resolvedWalletAddress: String): String =
+        buildString {
+            append("Auth confirmed")
+            append(" selected=$resolvedWalletAddress")
+        }
 
-    private fun requireText(input: TextInputEditText, label: String): String {
-        val value = input.text?.toString()?.trim().orEmpty()
+    private fun requireText(
+        input: TextInputEditText,
+        label: String,
+    ): String {
+        val value =
+            input.text
+                ?.toString()
+                ?.trim()
+                .orEmpty()
         require(value.isNotEmpty()) { "$label is required" }
         return value
     }

@@ -21,7 +21,8 @@ enum class Network(
         chainId = "80002",
         displayName = "Polygon Amoy",
         indexerName = "amoy",
-    );
+    ),
+    ;
 
     override fun toString(): String = displayName
 }

@@ -11,11 +11,12 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val sdk = OMSClient(
-            context = this,
-            projectAccessKey = DemoConfig.demoProjectAccessKey,
-            environment = OMSClientEnvironment.demoDefaults(),
-        )
+        val sdk =
+            OMSClient(
+                context = this,
+                projectAccessKey = DemoConfig.demoProjectAccessKey,
+                environment = OMSClientEnvironment.demoDefaults(),
+            )
         if (sdk.wallet.address != null) {
             startActivity(Intent(this, AuthDemoActivity::class.java))
             finish()

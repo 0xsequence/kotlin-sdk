@@ -12,9 +12,10 @@ internal fun View.applySafeDrawingInsets() {
     val initialPaddingBottom = paddingBottom
 
     ViewCompat.setOnApplyWindowInsetsListener(this) { view, windowInsets ->
-        val insets = windowInsets.getInsets(
-            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
-        )
+        val insets =
+            windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+            )
         view.setPadding(
             initialPaddingLeft + insets.left,
             initialPaddingTop + insets.top,
@@ -33,12 +34,14 @@ private fun View.requestApplyInsetsWhenAttached() {
         return
     }
 
-    addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-        override fun onViewAttachedToWindow(view: View) {
-            view.removeOnAttachStateChangeListener(this)
-            view.requestApplyInsets()
-        }
+    addOnAttachStateChangeListener(
+        object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) {
+                view.removeOnAttachStateChangeListener(this)
+                view.requestApplyInsets()
+            }
 
-        override fun onViewDetachedFromWindow(view: View) = Unit
-    })
+            override fun onViewDetachedFromWindow(view: View) = Unit
+        },
+    )
 }

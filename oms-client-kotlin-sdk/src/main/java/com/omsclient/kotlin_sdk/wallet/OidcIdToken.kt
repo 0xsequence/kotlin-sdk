@@ -1,12 +1,12 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import java.security.MessageDigest
-import java.util.Base64
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
+import java.security.MessageDigest
+import java.util.Base64
 
 internal object OidcIdToken {
     private val json = Json { ignoreUnknownKeys = true }

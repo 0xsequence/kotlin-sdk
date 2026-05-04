@@ -18,16 +18,16 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.TextInputEditText
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
+import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
@@ -139,18 +139,19 @@ class AuthDemoActivity : AppCompatActivity() {
                     appendLog("Google sign-in error: ${describeThrowable(it)}")
                 },
             ) {
-                val wallet = try {
-                    val idToken = requestGoogleIdToken()
-                    sdk.signInWithOidcIdToken(
-                        idToken = idToken,
-                        issuer = DemoConfig.googleIssuer,
-                        audience = DemoConfig.demoGoogleWebClientId,
-                        selectWallet = { wallets -> wallets.first() },
-                    )
-                } catch (throwable: Throwable) {
-                    sdk.signOut()
-                    throw throwable
-                }
+                val wallet =
+                    try {
+                        val idToken = requestGoogleIdToken()
+                        sdk.signInWithOidcIdToken(
+                            idToken = idToken,
+                            issuer = DemoConfig.googleIssuer,
+                            audience = DemoConfig.demoGoogleWebClientId,
+                            selectWallet = { wallets -> wallets.first() },
+                        )
+                    } catch (throwable: Throwable) {
+                        sdk.signOut()
+                        throw throwable
+                    }
                 renderSignedInWallet(wallet, "Google login complete")
                 appendLog("Google sign-in complete: ${wallet.address}")
             }
@@ -164,10 +165,11 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 val email = requireText(emailInput, "Email")
                 val response = sdk.startEmailAuth(email)
-                authStatusView.text = buildString {
-                    append("Code requested for ")
-                    append(response.loginHint ?: email)
-                }
+                authStatusView.text =
+                    buildString {
+                        append("Code requested for ")
+                        append(response.loginHint ?: email)
+                    }
                 signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
                 showPendingCodeStep()
                 emailInput.text?.clear()
@@ -187,10 +189,11 @@ class AuthDemoActivity : AppCompatActivity() {
                 onStart = { authStatusView.text = "Confirming code and resolving wallet..." },
                 onFailure = { authStatusView.text = "Code confirmation failed: ${it.message ?: "Unknown error"}" },
             ) {
-                val wallet = sdk.completeEmailAuth(
-                    code = requireText(codeInput, "Verification code"),
-                    selectWallet = { wallets -> wallets.first() },
-                )
+                val wallet =
+                    sdk.completeEmailAuth(
+                        code = requireText(codeInput, "Verification code"),
+                        selectWallet = { wallets -> wallets.first() },
+                    )
                 codeInput.text?.clear()
                 renderSignedInWallet(wallet, "Email login complete")
             }
@@ -220,10 +223,11 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 val message = requireText(messageInput, "Message")
                 val network = selectedNetwork
-                val result = sdk.wallet.signMessage(
-                    network = network,
-                    message = message,
-                )
+                val result =
+                    sdk.wallet.signMessage(
+                        network = network,
+                        message = message,
+                    )
                 lastSignedMessage = message
                 lastSignedSignature = result.signature
                 lastSignatureView.text = "Last signature: ${result.signature}"
@@ -238,17 +242,19 @@ class AuthDemoActivity : AppCompatActivity() {
                 onStart = { signatureStatusView.text = "Signature status: verification in progress..." },
                 onFailure = { signatureStatusView.text = "Signature status: verification failed." },
             ) {
-                val result = sdk.utils.verifySignature(
-                    network = selectedNetwork,
-                    walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
-                    message = requireNotNull(lastSignedMessage) { "No signed message available" },
-                    signature = requireNotNull(lastSignedSignature) { "No signature available" },
-                )
-                signatureStatusView.text = if (result.isValid) {
-                    "Signature status: valid on chain ${selectedNetwork.chainId}."
-                } else {
-                    "Signature status: invalid. API status=${result.status}."
-                }
+                val result =
+                    sdk.utils.verifySignature(
+                        network = selectedNetwork,
+                        walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
+                        message = requireNotNull(lastSignedMessage) { "No signed message available" },
+                        signature = requireNotNull(lastSignedSignature) { "No signature available" },
+                    )
+                signatureStatusView.text =
+                    if (result.isValid) {
+                        "Signature status: valid on chain ${selectedNetwork.chainId}."
+                    } else {
+                        "Signature status: invalid. API status=${result.status}."
+                    }
                 appendLog("Verify signature => isValid=${result.isValid} status=${result.status}")
             }
         }
@@ -260,12 +266,13 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { transactionStatusView.text = "Transaction status: send failed." },
             ) {
                 val network = selectedNetwork
-                val result = sdk.wallet.sendTransaction(
-                    network = network,
-                    to = transactionToInput.text.toString().trim(),
-                    value = parseUnits(transactionValueInput.text.toString(), 18),
-                    selectFeeOption = ::selectFeeOption,
-                )
+                val result =
+                    sdk.wallet.sendTransaction(
+                        network = network,
+                        to = transactionToInput.text.toString().trim(),
+                        value = parseUnits(transactionValueInput.text.toString(), 18),
+                        selectFeeOption = ::selectFeeOption,
+                    )
                 lastTransactionHash = result.txHash
                 lastTransactionHashView.text = "Last tx hash: ${result.txHash ?: "pending"}"
                 transactionStatusView.text = "Transaction status: ${result.status} on chain ${network.chainId}."
@@ -290,8 +297,9 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun configureNetworkPicker() {
-        val networks = listOf(Network.POLYGON_AMOY, Network.POLYGON)
-            .filter { network -> sdk.supportedNetworks.any { it.chainId == network.chainId } }
+        val networks =
+            listOf(Network.POLYGON_AMOY, Network.POLYGON)
+                .filter { network -> sdk.supportedNetworks.any { it.chainId == network.chainId } }
         val labels = networks.map(::networkLabel)
         networkInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
         networkInput.setText(networkLabel(selectedNetwork), false)
@@ -326,34 +334,37 @@ class AuthDemoActivity : AppCompatActivity() {
         } else {
             Log.d(TAG, message)
         }
-        logView.text = buildString {
-            append(logView.text)
-            append("\n")
-            append(message)
-        }.trim()
+        logView.text =
+            buildString {
+                append(logView.text)
+                append("\n")
+                append(message)
+            }.trim()
     }
 
     private suspend fun requestGoogleIdToken(): String {
         val nonce = generateSecureRandomNonce()
-        val request = GetCredentialRequest.Builder()
-            .addCredentialOption(
-                GetSignInWithGoogleOption.Builder(
-                    serverClientId = DemoConfig.demoGoogleWebClientId,
-                )
-                    .setNonce(nonce)
-                    .build(),
-            )
-            .build()
+        val request =
+            GetCredentialRequest
+                .Builder()
+                .addCredentialOption(
+                    GetSignInWithGoogleOption
+                        .Builder(
+                            serverClientId = DemoConfig.demoGoogleWebClientId,
+                        ).setNonce(nonce)
+                        .build(),
+                ).build()
 
-        val result = try {
-            credentialManager.getCredential(
-                context = this,
-                request = request,
-            )
-        } catch (error: GetCredentialException) {
-            appendLog("Credential Manager error: ${describeThrowable(error)}")
-            throw error
-        }
+        val result =
+            try {
+                credentialManager.getCredential(
+                    context = this,
+                    request = request,
+                )
+            } catch (error: GetCredentialException) {
+                appendLog("Credential Manager error: ${describeThrowable(error)}")
+                throw error
+            }
         val credential = result.credential
         require(credential is CustomCredential) {
             "Unexpected credential type: ${credential::class.java.simpleName}"
@@ -370,49 +381,59 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
-    private fun describeThrowable(throwable: Throwable): String = buildString {
-        if (throwable is WebRpcError) {
-            append("WebRpcError(")
-            append("error=")
-            append(throwable.error)
-            append(", code=")
-            append(throwable.code)
-            append(", status=")
-            append(throwable.status)
-            append(", kind=")
-            append(throwable.errorKind.name)
-            append(", message=")
-            append(throwable.message)
-            if (throwable.causeString.isNotBlank()) {
-                append(", cause=")
-                append(throwable.causeString)
+    private fun describeThrowable(throwable: Throwable): String =
+        buildString {
+            if (throwable is WebRpcError) {
+                append("WebRpcError(")
+                append("error=")
+                append(throwable.error)
+                append(", code=")
+                append(throwable.code)
+                append(", status=")
+                append(throwable.status)
+                append(", kind=")
+                append(throwable.errorKind.name)
+                append(", message=")
+                append(throwable.message)
+                if (throwable.causeString.isNotBlank()) {
+                    append(", cause=")
+                    append(throwable.causeString)
+                }
+                append(")")
+                return@buildString
             }
-            append(")")
-            return@buildString
-        }
-        append(throwable::class.java.simpleName)
-        throwable.message?.takeIf { it.isNotBlank() }?.let {
-            append(": ")
-            append(it)
-        }
-        throwable.cause?.let { cause ->
-            append(" | cause=")
-            append(cause::class.java.simpleName)
-            cause.message?.takeIf { it.isNotBlank() }?.let { message ->
+            append(throwable::class.java.simpleName)
+            throwable.message?.takeIf { it.isNotBlank() }?.let {
                 append(": ")
-                append(message)
+                append(it)
+            }
+            throwable.cause?.let { cause ->
+                append(" | cause=")
+                append(cause::class.java.simpleName)
+                cause.message?.takeIf { it.isNotBlank() }?.let { message ->
+                    append(": ")
+                    append(message)
+                }
             }
         }
-    }
 
-    private fun requireText(input: TextInputEditText, label: String): String {
-        val value = input.text?.toString()?.trim().orEmpty()
+    private fun requireText(
+        input: TextInputEditText,
+        label: String,
+    ): String {
+        val value =
+            input.text
+                ?.toString()
+                ?.trim()
+                .orEmpty()
         require(value.isNotEmpty()) { "$label is required" }
         return value
     }
 
-    private fun addressLabel(label: String, address: String?): String =
-        "$label:\n${address ?: "none"}"
+    private fun addressLabel(
+        label: String,
+        address: String?,
+    ): String = "$label:\n${address ?: "none"}"
 
     private fun copyWalletAddress() {
         val address = sdk.session.walletAddress
@@ -432,29 +453,31 @@ class AuthDemoActivity : AppCompatActivity() {
             val labels = feeOptions.map(::feeOptionLabel).toTypedArray()
             val firstAvailable = feeOptions.firstOrNull(::hasEnoughBalance)
             var resumed = false
+
             fun resumeOnce(selection: FeeOptionSelection?) {
                 if (!resumed) {
                     resumed = true
                     continuation.resume(selection)
                 }
             }
+
             fun cancelOnce() {
                 if (!resumed) {
                     resumed = true
                     continuation.resumeWithException(IllegalStateException("Fee selection cancelled"))
                 }
             }
-            val builder = MaterialAlertDialogBuilder(this)
-                .setTitle("Select fee")
-                .setItems(labels) { _, index ->
-                    val token = feeOptions[index].feeOption.token.symbol
-                    appendLog("Selected fee token: $token")
-                    resumeOnce(FeeOptionSelection(token = token))
-                }
-                .setOnCancelListener {
-                    appendLog("Fee selection cancelled")
-                    cancelOnce()
-                }
+            val builder =
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Select fee")
+                    .setItems(labels) { _, index ->
+                        val token = feeOptions[index].feeOption.token.symbol
+                        appendLog("Selected fee token: $token")
+                        resumeOnce(FeeOptionSelection(token = token))
+                    }.setOnCancelListener {
+                        appendLog("Fee selection cancelled")
+                        cancelOnce()
+                    }
             firstAvailable?.let { option ->
                 builder.setPositiveButton("Select first available") { _, _ ->
                     val token = option.feeOption.token.symbol
@@ -595,34 +618,38 @@ class AuthDemoActivity : AppCompatActivity() {
             return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes)
         }
 
-        private fun explorerUrlFor(chainId: String, txHash: String): String = when (chainId) {
-            "80002" -> "https://amoy.polygonscan.com/tx/$txHash"
-            "137" -> "https://polygonscan.com/tx/$txHash"
-            else -> "https://amoy.polygonscan.com/tx/$txHash"
-        }
+        private fun explorerUrlFor(
+            chainId: String,
+            txHash: String,
+        ): String =
+            when (chainId) {
+                "80002" -> "https://amoy.polygonscan.com/tx/$txHash"
+                "137" -> "https://polygonscan.com/tx/$txHash"
+                else -> "https://amoy.polygonscan.com/tx/$txHash"
+            }
 
-        private fun networkLabel(network: Network): String =
-            "${network.displayName} (${network.chainId})"
+        private fun networkLabel(network: Network): String = "${network.displayName} (${network.chainId})"
 
-        private fun feeOptionLabel(option: FeeOptionWithBalance): String = buildString {
-            val feeOption = option.feeOption
-            append(feeOption.token.symbol)
-            append(" ")
-            append(feeOption.displayValue)
-            append(" available=")
-            append(option.available ?: "unknown")
-            option.availableRaw?.let { availableRaw ->
-                append(" available_raw=")
-                append(availableRaw)
+        private fun feeOptionLabel(option: FeeOptionWithBalance): String =
+            buildString {
+                val feeOption = option.feeOption
+                append(feeOption.token.symbol)
+                append(" ")
+                append(feeOption.displayValue)
+                append(" available=")
+                append(option.available ?: "unknown")
+                option.availableRaw?.let { availableRaw ->
+                    append(" available_raw=")
+                    append(availableRaw)
+                }
+                option.decimals?.let { decimals ->
+                    append(" decimals=")
+                    append(decimals)
+                }
+                if (feeOption.value.isNotBlank()) {
+                    append(" raw=")
+                    append(feeOption.value)
+                }
             }
-            option.decimals?.let { decimals ->
-                append(" decimals=")
-                append(decimals)
-            }
-            if (feeOption.value.isNotBlank()) {
-                append(" raw=")
-                append(feeOption.value)
-            }
-        }
     }
 }

@@ -31,30 +31,32 @@ internal class AndroidKeystoreP256CredentialSigner(
     private val noncePreferences = appContext.getSharedPreferences(nonceStoreName, Context.MODE_PRIVATE)
     private val nonceLock = nonceLockFor(nonceStoreName, alias)
 
-    override suspend fun credentialId(): String = withContext(ioDispatcher) {
-        credentialId(getOrCreateKeyPair().public)
-    }
-
-    override suspend fun nextNonce(): String = withContext(ioDispatcher) {
-        synchronized(nonceLock) {
-            val previous = noncePreferences.getString(alias, null)?.toLongOrNull() ?: 0L
-            val next = maxOf(System.currentTimeMillis(), previous + 1)
-            check(noncePreferences.edit().putString(alias, next.toString()).commit()) {
-                "Unable to persist OMS Client credential nonce"
-            }
-            next.toString()
+    override suspend fun credentialId(): String =
+        withContext(ioDispatcher) {
+            credentialId(getOrCreateKeyPair().public)
         }
-    }
 
-    override suspend fun sign(preimage: String): String = withContext(ioDispatcher) {
-        val signature = Signature.getInstance(SHA256_WITH_ECDSA)
-        signature.initSign(requirePrivateKey())
-        signature.update(preimage.toByteArray(Charsets.UTF_8))
-        Numeric.toHexString(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
-    }
+    override suspend fun nextNonce(): String =
+        withContext(ioDispatcher) {
+            synchronized(nonceLock) {
+                val previous = noncePreferences.getString(alias, null)?.toLongOrNull() ?: 0L
+                val next = maxOf(System.currentTimeMillis(), previous + 1)
+                check(noncePreferences.edit().putString(alias, next.toString()).commit()) {
+                    "Unable to persist OMS Client credential nonce"
+                }
+                next.toString()
+            }
+        }
 
-    override fun hasCredential(): Boolean =
-        keyStore().containsAlias(alias)
+    override suspend fun sign(preimage: String): String =
+        withContext(ioDispatcher) {
+            val signature = Signature.getInstance(SHA256_WITH_ECDSA)
+            signature.initSign(requirePrivateKey())
+            signature.update(preimage.toByteArray(Charsets.UTF_8))
+            Numeric.toHexString(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
+        }
+
+    override fun hasCredential(): Boolean = keyStore().containsAlias(alias)
 
     override fun clear() {
         val store = keyStore()
@@ -79,17 +81,19 @@ internal class AndroidKeystoreP256CredentialSigner(
             return KeyPair(publicKey, privateKey)
         }
 
-        val keyPairGenerator = KeyPairGenerator.getInstance(
-            KeyProperties.KEY_ALGORITHM_EC,
-            ANDROID_KEYSTORE,
-        )
-        val spec = KeyGenParameterSpec.Builder(
-            alias,
-            KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
-        )
-            .setAlgorithmParameterSpec(ECGenParameterSpec(SECP256R1))
-            .setDigests(KeyProperties.DIGEST_SHA256)
-            .build()
+        val keyPairGenerator =
+            KeyPairGenerator.getInstance(
+                KeyProperties.KEY_ALGORITHM_EC,
+                ANDROID_KEYSTORE,
+            )
+        val spec =
+            KeyGenParameterSpec
+                .Builder(
+                    alias,
+                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+                ).setAlgorithmParameterSpec(ECGenParameterSpec(SECP256R1))
+                .setDigests(KeyProperties.DIGEST_SHA256)
+                .build()
         keyPairGenerator.initialize(spec)
         return keyPairGenerator.generateKeyPair()
     }
@@ -104,17 +108,17 @@ internal class AndroidKeystoreP256CredentialSigner(
 
     private fun BigInteger.toFixedHex(size: Int): String {
         val raw = toByteArray()
-        val unsigned = if (raw.size > 1 && raw[0] == 0.toByte()) {
-            raw.copyOfRange(1, raw.size)
-        } else {
-            raw
-        }
+        val unsigned =
+            if (raw.size > 1 && raw[0] == 0.toByte()) {
+                raw.copyOfRange(1, raw.size)
+            } else {
+                raw
+            }
         require(unsigned.size <= size) { "Invalid P-256 public key coordinate" }
         return Numeric.toHexStringNoPrefix(ByteArray(size - unsigned.size) + unsigned)
     }
 
-    private fun keyStore(): KeyStore =
-        KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+    private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
 
     companion object {
         private data class NonceLockKey(
@@ -124,8 +128,10 @@ internal class AndroidKeystoreP256CredentialSigner(
 
         private val nonceLocks = ConcurrentHashMap<NonceLockKey, Any>()
 
-        private fun nonceLockFor(storeName: String, alias: String): Any =
-            nonceLocks.computeIfAbsent(NonceLockKey(storeName, alias)) { Any() }
+        private fun nonceLockFor(
+            storeName: String,
+            alias: String,
+        ): Any = nonceLocks.computeIfAbsent(NonceLockKey(storeName, alias)) { Any() }
 
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val SECP256R1 = "secp256r1"
