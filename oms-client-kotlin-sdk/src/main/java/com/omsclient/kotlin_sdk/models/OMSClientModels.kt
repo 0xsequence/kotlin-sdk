@@ -1,5 +1,7 @@
 package com.omsclient.kotlin_sdk.models
 
+import java.math.BigInteger
+
 typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
 typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
 typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
@@ -11,12 +13,17 @@ data class FeeOptionWithBalance(
     val balance: TokenBalance?,
     val available: String?,
     val availableRaw: String?,
-    val decimals: UInt?,
+    val decimals: Int?,
 )
 
 data class SendTransactionRequest(
     val to: String,
-    val value: String,
+    /**
+     * Raw base-unit transaction value. Use
+     * [com.omsclient.kotlin_sdk.utils.parseUnits] to convert decimal display
+     * values before sending.
+     */
+    val value: BigInteger,
     val data: String? = null,
     val mode: TransactionMode = TransactionMode.Relayer,
 )

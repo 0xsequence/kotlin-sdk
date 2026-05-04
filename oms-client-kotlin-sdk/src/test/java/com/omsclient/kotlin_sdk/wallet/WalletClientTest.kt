@@ -33,6 +33,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.web3j.utils.Numeric
+import java.math.BigInteger
 import java.util.Base64
 
 class WalletClientTest {
@@ -1314,6 +1315,40 @@ class WalletClientTest {
     }
 
     @Test
+    fun sendTransactionRejectsNegativeValue() = runBlocking {
+        val client = WalletClient(
+            projectAccessKey = "test-access-key",
+            environment = OMSClientEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+            transport = OMSClientHttpClient(),
+            sessionStore = InMemorySessionStore(
+                snapshot = OMSClientSessionSnapshot(
+                    walletId = "wallet-main",
+                    walletAddress = "0xwallet",
+                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                ),
+                privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+            ),
+            nonceGenerator = { 1710000106L },
+            privateKeyFactory = ::fixedPrivateKeyBytes,
+        )
+        assertTrue(client.restorePersistedSession())
+
+        val error = runCatching {
+            client.sendTransaction(
+                network = OMSClientNetworks.requireSupported("80002"),
+                request = SendTransactionRequest(
+                    to = "0xabc",
+                    value = BigInteger.ONE.negate(),
+                ),
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is IllegalArgumentException)
+    }
+
+    @Test
     fun sendTransactionMatchesWaasRequestShape() = runBlocking {
         server.enqueue(
             MockResponse.Builder()
@@ -1441,7 +1476,7 @@ class WalletClientTest {
             network = OMSClientNetworks.requireSupported("80002"),
             request = SendTransactionRequest(
                 to = "0xabc",
-                value = "0",
+                value = BigInteger.ZERO,
                 data = "0x1234",
                 mode = TransactionMode.Native,
             ),
@@ -1451,12 +1486,12 @@ class WalletClientTest {
             assertEquals("100", feeOptions[0].balance?.balance)
             assertEquals("0.0000000000000001", feeOptions[0].available)
             assertEquals("100", feeOptions[0].availableRaw)
-            assertEquals(18u, feeOptions[0].decimals)
+            assertEquals(18, feeOptions[0].decimals)
             assertEquals("USDC", feeOptions[1].feeOption.token.symbol)
             assertEquals("2000", feeOptions[1].balance?.balance)
             assertEquals("0.002", feeOptions[1].available)
             assertEquals("2000", feeOptions[1].availableRaw)
-            assertEquals(6u, feeOptions[1].decimals)
+            assertEquals(6, feeOptions[1].decimals)
             FeeOptionSelection(token = feeOptions[1].feeOption.token.symbol)
         }
         val prepareRequest = requireNotNull(server.takeRequest())
@@ -1583,7 +1618,7 @@ class WalletClientTest {
             network = OMSClientNetworks.requireSupported("80002"),
             request = SendTransactionRequest(
                 to = "0xabc",
-                value = "0",
+                value = BigInteger.ZERO,
             ),
         )
 

@@ -106,7 +106,7 @@ suspend fun client.wallet.signMessage(
 suspend fun client.wallet.sendTransaction(
     network: Network,
     to: String,
-    value: String,
+    value: BigInteger,
     selectFeeOption: FeeOptionSelector? = null,
 ): SendTransactionResponse
 ```
@@ -123,6 +123,8 @@ When a prepared transaction includes fee options, `selectFeeOption` receives the
 available options enriched with the selected wallet's matching token balance
 when available. When no selector is provided, `sendTransaction` uses the first
 required fee option, or no fee option when the transaction is sponsored.
+`value` is a raw base-unit integer; use `parseUnits` to convert human-entered
+decimal values before sending.
 After execution, `sendTransaction` polls the WaaS status endpoint briefly for an
 executed status or transaction hash. If the transaction remains pending when
 polling times out, the response contains the `txnId`, `status =
@@ -145,6 +147,22 @@ enum class Network {
 Each entry exposes `chainId` and `displayName`.
 
 ## Utils
+
+Top-level unit helpers live in `com.omsclient.kotlin_sdk.utils`.
+
+```kotlin
+fun formatUnits(
+    value: BigInteger,
+    decimals: Int,
+): String
+```
+
+```kotlin
+fun parseUnits(
+    value: String,
+    decimals: Int,
+): BigInteger
+```
 
 ```kotlin
 suspend fun utils.verifySignature(
@@ -198,14 +216,14 @@ data class FeeOptionWithBalance(
     val balance: TokenBalance?,
     val available: String?,
     val availableRaw: String?,
-    val decimals: UInt?,
+    val decimals: Int?,
 )
 ```
 
 ```kotlin
 data class SendTransactionRequest(
     val to: String,
-    val value: String,
+    val value: BigInteger,
     val data: String? = null,
     val mode: TransactionMode = TransactionMode.Relayer,
 )
@@ -328,7 +346,7 @@ val txResult = client.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
-        value = "0",
+        value = parseUnits("0", 18),
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
@@ -342,7 +360,7 @@ val txResult = client.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
-        value = "0",
+        value = parseUnits("0", 18),
         data = "0x1234",
         mode = TransactionMode.Native,
     ),

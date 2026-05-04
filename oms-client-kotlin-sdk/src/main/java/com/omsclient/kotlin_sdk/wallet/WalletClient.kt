@@ -33,8 +33,8 @@ import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
+import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.delay
-import java.math.BigDecimal
 import java.math.BigInteger
 
 internal data class WalletState(
@@ -369,7 +369,7 @@ class WalletClient internal constructor(
     suspend fun sendTransaction(
         network: Network,
         to: String,
-        value: String,
+        value: BigInteger,
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse = sendTransaction(
         network = network,
@@ -393,6 +393,7 @@ class WalletClient internal constructor(
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse {
         val snapshot = session.requireSnapshot()
+        require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
         requireActiveCredential()
         val client = waasClient()
         val prepared = client.prepareEthereumTransaction(
@@ -400,7 +401,7 @@ class WalletClient internal constructor(
                 walletId = requireWalletId(),
                 network = network.chainId,
                 to = request.to,
-                value = request.value,
+                value = request.value.toString(),
                 data = request.data,
                 mode = request.mode,
             ),
@@ -527,17 +528,13 @@ class WalletClient internal constructor(
         type.equals("native", ignoreCase = true) ||
             (contractAddress.isNullOrBlank() && tokenId.isNullOrBlank())
 
-    private fun com.omsclient.kotlin_sdk.generated.waas.FeeToken.balanceDecimals(): UInt? =
-        decimals ?: if (isNativeToken()) 18u else null
+    private fun com.omsclient.kotlin_sdk.generated.waas.FeeToken.balanceDecimals(): Int? =
+        decimals?.toInt() ?: if (isNativeToken()) 18 else null
 
-    private fun String.formatTokenAmount(decimals: UInt?): String =
-        runCatching {
-            val raw = BigInteger(this)
-            val scale = decimals?.toInt() ?: return this
-            BigDecimal(raw, scale)
-                .stripTrailingZeros()
-                .toPlainString()
-        }.getOrDefault(this)
+    private fun String.formatTokenAmount(decimals: Int?): String =
+        decimals?.let { scale ->
+            runCatching { formatUnits(BigInteger(this), scale) }.getOrDefault(this)
+        } ?: this
 
     private fun List<FeeOption>.defaultSelection(sponsored: Boolean): FeeOptionSelection? =
         if (sponsored) null else firstOrNull()?.let { FeeOptionSelection(token = it.token.symbol) }
