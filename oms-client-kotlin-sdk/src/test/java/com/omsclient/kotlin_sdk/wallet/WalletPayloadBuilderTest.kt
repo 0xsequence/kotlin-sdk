@@ -17,7 +17,8 @@ class WalletPayloadBuilderTest {
     fun oidcCommitVerifierPayloadMatchesParityVector() {
         val idToken =
             "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9." +
-                "eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiJkZW1vLXdlYi1jbGllbnQtaWQiLCJzdWIiOiJnb29nbGUtc3ViLTEyMyIsImVtYWlsIjoidXNlckBleGFtcGxlLmNvbSIsImV4cCI6MTkxMDAwMDEwMH0." +
+                "eyJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLCJhdWQiOiJkZW1vLXdlYi1jbGllbnQtaWQi" +
+                "LCJzdWIiOiJnb29nbGUtc3ViLTEyMyIsImVtYWlsIjoidXNlckBleGFtcGxlLmNvbSIsImV4cCI6MTkxMDAwMDEwMH0." +
                 "signature"
         val handle = OidcIdToken.handleHash(idToken)
 
@@ -31,11 +32,12 @@ class WalletPayloadBuilderTest {
                 CommitVerifierRequest(
                     identityType = IdentityType.OIDC,
                     authMode = AuthMode.IDToken,
-                    metadata = mapOf(
-                        "iss" to "https://accounts.google.com",
-                        "aud" to "demo-web-client-id",
-                        "exp" to "1910000100",
-                    ),
+                    metadata =
+                        mapOf(
+                            "iss" to "https://accounts.google.com",
+                            "aud" to "demo-web-client-id",
+                            "exp" to "1910000100",
+                        ),
                     handle = handle,
                 ),
             ),
@@ -74,10 +76,11 @@ class WalletPayloadBuilderTest {
 
     @Test
     fun completeAuthPayloadFromCodeMatchesParityVector() {
-        val answer = WalletAuthChallenge.hashAnswer(
-            challenge = "challenge",
-            code = "123456",
-        )
+        val answer =
+            WalletAuthChallenge.hashAnswer(
+                challenge = "challenge",
+                code = "123456",
+            )
 
         assertEquals(
             "2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M",

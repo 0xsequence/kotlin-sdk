@@ -12,8 +12,7 @@ class OMSClientEnvironment(
 ) {
     internal val defaultWalletType: WalletType = WalletType.Ethereum
 
-    fun indexerUrlFor(network: Network): String =
-        indexerUrlTemplate.replace("{value}", network.indexerName)
+    fun indexerUrlFor(network: Network): String = indexerUrlTemplate.replace("{value}", network.indexerName)
 
     internal fun walletApiBaseUrl(): String {
         val uri = URI(walletApiUrl)

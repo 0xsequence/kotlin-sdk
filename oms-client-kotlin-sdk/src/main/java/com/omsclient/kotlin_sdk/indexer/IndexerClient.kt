@@ -31,45 +31,49 @@ class IndexerClient internal constructor(
         walletAddress: String,
         includeMetadata: Boolean,
     ): TokenBalancesResult {
-        val response = transport.postJson(
-            baseUrl = environment.indexerUrlFor(network),
-            path = "/GetTokenBalances",
-            body = buildJsonObject {
-                putJsonObject("page") {
-                    put("page", 0)
-                    put("pageSize", 40)
-                    put("more", false)
-                }
-                put("contractAddress", contractAddress)
-                put("accountAddress", walletAddress)
-                put("includeMetadata", includeMetadata)
-            }.toString(),
-            headers = defaultHeaders(),
-        )
+        val response =
+            transport.postJson(
+                baseUrl = environment.indexerUrlFor(network),
+                path = "/GetTokenBalances",
+                body =
+                    buildJsonObject {
+                        putJsonObject("page") {
+                            put("page", 0)
+                            put("pageSize", 40)
+                            put("more", false)
+                        }
+                        put("contractAddress", contractAddress)
+                        put("accountAddress", walletAddress)
+                        put("includeMetadata", includeMetadata)
+                    }.toString(),
+                headers = defaultHeaders(),
+            )
 
         val root = parseJsonObject(response.body)
         val pageObject = root.objectOrNull("page")
-        val page = pageObject?.let {
-            TokenBalancesPage(
-                page = it.long("page")?.toInt() ?: 0,
-                pageSize = it.long("pageSize")?.toInt() ?: 0,
-                more = it.boolean("more") == true,
-            )
-        }
+        val page =
+            pageObject?.let {
+                TokenBalancesPage(
+                    page = it.long("page")?.toInt() ?: 0,
+                    pageSize = it.long("pageSize")?.toInt() ?: 0,
+                    more = it.boolean("more") == true,
+                )
+            }
 
-        val balances = root.arrayOrEmpty("balances").mapNotNull { element ->
-            val objectValue = element as? JsonObject ?: return@mapNotNull null
-            TokenBalance(
-                contractType = objectValue.string("contractType"),
-                contractAddress = objectValue.string("contractAddress"),
-                accountAddress = objectValue.string("accountAddress"),
-                tokenId = objectValue.string("tokenID"),
-                balance = objectValue.string("balance"),
-                blockHash = objectValue.string("blockHash"),
-                blockNumber = objectValue.long("blockNumber"),
-                chainId = objectValue.long("chainId"),
-            )
-        }
+        val balances =
+            root.arrayOrEmpty("balances").mapNotNull { element ->
+                val objectValue = element as? JsonObject ?: return@mapNotNull null
+                TokenBalance(
+                    contractType = objectValue.string("contractType"),
+                    contractAddress = objectValue.string("contractAddress"),
+                    accountAddress = objectValue.string("accountAddress"),
+                    tokenId = objectValue.string("tokenID"),
+                    balance = objectValue.string("balance"),
+                    blockHash = objectValue.string("blockHash"),
+                    blockNumber = objectValue.long("blockNumber"),
+                    chainId = objectValue.long("chainId"),
+                )
+            }
 
         return TokenBalancesResult(
             status = response.statusCode,
@@ -85,14 +89,16 @@ class IndexerClient internal constructor(
         network: Network,
         walletAddress: String,
     ): TokenBalance? {
-        val response = transport.postJson(
-            baseUrl = environment.indexerUrlFor(network),
-            path = "/GetNativeTokenBalance",
-            body = buildJsonObject {
-                put("accountAddress", walletAddress)
-            }.toString(),
-            headers = defaultHeaders(),
-        )
+        val response =
+            transport.postJson(
+                baseUrl = environment.indexerUrlFor(network),
+                path = "/GetNativeTokenBalance",
+                body =
+                    buildJsonObject {
+                        put("accountAddress", walletAddress)
+                    }.toString(),
+                headers = defaultHeaders(),
+            )
 
         val balanceObject = parseJsonObject(response.body).objectOrNull("balance") ?: return null
         return TokenBalance(
@@ -107,8 +113,9 @@ class IndexerClient internal constructor(
         )
     }
 
-    private fun defaultHeaders(): Map<String, String> = mapOf(
-        OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
-        "Accept" to "application/json",
-    )
+    private fun defaultHeaders(): Map<String, String> =
+        mapOf(
+            OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
+            "Accept" to "application/json",
+        )
 }

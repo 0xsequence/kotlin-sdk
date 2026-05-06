@@ -15,8 +15,8 @@ import com.omsclient.kotlin_sdk.wallet.AndroidKeystoreP256CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.WalletClient
 import okhttp3.OkHttpClient
-import java.security.MessageDigest
 import java.net.URI
+import java.security.MessageDigest
 
 /**
  * Main entry point for OMS Client.
@@ -34,26 +34,29 @@ class OMSClient internal constructor(
 ) {
     private val transport = OMSClientHttpClient(okHttpClient)
 
-    val wallet: WalletClient = WalletClient(
-        projectAccessKey = projectAccessKey,
-        environment = environment,
-        transport = transport,
-        session = walletSession,
-        sessionStore = sessionStore,
-        credentialSigner = credentialSigner,
-    )
+    val wallet: WalletClient =
+        WalletClient(
+            projectAccessKey = projectAccessKey,
+            environment = environment,
+            transport = transport,
+            session = walletSession,
+            sessionStore = sessionStore,
+            credentialSigner = credentialSigner,
+        )
 
-    val utils: OMSClientUtils = OMSClientUtils(
-        projectAccessKey = projectAccessKey,
-        environment = environment,
-        transport = transport,
-    )
+    val utils: OMSClientUtils =
+        OMSClientUtils(
+            projectAccessKey = projectAccessKey,
+            environment = environment,
+            transport = transport,
+        )
 
-    val indexer: IndexerClient = IndexerClient(
-        projectAccessKey = projectAccessKey,
-        environment = environment,
-        transport = transport,
-    )
+    val indexer: IndexerClient =
+        IndexerClient(
+            projectAccessKey = projectAccessKey,
+            environment = environment,
+            transport = transport,
+        )
 
     init {
         wallet.restorePersistedSession()
@@ -63,13 +66,14 @@ class OMSClient internal constructor(
      * Snapshot of the current auth and wallet-selection state.
      */
     val session: OMSClientSessionState
-        get() = wallet.currentState().let { state ->
-            OMSClientSessionState(
-                hasPendingSignIn = state.hasPendingSignIn,
-                walletAddress = state.walletAddress,
-                signerAddress = state.signerAddress,
-            )
-        }
+        get() =
+            wallet.currentState().let { state ->
+                OMSClientSessionState(
+                    hasPendingSignIn = state.hasPendingSignIn,
+                    walletAddress = state.walletAddress,
+                    signerAddress = state.signerAddress,
+                )
+            }
 
     /**
      * Networks currently supported by this SDK build.
@@ -81,8 +85,7 @@ class OMSClient internal constructor(
      * Returns a supported network by chain id, or null when the chain id is not
      * supported by this SDK build.
      */
-    fun network(chainId: String): Network? =
-        supportedNetworks.firstOrNull { it.chainId == chainId }
+    fun network(chainId: String): Network? = supportedNetworks.firstOrNull { it.chainId == chainId }
 
     /**
      * Creates an Android-backed client with persisted secure storage for
@@ -98,16 +101,18 @@ class OMSClient internal constructor(
         environment = environment,
         okHttpClient = okHttpClient,
         walletSession = OMSClientSession(),
-        sessionStore = AndroidKeystoreSessionStore(
-            context = context.applicationContext,
-            alias = scopedSessionKeyAlias(environment),
-            fileName = scopedSessionFileName(environment),
-        ),
-        credentialSigner = AndroidKeystoreP256CredentialSigner(
-            context = context.applicationContext,
-            alias = scopedCredentialKeyAlias(environment),
-            nonceStoreName = scopedCredentialNonceStoreName(environment),
-        ),
+        sessionStore =
+            AndroidKeystoreSessionStore(
+                context = context.applicationContext,
+                alias = scopedSessionKeyAlias(environment),
+                fileName = scopedSessionFileName(environment),
+            ),
+        credentialSigner =
+            AndroidKeystoreP256CredentialSigner(
+                context = context.applicationContext,
+                alias = scopedCredentialKeyAlias(environment),
+                nonceStoreName = scopedCredentialNonceStoreName(environment),
+            ),
     )
 
     /**
@@ -116,8 +121,7 @@ class OMSClient internal constructor(
      * The returned verifier response can be shown or inspected by the app, and
      * the OTP can later be completed with [completeEmailAuth].
      */
-    suspend fun startEmailAuth(email: String): CommitVerifierResponse =
-        wallet.startEmailAuth(email)
+    suspend fun startEmailAuth(email: String): CommitVerifierResponse = wallet.startEmailAuth(email)
 
     /**
      * Signs in with an OIDC ID token and resolves the only available wallet for
@@ -128,12 +132,13 @@ class OMSClient internal constructor(
         issuer: String,
         audience: String,
         walletType: WalletType = environment.defaultWalletType,
-    ): Wallet = wallet.signInWithOidcIdToken(
-        idToken = idToken,
-        issuer = issuer,
-        audience = audience,
-        walletType = walletType,
-    )
+    ): Wallet =
+        wallet.signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = issuer,
+            audience = audience,
+            walletType = walletType,
+        )
 
     /**
      * Signs in with an OIDC ID token and lets the app select from multiple
@@ -145,13 +150,14 @@ class OMSClient internal constructor(
         audience: String,
         walletType: WalletType = environment.defaultWalletType,
         selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): Wallet = wallet.signInWithOidcIdToken(
-        idToken = idToken,
-        issuer = issuer,
-        audience = audience,
-        walletType = walletType,
-        selectWallet = selectWallet,
-    )
+    ): Wallet =
+        wallet.signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = issuer,
+            audience = audience,
+            walletType = walletType,
+            selectWallet = selectWallet,
+        )
 
     /**
      * Completes email OTP authentication and resolves the only available wallet
@@ -160,10 +166,11 @@ class OMSClient internal constructor(
     suspend fun completeEmailAuth(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
-    ): Wallet = wallet.completeEmailAuth(
-        code = code,
-        walletType = walletType,
-    )
+    ): Wallet =
+        wallet.completeEmailAuth(
+            code = code,
+            walletType = walletType,
+        )
 
     /**
      * Completes email OTP authentication and lets the app select from multiple
@@ -173,11 +180,12 @@ class OMSClient internal constructor(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
         selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): Wallet = wallet.completeEmailAuth(
-        code = code,
-        walletType = walletType,
-        selectWallet = selectWallet,
-    )
+    ): Wallet =
+        wallet.completeEmailAuth(
+            code = code,
+            walletType = walletType,
+            selectWallet = selectWallet,
+        )
 
     /**
      * Signs out of the current account and clears all in-memory and persisted
@@ -188,31 +196,27 @@ class OMSClient internal constructor(
     }
 
     companion object {
-        internal fun scopedSessionKeyAlias(
-            environment: OMSClientEnvironment,
-        ): String = "oms-client-session-${scopedSessionSuffix(environment)}"
+        internal fun scopedSessionKeyAlias(environment: OMSClientEnvironment): String =
+            "oms-client-session-${scopedSessionSuffix(environment)}"
 
-        internal fun scopedSessionFileName(
-            environment: OMSClientEnvironment,
-        ): String = "oms-client-session-${scopedSessionSuffix(environment)}.json"
+        internal fun scopedSessionFileName(environment: OMSClientEnvironment): String =
+            "oms-client-session-${scopedSessionSuffix(environment)}.json"
 
-        internal fun scopedCredentialKeyAlias(
-            environment: OMSClientEnvironment,
-        ): String = "oms-client-credential-${scopedSessionSuffix(environment)}"
+        internal fun scopedCredentialKeyAlias(environment: OMSClientEnvironment): String =
+            "oms-client-credential-${scopedSessionSuffix(environment)}"
 
-        internal fun scopedCredentialNonceStoreName(
-            environment: OMSClientEnvironment,
-        ): String = "oms-client-credential-nonces-${scopedSessionSuffix(environment)}"
+        internal fun scopedCredentialNonceStoreName(environment: OMSClientEnvironment): String =
+            "oms-client-credential-nonces-${scopedSessionSuffix(environment)}"
 
-        private fun scopedSessionSuffix(
-            environment: OMSClientEnvironment,
-        ): String {
-            val source = buildString {
-                append(normalizedWalletApiOrigin(environment.walletApiUrl))
-                append('\u0000')
-                append(environment.authorizationScope)
-            }
-            return MessageDigest.getInstance("SHA-256")
+        private fun scopedSessionSuffix(environment: OMSClientEnvironment): String {
+            val source =
+                buildString {
+                    append(normalizedWalletApiOrigin(environment.walletApiUrl))
+                    append('\u0000')
+                    append(environment.authorizationScope)
+                }
+            return MessageDigest
+                .getInstance("SHA-256")
                 .digest(source.toByteArray(Charsets.UTF_8))
                 .joinToString(separator = "") { "%02x".format(it) }
         }

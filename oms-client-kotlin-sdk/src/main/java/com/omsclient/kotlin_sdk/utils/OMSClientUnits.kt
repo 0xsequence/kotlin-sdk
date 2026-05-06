@@ -7,7 +7,10 @@ import java.math.BigInteger
  *
  * Trailing fractional zeros are removed from the returned value.
  */
-fun formatUnits(value: BigInteger, decimals: Int): String {
+fun formatUnits(
+    value: BigInteger,
+    decimals: Int,
+): String {
     require(decimals >= 0) { "decimals must be non-negative" }
 
     var display = value.abs().toString()
@@ -31,7 +34,10 @@ fun formatUnits(value: BigInteger, decimals: Int): String {
  * Fractional precision beyond [decimals] is rounded to the nearest base unit,
  * matching viem's `parseUnits` behavior.
  */
-fun parseUnits(value: String, decimals: Int): BigInteger {
+fun parseUnits(
+    value: String,
+    decimals: Int,
+): BigInteger {
     require(decimals >= 0) { "decimals must be non-negative" }
     require(DECIMAL_PATTERN.matches(value)) { "Invalid decimal number: $value" }
 
@@ -47,11 +53,12 @@ fun parseUnits(value: String, decimals: Int): BigInteger {
         }
         fraction = ""
     } else if (fraction.length > decimals) {
-        val roundedFraction = if (fraction[decimals] >= '5') {
-            incrementDecimalString(fraction.substring(0, decimals)).padStart(decimals, '0')
-        } else {
-            fraction.substring(0, decimals)
-        }
+        val roundedFraction =
+            if (fraction[decimals] >= '5') {
+                incrementDecimalString(fraction.substring(0, decimals)).padStart(decimals, '0')
+            } else {
+                fraction.substring(0, decimals)
+            }
 
         if (roundedFraction.length > decimals) {
             integer = incrementDecimalString(integer)
@@ -69,5 +76,4 @@ fun parseUnits(value: String, decimals: Int): BigInteger {
 
 private val DECIMAL_PATTERN = Regex("-?(?:\\d+(?:\\.\\d*)?|\\.\\d+)")
 
-private fun incrementDecimalString(value: String): String =
-    value.ifEmpty { "0" }.let { BigInteger(it).add(BigInteger.ONE).toString() }
+private fun incrementDecimalString(value: String): String = value.ifEmpty { "0" }.let { BigInteger(it).add(BigInteger.ONE).toString() }

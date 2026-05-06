@@ -23,17 +23,19 @@ class OMSClientUtils internal constructor(
         message: String,
         signature: String,
     ): VerifySignatureResult {
-        val response = transport.postJson(
-            baseUrl = environment.apiRpcUrl,
-            path = "/IsValidMessageSignature",
-            body = buildJsonObject {
-                put("chainId", network.chainId)
-                put("walletAddress", walletAddress)
-                put("message", message)
-                put("signature", signature)
-            }.toString(),
-            headers = defaultHeaders(),
-        )
+        val response =
+            transport.postJson(
+                baseUrl = environment.apiRpcUrl,
+                path = "/IsValidMessageSignature",
+                body =
+                    buildJsonObject {
+                        put("chainId", network.chainId)
+                        put("walletAddress", walletAddress)
+                        put("message", message)
+                        put("signature", signature)
+                    }.toString(),
+                headers = defaultHeaders(),
+            )
 
         return VerifySignatureResult(
             status = response.statusCode,
@@ -41,8 +43,9 @@ class OMSClientUtils internal constructor(
         )
     }
 
-    private fun defaultHeaders(): Map<String, String> = mapOf(
-        OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
-        "Accept" to "application/json",
-    )
+    private fun defaultHeaders(): Map<String, String> =
+        mapOf(
+            OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
+            "Accept" to "application/json",
+        )
 }

@@ -212,8 +212,18 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 
 ## Build From Source
 
+To enable the local pre-push Kotlin style gate for this checkout:
+
+```sh
+tools/install-git-hooks.sh
+```
+
+The hook runs `./gradlew ktlintCheck` before push. This is intentionally local
+and is not wired into GitHub CI.
+
 ```sh
 ./gradlew :oms-client-kotlin-sdk:testDebugUnitTest
+./gradlew ktlintCheck
 ./gradlew :oms-client-kotlin-sdk:lintDebug
 ./gradlew :app:lintDebug
 ./gradlew :app:assembleDebug

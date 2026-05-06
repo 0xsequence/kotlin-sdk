@@ -26,12 +26,13 @@ internal class OMSClientHttpClient(
         body: String,
         headers: Map<String, String>,
     ): OMSClientHttpResponse {
-        val response = postJsonWithStatus(
-            baseUrl = baseUrl,
-            path = path,
-            body = body,
-            headers = headers,
-        )
+        val response =
+            postJsonWithStatus(
+                baseUrl = baseUrl,
+                path = path,
+                body = body,
+                headers = headers,
+            )
         if (response.statusCode !in 200..299) {
             throw OMSClientHttpException(response.statusCode, response.body)
         }
@@ -43,26 +44,30 @@ internal class OMSClientHttpClient(
         path: String,
         body: String,
         headers: Map<String, String>,
-    ): OMSClientHttpResponse = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(joinUrl(baseUrl, path))
-            .post(body.toRequestBody(jsonMediaType))
-            .apply {
-                headers.forEach { (name, value) -> addHeader(name, value) }
+    ): OMSClientHttpResponse =
+        withContext(Dispatchers.IO) {
+            val request =
+                Request
+                    .Builder()
+                    .url(joinUrl(baseUrl, path))
+                    .post(body.toRequestBody(jsonMediaType))
+                    .apply {
+                        headers.forEach { (name, value) -> addHeader(name, value) }
+                    }.build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
+                OMSClientHttpResponse(
+                    statusCode = response.code,
+                    body = responseBody,
+                )
             }
-            .build()
-
-        okHttpClient.newCall(request).execute().use { response ->
-            val responseBody = response.body?.string().orEmpty()
-            OMSClientHttpResponse(
-                statusCode = response.code,
-                body = responseBody,
-            )
         }
-    }
 
-    private fun joinUrl(baseUrl: String, path: String): String =
-        baseUrl.trimEnd('/') + "/" + path.trimStart('/')
+    private fun joinUrl(
+        baseUrl: String,
+        path: String,
+    ): String = baseUrl.trimEnd('/') + "/" + path.trimStart('/')
 
     companion object {
         private val jsonMediaType = "application/json; charset=utf-8".toMediaType()

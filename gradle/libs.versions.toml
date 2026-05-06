@@ -13,6 +13,8 @@ coroutines = "1.10.2"
 web3j = "4.14.0"
 credentials = "1.6.0"
 googleid = "1.2.0"
+ktlintGradle = "14.2.0"
+ktlint = "1.8.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,3 +36,4 @@ googleid = { group = "com.google.android.libraries.identity.googleid", name = "g
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }

@@ -1,13 +1,26 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.ktlint)
+}
+
+ktlint {
+    version.set(libs.versions.ktlint.get())
+    android.set(true)
+    outputToConsole.set(true)
+    filter {
+        exclude("**/build/**")
+    }
 }
 
 android {
     namespace = "com.omsclient.kotlin_sdk_samples"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version =
+            release(
+                36,
+            ) {
+                minorApiLevel = 1
+            }
     }
 
     defaultConfig {
@@ -25,7 +38,7 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }

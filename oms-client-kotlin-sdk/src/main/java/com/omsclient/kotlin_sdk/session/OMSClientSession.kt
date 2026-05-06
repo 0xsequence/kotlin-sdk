@@ -32,22 +32,24 @@ internal class OMSClientSession(
             val signerAddress: String,
             val signerKeyType: KeyType?,
         ) : SessionState {
-            override fun snapshot(): OMSClientSessionSnapshot = OMSClientSessionSnapshot(
-                challenge = challenge,
-                verifier = verifier,
-                signerAddress = signerAddress,
-                signerKeyType = signerKeyType,
-            )
+            override fun snapshot(): OMSClientSessionSnapshot =
+                OMSClientSessionSnapshot(
+                    challenge = challenge,
+                    verifier = verifier,
+                    signerAddress = signerAddress,
+                    signerKeyType = signerKeyType,
+                )
         }
 
         data class AwaitingWalletResolution(
             val signerAddress: String,
             val signerKeyType: KeyType?,
         ) : SessionState {
-            override fun snapshot(): OMSClientSessionSnapshot = OMSClientSessionSnapshot(
-                signerAddress = signerAddress,
-                signerKeyType = signerKeyType,
-            )
+            override fun snapshot(): OMSClientSessionSnapshot =
+                OMSClientSessionSnapshot(
+                    signerAddress = signerAddress,
+                    signerKeyType = signerKeyType,
+                )
         }
 
         data class ActiveSession(
@@ -56,12 +58,13 @@ internal class OMSClientSession(
             val signerAddress: String?,
             val signerKeyType: KeyType?,
         ) : SessionState {
-            override fun snapshot(): OMSClientSessionSnapshot = OMSClientSessionSnapshot(
-                walletId = walletId,
-                walletAddress = walletAddress,
-                signerAddress = signerAddress,
-                signerKeyType = signerKeyType,
-            )
+            override fun snapshot(): OMSClientSessionSnapshot =
+                OMSClientSessionSnapshot(
+                    walletId = walletId,
+                    walletAddress = walletAddress,
+                    signerAddress = signerAddress,
+                    signerKeyType = signerKeyType,
+                )
         }
     }
 
@@ -83,72 +86,96 @@ internal class OMSClientSession(
         signerAddress: String,
         signerKeyType: KeyType?,
     ) {
-        state = SessionState.PendingAuth(
-            challenge = challenge,
-            verifier = verifier,
-            signerAddress = signerAddress,
-            signerKeyType = signerKeyType,
-        )
+        state =
+            SessionState.PendingAuth(
+                challenge = challenge,
+                verifier = verifier,
+                signerAddress = signerAddress,
+                signerKeyType = signerKeyType,
+            )
     }
 
     fun markAuthVerified() {
-        val current = when (val current = state) {
-            is SessionState.PendingAuth -> current
-            else -> error("No active pending auth challenge")
-        }
-        state = SessionState.AwaitingWalletResolution(
-            signerAddress = current.signerAddress,
-            signerKeyType = current.signerKeyType,
-        )
-    }
-
-    fun activateWallet(walletId: String, walletAddress: String) {
-        val current = when (val current = state) {
-            is SessionState.AwaitingWalletResolution -> current
-            else -> error("No authenticated wallet resolution in progress")
-        }
-        state = SessionState.ActiveSession(
-            walletId = walletId,
-            walletAddress = walletAddress,
-            signerAddress = current.signerAddress,
-            signerKeyType = current.signerKeyType,
-        )
-    }
-
-    fun requireSnapshot(): OMSClientSessionSnapshot = state.snapshot()
-        ?: error("No active OMS Client session")
-
-    fun requirePendingAuth(): OMSClientPendingAuthSnapshot {
-        return when (val current = state) {
-            is SessionState.PendingAuth -> OMSClientPendingAuthSnapshot(
-                challenge = current.challenge,
-                verifier = current.verifier,
+        val current =
+            when (val current = state) {
+                is SessionState.PendingAuth -> current
+                else -> error("No active pending auth challenge")
+            }
+        state =
+            SessionState.AwaitingWalletResolution(
+                signerAddress = current.signerAddress,
+                signerKeyType = current.signerKeyType,
             )
-            else -> error("No active pending auth challenge")
-        }
     }
+
+    fun activateWallet(
+        walletId: String,
+        walletAddress: String,
+    ) {
+        val current =
+            when (val current = state) {
+                is SessionState.AwaitingWalletResolution -> current
+                else -> error("No authenticated wallet resolution in progress")
+            }
+        state =
+            SessionState.ActiveSession(
+                walletId = walletId,
+                walletAddress = walletAddress,
+                signerAddress = current.signerAddress,
+                signerKeyType = current.signerKeyType,
+            )
+    }
+
+    fun requireSnapshot(): OMSClientSessionSnapshot =
+        state.snapshot()
+            ?: error("No active OMS Client session")
+
+    fun requirePendingAuth(): OMSClientPendingAuthSnapshot =
+        when (val current = state) {
+            is SessionState.PendingAuth -> {
+                OMSClientPendingAuthSnapshot(
+                    challenge = current.challenge,
+                    verifier = current.verifier,
+                )
+            }
+
+            else -> {
+                error("No active pending auth challenge")
+            }
+        }
 
     private fun OMSClientSessionSnapshot?.toSessionState(): SessionState {
         val snapshot = this ?: return SessionState.NoSession
         return when {
-            !snapshot.walletId.isNullOrBlank() && !snapshot.walletAddress.isNullOrBlank() -> SessionState.ActiveSession(
-                walletId = snapshot.walletId,
-                walletAddress = snapshot.walletAddress,
-                signerAddress = snapshot.signerAddress,
-                signerKeyType = snapshot.signerKeyType,
-            )
+            !snapshot.walletId.isNullOrBlank() && !snapshot.walletAddress.isNullOrBlank() -> {
+                SessionState.ActiveSession(
+                    walletId = snapshot.walletId,
+                    walletAddress = snapshot.walletAddress,
+                    signerAddress = snapshot.signerAddress,
+                    signerKeyType = snapshot.signerKeyType,
+                )
+            }
+
             !snapshot.challenge.isNullOrBlank() && !snapshot.verifier.isNullOrBlank() &&
-                !snapshot.signerAddress.isNullOrBlank() -> SessionState.PendingAuth(
-                challenge = snapshot.challenge,
-                verifier = snapshot.verifier,
-                signerAddress = snapshot.signerAddress,
-                signerKeyType = snapshot.signerKeyType,
-            )
-            !snapshot.signerAddress.isNullOrBlank() -> SessionState.AwaitingWalletResolution(
-                signerAddress = snapshot.signerAddress,
-                signerKeyType = snapshot.signerKeyType,
-            )
-            else -> SessionState.NoSession
+                !snapshot.signerAddress.isNullOrBlank() -> {
+                SessionState.PendingAuth(
+                    challenge = snapshot.challenge,
+                    verifier = snapshot.verifier,
+                    signerAddress = snapshot.signerAddress,
+                    signerKeyType = snapshot.signerKeyType,
+                )
+            }
+
+            !snapshot.signerAddress.isNullOrBlank() -> {
+                SessionState.AwaitingWalletResolution(
+                    signerAddress = snapshot.signerAddress,
+                    signerKeyType = snapshot.signerKeyType,
+                )
+            }
+
+            else -> {
+                SessionState.NoSession
+            }
         }
     }
 }

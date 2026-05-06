@@ -24,18 +24,18 @@ import com.omsclient.kotlin_sdk.models.FeeOption
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
-import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
-import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
-import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.session.OMSClientSession
+import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.delay
 import java.math.BigInteger
+import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
+import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 
 internal data class WalletState(
     val hasPendingSignIn: Boolean,
@@ -58,15 +58,17 @@ class WalletClient internal constructor(
     private val transactionStatusPollTimeoutMillis: Long = 60_000L,
     private val transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
-    private val signer: CredentialSigner = credentialSigner ?: EthereumPrivateKeyCredentialSigner(
-        privateKeyFactory = privateKeyFactory,
-        nonceGenerator = { nonceGenerator().toString() },
-    )
-    private val indexerClient: IndexerClient = IndexerClient(
-        projectAccessKey = projectAccessKey,
-        environment = environment,
-        transport = transport,
-    )
+    private val signer: CredentialSigner =
+        credentialSigner ?: EthereumPrivateKeyCredentialSigner(
+            privateKeyFactory = privateKeyFactory,
+            nonceGenerator = { nonceGenerator().toString() },
+        )
+    private val indexerClient: IndexerClient =
+        IndexerClient(
+            projectAccessKey = projectAccessKey,
+            environment = environment,
+            transport = transport,
+        )
 
     internal val hasPendingSignIn: Boolean
         get() {
@@ -83,11 +85,12 @@ class WalletClient internal constructor(
     internal val signerAddress: String?
         get() = session.snapshot()?.signerAddress
 
-    internal fun currentState(): WalletState = WalletState(
-        hasPendingSignIn = hasPendingSignIn,
-        walletAddress = address,
-        signerAddress = signerAddress,
-    )
+    internal fun currentState(): WalletState =
+        WalletState(
+            hasPendingSignIn = hasPendingSignIn,
+            walletAddress = address,
+            signerAddress = signerAddress,
+        )
 
     internal fun restoreSession(snapshot: OMSClientSessionSnapshot) {
         session.restore(snapshot)
@@ -114,24 +117,23 @@ class WalletClient internal constructor(
         sessionStore?.clear()
     }
 
-    private fun requireWalletId(): String =
-        requireNotNull(session.snapshot()?.walletId) { "No wallet selected" }
+    private fun requireWalletId(): String = requireNotNull(session.snapshot()?.walletId) { "No wallet selected" }
 
-    private fun requireWalletAddress(): String =
-        requireNotNull(address) { "No wallet selected" }
+    private fun requireWalletAddress(): String = requireNotNull(address) { "No wallet selected" }
 
     internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
         requireNoActiveWalletSession()
         return try {
             val signerAddress = signer.credentialId()
-            val response = waasClient().commitVerifier(
-                CommitVerifierRequest(
-                    identityType = IdentityType.Email,
-                    authMode = AuthMode.OTP,
-                    metadata = emptyMap(),
-                    handle = email,
-                ),
-            )
+            val response =
+                waasClient().commitVerifier(
+                    CommitVerifierRequest(
+                        identityType = IdentityType.Email,
+                        authMode = AuthMode.OTP,
+                        metadata = emptyMap(),
+                        handle = email,
+                    ),
+                )
 
             session.replaceForPendingAuth(
                 challenge = response.challenge,
@@ -152,18 +154,19 @@ class WalletClient internal constructor(
         issuer: String,
         audience: String,
         walletType: WalletType = environment.defaultWalletType,
-    ): Wallet = signInWithOidcIdToken(
-        idToken = idToken,
-        issuer = issuer,
-        audience = audience,
-        walletType = walletType,
-        selectWallet = { wallets ->
-            require(wallets.size == 1) {
-                "Multiple wallets are available. Call signInWithOidcIdToken(idToken, issuer, audience, walletType, selectWallet) to choose one."
-            }
-            wallets.single()
-        },
-    )
+    ): Wallet =
+        signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = issuer,
+            audience = audience,
+            walletType = walletType,
+            selectWallet = { wallets ->
+                require(wallets.size == 1) {
+                    "Multiple wallets are available. Call signInWithOidcIdToken(idToken, issuer, audience, walletType, selectWallet) to choose one."
+                }
+                wallets.single()
+            },
+        )
 
     internal suspend fun signInWithOidcIdToken(
         idToken: String,
@@ -175,18 +178,20 @@ class WalletClient internal constructor(
         requireNoActiveWalletSession()
         try {
             val signerAddress = signer.credentialId()
-            val response = waasClient().commitVerifier(
-                CommitVerifierRequest(
-                    identityType = IdentityType.OIDC,
-                    authMode = AuthMode.IDToken,
-                    metadata = mapOf(
-                        "iss" to issuer,
-                        "aud" to audience,
-                        "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
+            val response =
+                waasClient().commitVerifier(
+                    CommitVerifierRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.IDToken,
+                        metadata =
+                            mapOf(
+                                "iss" to issuer,
+                                "aud" to audience,
+                                "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
+                            ),
+                        handle = OidcIdToken.handleHash(idToken),
                     ),
-                    handle = OidcIdToken.handleHash(idToken),
-                ),
-            )
+                )
 
             session.replaceForPendingAuth(
                 challenge = response.challenge,
@@ -195,12 +200,13 @@ class WalletClient internal constructor(
                 signerKeyType = signer.keyType,
             )
 
-            val auth = try {
-                confirmOidcIdTokenSignIn(idToken)
-            } catch (throwable: Throwable) {
-                signOut()
-                throw throwable
-            }
+            val auth =
+                try {
+                    confirmOidcIdTokenSignIn(idToken)
+                } catch (throwable: Throwable) {
+                    signOut()
+                    throw throwable
+                }
             return resolveAuthenticatedWallet(auth, walletType, selectWallet)
         } catch (throwable: Throwable) {
             signOut()
@@ -235,16 +241,17 @@ class WalletClient internal constructor(
     internal suspend fun completeEmailAuth(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
-    ): Wallet = completeEmailAuth(
-        code = code,
-        walletType = walletType,
-        selectWallet = { wallets ->
-            require(wallets.size == 1) {
-                "Multiple wallets are available. Call completeEmailAuth(code, selectWallet) to choose one."
-            }
-            wallets.single()
-        },
-    )
+    ): Wallet =
+        completeEmailAuth(
+            code = code,
+            walletType = walletType,
+            selectWallet = { wallets ->
+                require(wallets.size == 1) {
+                    "Multiple wallets are available. Call completeEmailAuth(code, selectWallet) to choose one."
+                }
+                wallets.single()
+            },
+        )
 
     /**
      * Completes the email OTP flow and returns the selected wallet.
@@ -264,8 +271,8 @@ class WalletClient internal constructor(
     internal suspend fun resolveWallet(
         completeAuth: CompleteAuthResponse,
         walletType: WalletType = environment.defaultWalletType,
-    ): Wallet {
-        return resolveAuthenticatedWallet(
+    ): Wallet =
+        resolveAuthenticatedWallet(
             completeAuth = completeAuth,
             walletType = walletType,
             selectWallet = { wallets ->
@@ -275,15 +282,16 @@ class WalletClient internal constructor(
                 wallets.single()
             },
         )
-    }
 
     internal suspend fun useWallet(walletId: String): Wallet {
         session.requireSnapshot()
-        val wallet = waasClient().useWallet(
-            UseWalletRequest(
-                walletId = walletId,
-            ),
-        ).wallet
+        val wallet =
+            waasClient()
+                .useWallet(
+                    UseWalletRequest(
+                        walletId = walletId,
+                    ),
+                ).wallet
 
         session.activateWallet(
             walletId = wallet.id,
@@ -295,9 +303,11 @@ class WalletClient internal constructor(
 
     internal suspend fun createWallet(walletType: WalletType = environment.defaultWalletType): Wallet {
         session.requireSnapshot()
-        val wallet = waasClient().createWallet(
-            CreateWalletRequest(type = walletType),
-        ).wallet
+        val wallet =
+            waasClient()
+                .createWallet(
+                    CreateWalletRequest(type = walletType),
+                ).wallet
 
         session.activateWallet(
             walletId = wallet.id,
@@ -316,11 +326,15 @@ class WalletClient internal constructor(
         return try {
             val candidateWallets = completeAuth.wallets.filter { it.type == walletType }
             when {
-                candidateWallets.isEmpty() -> createWallet(walletType)
+                candidateWallets.isEmpty() -> {
+                    createWallet(walletType)
+                }
+
                 candidateWallets.size == 1 -> {
                     val selected = candidateWallets.single()
                     useWallet(selected.id)
                 }
+
                 else -> {
                     val selected = selectWallet(candidateWallets)
                     require(candidateWallets.contains(selected)) {
@@ -350,7 +364,10 @@ class WalletClient internal constructor(
     /**
      * Signs [message] with the currently selected wallet on [network].
      */
-    suspend fun signMessage(network: Network, message: String): SignMessageResponse {
+    suspend fun signMessage(
+        network: Network,
+        message: String,
+    ): SignMessageResponse {
         session.requireSnapshot()
         requireActiveCredential()
         return waasClient().signMessage(
@@ -371,14 +388,16 @@ class WalletClient internal constructor(
         to: String,
         value: BigInteger,
         selectFeeOption: FeeOptionSelector? = null,
-    ): ClientSendTransactionResponse = sendTransaction(
-        network = network,
-        request = ClientSendTransactionRequest(
-            to = to,
-            value = value,
-        ),
-        selectFeeOption = selectFeeOption,
-    )
+    ): ClientSendTransactionResponse =
+        sendTransaction(
+            network = network,
+            request =
+                ClientSendTransactionRequest(
+                    to = to,
+                    value = value,
+                ),
+            selectFeeOption = selectFeeOption,
+        )
 
     /**
      * Sends a transaction from the currently selected wallet on [network].
@@ -396,41 +415,45 @@ class WalletClient internal constructor(
         require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
         requireActiveCredential()
         val client = waasClient()
-        val prepared = client.prepareEthereumTransaction(
-            PrepareEthereumTransactionRequest(
-                walletId = requireWalletId(),
-                network = network.chainId,
-                to = request.to,
-                value = request.value.toString(),
-                data = request.data,
-                mode = request.mode,
-            ),
-        )
-        val feeOption = prepared.feeOptions
-            .takeIf { it.isNotEmpty() }
-            ?.let { feeOptions ->
-                if (selectFeeOption == null) {
-                    feeOptions.defaultSelection(sponsored = prepared.sponsored)
-                } else {
-                    selectFeeOption(
-                        enrichFeeOptionsWithBalances(
-                            network = network,
-                            walletAddress = requireNotNull(snapshot.walletAddress) { "No wallet selected" },
-                            feeOptions = feeOptions,
-                        ),
-                    )
+        val prepared =
+            client.prepareEthereumTransaction(
+                PrepareEthereumTransactionRequest(
+                    walletId = requireWalletId(),
+                    network = network.chainId,
+                    to = request.to,
+                    value = request.value.toString(),
+                    data = request.data,
+                    mode = request.mode,
+                ),
+            )
+        val feeOption =
+            prepared.feeOptions
+                .takeIf { it.isNotEmpty() }
+                ?.let { feeOptions ->
+                    if (selectFeeOption == null) {
+                        feeOptions.defaultSelection(sponsored = prepared.sponsored)
+                    } else {
+                        selectFeeOption(
+                            enrichFeeOptionsWithBalances(
+                                network = network,
+                                walletAddress = requireNotNull(snapshot.walletAddress) { "No wallet selected" },
+                                feeOptions = feeOptions,
+                            ),
+                        )
+                    }
                 }
-            }
-        val executed = client.execute(
-            ExecuteRequest(
+        val executed =
+            client.execute(
+                ExecuteRequest(
+                    txnId = prepared.txnId,
+                    feeOption = feeOption,
+                ),
+            )
+        val status =
+            client.waitForTransactionStatus(
                 txnId = prepared.txnId,
-                feeOption = feeOption,
-            ),
-        )
-        val status = client.waitForTransactionStatus(
-            txnId = prepared.txnId,
-            fallbackStatus = executed.status,
-        )
+                fallbackStatus = executed.status,
+            )
         return ClientSendTransactionResponse(
             txnId = prepared.txnId,
             status = status.status.takeIf { it != TransactionStatus.UNKNOWN_DEFAULT } ?: executed.status,
@@ -450,30 +473,33 @@ class WalletClient internal constructor(
         walletAddress: String,
         feeOptions: List<FeeOption>,
     ): List<FeeOptionWithBalance> {
-        val nativeBalance = if (feeOptions.any { it.token.isNativeToken() }) {
-            loadNativeTokenBalance(network = network, walletAddress = walletAddress)
-        } else {
-            null
-        }
-        val balancesByContract = feeOptions
-            .mapNotNull { it.token.contractAddress?.normalizeAddress() }
-            .distinct()
-            .associateWith { contractAddress ->
-                loadTokenBalanceOrZero(
-                    network = network,
-                    contractAddress = contractAddress,
-                    walletAddress = walletAddress,
-                )
+        val nativeBalance =
+            if (feeOptions.any { it.token.isNativeToken() }) {
+                loadNativeTokenBalance(network = network, walletAddress = walletAddress)
+            } else {
+                null
             }
+        val balancesByContract =
+            feeOptions
+                .mapNotNull { it.token.contractAddress?.normalizeAddress() }
+                .distinct()
+                .associateWith { contractAddress ->
+                    loadTokenBalanceOrZero(
+                        network = network,
+                        contractAddress = contractAddress,
+                        walletAddress = walletAddress,
+                    )
+                }
 
         return feeOptions.map { feeOption ->
-            val balance = if (feeOption.token.isNativeToken()) {
-                nativeBalance
-            } else {
-                feeOption.token.contractAddress
-                    ?.normalizeAddress()
-                    ?.let { balancesByContract[it] }
-            }
+            val balance =
+                if (feeOption.token.isNativeToken()) {
+                    nativeBalance
+                } else {
+                    feeOption.token.contractAddress
+                        ?.normalizeAddress()
+                        ?.let { balancesByContract[it] }
+                }
             val decimals = feeOption.token.balanceDecimals()
             FeeOptionWithBalance(
                 feeOption = feeOption,
@@ -488,39 +514,44 @@ class WalletClient internal constructor(
     private suspend fun loadNativeTokenBalance(
         network: Network,
         walletAddress: String,
-    ): TokenBalance? = runCatching {
-        indexerClient.getNativeTokenBalance(
-            network = network,
-            walletAddress = walletAddress,
-        )
-    }.getOrNull()
+    ): TokenBalance? =
+        runCatching {
+            indexerClient.getNativeTokenBalance(
+                network = network,
+                walletAddress = walletAddress,
+            )
+        }.getOrNull()
 
     private suspend fun loadTokenBalanceOrZero(
         network: Network,
         contractAddress: String,
         walletAddress: String,
-    ): TokenBalance? = runCatching {
-        indexerClient.getTokenBalances(
-            network = network,
-            contractAddress = contractAddress,
-            walletAddress = walletAddress,
-            includeMetadata = false,
-        ).balances.firstOrNull { balance ->
-            balance.contractAddress.normalizeAddress() == contractAddress
-        } ?: TokenBalance(
-            contractType = "ERC20",
-            contractAddress = contractAddress,
-            accountAddress = walletAddress,
-            tokenId = null,
-            balance = "0",
-            blockHash = null,
-            blockNumber = null,
-            chainId = network.chainId.toLongOrNull(),
-        )
-    }.getOrNull()
+    ): TokenBalance? =
+        runCatching {
+            indexerClient
+                .getTokenBalances(
+                    network = network,
+                    contractAddress = contractAddress,
+                    walletAddress = walletAddress,
+                    includeMetadata = false,
+                ).balances
+                .firstOrNull { balance ->
+                    balance.contractAddress.normalizeAddress() == contractAddress
+                } ?: TokenBalance(
+                contractType = "ERC20",
+                contractAddress = contractAddress,
+                accountAddress = walletAddress,
+                tokenId = null,
+                balance = "0",
+                blockHash = null,
+                blockNumber = null,
+                chainId = network.chainId.toLongOrNull(),
+            )
+        }.getOrNull()
 
     private fun String?.normalizeAddress(): String? =
-        this?.trim()
+        this
+            ?.trim()
             ?.takeIf { it.isNotEmpty() }
             ?.lowercase()
 
@@ -563,22 +594,25 @@ class WalletClient internal constructor(
             if (remainingMillis <= 0L) {
                 return lastStatus
             }
-            val nextDelayMillis = if (completedStatusPolls < fastTransactionStatusPollCount) {
-                fastTransactionStatusPollIntervalMillis
-            } else {
-                transactionStatusPollIntervalMillis
-            }
+            val nextDelayMillis =
+                if (completedStatusPolls < fastTransactionStatusPollCount) {
+                    fastTransactionStatusPollIntervalMillis
+                } else {
+                    transactionStatusPollIntervalMillis
+                }
             transactionStatusDelay(minOf(nextDelayMillis, remainingMillis))
         } while (true)
     }
 
-    private fun waasClient(): WaasWalletClient = WaasWalletClient(
-        baseUrl = environment.walletApiBaseUrl(),
-        transport = WalletSignedWaasTransport(
-            projectAccessKey = projectAccessKey,
-            environment = environment,
-            httpClient = transport,
-            signer = signer,
-        ),
-    )
+    private fun waasClient(): WaasWalletClient =
+        WaasWalletClient(
+            baseUrl = environment.walletApiBaseUrl(),
+            transport =
+                WalletSignedWaasTransport(
+                    projectAccessKey = projectAccessKey,
+                    environment = environment,
+                    httpClient = transport,
+                    signer = signer,
+                ),
+        )
 }
