@@ -60,8 +60,9 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var emailInput: TextInputEditText
     private lateinit var codeInput: TextInputEditText
     private lateinit var authStatusView: TextView
+    private lateinit var sessionStateCard: View
+    private lateinit var sessionStateView: TextView
     private lateinit var walletAddressView: TextView
-    private lateinit var signerAddressView: TextView
     private lateinit var networkInput: AutoCompleteTextView
     private lateinit var messageInput: TextInputEditText
     private lateinit var transactionToInput: TextInputEditText
@@ -113,8 +114,9 @@ class AuthDemoActivity : AppCompatActivity() {
         emailInput = findViewById(R.id.emailInput)
         codeInput = findViewById(R.id.codeInput)
         authStatusView = findViewById(R.id.authStatusView)
+        sessionStateCard = findViewById(R.id.sessionStateCard)
+        sessionStateView = findViewById(R.id.sessionStateView)
         walletAddressView = findViewById(R.id.walletAddressView)
-        signerAddressView = findViewById(R.id.signerAddressView)
         networkInput = findViewById(R.id.networkInput)
         messageInput = findViewById(R.id.messageInput)
         transactionToInput = findViewById(R.id.transactionToInput)
@@ -210,7 +212,6 @@ class AuthDemoActivity : AppCompatActivity() {
                         append("Code requested for ")
                         append(response.loginHint ?: email)
                     }
-                signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
                 showPendingCodeStep()
                 emailInput.text?.clear()
                 appendLog("Verifier committed: verifier=${response.verifier}")
@@ -355,9 +356,7 @@ class AuthDemoActivity : AppCompatActivity() {
         launchAction(
             label = "Handle Google redirect sign-in callback",
             onStart = {
-                if (sdk.session.hasPendingOidcRedirectAuth) {
-                    showGoogleRedirectPendingStep("Completing Google redirect sign-in...")
-                }
+                showGoogleRedirectPendingStep("Completing Google redirect sign-in...")
             },
         ) {
             when (
@@ -386,7 +385,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 }
 
                 OidcRedirectAuthResult.NotOidcRedirectCallback -> {
-                    Unit
+                    renderSessionState()
                 }
             }
         }
@@ -611,9 +610,9 @@ class AuthDemoActivity : AppCompatActivity() {
         wallet: Wallet,
         status: String,
     ) {
+        renderSessionStateBox()
         authStatusView.text = status
         walletAddressView.text = addressLabel("Wallet address", wallet.address)
-        signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.GONE
         emailStepContainer.visibility = View.GONE
@@ -626,38 +625,18 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun renderSessionState() {
-        if (sdk.session.signerAddress == null && sdk.session.walletAddress == null) {
-            if (sdk.session.hasPendingOidcRedirectAuth) {
-                showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
-                return
-            }
+        renderSessionStateBox()
+        if (sdk.session.walletAddress == null) {
             resetUiForNoSession()
             return
         }
 
         logoutButton.visibility = View.VISIBLE
-        signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: ready to sign."
         lastTransactionHashView.text = "Last tx hash: none"
         transactionStatusView.text = "Transaction status: ready to send."
         openExplorerButton.visibility = View.GONE
-
-        if (sdk.session.hasPendingSignIn) {
-            if (sdk.session.hasPendingOidcRedirectAuth) {
-                showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
-                return
-            }
-            authStatusView.text = "Pending sign-in verification"
-            walletAddressView.text = addressLabel("Wallet address", null)
-            authCard.visibility = View.VISIBLE
-            emailStepContainer.visibility = View.GONE
-            codeStepContainer.visibility = View.VISIBLE
-            walletActionsContainer.visibility = View.GONE
-            copyWalletAddressButton.visibility = View.GONE
-            focusCodeInput()
-            return
-        }
 
         authStatusView.text = "Restored persisted wallet session"
         walletAddressView.text = addressLabel("Wallet address", sdk.session.walletAddress)
@@ -668,9 +647,9 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun resetUiForNoSession() {
+        renderSessionStateBox()
         authStatusView.text = "Waiting for sign-in."
         walletAddressView.text = addressLabel("Wallet address", null)
-        signerAddressView.text = addressLabel("Signer address", null)
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: waiting for a message."
         lastTransactionHashView.text = "Last tx hash: none"
@@ -685,8 +664,8 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun showEmailStep() {
+        renderSessionStateBox()
         authStatusView.text = "Waiting for sign-in."
-        signerAddressView.text = addressLabel("Signer address", null)
         logoutButton.visibility = View.GONE
         authCard.visibility = View.VISIBLE
         emailStepContainer.visibility = View.VISIBLE
@@ -701,8 +680,8 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun showGoogleRedirectPendingStep(status: String) {
+        renderSessionStateBox()
         authStatusView.text = status
-        signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
         walletAddressView.text = addressLabel("Wallet address", null)
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.VISIBLE
@@ -714,6 +693,7 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun showPendingCodeStep() {
+        renderSessionStateBox()
         logoutButton.visibility = View.VISIBLE
         authCard.visibility = View.VISIBLE
         emailStepContainer.visibility = View.GONE
@@ -721,6 +701,18 @@ class AuthDemoActivity : AppCompatActivity() {
         walletActionsContainer.visibility = View.GONE
         copyWalletAddressButton.visibility = View.GONE
         focusCodeInput()
+    }
+
+    private fun renderSessionStateBox() {
+        val session = sdk.session
+        sessionStateCard.visibility = if (session.walletAddress == null) View.GONE else View.VISIBLE
+        sessionStateView.text =
+            buildString {
+                appendLine("walletAddress: ${session.walletAddress ?: "null"}")
+                appendLine("expiresAt: ${session.expiresAt ?: "null"}")
+                appendLine("loginType: ${session.loginType ?: "null"}")
+                append("sessionEmail: ${session.sessionEmail ?: "null"}")
+            }
     }
 
     private fun focusCodeInput() {

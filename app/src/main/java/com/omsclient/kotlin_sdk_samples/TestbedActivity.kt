@@ -29,7 +29,6 @@ class TestbedActivity : AppCompatActivity() {
     private lateinit var messageInput: TextInputEditText
     private lateinit var transactionToInput: TextInputEditText
     private lateinit var transactionValueInput: TextInputEditText
-    private lateinit var currentSignerView: TextView
     private lateinit var currentWalletView: TextView
     private lateinit var lastSignatureView: TextView
     private lateinit var logView: TextView
@@ -67,7 +66,6 @@ class TestbedActivity : AppCompatActivity() {
         messageInput = findViewById(R.id.messageInput)
         transactionToInput = findViewById(R.id.transactionToInput)
         transactionValueInput = findViewById(R.id.transactionValueInput)
-        currentSignerView = findViewById(R.id.currentSignerView)
         currentWalletView = findViewById(R.id.currentWalletView)
         lastSignatureView = findViewById(R.id.lastSignatureView)
         logView = findViewById(R.id.logView)
@@ -218,14 +216,12 @@ class TestbedActivity : AppCompatActivity() {
 
     private fun renderSession() {
         val sdk = runtime?.sdk
-        if (sdk == null || (sdk.session.signerAddress == null && sdk.session.walletAddress == null)) {
-            currentSignerView.text = "Signer: none"
+        if (sdk?.session?.walletAddress == null) {
             currentWalletView.text = "Wallet: none"
             return
         }
 
-        currentSignerView.text = "Signer: ${sdk.session.signerAddress ?: "none"}"
-        currentWalletView.text = "Wallet: ${sdk.session.walletAddress ?: "pending selection"}"
+        currentWalletView.text = "Wallet: ${sdk.session.walletAddress}"
     }
 
     private fun appendLog(message: String) {

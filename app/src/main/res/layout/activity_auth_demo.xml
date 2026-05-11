@@ -45,6 +45,40 @@
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/sessionStateCard"
+            style="@style/Widget.Kotlinsdk.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="OMSClientSessionState"
+                    android:textColor="@color/slate_900"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/sessionStateView"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textColor="@color/slate_700"
+                    android:textIsSelectable="true"
+                    android:textSize="12sp"
+                    android:typeface="monospace" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.card.MaterialCardView
             android:id="@+id/authCard"
             style="@style/Widget.Kotlinsdk.Card"
             android:layout_width="match_parent"
@@ -233,17 +267,6 @@
                         android:layout_height="40dp"
                         android:layout_marginTop="8dp"
                         android:text="Copy address" />
-
-                    <TextView
-                        android:id="@+id/signerAddressView"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp"
-                        android:text="Signer address: none"
-                        android:textColor="@color/slate_700"
-                        android:textIsSelectable="true"
-                        android:textSize="13sp"
-                        android:typeface="monospace" />
 
                     <com.google.android.material.textfield.TextInputLayout
                         style="@style/Widget.Kotlinsdk.TextInputLayout"

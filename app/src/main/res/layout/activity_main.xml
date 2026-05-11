@@ -255,19 +255,10 @@
                 </LinearLayout>
 
                 <TextView
-                    android:id="@+id/currentSignerView"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:text="Signer: none"
-                    android:textColor="@color/slate_700"
-                    android:textSize="13sp" />
-
-                <TextView
                     android:id="@+id/currentWalletView"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
+                    android:layout_marginTop="14dp"
                     android:text="Wallet: none"
                     android:textColor="@color/forest_600"
                     android:textSize="13sp"
