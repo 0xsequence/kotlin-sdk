@@ -1,6 +1,7 @@
 package com.omsclient.kotlin_sdk.storage
 
 import android.content.Context
+import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.generated.waas.KeyType
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import org.json.JSONObject
@@ -28,6 +29,9 @@ internal class AndroidKeystoreSessionStore(
                 walletAddress = persisted.walletAddress,
                 signerAddress = persisted.signerAddress,
                 signerKeyType = persisted.signerKeyType,
+                expiresAt = persisted.expiresAt,
+                loginType = persisted.loginType,
+                sessionEmail = persisted.sessionEmail,
             )
         }.getOrNull()
     }
@@ -43,6 +47,9 @@ internal class AndroidKeystoreSessionStore(
                 walletAddress = snapshot.walletAddress,
                 signerAddress = snapshot.signerAddress,
                 signerKeyType = snapshot.signerKeyType,
+                expiresAt = snapshot.expiresAt,
+                loginType = snapshot.loginType,
+                sessionEmail = snapshot.sessionEmail,
             )
         sessionFile.writeText(persisted.toJson())
     }
@@ -58,6 +65,9 @@ internal class AndroidKeystoreSessionStore(
         val walletAddress: String? = null,
         val signerAddress: String? = null,
         val signerKeyType: KeyType? = null,
+        val expiresAt: String? = null,
+        val loginType: OMSClientSessionLoginType? = null,
+        val sessionEmail: String? = null,
     ) {
         fun isRestorable(): Boolean = !walletId.isNullOrBlank() && !walletAddress.isNullOrBlank()
 
@@ -68,6 +78,9 @@ internal class AndroidKeystoreSessionStore(
                     put("walletAddress", walletAddress)
                     put("signerAddress", signerAddress)
                     put("signerKeyType", signerKeyType?.wireValue)
+                    put("expiresAt", expiresAt)
+                    put("loginType", loginType?.name)
+                    put("sessionEmail", sessionEmail)
                 }.toString()
 
         companion object {
@@ -83,6 +96,17 @@ internal class AndroidKeystoreSessionStore(
                             .ifBlank { null }
                             ?.let(KeyType::fromWireValue)
                             ?.takeIf { it != KeyType.UNKNOWN_DEFAULT },
+                    expiresAt = jsonObject.optString("expiresAt").ifBlank { null },
+                    loginType =
+                        jsonObject
+                            .optString("loginType")
+                            .ifBlank { null }
+                            ?.let { value ->
+                                runCatching {
+                                    OMSClientSessionLoginType.valueOf(value)
+                                }.getOrNull()
+                            },
+                    sessionEmail = jsonObject.optString("sessionEmail").ifBlank { null },
                 )
             }
         }

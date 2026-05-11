@@ -1,6 +1,7 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.OMSClientNetworks
+import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
@@ -153,7 +154,7 @@ class WalletEmailAuthTest {
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
             assertEquals("verifier-123", response.verifier)
             assertNull(redirectStore.pending)
-            assertFalse(client.hasPendingOidcRedirectAuth)
+            assertFalse(client.canResumeOidcRedirectAuth)
             assertEquals(1, redirectStore.clearCalls)
         }
 
@@ -374,6 +375,7 @@ class WalletEmailAuthTest {
                                 challenge = "challenge",
                                 code = "123456",
                             ),
+                        lifetime = 604_800u,
                     ),
                 )
             val expectedSignedRequest =
@@ -628,6 +630,9 @@ class WalletEmailAuthTest {
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
+            assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
+            assertEquals(OMSClientSessionLoginType.Email, store.snapshot?.loginType)
+            assertEquals("user@example.com", store.snapshot?.sessionEmail)
             assertNull(store.privateKeyHex)
             assertEquals(1, store.saveCalls)
         }

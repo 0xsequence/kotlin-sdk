@@ -22,6 +22,7 @@ import com.omsclient.kotlin_sdk.wallet.WalletClient
 import okhttp3.OkHttpClient
 import java.net.URI
 import java.security.MessageDigest
+import java.time.Instant
 
 /**
  * Main entry point for OMS Client.
@@ -70,18 +71,22 @@ class OMSClient internal constructor(
     }
 
     /**
-     * Snapshot of the current auth and wallet-selection state.
+     * Snapshot of the current durable wallet-session state.
      */
     val session: OMSClientSessionState
-        get() =
-            wallet.currentState().let { state ->
-                OMSClientSessionState(
-                    hasPendingSignIn = state.hasPendingSignIn,
-                    hasPendingOidcRedirectAuth = state.hasPendingOidcRedirectAuth,
-                    walletAddress = state.walletAddress,
-                    signerAddress = state.signerAddress,
-                )
+        get() {
+            val snapshot = wallet.snapshotSession()
+            val walletAddress = snapshot?.walletAddress
+            if (walletAddress.isNullOrBlank()) {
+                return OMSClientSessionState(walletAddress = null)
             }
+            return OMSClientSessionState(
+                walletAddress = walletAddress,
+                expiresAt = snapshot.expiresAt?.toInstantOrNull(),
+                loginType = snapshot.loginType,
+                sessionEmail = snapshot.sessionEmail,
+            )
+        }
 
     /**
      * Networks currently supported by this SDK build.
@@ -295,3 +300,5 @@ class OMSClient internal constructor(
         }
     }
 }
+
+private fun String.toInstantOrNull(): Instant? = runCatching { Instant.parse(this) }.getOrNull()

@@ -27,19 +27,32 @@ val client.session: OMSClientSessionState
 
 ```kotlin
 data class OMSClientSessionState(
-    val hasPendingSignIn: Boolean,
-    val hasPendingOidcRedirectAuth: Boolean,
     val walletAddress: String?,
-    val signerAddress: String?,
+    val expiresAt: Instant?,
+    val loginType: OMSClientSessionLoginType?,
+    val sessionEmail: String?,
 )
 ```
 
-`client.session.hasPendingSignIn` reflects an auth flow that has not resolved to
-a wallet yet. `client.session.hasPendingOidcRedirectAuth` reflects a persisted
-OIDC redirect flow that can be resumed when the browser redirects back to the
-app. Persisted session restore revives completed wallet sessions. If auth
-completes but wallet resolution or session persistence fails, the SDK clears the
-in-memory auth session instead of leaving a transient signer active.
+```kotlin
+enum class OMSClientSessionLoginType {
+    Email,
+    GoogleAuth,
+    Oidc,
+}
+```
+
+`client.session` only reports completed wallet-session state. Pending auth
+state, OIDC redirect verifier/state, and signer details are SDK internals. Apps
+should show OTP or redirect waiting UI from the method result that started the
+flow, not from session state. Always pass incoming app-link URLs to
+`handleOidcRedirectCallback`; stale callbacks return `NoPendingAuth`, and the
+app can show sign-in UI and let the user start again. Persisted session restore
+revives completed wallet sessions, including the session expiry, login type, and
+email returned by the wallet API, but not pending email OTP state. Completed auth
+requests use a one-week wallet API session lifetime. If auth completes but
+wallet resolution or session persistence fails, the SDK clears the in-memory
+auth session instead of leaving transient state active.
 
 The Android `OMSClient(context, ...)` constructor signs wallet API requests with
 a non-extractable Android Keystore P-256 credential using the
@@ -138,7 +151,8 @@ completed wallet session so Android can resume after the browser redirect. Open
 Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
 handler is idempotent and safe to call from `onCreate` / `onNewIntent`: unrelated
 links return `NotOidcRedirectCallback`, stale links return `NoPendingAuth`, and
-successful auth returns `Completed`.
+successful auth returns `Completed`. Starting a new auth flow clears or replaces
+stale redirect state, and `signOut()` clears it.
 
 ```kotlin
 suspend fun client.completeEmailAuth(

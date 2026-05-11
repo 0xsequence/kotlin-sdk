@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.Instant
 
 class OMSClientTest {
     @Test
@@ -21,6 +22,9 @@ class OMSClientTest {
                 walletId = "wallet-main",
                 walletAddress = "0xwallet",
                 signerAddress = "0xsigner",
+                expiresAt = "2026-01-01T00:00:00Z",
+                loginType = OMSClientSessionLoginType.Email,
+                sessionEmail = "user@example.com",
             )
         val sdk =
             OMSClient(
@@ -31,11 +35,13 @@ class OMSClientTest {
 
         assertEquals("0xwallet", sdk.wallet.address)
         assertEquals("0xwallet", sdk.session.walletAddress)
-        assertEquals("0xsigner", sdk.session.signerAddress)
+        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), sdk.session.expiresAt)
+        assertEquals(OMSClientSessionLoginType.Email, sdk.session.loginType)
+        assertEquals("user@example.com", sdk.session.sessionEmail)
     }
 
     @Test
-    fun sessionStateExposesPendingOidcRedirectAuth() {
+    fun sessionStateOnlyReflectsCompletedWalletSession() {
         val sdk =
             OMSClient(
                 projectAccessKey = "test-access-key",
@@ -56,8 +62,10 @@ class OMSClientTest {
                     ),
             )
 
-        assertEquals(true, sdk.session.hasPendingOidcRedirectAuth)
-        assertEquals(false, sdk.session.hasPendingSignIn)
+        assertNull(sdk.session.walletAddress)
+        assertNull(sdk.session.expiresAt)
+        assertNull(sdk.session.loginType)
+        assertNull(sdk.session.sessionEmail)
     }
 
     @Test
@@ -81,7 +89,9 @@ class OMSClientTest {
 
         assertNull(sdk.wallet.address)
         assertNull(sdk.session.walletAddress)
-        assertNull(sdk.session.signerAddress)
+        assertNull(sdk.session.expiresAt)
+        assertNull(sdk.session.loginType)
+        assertNull(sdk.session.sessionEmail)
         assertNull(store.snapshot)
         assertEquals(1, store.clearCalls)
     }

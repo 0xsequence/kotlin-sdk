@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
@@ -121,6 +122,7 @@ class WalletOidcIdTokenAuthTest {
                         authMode = AuthMode.IDToken,
                         verifier = "oidc-verifier-123",
                         answer = idToken,
+                        lifetime = 604_800u,
                     ),
                 ),
                 requireNotNull(completeAuthRequest.body).utf8(),
@@ -139,6 +141,9 @@ class WalletOidcIdTokenAuthTest {
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
+            assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
+            assertEquals(OMSClientSessionLoginType.GoogleAuth, store.snapshot?.loginType)
+            assertEquals("user@example.com", store.snapshot?.sessionEmail)
             assertEquals(KeyType.Ethereum_Secp256k1, store.snapshot?.signerKeyType)
             assertNull(store.snapshot?.verifier)
             assertNull(store.snapshot?.challenge)
@@ -206,7 +211,7 @@ class WalletOidcIdTokenAuthTest {
 
             assertEquals("0xdef", wallet.address)
             assertNull(redirectStore.pending)
-            assertFalse(client.hasPendingOidcRedirectAuth)
+            assertFalse(client.canResumeOidcRedirectAuth)
             assertEquals(1, redirectStore.clearCalls)
         }
 
