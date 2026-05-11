@@ -147,6 +147,70 @@ class WalletOidcIdTokenAuthTest {
         }
 
     @Test
+    fun signInWithOidcIdTokenClearsPendingOidcRedirectAuth() =
+        runBlocking {
+            val idToken = fakeJwt(exp = 1910000100L)
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":""}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://accounts.google.com",
+                                    sub = "google-sub-123",
+                                ),
+                            email = "user@example.com",
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
+                    .build(),
+            )
+
+            val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = redirectStore,
+                    nonceGenerator = { 1710000112L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+
+            val wallet =
+                client.signInWithOidcIdToken(
+                    idToken = idToken,
+                    issuer = "https://accounts.google.com",
+                    audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+                )
+
+            assertEquals("0xdef", wallet.address)
+            assertNull(redirectStore.pending)
+            assertFalse(client.hasPendingOidcRedirectAuth)
+            assertEquals(1, redirectStore.clearCalls)
+        }
+
+    @Test
     fun signInWithOidcIdTokenRejectsWhenWalletSessionIsActive() =
         runBlocking {
             val activeSession = activeSessionSnapshot()

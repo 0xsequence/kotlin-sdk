@@ -94,6 +94,19 @@ internal fun activeSessionSnapshot(): OMSClientSessionSnapshot =
         signerKeyType = KeyType.Ethereum_Secp256k1,
     )
 
+internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
+    PendingOidcRedirectAuth(
+        verifier = "stale-oidc-verifier",
+        challenge = "stale-oidc-challenge",
+        nonce = "stale-oidc-nonce",
+        redirectUri = "omsclientkotlindemo://auth/callback",
+        issuer = "https://issuer.example",
+        authorizationScope = "proj_1",
+        walletType = WalletType.Ethereum,
+        signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+        signerKeyType = KeyType.Ethereum_Secp256k1,
+    )
+
 internal fun uriOriginAndPath(url: String): String {
     val uri = URI(url)
     return "${uri.scheme}://${uri.rawAuthority}${uri.rawPath}"

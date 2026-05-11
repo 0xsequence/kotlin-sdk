@@ -128,8 +128,12 @@ class WalletClient internal constructor(
         signer.clear()
         sessionStore?.clear()
         if (clearOidcRedirectAuth) {
-            oidcRedirectAuthStore?.clear()
+            clearPendingOidcRedirectAuth()
         }
+    }
+
+    private fun clearPendingOidcRedirectAuth() {
+        oidcRedirectAuthStore?.clear()
     }
 
     private fun requireWalletId(): String = requireNotNull(session.snapshot()?.walletId) { "No wallet selected" }
@@ -138,6 +142,7 @@ class WalletClient internal constructor(
 
     internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
         requireNoActiveWalletSession()
+        clearPendingOidcRedirectAuth()
         return try {
             val signerAddress = signer.credentialId()
             val response =
@@ -191,6 +196,7 @@ class WalletClient internal constructor(
         selectWallet: suspend (List<Wallet>) -> Wallet,
     ): Wallet {
         requireNoActiveWalletSession()
+        clearPendingOidcRedirectAuth()
         try {
             val signerAddress = signer.credentialId()
             val response =

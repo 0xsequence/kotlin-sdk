@@ -122,6 +122,42 @@ class WalletEmailAuthTest {
         }
 
     @Test
+    fun startEmailAuthClearsPendingOidcRedirectAuth() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                    .build(),
+            )
+
+            val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = redirectStore,
+                    nonceGenerator = { 1710000100L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+
+            val response = client.startEmailAuth("user@example.com")
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("verifier-123", response.verifier)
+            assertNull(redirectStore.pending)
+            assertFalse(client.hasPendingOidcRedirectAuth)
+            assertEquals(1, redirectStore.clearCalls)
+        }
+
+    @Test
     fun startEmailAuthRejectsWhenWalletSessionIsActive() =
         runBlocking {
             val activeSession = activeSessionSnapshot()
