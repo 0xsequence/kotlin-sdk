@@ -28,16 +28,18 @@ val client.session: OMSClientSessionState
 ```kotlin
 data class OMSClientSessionState(
     val hasPendingSignIn: Boolean,
+    val hasPendingOidcRedirectAuth: Boolean,
     val walletAddress: String?,
     val signerAddress: String?,
 )
 ```
 
-`client.session.hasPendingSignIn` reflects an in-memory auth flow that has not
-resolved to a wallet yet. Persisted session restore only revives completed
-wallet sessions. If auth completes but wallet resolution or session persistence
-fails, the SDK clears the in-memory auth session instead of leaving a transient
-signer active.
+`client.session.hasPendingSignIn` reflects an auth flow that has not resolved to
+a wallet yet. `client.session.hasPendingOidcRedirectAuth` reflects a persisted
+OIDC redirect flow that can be resumed when the browser redirects back to the
+app. Persisted session restore revives completed wallet sessions. If auth
+completes but wallet resolution or session persistence fails, the SDK clears the
+in-memory auth session instead of leaving a transient signer active.
 
 The Android `OMSClient(context, ...)` constructor signs wallet API requests with
 a non-extractable Android Keystore P-256 credential using the
@@ -73,6 +75,70 @@ suspend fun client.signInWithOidcIdToken(
     selectWallet: suspend (List<Wallet>) -> Wallet,
 ): Wallet
 ```
+
+```kotlin
+data class OidcProviderConfig(
+    val issuer: String,
+    val clientId: String,
+    val authorizationUrl: String,
+    val scopes: List<String> = listOf("openid", "email", "profile"),
+    val relayRedirectUri: String? = null,
+    val authorizeParams: Map<String, String> = emptyMap(),
+)
+```
+
+```kotlin
+object OidcProviders {
+    fun google(
+        clientId: String = OidcProviders.defaultGoogleClientId,
+        relayRedirectUri: String = OidcProviders.defaultRelayRedirectUri,
+        scopes: List<String> = listOf("openid", "email", "profile"),
+        authorizeParams: Map<String, String> = emptyMap(),
+    ): OidcProviderConfig
+}
+```
+
+```kotlin
+data class StartOidcRedirectAuthResult(
+    val authorizationUrl: String,
+    val state: String,
+    val challenge: String,
+)
+```
+
+```kotlin
+suspend fun client.startOidcRedirectAuth(
+    provider: OidcProviderConfig,
+    redirectUri: String,
+    walletType: WalletType = WalletType.Ethereum,
+    relayRedirectUri: String? = provider.relayRedirectUri,
+    authorizeParams: Map<String, String> = emptyMap(),
+): StartOidcRedirectAuthResult
+```
+
+```kotlin
+sealed interface OidcRedirectAuthResult {
+    data class Completed(val wallet: Wallet) : OidcRedirectAuthResult
+    data object NotOidcRedirectCallback : OidcRedirectAuthResult
+    data object NoPendingAuth : OidcRedirectAuthResult
+    data class Failed(val error: Throwable) : OidcRedirectAuthResult
+}
+```
+
+```kotlin
+suspend fun client.handleOidcRedirectCallback(
+    callbackUrl: String?,
+    selectWallet: suspend (List<Wallet>) -> Wallet = { wallets -> wallets.single() },
+): OidcRedirectAuthResult
+```
+
+OIDC redirect auth stores transient verifier/state data separately from the
+completed wallet session so Android can resume after the browser redirect. Open
+`StartOidcRedirectAuthResult.authorizationUrl` with app-owned UI such as Custom
+Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
+handler is idempotent and safe to call from `onCreate` / `onNewIntent`: unrelated
+links return `NotOidcRedirectCallback`, stale links return `NoPendingAuth`, and
+successful auth returns `Completed`.
 
 ```kotlin
 suspend fun client.completeEmailAuth(

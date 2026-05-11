@@ -95,19 +95,40 @@ val wallet = client.signInWithOidcIdToken(
 )
 ```
 
+For OIDC authorization-code PKCE redirect flows, start the redirect, open the
+returned URL with your browser or Custom Tabs, then safely handle incoming app
+links from `onCreate` / `onNewIntent`:
+
+```kotlin
+val started = client.startOidcRedirectAuth(
+    provider = OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID"),
+    redirectUri = "omsclientkotlindemo://auth/callback",
+)
+
+// Open started.authorizationUrl.
+
+when (val result = client.handleOidcRedirectCallback(intent.data?.toString())) {
+    is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
+    OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
+    OidcRedirectAuthResult.NoPendingAuth -> Unit
+    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
+}
+```
+
 Useful state checks:
 
 ```kotlin
 val walletAddress = client.session.walletAddress
 val signerAddress = client.session.signerAddress
 val hasPendingSignIn = client.session.hasPendingSignIn
+val hasPendingOidcRedirectAuth = client.session.hasPendingOidcRedirectAuth
 ```
 
-`hasPendingSignIn` only reflects in-memory state in the current process. A fresh
-SDK instance restores completed wallet sessions, not interrupted pending logins.
-If auth completes but wallet selection, wallet creation, or session persistence
-fails, the SDK clears the in-memory auth session instead of retaining an
-unrecoverable transient signer.
+A fresh SDK instance restores completed wallet sessions. OIDC redirect auth also
+persists the transient verifier/state needed to resume after the browser returns
+to the app. If auth completes but wallet selection, wallet creation, or session
+persistence fails, the SDK clears the in-memory auth session instead of retaining
+an unrecoverable transient signer.
 
 Use the selected wallet:
 
