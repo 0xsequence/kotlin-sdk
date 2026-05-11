@@ -1,17 +1,19 @@
 <resources>
     <style name="Widget.Kotlinsdk.Card" parent="Widget.MaterialComponents.CardView">
-        <item name="cardBackgroundColor">@color/white</item>
-        <item name="cardCornerRadius">18dp</item>
+        <item name="cardBackgroundColor">@color/surface_800</item>
+        <item name="cardCornerRadius">8dp</item>
         <item name="cardElevation">0dp</item>
         <item name="strokeColor">@color/sand_300</item>
         <item name="strokeWidth">1dp</item>
     </style>
 
     <style name="Widget.Kotlinsdk.TextInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense">
-        <item name="boxBackgroundColor">@color/white</item>
+        <item name="boxBackgroundColor">@color/surface_900</item>
         <item name="boxStrokeColor">@color/sand_300</item>
         <item name="boxStrokeWidth">1dp</item>
         <item name="boxStrokeWidthFocused">1dp</item>
+        <item name="colorControlNormal">@color/slate_500</item>
+        <item name="colorControlActivated">@color/amber_500</item>
         <item name="hintTextColor">@color/slate_500</item>
         <item name="android:textColorHint">@color/slate_500</item>
         <item name="shapeAppearanceOverlay">@style/ShapeAppearance.Kotlinsdk.Field</item>
@@ -24,33 +26,35 @@
         <item name="android:paddingEnd">48dp</item>
         <item name="android:singleLine">true</item>
         <item name="android:textColor">@color/slate_900</item>
+        <item name="android:textColorHint">@color/slate_500</item>
+        <item name="android:popupBackground">@color/surface_800</item>
         <item name="android:textSize">17sp</item>
     </style>
 
     <style name="Widget.Kotlinsdk.Button" parent="Widget.MaterialComponents.Button">
         <item name="android:minHeight">52dp</item>
         <item name="android:textAllCaps">false</item>
-        <item name="cornerRadius">14dp</item>
+        <item name="cornerRadius">10dp</item>
         <item name="elevation">0dp</item>
-        <item name="backgroundTint">@color/slate_800</item>
-        <item name="android:textColor">@color/white</item>
-        <item name="rippleColor">@color/sand_200</item>
+        <item name="backgroundTint">@color/amber_500</item>
+        <item name="android:textColor">@color/black</item>
+        <item name="rippleColor">@color/amber_700</item>
     </style>
 
     <style name="Widget.Kotlinsdk.Button.Outline" parent="Widget.MaterialComponents.Button.OutlinedButton">
         <item name="android:minHeight">52dp</item>
         <item name="android:textAllCaps">false</item>
-        <item name="cornerRadius">14dp</item>
+        <item name="cornerRadius">10dp</item>
         <item name="elevation">0dp</item>
         <item name="strokeColor">@color/sand_300</item>
         <item name="strokeWidth">1dp</item>
-        <item name="android:textColor">@color/slate_800</item>
-        <item name="backgroundTint">@color/white</item>
+        <item name="android:textColor">@color/slate_900</item>
+        <item name="backgroundTint">@color/surface_700</item>
         <item name="rippleColor">@color/sand_200</item>
     </style>
 
     <style name="ShapeAppearance.Kotlinsdk.Field" parent="">
         <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">14dp</item>
+        <item name="cornerSize">10dp</item>
     </style>
 </resources>

@@ -33,13 +33,6 @@
                     android:textSize="30sp"
                     android:textStyle="bold" />
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:text="Google ID-token and email OTP sign-in with signing and transaction actions."
-                    android:textColor="@color/slate_700"
-                    android:textSize="14sp" />
             </LinearLayout>
 
             <com.google.android.material.button.MaterialButton
@@ -89,6 +82,15 @@
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/startGoogleSignInButton"
+                        style="@style/Widget.Kotlinsdk.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="16dp"
+                        android:text="Continue with Google"
+                        android:visibility="gone" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/startGoogleRedirectSignInButton"
                         style="@style/Widget.Kotlinsdk.Button"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

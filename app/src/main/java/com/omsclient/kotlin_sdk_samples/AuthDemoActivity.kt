@@ -13,6 +13,9 @@ import android.widget.AutoCompleteTextView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.browser.customtabs.CustomTabColorSchemeParams
+import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.content.ContextCompat
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -31,6 +34,8 @@ import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
+import com.omsclient.kotlin_sdk.wallet.OidcProviders
+import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -75,6 +80,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var copyWalletAddressButton: MaterialButton
     private lateinit var cancelCodeStepButton: MaterialButton
     private lateinit var startGoogleSignInButton: MaterialButton
+    private lateinit var startGoogleRedirectSignInButton: MaterialButton
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
@@ -89,6 +95,13 @@ class AuthDemoActivity : AppCompatActivity() {
         populateDefaults()
         bindActions()
         renderSessionState()
+        handleOidcRedirectCallback(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleOidcRedirectCallback(intent)
     }
 
     override fun onDestroy() {
@@ -120,6 +133,7 @@ class AuthDemoActivity : AppCompatActivity() {
         copyWalletAddressButton = findViewById(R.id.copyWalletAddressButton)
         cancelCodeStepButton = findViewById(R.id.cancelCodeStepButton)
         startGoogleSignInButton = findViewById(R.id.startGoogleSignInButton)
+        startGoogleRedirectSignInButton = findViewById(R.id.startGoogleRedirectSignInButton)
     }
 
     private fun populateDefaults() {
@@ -154,6 +168,30 @@ class AuthDemoActivity : AppCompatActivity() {
                     }
                 renderSignedInWallet(wallet, "Google login complete")
                 appendLog("Google sign-in complete: ${wallet.address}")
+            }
+        }
+
+        startGoogleRedirectSignInButton.setOnClickListener {
+            launchAction(
+                label = "Start Google redirect sign-in",
+                onStart = {
+                    showGoogleRedirectPendingStep("Opening Google redirect sign-in...")
+                },
+                onFailure = {
+                    showEmailStep()
+                    authStatusView.text = "Google redirect sign-in failed: ${it.message ?: "Unknown error"}"
+                    appendLog("Google redirect start error: ${describeThrowable(it)}")
+                },
+            ) {
+                val started = sdk.startOidcRedirectAuth(
+                    provider = OidcProviders.google(
+                        clientId = DemoConfig.demoGoogleWebClientId,
+                    ),
+                    redirectUri = DemoConfig.oidcRedirectUri,
+                )
+                appendLog("Google redirect auth started: state=${started.state}")
+                showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
+                openInAppBrowser(started.authorizationUrl)
             }
         }
 
@@ -294,6 +332,58 @@ class AuthDemoActivity : AppCompatActivity() {
         copyWalletAddressButton.setOnClickListener {
             copyWalletAddress()
         }
+    }
+
+    private fun openInAppBrowser(url: String) {
+        val colorSchemeParams = CustomTabColorSchemeParams.Builder()
+            .setToolbarColor(ContextCompat.getColor(this, R.color.sand_50))
+            .build()
+        CustomTabsIntent.Builder()
+            .setShowTitle(true)
+            .setDefaultColorSchemeParams(colorSchemeParams)
+            .build()
+            .launchUrl(this, Uri.parse(url))
+    }
+
+    private fun handleOidcRedirectCallback(intent: Intent?) {
+        val callbackUrl = intent?.data?.toString() ?: return
+        launchAction(
+            label = "Handle Google redirect sign-in callback",
+            onStart = {
+                if (sdk.session.hasPendingOidcRedirectAuth) {
+                    showGoogleRedirectPendingStep("Completing Google redirect sign-in...")
+                }
+            },
+        ) {
+            when (val result = sdk.handleOidcRedirectCallback(
+                callbackUrl = callbackUrl,
+                selectWallet = { wallets -> wallets.first() },
+            )) {
+                is OidcRedirectAuthResult.Completed -> {
+                    consumeIntentData()
+                    renderSignedInWallet(result.wallet, "Google redirect login complete")
+                    appendLog("Google redirect sign-in complete: ${result.wallet.address}")
+                }
+
+                is OidcRedirectAuthResult.Failed -> {
+                    consumeIntentData()
+                    showEmailStep()
+                    authStatusView.text = "Google redirect completion failed: ${result.error.message ?: "Unknown error"}"
+                    appendLog("Google redirect completion error: ${describeThrowable(result.error)}")
+                }
+
+                OidcRedirectAuthResult.NoPendingAuth -> {
+                    consumeIntentData()
+                    renderSessionState()
+                }
+
+                OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
+            }
+        }
+    }
+
+    private fun consumeIntentData() {
+        setIntent(Intent(intent).apply { data = null })
     }
 
     private fun configureNetworkPicker() {
@@ -527,6 +617,10 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun renderSessionState() {
         if (sdk.session.signerAddress == null && sdk.session.walletAddress == null) {
+            if (sdk.session.hasPendingOidcRedirectAuth) {
+                showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
+                return
+            }
             resetUiForNoSession()
             return
         }
@@ -540,6 +634,10 @@ class AuthDemoActivity : AppCompatActivity() {
         openExplorerButton.visibility = View.GONE
 
         if (sdk.session.hasPendingSignIn) {
+            if (sdk.session.hasPendingOidcRedirectAuth) {
+                showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
+                return
+            }
             authStatusView.text = "Pending sign-in verification"
             walletAddressView.text = addressLabel("Wallet address", null)
             authCard.visibility = View.VISIBLE
@@ -590,6 +688,19 @@ class AuthDemoActivity : AppCompatActivity() {
             emailInput.requestFocus()
             emailInput.setSelection(emailInput.text?.length ?: 0)
         }
+    }
+
+    private fun showGoogleRedirectPendingStep(status: String) {
+        authStatusView.text = status
+        signerAddressView.text = addressLabel("Signer address", sdk.session.signerAddress)
+        walletAddressView.text = addressLabel("Wallet address", null)
+        logoutButton.visibility = View.VISIBLE
+        authCard.visibility = View.VISIBLE
+        emailStepContainer.visibility = View.GONE
+        codeStepContainer.visibility = View.GONE
+        walletActionsContainer.visibility = View.GONE
+        copyWalletAddressButton.visibility = View.GONE
+        openExplorerButton.visibility = View.GONE
     }
 
     private fun showPendingCodeStep() {
