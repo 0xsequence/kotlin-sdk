@@ -1,9 +1,13 @@
 package com.omsclient.kotlin_sdk
 
+import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
+import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -28,6 +32,30 @@ class OMSClientTest {
         assertEquals("0xwallet", sdk.wallet.address)
         assertEquals("0xwallet", sdk.session.walletAddress)
         assertEquals("0xsigner", sdk.session.signerAddress)
+    }
+
+    @Test
+    fun sessionStateExposesPendingOidcRedirectAuth() {
+        val sdk = OMSClient(
+            projectAccessKey = "test-access-key",
+            walletSession = OMSClientSession(),
+            oidcRedirectAuthStore = StubOidcRedirectAuthStore(
+                PendingOidcRedirectAuth(
+                    verifier = "verifier-123",
+                    challenge = "challenge-123",
+                    nonce = "nonce-123",
+                    redirectUri = "omsclientkotlindemo://auth/callback",
+                    issuer = "https://issuer.example",
+                    authorizationScope = "proj_1",
+                    walletType = WalletType.Ethereum,
+                    signerAddress = "0xsigner",
+                    signerKeyType = KeyType.Ethereum_Secp256k1,
+                ),
+            ),
+        )
+
+        assertEquals(true, sdk.session.hasPendingOidcRedirectAuth)
+        assertEquals(false, sdk.session.hasPendingSignIn)
     }
 
     @Test
@@ -145,6 +173,16 @@ class OMSClientTest {
         override fun load(): OMSClientSessionSnapshot? = snapshot
 
         override fun save(snapshot: OMSClientSessionSnapshot) = Unit
+
+        override fun clear() = Unit
+    }
+
+    private class StubOidcRedirectAuthStore(
+        private val pending: PendingOidcRedirectAuth?,
+    ) : OidcRedirectAuthStore {
+        override fun load(): PendingOidcRedirectAuth? = pending
+
+        override fun save(pending: PendingOidcRedirectAuth) = Unit
 
         override fun clear() = Unit
     }

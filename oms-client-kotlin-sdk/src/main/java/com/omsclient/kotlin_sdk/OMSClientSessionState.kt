@@ -5,6 +5,7 @@ package com.omsclient.kotlin_sdk
  */
 data class OMSClientSessionState(
     val hasPendingSignIn: Boolean,
+    val hasPendingOidcRedirectAuth: Boolean,
     val walletAddress: String?,
     val signerAddress: String?,
 )

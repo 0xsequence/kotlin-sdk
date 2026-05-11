@@ -150,6 +150,6 @@ class WalletPayloadBuilderTest {
         assertEquals("/SignMessage", WaasWalletApi.SignMessage.path)
         assertEquals("/PrepareEthereumTransaction", WaasWalletApi.PrepareEthereumTransaction.path)
         assertEquals("/Execute", WaasWalletApi.Execute.path)
-        assertEquals("/GetTransactionStatus", WaasWalletApi.GetTransactionStatus.path)
+        assertEquals("/TransactionStatus", WaasWalletApi.TransactionStatus.path)
     }
 }
