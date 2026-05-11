@@ -1,9 +1,9 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.generated.waas.KeyType
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -42,13 +42,17 @@ data class StartOidcRedirectAuthResult(
  * Result of handling an incoming OIDC authorization-code redirect callback.
  */
 sealed interface OidcRedirectAuthResult {
-    data class Completed(val wallet: Wallet) : OidcRedirectAuthResult
+    data class Completed(
+        val wallet: Wallet,
+    ) : OidcRedirectAuthResult
 
     data object NotOidcRedirectCallback : OidcRedirectAuthResult
 
     data object NoPendingAuth : OidcRedirectAuthResult
 
-    data class Failed(val error: Throwable) : OidcRedirectAuthResult
+    data class Failed(
+        val error: Throwable,
+    ) : OidcRedirectAuthResult
 }
 
 /**
@@ -65,17 +69,19 @@ object OidcProviders {
         relayRedirectUri: String = defaultRelayRedirectUri,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
-    ): OidcProviderConfig = OidcProviderConfig(
-        issuer = "https://accounts.google.com",
-        clientId = clientId,
-        authorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth",
-        scopes = scopes,
-        relayRedirectUri = relayRedirectUri,
-        authorizeParams = mapOf(
-            "access_type" to "offline",
-            "prompt" to "consent",
-        ) + authorizeParams,
-    )
+    ): OidcProviderConfig =
+        OidcProviderConfig(
+            issuer = "https://accounts.google.com",
+            clientId = clientId,
+            authorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth",
+            scopes = scopes,
+            relayRedirectUri = relayRedirectUri,
+            authorizeParams =
+                mapOf(
+                    "access_type" to "offline",
+                    "prompt" to "consent",
+                ) + authorizeParams,
+        )
 }
 
 @Serializable
@@ -128,15 +134,17 @@ internal object OidcRedirectAuth {
         nonce: String,
         scope: String,
         redirectUri: String? = null,
-    ): String = base64UrlEncode(
-        WebRpcJson.encodeToString(
-            OidcStatePayload(
-                nonce = nonce,
-                scope = scope,
-                redirectUri = redirectUri,
-            ),
-        ).toByteArray(Charsets.UTF_8),
-    )
+    ): String =
+        base64UrlEncode(
+            WebRpcJson
+                .encodeToString(
+                    OidcStatePayload(
+                        nonce = nonce,
+                        scope = scope,
+                        redirectUri = redirectUri,
+                    ),
+                ).toByteArray(Charsets.UTF_8),
+        )
 
     fun buildAuthorizationUrl(
         provider: OidcProviderConfig,
@@ -166,8 +174,10 @@ internal object OidcRedirectAuth {
     }
 
     fun parseCallbackUrl(callbackUrl: String): OidcCallbackParams {
-        val query = callbackUrl.substringAfter('?', missingDelimiterValue = "")
-            .substringBefore('#')
+        val query =
+            callbackUrl
+                .substringAfter('?', missingDelimiterValue = "")
+                .substringBefore('#')
         val params = parseQuery(query)
         return OidcCallbackParams(
             code = params["code"],
@@ -177,7 +187,10 @@ internal object OidcRedirectAuth {
         )
     }
 
-    fun validateState(encodedState: String, pending: PendingOidcRedirectAuth) {
+    fun validateState(
+        encodedState: String,
+        pending: PendingOidcRedirectAuth,
+    ) {
         val state = decodeState(encodedState)
         require(state.nonce == pending.nonce) { "OIDC state nonce mismatch" }
         require(state.scope == pending.authorizationScope) { "OIDC state scope mismatch" }
@@ -186,15 +199,22 @@ internal object OidcRedirectAuth {
         }
     }
 
-    fun matchesRedirectUri(callbackUrl: String, redirectUri: String): Boolean = runCatching {
-        val callback = URI(callbackUrl)
-        val expected = URI(redirectUri)
-        callback.scheme.equals(expected.scheme, ignoreCase = true) &&
-            sameAuthority(callback.rawAuthority, expected.rawAuthority) &&
-            callback.rawPath == expected.rawPath
-    }.getOrDefault(false)
+    fun matchesRedirectUri(
+        callbackUrl: String,
+        redirectUri: String,
+    ): Boolean =
+        runCatching {
+            val callback = URI(callbackUrl)
+            val expected = URI(redirectUri)
+            callback.scheme.equals(expected.scheme, ignoreCase = true) &&
+                sameAuthority(callback.rawAuthority, expected.rawAuthority) &&
+                callback.rawPath == expected.rawPath
+        }.getOrDefault(false)
 
-    private fun sameAuthority(callbackAuthority: String?, expectedAuthority: String?): Boolean =
+    private fun sameAuthority(
+        callbackAuthority: String?,
+        expectedAuthority: String?,
+    ): Boolean =
         when {
             callbackAuthority == null || expectedAuthority == null -> callbackAuthority == expectedAuthority
             else -> callbackAuthority.equals(expectedAuthority, ignoreCase = true)
@@ -209,7 +229,8 @@ internal object OidcRedirectAuth {
         if (query.isBlank()) {
             return emptyMap()
         }
-        return query.split('&')
+        return query
+            .split('&')
             .filter { it.isNotBlank() }
             .associate { pair ->
                 val key = pair.substringBefore('=').urlDecode()
@@ -218,12 +239,9 @@ internal object OidcRedirectAuth {
             }
     }
 
-    private fun String.urlDecode(): String =
-        URLDecoder.decode(this, Charsets.UTF_8.name())
+    private fun String.urlDecode(): String = URLDecoder.decode(this, Charsets.UTF_8.name())
 
-    private fun base64UrlEncode(bytes: ByteArray): String =
-        Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    private fun base64UrlEncode(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
-    private fun base64UrlDecode(value: String): ByteArray =
-        Base64.getUrlDecoder().decode(value)
+    private fun base64UrlDecode(value: String): ByteArray = Base64.getUrlDecoder().decode(value)
 }

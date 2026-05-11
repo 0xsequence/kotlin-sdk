@@ -30,42 +30,49 @@ class WalletSigningTest {
     }
 
     @Test
-    fun signMessageUsesCredentialSignerForRestoredSession() = runBlocking {
-        server.enqueue(
-            MockResponse.Builder()
-                .code(200)
-                .body("""{"signature":"0xsigned"}""")
-                .build(),
-        )
+    fun signMessageUsesCredentialSignerForRestoredSession() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"signature":"0xsigned"}""")
+                    .build(),
+            )
 
-        val signer = TrackingCredentialSigner()
-        val store = InMemorySessionStore(
-            snapshot = OMSClientSessionSnapshot(
-                walletId = "wallet-main",
-                walletAddress = "0xwallet",
-                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-            ),
-        )
-        val client = WalletClient(
-            projectAccessKey = "test-access-key",
-            environment = OMSClientEnvironment(
-                walletApiUrl = server.url("/rpc/Wallet/").toString(),
-            ),
-            transport = OMSClientHttpClient(),
-            sessionStore = store,
-            credentialSigner = signer,
-        )
+            val signer = TrackingCredentialSigner()
+            val store =
+                InMemorySessionStore(
+                    snapshot =
+                        OMSClientSessionSnapshot(
+                            walletId = "wallet-main",
+                            walletAddress = "0xwallet",
+                            signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                        ),
+                )
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = store,
+                    credentialSigner = signer,
+                )
 
-        assertTrue(client.restorePersistedSession())
-        assertEquals(0, signer.signCalls)
+            assertTrue(client.restorePersistedSession())
+            assertEquals(0, signer.signCalls)
 
-        val result = client.signMessage(
-            network = OMSClientNetworks.requireSupported("80002"),
-            message = "hello",
-        )
+            val result =
+                client.signMessage(
+                    network = OMSClientNetworks.requireSupported("80002"),
+                    message = "hello",
+                )
 
-        assertEquals("0xsigned", result.signature)
-        assertEquals(1, signer.signCalls)
-        assertEquals(0, store.saveCalls)
-    }
+            assertEquals("0xsigned", result.signature)
+            assertEquals(1, signer.signCalls)
+            assertEquals(0, store.saveCalls)
+        }
 }

@@ -22,13 +22,14 @@ class WalletRequestSignerVectorTest {
     fun signMessageVectorMatchesCSdk() {
         val endpoint = WaasWalletApi.SignMessage.path
         val nonce = "1710000000"
-        val payload = WaasWalletApi.SignMessage.encodeRequest(
-            SignMessageRequest(
-                walletId = "0x1234567890123456789012345678901234567890",
-                network = "80002",
-                message = "hello",
-            ),
-        )
+        val payload =
+            WaasWalletApi.SignMessage.encodeRequest(
+                SignMessageRequest(
+                    walletId = "0x1234567890123456789012345678901234567890",
+                    network = "80002",
+                    message = "hello",
+                ),
+            )
         val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
@@ -44,13 +45,14 @@ class WalletRequestSignerVectorTest {
         assertTrue(signature.startsWith("0x"))
         assertTrue(header.contains("scope=\"proj_1\""))
 
-        val signedRequest = WalletRequestSigner.signWalletRequest(
-            endpoint = endpoint,
-            nonce = nonce,
-            payload = payload,
-            scope = scope,
-            privateKeyHex = privateKeyHex,
-        )
+        val signedRequest =
+            WalletRequestSigner.signWalletRequest(
+                endpoint = endpoint,
+                nonce = nonce,
+                payload = payload,
+                scope = scope,
+                privateKeyHex = privateKeyHex,
+            )
         assertEquals(signature, signedRequest.signature)
         assertEquals(header, signedRequest.authorizationHeader)
     }
@@ -59,15 +61,16 @@ class WalletRequestSignerVectorTest {
     fun prepareEthereumTransactionVectorMatchesCSdk() {
         val endpoint = WaasWalletApi.PrepareEthereumTransaction.path
         val nonce = "1710000001"
-        val payload = WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
-            PrepareEthereumTransactionRequest(
-                walletId = "0x1234567890123456789012345678901234567890",
-                network = "80002",
-                to = "0xE5E8B483FfC05967FcFed58cc98D053265af6D99",
-                value = "1000",
-                mode = TransactionMode.Relayer,
-            ),
-        )
+        val payload =
+            WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
+                PrepareEthereumTransactionRequest(
+                    walletId = "0x1234567890123456789012345678901234567890",
+                    network = "80002",
+                    to = "0xE5E8B483FfC05967FcFed58cc98D053265af6D99",
+                    value = "1000",
+                    mode = TransactionMode.Relayer,
+                ),
+            )
         val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
@@ -87,17 +90,19 @@ class WalletRequestSignerVectorTest {
     fun completeAuthVectorMatchesCSdk() {
         val endpoint = WaasWalletApi.CompleteAuth.path
         val nonce = "1710000002"
-        val payload = WaasWalletApi.CompleteAuth.encodeRequest(
-            CompleteAuthRequest(
-                identityType = IdentityType.Email,
-                authMode = AuthMode.OTP,
-                verifier = "verifier-123",
-                answer = WalletAuthChallenge.hashAnswer(
-                    challenge = "challenge",
-                    code = "123456",
+        val payload =
+            WaasWalletApi.CompleteAuth.encodeRequest(
+                CompleteAuthRequest(
+                    identityType = IdentityType.Email,
+                    authMode = AuthMode.OTP,
+                    verifier = "verifier-123",
+                    answer =
+                        WalletAuthChallenge.hashAnswer(
+                            challenge = "challenge",
+                            code = "123456",
+                        ),
                 ),
-            ),
-        )
+            )
         val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
@@ -112,13 +117,14 @@ class WalletRequestSignerVectorTest {
         assertTrue(signature.startsWith("0x"))
         assertTrue(header.contains("nonce=1710000002"))
 
-        val signedRequest = WalletRequestSigner.signWalletRequest(
-            endpoint = endpoint,
-            nonce = nonce,
-            payload = payload,
-            scope = scope,
-            privateKeyHex = privateKeyHex,
-        )
+        val signedRequest =
+            WalletRequestSigner.signWalletRequest(
+                endpoint = endpoint,
+                nonce = nonce,
+                payload = payload,
+                scope = scope,
+                privateKeyHex = privateKeyHex,
+            )
         assertEquals(signature, signedRequest.signature)
         assertEquals(header, signedRequest.authorizationHeader)
     }

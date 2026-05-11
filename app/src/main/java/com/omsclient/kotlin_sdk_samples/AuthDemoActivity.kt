@@ -34,9 +34,9 @@ import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
+import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.OidcProviders
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
-import com.omsclient.kotlin_sdk.utils.parseUnits
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -183,12 +183,14 @@ class AuthDemoActivity : AppCompatActivity() {
                     appendLog("Google redirect start error: ${describeThrowable(it)}")
                 },
             ) {
-                val started = sdk.startOidcRedirectAuth(
-                    provider = OidcProviders.google(
-                        clientId = DemoConfig.demoGoogleWebClientId,
-                    ),
-                    redirectUri = DemoConfig.oidcRedirectUri,
-                )
+                val started =
+                    sdk.startOidcRedirectAuth(
+                        provider =
+                            OidcProviders.google(
+                                clientId = DemoConfig.demoGoogleWebClientId,
+                            ),
+                        redirectUri = DemoConfig.oidcRedirectUri,
+                    )
                 appendLog("Google redirect auth started: state=${started.state}")
                 showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
                 openInAppBrowser(started.authorizationUrl)
@@ -335,10 +337,13 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun openInAppBrowser(url: String) {
-        val colorSchemeParams = CustomTabColorSchemeParams.Builder()
-            .setToolbarColor(ContextCompat.getColor(this, R.color.sand_50))
-            .build()
-        CustomTabsIntent.Builder()
+        val colorSchemeParams =
+            CustomTabColorSchemeParams
+                .Builder()
+                .setToolbarColor(ContextCompat.getColor(this, R.color.sand_50))
+                .build()
+        CustomTabsIntent
+            .Builder()
             .setShowTitle(true)
             .setDefaultColorSchemeParams(colorSchemeParams)
             .build()
@@ -355,10 +360,13 @@ class AuthDemoActivity : AppCompatActivity() {
                 }
             },
         ) {
-            when (val result = sdk.handleOidcRedirectCallback(
-                callbackUrl = callbackUrl,
-                selectWallet = { wallets -> wallets.first() },
-            )) {
+            when (
+                val result =
+                    sdk.handleOidcRedirectCallback(
+                        callbackUrl = callbackUrl,
+                        selectWallet = { wallets -> wallets.first() },
+                    )
+            ) {
                 is OidcRedirectAuthResult.Completed -> {
                     consumeIntentData()
                     renderSignedInWallet(result.wallet, "Google redirect login complete")
@@ -377,7 +385,9 @@ class AuthDemoActivity : AppCompatActivity() {
                     renderSessionState()
                 }
 
-                OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
+                OidcRedirectAuthResult.NotOidcRedirectCallback -> {
+                    Unit
+                }
             }
         }
     }

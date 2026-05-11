@@ -25,41 +25,45 @@ internal fun walletFixture(
     address: String,
     reference: String? = null,
     type: WalletType = WalletType.Ethereum,
-): Wallet = Wallet(
-    id = walletId,
-    type = type,
-    address = address,
-    reference = reference,
-)
+): Wallet =
+    Wallet(
+        id = walletId,
+        type = type,
+        address = address,
+        reference = reference,
+    )
 
 internal fun identityFixture(
     type: IdentityType,
     iss: String? = null,
     sub: String = "sub-123",
-): Identity = Identity(
-    type = type,
-    iss = iss,
-    sub = sub,
-)
+): Identity =
+    Identity(
+        type = type,
+        iss = iss,
+        sub = sub,
+    )
 
 internal fun completeAuthResponseBody(
     wallets: List<Wallet>,
     identity: Identity = identityFixture(IdentityType.Email),
     email: String? = "user@example.com",
-): String = WebRpcJson.encodeToString(
-    CompleteAuthResponse(
-        identity = identity,
-        wallets = wallets,
-        email = email,
-        credential = credentialFixture(),
-    ),
-)
+): String =
+    WebRpcJson.encodeToString(
+        CompleteAuthResponse(
+            identity = identity,
+            wallets = wallets,
+            email = email,
+            credential = credentialFixture(),
+        ),
+    )
 
-internal fun credentialFixture(): CredentialInfo = CredentialInfo(
-    credentialId = "credential-123",
-    expiresAt = "2026-01-01T00:00:00Z",
-    isCaller = true,
-)
+internal fun credentialFixture(): CredentialInfo =
+    CredentialInfo(
+        credentialId = "credential-123",
+        expiresAt = "2026-01-01T00:00:00Z",
+        isCaller = true,
+    )
 
 internal fun walletResponseBody(
     walletId: String,
@@ -71,16 +75,16 @@ internal fun walletResponseBody(
 internal fun fakeJwt(exp: Long): String {
     val encoder = Base64.getUrlEncoder().withoutPadding()
     val header = encoder.encodeToString("""{"alg":"RS256","typ":"JWT"}""".toByteArray())
-    val payload = encoder.encodeToString(
-        """
-        {"iss":"https://accounts.google.com","aud":"demo-web-client-id","sub":"google-sub-123","email":"user@example.com","exp":$exp}
-        """.trimIndent().toByteArray()
-    )
+    val payload =
+        encoder.encodeToString(
+            """
+            {"iss":"https://accounts.google.com","aud":"demo-web-client-id","sub":"google-sub-123","email":"user@example.com","exp":$exp}
+            """.trimIndent().toByteArray(),
+        )
     return "$header.$payload.signature"
 }
 
-internal fun fixedPrivateKeyBytes(): ByteArray =
-    Numeric.hexStringToByteArray(FIXED_PRIVATE_KEY_HEX)
+internal fun fixedPrivateKeyBytes(): ByteArray = Numeric.hexStringToByteArray(FIXED_PRIVATE_KEY_HEX)
 
 internal fun activeSessionSnapshot(): OMSClientSessionSnapshot =
     OMSClientSessionSnapshot(
@@ -97,7 +101,8 @@ internal fun uriOriginAndPath(url: String): String {
 
 internal fun queryParams(url: String): Map<String, String> {
     val query = URI(url).rawQuery ?: return emptyMap()
-    return query.split('&')
+    return query
+        .split('&')
         .filter { it.isNotBlank() }
         .associate { pair ->
             pair.substringBefore('=').urlDecode() to
@@ -105,8 +110,7 @@ internal fun queryParams(url: String): Map<String, String> {
         }
 }
 
-private fun String.urlDecode(): String =
-    URLDecoder.decode(this, Charsets.UTF_8.name())
+private fun String.urlDecode(): String = URLDecoder.decode(this, Charsets.UTF_8.name())
 
 internal class InMemorySessionStore(
     var snapshot: OMSClientSessionSnapshot? = null,
@@ -136,9 +140,7 @@ internal class FailingSaveSessionStore : OMSClientSecureSessionStore {
 
     override fun load(): OMSClientSessionSnapshot? = null
 
-    override fun save(snapshot: OMSClientSessionSnapshot) {
-        throw IllegalStateException("save failed")
-    }
+    override fun save(snapshot: OMSClientSessionSnapshot): Unit = throw IllegalStateException("save failed")
 
     override fun clear() {
         clearCalls += 1
@@ -168,8 +170,7 @@ internal class TrackingCredentialSigner : CredentialSigner {
     var signCalls: Int = 0
         private set
 
-    override suspend fun credentialId(): String =
-        WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX)
+    override suspend fun credentialId(): String = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX)
 
     override suspend fun nextNonce(): String = "1710000107"
 

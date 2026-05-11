@@ -36,23 +36,25 @@ class OMSClientTest {
 
     @Test
     fun sessionStateExposesPendingOidcRedirectAuth() {
-        val sdk = OMSClient(
-            projectAccessKey = "test-access-key",
-            walletSession = OMSClientSession(),
-            oidcRedirectAuthStore = StubOidcRedirectAuthStore(
-                PendingOidcRedirectAuth(
-                    verifier = "verifier-123",
-                    challenge = "challenge-123",
-                    nonce = "nonce-123",
-                    redirectUri = "omsclientkotlindemo://auth/callback",
-                    issuer = "https://issuer.example",
-                    authorizationScope = "proj_1",
-                    walletType = WalletType.Ethereum,
-                    signerAddress = "0xsigner",
-                    signerKeyType = KeyType.Ethereum_Secp256k1,
-                ),
-            ),
-        )
+        val sdk =
+            OMSClient(
+                projectAccessKey = "test-access-key",
+                walletSession = OMSClientSession(),
+                oidcRedirectAuthStore =
+                    StubOidcRedirectAuthStore(
+                        PendingOidcRedirectAuth(
+                            verifier = "verifier-123",
+                            challenge = "challenge-123",
+                            nonce = "nonce-123",
+                            redirectUri = "omsclientkotlindemo://auth/callback",
+                            issuer = "https://issuer.example",
+                            authorizationScope = "proj_1",
+                            walletType = WalletType.Ethereum,
+                            signerAddress = "0xsigner",
+                            signerKeyType = KeyType.Ethereum_Secp256k1,
+                        ),
+                    ),
+            )
 
         assertEquals(true, sdk.session.hasPendingOidcRedirectAuth)
         assertEquals(false, sdk.session.hasPendingSignIn)

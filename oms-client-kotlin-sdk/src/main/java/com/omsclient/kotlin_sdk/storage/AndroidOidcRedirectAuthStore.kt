@@ -14,12 +14,13 @@ internal class AndroidOidcRedirectAuthStore(
 ) : OidcRedirectAuthStore {
     private val pendingFile = File(context.noBackupFilesDir, fileName)
 
-    override fun load(): PendingOidcRedirectAuth? = runCatching {
-        if (!pendingFile.exists()) {
-            return null
-        }
-        WebRpcJson.decodeFromString<PendingOidcRedirectAuth>(pendingFile.readText())
-    }.getOrNull()
+    override fun load(): PendingOidcRedirectAuth? =
+        runCatching {
+            if (!pendingFile.exists()) {
+                return null
+            }
+            WebRpcJson.decodeFromString<PendingOidcRedirectAuth>(pendingFile.readText())
+        }.getOrNull()
 
     override fun save(pending: PendingOidcRedirectAuth) {
         pendingFile.parentFile?.mkdirs()
