@@ -1,8 +1,5 @@
 # Publishing
 
-This document covers local publishing checks for the SDK package. Real remote
-publishing is not configured in this repository yet.
-
 ## Local Maven Publish
 
 Use `mavenLocal` to verify that the Android library can be packaged and consumed
@@ -37,7 +34,7 @@ Expected files include:
 Signing is not required for `mavenLocal`. The module only signs publications
 when `signingInMemoryKey` and `signingInMemoryKeyPassword` are provided.
 
-## Consumer Test
+### Consumer Test
 
 Test the published artifact from a separate Android consumer project. The sample
 app in this repository uses `implementation(project(":oms-client-kotlin-sdk"))`,
