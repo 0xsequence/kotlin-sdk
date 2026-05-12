@@ -30,7 +30,7 @@ class WalletRequestSignerVectorTest {
                     message = "hello",
                 ),
             )
-        val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, payload)
+        val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
         val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
@@ -39,7 +39,7 @@ class WalletRequestSignerVectorTest {
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"message\":\"hello\"}",
             payload,
         )
-        assertTrue(preimage.startsWith("POST /rpc/Wallet/SignMessage\nnonce: 1710000000\n\n"))
+        assertTrue(preimage.startsWith("POST /rpc/Wallet/SignMessage\nnonce: 1710000000\nscope: proj_1\n\n"))
         assertTrue(digest.startsWith("0x"))
         assertEquals(derivedAddress, WalletRequestSigner.walletAddressFromPrivateKeyHex(privateKeyHex))
         assertTrue(signature.startsWith("0x"))
@@ -71,7 +71,7 @@ class WalletRequestSignerVectorTest {
                     mode = TransactionMode.Relayer,
                 ),
             )
-        val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, payload)
+        val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
         val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
@@ -80,7 +80,7 @@ class WalletRequestSignerVectorTest {
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"to\":\"0xE5E8B483FfC05967FcFed58cc98D053265af6D99\",\"value\":\"1000\",\"mode\":\"relayer\"}",
             payload,
         )
-        assertTrue(preimage.startsWith("POST /rpc/Wallet/PrepareEthereumTransaction\nnonce: 1710000001\n\n"))
+        assertTrue(preimage.startsWith("POST /rpc/Wallet/PrepareEthereumTransaction\nnonce: 1710000001\nscope: proj_1\n\n"))
         assertTrue(digest.startsWith("0x"))
         assertTrue(signature.startsWith("0x"))
         assertTrue(header.contains("nonce=1710000001"))
@@ -103,7 +103,7 @@ class WalletRequestSignerVectorTest {
                         ),
                 ),
             )
-        val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, payload)
+        val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
         val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
@@ -112,7 +112,7 @@ class WalletRequestSignerVectorTest {
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"verifier\":\"verifier-123\",\"answer\":\"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M\"}",
             payload,
         )
-        assertTrue(preimage.startsWith("POST /rpc/Wallet/CompleteAuth\nnonce: 1710000002\n\n"))
+        assertTrue(preimage.startsWith("POST /rpc/Wallet/CompleteAuth\nnonce: 1710000002\nscope: proj_1\n\n"))
         assertTrue(digest.startsWith("0x"))
         assertTrue(signature.startsWith("0x"))
         assertTrue(header.contains("nonce=1710000002"))

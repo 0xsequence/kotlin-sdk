@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.session
 
+import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.generated.waas.KeyType
 
 internal data class OMSClientSessionSnapshot(
@@ -9,6 +10,9 @@ internal data class OMSClientSessionSnapshot(
     val walletAddress: String? = null,
     val signerAddress: String? = null,
     val signerKeyType: KeyType? = null,
+    val expiresAt: String? = null,
+    val loginType: OMSClientSessionLoginType? = null,
+    val sessionEmail: String? = null,
 )
 
 internal data class OMSClientPendingAuthSnapshot(
@@ -44,11 +48,17 @@ internal class OMSClientSession(
         data class AwaitingWalletResolution(
             val signerAddress: String,
             val signerKeyType: KeyType?,
+            val expiresAt: String,
+            val loginType: OMSClientSessionLoginType?,
+            val sessionEmail: String?,
         ) : SessionState {
             override fun snapshot(): OMSClientSessionSnapshot =
                 OMSClientSessionSnapshot(
                     signerAddress = signerAddress,
                     signerKeyType = signerKeyType,
+                    expiresAt = expiresAt,
+                    loginType = loginType,
+                    sessionEmail = sessionEmail,
                 )
         }
 
@@ -57,6 +67,9 @@ internal class OMSClientSession(
             val walletAddress: String,
             val signerAddress: String?,
             val signerKeyType: KeyType?,
+            val expiresAt: String?,
+            val loginType: OMSClientSessionLoginType?,
+            val sessionEmail: String?,
         ) : SessionState {
             override fun snapshot(): OMSClientSessionSnapshot =
                 OMSClientSessionSnapshot(
@@ -64,6 +77,9 @@ internal class OMSClientSession(
                     walletAddress = walletAddress,
                     signerAddress = signerAddress,
                     signerKeyType = signerKeyType,
+                    expiresAt = expiresAt,
+                    loginType = loginType,
+                    sessionEmail = sessionEmail,
                 )
         }
     }
@@ -95,7 +111,11 @@ internal class OMSClientSession(
             )
     }
 
-    fun markAuthVerified() {
+    fun markAuthVerified(
+        expiresAt: String,
+        loginType: OMSClientSessionLoginType?,
+        sessionEmail: String?,
+    ) {
         val current =
             when (val current = state) {
                 is SessionState.PendingAuth -> current
@@ -105,6 +125,9 @@ internal class OMSClientSession(
             SessionState.AwaitingWalletResolution(
                 signerAddress = current.signerAddress,
                 signerKeyType = current.signerKeyType,
+                expiresAt = expiresAt,
+                loginType = loginType,
+                sessionEmail = sessionEmail,
             )
     }
 
@@ -123,6 +146,9 @@ internal class OMSClientSession(
                 walletAddress = walletAddress,
                 signerAddress = current.signerAddress,
                 signerKeyType = current.signerKeyType,
+                expiresAt = current.expiresAt,
+                loginType = current.loginType,
+                sessionEmail = current.sessionEmail,
             )
     }
 
@@ -153,6 +179,9 @@ internal class OMSClientSession(
                     walletAddress = snapshot.walletAddress,
                     signerAddress = snapshot.signerAddress,
                     signerKeyType = snapshot.signerKeyType,
+                    expiresAt = snapshot.expiresAt,
+                    loginType = snapshot.loginType,
+                    sessionEmail = snapshot.sessionEmail,
                 )
             }
 
@@ -170,6 +199,9 @@ internal class OMSClientSession(
                 SessionState.AwaitingWalletResolution(
                     signerAddress = snapshot.signerAddress,
                     signerKeyType = snapshot.signerKeyType,
+                    expiresAt = snapshot.expiresAt.orEmpty(),
+                    loginType = snapshot.loginType,
+                    sessionEmail = snapshot.sessionEmail,
                 )
             }
 

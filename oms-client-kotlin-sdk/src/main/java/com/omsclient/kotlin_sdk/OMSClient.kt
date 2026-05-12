@@ -9,14 +9,20 @@ import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.storage.AndroidKeystoreSessionStore
+import com.omsclient.kotlin_sdk.storage.AndroidOidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.utils.OMSClientUtils
 import com.omsclient.kotlin_sdk.wallet.AndroidKeystoreP256CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.CredentialSigner
+import com.omsclient.kotlin_sdk.wallet.OidcProviderConfig
+import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
+import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
+import com.omsclient.kotlin_sdk.wallet.StartOidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.wallet.WalletClient
 import okhttp3.OkHttpClient
 import java.net.URI
 import java.security.MessageDigest
+import java.time.Instant
 
 /**
  * Main entry point for OMS Client.
@@ -30,6 +36,7 @@ class OMSClient internal constructor(
     okHttpClient: OkHttpClient = OkHttpClient(),
     walletSession: OMSClientSession = OMSClientSession(),
     sessionStore: OMSClientSecureSessionStore? = null,
+    oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
     credentialSigner: CredentialSigner? = null,
 ) {
     private val transport = OMSClientHttpClient(okHttpClient)
@@ -41,6 +48,7 @@ class OMSClient internal constructor(
             transport = transport,
             session = walletSession,
             sessionStore = sessionStore,
+            oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
         )
 
@@ -63,17 +71,22 @@ class OMSClient internal constructor(
     }
 
     /**
-     * Snapshot of the current auth and wallet-selection state.
+     * Snapshot of the current durable wallet-session state.
      */
     val session: OMSClientSessionState
-        get() =
-            wallet.currentState().let { state ->
-                OMSClientSessionState(
-                    hasPendingSignIn = state.hasPendingSignIn,
-                    walletAddress = state.walletAddress,
-                    signerAddress = state.signerAddress,
-                )
+        get() {
+            val snapshot = wallet.snapshotSession()
+            val walletAddress = snapshot?.walletAddress
+            if (walletAddress.isNullOrBlank()) {
+                return OMSClientSessionState(walletAddress = null)
             }
+            return OMSClientSessionState(
+                walletAddress = walletAddress,
+                expiresAt = snapshot.expiresAt?.toInstantOrNull(),
+                loginType = snapshot.loginType,
+                sessionEmail = snapshot.sessionEmail,
+            )
+        }
 
     /**
      * Networks currently supported by this SDK build.
@@ -106,6 +119,11 @@ class OMSClient internal constructor(
                 context = context.applicationContext,
                 alias = scopedSessionKeyAlias(environment),
                 fileName = scopedSessionFileName(environment),
+            ),
+        oidcRedirectAuthStore =
+            AndroidOidcRedirectAuthStore(
+                context = context.applicationContext,
+                fileName = scopedOidcRedirectAuthFileName(environment),
             ),
         credentialSigner =
             AndroidKeystoreP256CredentialSigner(
@@ -160,6 +178,50 @@ class OMSClient internal constructor(
         )
 
     /**
+     * Starts OIDC authorization-code PKCE redirect authentication.
+     *
+     * Open the returned [StartOidcRedirectAuthResult.authorizationUrl] in a
+     * browser or Custom Tabs. After the provider redirects back to the app,
+     * pass the callback URL to [handleOidcRedirectCallback].
+     */
+    suspend fun startOidcRedirectAuth(
+        provider: OidcProviderConfig,
+        redirectUri: String,
+        walletType: WalletType = environment.defaultWalletType,
+        relayRedirectUri: String? = provider.relayRedirectUri,
+        authorizeParams: Map<String, String> = emptyMap(),
+    ): StartOidcRedirectAuthResult =
+        wallet.startOidcRedirectAuth(
+            provider = provider,
+            redirectUri = redirectUri,
+            walletType = walletType,
+            relayRedirectUri = relayRedirectUri,
+            authorizeParams = authorizeParams,
+        )
+
+    /**
+     * Safely handles an incoming OIDC authorization-code PKCE redirect callback.
+     *
+     * This method is idempotent and safe to call for every incoming app link.
+     * Unrelated links return [OidcRedirectAuthResult.NotOidcRedirectCallback],
+     * stale callbacks return [OidcRedirectAuthResult.NoPendingAuth], and a
+     * successful callback returns [OidcRedirectAuthResult.Completed].
+     */
+    suspend fun handleOidcRedirectCallback(
+        callbackUrl: String?,
+        selectWallet: suspend (List<Wallet>) -> Wallet = { wallets ->
+            require(wallets.size == 1) {
+                "Multiple wallets are available. Provide selectWallet to choose one."
+            }
+            wallets.single()
+        },
+    ): OidcRedirectAuthResult =
+        wallet.handleOidcRedirectCallback(
+            callbackUrl = callbackUrl,
+            selectWallet = selectWallet,
+        )
+
+    /**
      * Completes email OTP authentication and resolves the only available wallet
      * for the requested [walletType].
      */
@@ -208,6 +270,9 @@ class OMSClient internal constructor(
         internal fun scopedCredentialNonceStoreName(environment: OMSClientEnvironment): String =
             "oms-client-credential-nonces-${scopedSessionSuffix(environment)}"
 
+        internal fun scopedOidcRedirectAuthFileName(environment: OMSClientEnvironment): String =
+            "oms-client-oidc-redirect-auth-${scopedSessionSuffix(environment)}.json"
+
         private fun scopedSessionSuffix(environment: OMSClientEnvironment): String {
             val source =
                 buildString {
@@ -235,3 +300,5 @@ class OMSClient internal constructor(
         }
     }
 }
+
+private fun String.toInstantOrNull(): Instant? = runCatching { Instant.parse(this) }.getOrNull()

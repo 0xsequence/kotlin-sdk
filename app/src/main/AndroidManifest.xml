@@ -14,7 +14,22 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Kotlinsdk">
 
-        <activity android:name=".AuthDemoActivity" />
+        <activity
+            android:name=".AuthDemoActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="auth"
+                    android:pathPrefix="/callback"
+                    android:scheme="omsclientkotlindemo" />
+            </intent-filter>
+        </activity>
         <activity android:name=".TestbedActivity" />
 
         <activity

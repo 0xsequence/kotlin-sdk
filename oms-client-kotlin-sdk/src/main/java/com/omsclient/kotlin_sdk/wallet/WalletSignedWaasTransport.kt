@@ -24,6 +24,7 @@ internal class WalletSignedWaasTransport(
             WalletRequestSigner.buildWalletRequestPreimage(
                 endpoint = endpoint,
                 nonce = nonce,
+                scope = environment.authorizationScope,
                 payload = body,
                 requestPathPrefix = WaasWalletApi.basePath,
             )

@@ -54,6 +54,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.androidx.browser)
     implementation(libs.material)
     implementation(libs.googleid)
     implementation(libs.kotlinx.coroutines.android)

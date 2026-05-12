@@ -1,13 +1,18 @@
 package com.omsclient.kotlin_sdk
 
+import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
+import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.Instant
 
 class OMSClientTest {
     @Test
@@ -17,6 +22,9 @@ class OMSClientTest {
                 walletId = "wallet-main",
                 walletAddress = "0xwallet",
                 signerAddress = "0xsigner",
+                expiresAt = "2026-01-01T00:00:00Z",
+                loginType = OMSClientSessionLoginType.Email,
+                sessionEmail = "user@example.com",
             )
         val sdk =
             OMSClient(
@@ -27,7 +35,37 @@ class OMSClientTest {
 
         assertEquals("0xwallet", sdk.wallet.address)
         assertEquals("0xwallet", sdk.session.walletAddress)
-        assertEquals("0xsigner", sdk.session.signerAddress)
+        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), sdk.session.expiresAt)
+        assertEquals(OMSClientSessionLoginType.Email, sdk.session.loginType)
+        assertEquals("user@example.com", sdk.session.sessionEmail)
+    }
+
+    @Test
+    fun sessionStateOnlyReflectsCompletedWalletSession() {
+        val sdk =
+            OMSClient(
+                projectAccessKey = "test-access-key",
+                walletSession = OMSClientSession(),
+                oidcRedirectAuthStore =
+                    StubOidcRedirectAuthStore(
+                        PendingOidcRedirectAuth(
+                            verifier = "verifier-123",
+                            challenge = "challenge-123",
+                            nonce = "nonce-123",
+                            redirectUri = "omsclientkotlindemo://auth/callback",
+                            issuer = "https://issuer.example",
+                            authorizationScope = "proj_1",
+                            walletType = WalletType.Ethereum,
+                            signerAddress = "0xsigner",
+                            signerKeyType = KeyType.Ethereum_Secp256k1,
+                        ),
+                    ),
+            )
+
+        assertNull(sdk.session.walletAddress)
+        assertNull(sdk.session.expiresAt)
+        assertNull(sdk.session.loginType)
+        assertNull(sdk.session.sessionEmail)
     }
 
     @Test
@@ -51,7 +89,9 @@ class OMSClientTest {
 
         assertNull(sdk.wallet.address)
         assertNull(sdk.session.walletAddress)
-        assertNull(sdk.session.signerAddress)
+        assertNull(sdk.session.expiresAt)
+        assertNull(sdk.session.loginType)
+        assertNull(sdk.session.sessionEmail)
         assertNull(store.snapshot)
         assertEquals(1, store.clearCalls)
     }
@@ -145,6 +185,16 @@ class OMSClientTest {
         override fun load(): OMSClientSessionSnapshot? = snapshot
 
         override fun save(snapshot: OMSClientSessionSnapshot) = Unit
+
+        override fun clear() = Unit
+    }
+
+    private class StubOidcRedirectAuthStore(
+        private val pending: PendingOidcRedirectAuth?,
+    ) : OidcRedirectAuthStore {
+        override fun load(): PendingOidcRedirectAuth? = pending
+
+        override fun save(pending: PendingOidcRedirectAuth) = Unit
 
         override fun clear() = Unit
     }

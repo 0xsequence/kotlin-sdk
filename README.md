@@ -47,7 +47,9 @@ Wallet API requests are signed with a non-extractable Android Keystore P-256
 credential (`webcrypto-secp256r1`), so the private credential key is not written
 to app storage.
 Only completed wallet sessions are restored automatically. Pending auth state is
-kept in memory for the current app run and is not persisted across restarts.
+not exposed through `client.session`; email OTP pending state is kept in memory,
+while OIDC redirect verifier/state is stored internally only so incoming app
+links can be handled.
 
 If you need a custom environment:
 
@@ -95,19 +97,46 @@ val wallet = client.signInWithOidcIdToken(
 )
 ```
 
+For OIDC authorization-code PKCE redirect flows, start the redirect, open the
+returned URL with your browser or Custom Tabs, then safely handle incoming app
+links from `onCreate` / `onNewIntent`:
+
+```kotlin
+val started = client.startOidcRedirectAuth(
+    provider = OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID"),
+    redirectUri = "omsclientkotlindemo://auth/callback",
+)
+
+// Open started.authorizationUrl.
+
+when (val result = client.handleOidcRedirectCallback(intent.data?.toString())) {
+    is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
+    OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
+    OidcRedirectAuthResult.NoPendingAuth -> Unit
+    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
+}
+```
+
 Useful state checks:
 
 ```kotlin
 val walletAddress = client.session.walletAddress
-val signerAddress = client.session.signerAddress
-val hasPendingSignIn = client.session.hasPendingSignIn
+val expiresAt = client.session.expiresAt
+val loginType = client.session.loginType
+val sessionEmail = client.session.sessionEmail
 ```
 
-`hasPendingSignIn` only reflects in-memory state in the current process. A fresh
-SDK instance restores completed wallet sessions, not interrupted pending logins.
-If auth completes but wallet selection, wallet creation, or session persistence
-fails, the SDK clears the in-memory auth session instead of retaining an
-unrecoverable transient signer.
+`client.session` only reports completed wallet-session state. Pending auth
+state, OIDC redirect verifier/state, and signer details are SDK internals. Show
+OTP or redirect waiting UI from the method result that started the flow, not from
+session state. Always pass incoming app links to `handleOidcRedirectCallback`;
+if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
+fresh SDK instance restores completed wallet sessions, including the session
+expiry, login type, and email returned by the wallet API, but not email OTP
+pending state. Completed auth requests ask the wallet API for a one-week
+session lifetime. If auth completes but wallet selection, wallet creation, or
+session persistence fails, the SDK clears the in-memory auth session instead of
+retaining unrecoverable transient state.
 
 Use the selected wallet:
 

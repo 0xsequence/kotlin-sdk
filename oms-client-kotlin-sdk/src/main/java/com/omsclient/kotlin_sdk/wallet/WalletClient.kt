@@ -1,6 +1,7 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.Network
+import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
@@ -8,12 +9,13 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest
-import com.omsclient.kotlin_sdk.generated.waas.GetTransactionStatusRequest
+import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageResponse
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
+import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletClient
@@ -32,16 +34,11 @@ import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.math.BigInteger
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
-
-internal data class WalletState(
-    val hasPendingSignIn: Boolean,
-    val walletAddress: String?,
-    val signerAddress: String?,
-)
 
 class WalletClient internal constructor(
     private val projectAccessKey: String,
@@ -49,7 +46,9 @@ class WalletClient internal constructor(
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
     private val session: OMSClientSession = OMSClientSession(),
     private val sessionStore: OMSClientSecureSessionStore? = null,
+    private val oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
     private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
+    private val oidcNonceGenerator: () -> String = OidcRedirectAuth::generateNonce,
     private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
     private val credentialSigner: CredentialSigner? = null,
     private val fastTransactionStatusPollIntervalMillis: Long = 400L,
@@ -76,6 +75,9 @@ class WalletClient internal constructor(
             return snapshot.walletAddress.isNullOrBlank()
         }
 
+    internal val canResumeOidcRedirectAuth: Boolean
+        get() = oidcRedirectAuthStore?.load() != null
+
     /**
      * Address of the currently selected wallet, or null when no wallet is selected.
      */
@@ -84,13 +86,6 @@ class WalletClient internal constructor(
 
     internal val signerAddress: String?
         get() = session.snapshot()?.signerAddress
-
-    internal fun currentState(): WalletState =
-        WalletState(
-            hasPendingSignIn = hasPendingSignIn,
-            walletAddress = address,
-            signerAddress = signerAddress,
-        )
 
     internal fun restoreSession(snapshot: OMSClientSessionSnapshot) {
         session.restore(snapshot)
@@ -112,9 +107,20 @@ class WalletClient internal constructor(
     }
 
     internal fun signOut() {
+        clearSession(clearOidcRedirectAuth = true)
+    }
+
+    private fun clearSession(clearOidcRedirectAuth: Boolean) {
         session.clear()
         signer.clear()
         sessionStore?.clear()
+        if (clearOidcRedirectAuth) {
+            clearPendingOidcRedirectAuth()
+        }
+    }
+
+    private fun clearPendingOidcRedirectAuth() {
+        oidcRedirectAuthStore?.clear()
     }
 
     private fun requireWalletId(): String = requireNotNull(session.snapshot()?.walletId) { "No wallet selected" }
@@ -123,6 +129,7 @@ class WalletClient internal constructor(
 
     internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
         requireNoActiveWalletSession()
+        clearPendingOidcRedirectAuth()
         return try {
             val signerAddress = signer.credentialId()
             val response =
@@ -176,6 +183,7 @@ class WalletClient internal constructor(
         selectWallet: suspend (List<Wallet>) -> Wallet,
     ): Wallet {
         requireNoActiveWalletSession()
+        clearPendingOidcRedirectAuth()
         try {
             val signerAddress = signer.credentialId()
             val response =
@@ -214,6 +222,146 @@ class WalletClient internal constructor(
         }
     }
 
+    internal suspend fun startOidcRedirectAuth(
+        provider: OidcProviderConfig,
+        redirectUri: String,
+        walletType: WalletType = environment.defaultWalletType,
+        relayRedirectUri: String? = provider.relayRedirectUri,
+        authorizeParams: Map<String, String> = emptyMap(),
+    ): StartOidcRedirectAuthResult {
+        requireNoActiveWalletSession()
+        val redirectAuthStore =
+            requireNotNull(oidcRedirectAuthStore) {
+                "OIDC redirect auth requires an OIDC redirect auth store"
+            }
+        return try {
+            val signerAddress = signer.credentialId()
+            val oauthRedirectUri = relayRedirectUri ?: redirectUri
+            val response =
+                waasClient().commitVerifier(
+                    CommitVerifierRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.AuthCodePKCE,
+                        metadata =
+                            mapOf(
+                                "iss" to provider.issuer,
+                                "aud" to provider.clientId,
+                                "redirect_uri" to oauthRedirectUri,
+                            ),
+                    ),
+                )
+            val nonce = oidcNonceGenerator()
+            val state =
+                OidcRedirectAuth.encodeState(
+                    nonce = nonce,
+                    scope = environment.authorizationScope,
+                    redirectUri = redirectUri.takeIf { oauthRedirectUri != redirectUri },
+                )
+
+            session.replaceForPendingAuth(
+                challenge = response.challenge,
+                verifier = response.verifier,
+                signerAddress = signerAddress,
+                signerKeyType = signer.keyType,
+            )
+            redirectAuthStore.save(
+                PendingOidcRedirectAuth(
+                    verifier = response.verifier,
+                    challenge = response.challenge,
+                    nonce = nonce,
+                    redirectUri = redirectUri,
+                    issuer = provider.issuer,
+                    authorizationScope = environment.authorizationScope,
+                    walletType = walletType,
+                    signerAddress = signerAddress,
+                    signerKeyType = signer.keyType,
+                ),
+            )
+
+            val authorizationUrl =
+                OidcRedirectAuth.buildAuthorizationUrl(
+                    provider = provider,
+                    redirectUri = oauthRedirectUri,
+                    state = state,
+                    challenge = response.challenge,
+                    loginHint = response.loginHint,
+                    authorizeParams = provider.authorizeParams + authorizeParams,
+                )
+
+            StartOidcRedirectAuthResult(
+                authorizationUrl = authorizationUrl,
+                state = state,
+                challenge = response.challenge,
+            )
+        } catch (throwable: Throwable) {
+            signOut()
+            throw throwable
+        }
+    }
+
+    internal suspend fun handleOidcRedirectCallback(
+        callbackUrl: String?,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): OidcRedirectAuthResult {
+        if (callbackUrl.isNullOrBlank()) {
+            return OidcRedirectAuthResult.NotOidcRedirectCallback
+        }
+
+        val callback = OidcRedirectAuth.parseCallbackUrl(callbackUrl)
+        if (!callback.hasOidcResponse) {
+            return OidcRedirectAuthResult.NotOidcRedirectCallback
+        }
+
+        val redirectAuthStore = oidcRedirectAuthStore ?: return OidcRedirectAuthResult.NoPendingAuth
+        val pending = redirectAuthStore.load() ?: return OidcRedirectAuthResult.NoPendingAuth
+        if (!OidcRedirectAuth.matchesRedirectUri(callbackUrl, pending.redirectUri)) {
+            return OidcRedirectAuthResult.NotOidcRedirectCallback
+        }
+
+        val state = callback.state ?: return OidcRedirectAuthResult.NotOidcRedirectCallback
+        val stateMatches =
+            runCatching {
+                OidcRedirectAuth.validateState(state, pending)
+            }.isSuccess
+        if (!stateMatches) {
+            return OidcRedirectAuthResult.NotOidcRedirectCallback
+        }
+
+        var clearPendingAuth = false
+        return try {
+            clearPendingAuth = true
+            callback.error?.let { error ->
+                throw IllegalStateException(callback.errorDescription ?: "OIDC provider returned error: $error")
+            }
+            val code = requireNotNull(callback.code) { "OIDC callback URL is missing code" }
+            restorePendingOidcRedirectAuth(pending)
+
+            val auth =
+                waasClient().completeAuth(
+                    CompleteAuthRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.AuthCodePKCE,
+                        verifier = pending.verifier,
+                        answer = code,
+                        lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
+                    ),
+                )
+            OidcRedirectAuthResult.Completed(
+                resolveAuthenticatedWallet(auth, pending.walletType, selectWallet),
+            )
+        } catch (throwable: CancellationException) {
+            clearPendingAuth = false
+            throw throwable
+        } catch (throwable: Throwable) {
+            clearSession(clearOidcRedirectAuth = false)
+            OidcRedirectAuthResult.Failed(throwable)
+        } finally {
+            if (clearPendingAuth) {
+                redirectAuthStore.clear()
+            }
+        }
+    }
+
     internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
         val snapshot = session.requirePendingAuth()
         return waasClient().completeAuth(
@@ -222,6 +370,7 @@ class WalletClient internal constructor(
                 authMode = AuthMode.OTP,
                 verifier = snapshot.verifier,
                 answer = WalletAuthChallenge.hashAnswer(snapshot.challenge, code),
+                lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
             ),
         )
     }
@@ -234,6 +383,7 @@ class WalletClient internal constructor(
                 authMode = AuthMode.IDToken,
                 verifier = snapshot.verifier,
                 answer = idToken,
+                lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
             ),
         )
     }
@@ -322,7 +472,11 @@ class WalletClient internal constructor(
         walletType: WalletType,
         selectWallet: suspend (List<Wallet>) -> Wallet,
     ): Wallet {
-        session.markAuthVerified()
+        session.markAuthVerified(
+            expiresAt = completeAuth.credential.expiresAt,
+            loginType = completeAuth.identity.toSessionLoginType(),
+            sessionEmail = completeAuth.email,
+        )
         return try {
             val candidateWallets = completeAuth.wallets.filter { it.type == walletType }
             when {
@@ -349,6 +503,22 @@ class WalletClient internal constructor(
         }
     }
 
+    private suspend fun restorePendingOidcRedirectAuth(pending: PendingOidcRedirectAuth) {
+        requireActiveCredential()
+        val currentSignerAddress = signer.credentialId()
+        check(currentSignerAddress == pending.signerAddress) {
+            "OIDC redirect auth signer mismatch"
+        }
+        session.restore(
+            OMSClientSessionSnapshot(
+                challenge = pending.challenge,
+                verifier = pending.verifier,
+                signerAddress = pending.signerAddress,
+                signerKeyType = pending.signerKeyType,
+            ),
+        )
+    }
+
     private fun persistCurrentSession() {
         val snapshot = session.snapshot() ?: return
         sessionStore?.save(snapshot)
@@ -360,6 +530,28 @@ class WalletClient internal constructor(
             "Cannot start a new login while a wallet session is active"
         }
     }
+
+    private fun Identity.toSessionLoginType(): OMSClientSessionLoginType? =
+        when (type) {
+            IdentityType.Email -> {
+                OMSClientSessionLoginType.Email
+            }
+
+            IdentityType.OIDC -> {
+                if (iss == GOOGLE_ISSUER) {
+                    OMSClientSessionLoginType.GoogleAuth
+                } else {
+                    OMSClientSessionLoginType.Oidc
+                }
+            }
+
+            IdentityType.Phone,
+            IdentityType.Passkey,
+            IdentityType.UNKNOWN_DEFAULT,
+            -> {
+                null
+            }
+        }
 
     /**
      * Signs [message] with the currently selected wallet on [network].
@@ -579,7 +771,7 @@ class WalletClient internal constructor(
         var completedStatusPolls = 0
 
         do {
-            lastStatus = getTransactionStatus(GetTransactionStatusRequest(txnId = txnId))
+            lastStatus = transactionStatus(TransactionStatusRequest(txnId = txnId))
             completedStatusPolls += 1
             if (lastStatus.status == TransactionStatus.Executed || !lastStatus.txnHash.isNullOrBlank()) {
                 return lastStatus
@@ -616,3 +808,6 @@ class WalletClient internal constructor(
                 ),
         )
 }
+
+private val DEFAULT_SESSION_LIFETIME_SECONDS: UInt = 604_800u
+private const val GOOGLE_ISSUER: String = "https://accounts.google.com"

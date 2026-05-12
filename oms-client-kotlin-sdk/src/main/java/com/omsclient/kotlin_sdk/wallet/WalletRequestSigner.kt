@@ -32,9 +32,10 @@ internal object WalletRequestSigner {
     fun buildWalletRequestPreimage(
         endpoint: String,
         nonce: String,
+        scope: String,
         payload: String,
         requestPathPrefix: String = DEFAULT_WALLET_REQUEST_PATH_PREFIX,
-    ): String = "POST ${requestPathPrefix.trimEnd('/')}$endpoint\nnonce: $nonce\n\n$payload"
+    ): String = "POST ${requestPathPrefix.trimEnd('/')}$endpoint\nnonce: $nonce\nscope: $scope\n\n$payload"
 
     fun walletRequestPreimageDigestHex(preimage: String): String =
         Numeric.toHexString(Hash.sha3(preimage.toByteArray(StandardCharsets.UTF_8)))
@@ -108,6 +109,7 @@ internal object WalletRequestSigner {
             buildWalletRequestPreimage(
                 endpoint = endpoint,
                 nonce = nonce,
+                scope = scope,
                 payload = payload,
                 requestPathPrefix = requestPathPrefix,
             )
