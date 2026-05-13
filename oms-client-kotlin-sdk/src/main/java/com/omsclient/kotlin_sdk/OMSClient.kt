@@ -11,7 +11,6 @@ import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.storage.AndroidKeystoreSessionStore
 import com.omsclient.kotlin_sdk.storage.AndroidOidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
-import com.omsclient.kotlin_sdk.utils.OMSClientUtils
 import com.omsclient.kotlin_sdk.wallet.AndroidKeystoreP256CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.OidcProviderConfig
@@ -50,13 +49,6 @@ class OMSClient internal constructor(
             sessionStore = sessionStore,
             oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
-        )
-
-    val utils: OMSClientUtils =
-        OMSClientUtils(
-            projectAccessKey = projectAccessKey,
-            environment = environment,
-            transport = transport,
         )
 
     val indexer: IndexerClient =

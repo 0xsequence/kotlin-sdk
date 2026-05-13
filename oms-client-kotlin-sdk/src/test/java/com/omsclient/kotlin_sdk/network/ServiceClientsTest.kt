@@ -1,9 +1,13 @@
 package com.omsclient.kotlin_sdk.network
 
+import com.omsclient.kotlin_sdk.OMSClient
 import com.omsclient.kotlin_sdk.OMSClientNetworks
+import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
-import com.omsclient.kotlin_sdk.utils.OMSClientUtils
+import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
@@ -28,7 +32,7 @@ class ServiceClientsTest {
     }
 
     @Test
-    fun verifySignatureParsesApiResponse() =
+    fun walletSignatureValidationUsesGeneratedPublicClient() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -37,26 +41,63 @@ class ServiceClientsTest {
                     .body("""{"isValid":true}""")
                     .build(),
             )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"isValid":false}""")
+                    .build(),
+            )
 
             val environment =
                 OMSClientEnvironment(
-                    apiRpcUrl = server.url("/rpc/API/").toString(),
+                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
                 )
-            val client = OMSClientUtils("test-access-key", environment, OMSClientHttpClient())
+            val client = OMSClient(projectAccessKey = "test-access-key", environment = environment)
+            client.wallet.restoreSession(
+                OMSClientSessionSnapshot(
+                    walletId = "wallet-id",
+                    walletAddress = "0xwallet",
+                ),
+            )
 
-            val response =
-                client.verifySignature(
+            val messageIsValid =
+                client.wallet.isValidMessageSignature(
+                    network = OMSClientNetworks.requireSupported("80002"),
+                    message = "hello",
+                    signature = "0xmessage",
+                )
+            val messageRequest = requireNotNull(server.takeRequest())
+
+            assertEquals("/rpc/WalletPublic/IsValidMessageSignature", messageRequest.target)
+            assertEquals("test-access-key", messageRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals(null, messageRequest.headers["Authorization"])
+            assertEquals(
+                """{"network":"80002","walletId":"wallet-id","message":"hello","signature":"0xmessage"}""",
+                requireNotNull(messageRequest.body).utf8(),
+            )
+            assertEquals(true, messageIsValid)
+
+            val typedDataIsValid =
+                client.wallet.isValidTypedDataSignature(
                     network = OMSClientNetworks.requireSupported("80002"),
                     walletAddress = "0xabc",
-                    message = "hello",
-                    signature = "0xsig",
+                    typedData =
+                        buildJsonObject {
+                            put("contents", "hello")
+                        },
+                    signature = "0xtyped",
                 )
-            val request = requireNotNull(server.takeRequest())
+            val typedDataRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/API/IsValidMessageSignature", request.target)
-            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
-            assertEquals(true, response.isValid)
-            assertEquals(200, response.status)
+            assertEquals("/rpc/WalletPublic/IsValidTypedDataSignature", typedDataRequest.target)
+            assertEquals("test-access-key", typedDataRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals(null, typedDataRequest.headers["Authorization"])
+            assertEquals(
+                """{"network":"80002","walletAddress":"0xabc","typedData":{"contents":"hello"},"signature":"0xtyped"}""",
+                requireNotNull(typedDataRequest.body).utf8(),
+            )
+            assertEquals(false, typedDataIsValid)
         }
 
     @Test
@@ -195,7 +236,7 @@ class ServiceClientsTest {
         }
 
     @Test
-    fun httpExceptionMessageIsSanitizedButRetainsResponseBodyField() =
+    fun generatedWalletPublicErrorMessageDoesNotIncludeRawBody() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -206,25 +247,24 @@ class ServiceClientsTest {
             )
 
             val client =
-                OMSClientUtils(
-                    "test-access-key",
-                    OMSClientEnvironment(apiRpcUrl = server.url("/rpc/API/").toString()),
-                    OMSClientHttpClient(),
+                OMSClient(
+                    projectAccessKey = "test-access-key",
+                    environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
                 )
 
             val failure =
                 runCatching {
-                    client.verifySignature(
+                    client.wallet.isValidMessageSignature(
                         network = OMSClientNetworks.requireSupported("80002"),
                         walletAddress = "0xabc",
                         message = "hello",
                         signature = "0xsig",
                     )
-                }.exceptionOrNull() as? OMSClientHttpException
+                }.exceptionOrNull() as? WebRpcError
 
             requireNotNull(failure)
-            assertEquals("OMS Client request failed with status 400", failure.message)
-            assertEquals("""{"detail":"sensitive backend context"}""", failure.responseBody)
+            assertEquals("endpoint error", failure.message)
+            assertEquals(400, failure.status)
             assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
         }
 }

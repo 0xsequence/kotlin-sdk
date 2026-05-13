@@ -34,11 +34,6 @@ data class SendTransactionResponse(
     val txHash: String?,
 )
 
-data class VerifySignatureResult(
-    val status: Int,
-    val isValid: Boolean,
-)
-
 data class TokenBalancesPage(
     val page: Int,
     val pageSize: Int,
