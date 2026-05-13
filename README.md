@@ -21,7 +21,7 @@ Until the package is published, use the source directly from this repository.
 - wallet selection and wallet creation flows
 - message signing
 - transaction sending
-- signature verification through the API service
+- signature verification through the generated WaaS public client
 - token balance lookups through the indexer service
 - unit formatting and parsing helpers for raw token amounts
 
@@ -149,7 +149,7 @@ val signResult = client.wallet.signMessage(
     message = "hello from android",
 )
 
-val verifyResult = client.utils.verifySignature(
+val verifyResult = client.wallet.isValidMessageSignature(
     network = network,
     walletAddress = walletAddress,
     message = "hello from android",

@@ -15,7 +15,6 @@ OMSClient(
 
 ```kotlin
 val client.wallet: WalletClient
-val client.utils: OMSClientUtils
 val client.indexer: IndexerClient
 ```
 
@@ -245,12 +244,23 @@ fun parseUnits(
 ```
 
 ```kotlin
-suspend fun utils.verifySignature(
-    network: Network,
-    walletAddress: String,
+suspend fun wallet.isValidMessageSignature(
+    network: Network? = null,
+    walletAddress: String? = null,
+    walletId: String? = null,
     message: String,
     signature: String,
-): VerifySignatureResult
+): Boolean
+```
+
+```kotlin
+suspend fun wallet.isValidTypedDataSignature(
+    network: Network? = null,
+    walletAddress: String? = null,
+    walletId: String? = null,
+    typedData: JsonElement,
+    signature: String,
+): Boolean
 ```
 
 ## Indexer Service
@@ -314,13 +324,6 @@ data class SendTransactionResponse(
     val txnId: String,
     val status: TransactionStatus,
     val txHash: String?,
-)
-```
-
-```kotlin
-data class VerifySignatureResult(
-    val status: Int,
-    val isValid: Boolean,
 )
 ```
 
