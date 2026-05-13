@@ -81,7 +81,6 @@ class ServiceClientsTest {
             val typedDataIsValid =
                 client.wallet.isValidTypedDataSignature(
                     network = OMSClientNetworks.requireSupported("80002"),
-                    walletAddress = "0xabc",
                     typedData =
                         buildJsonObject {
                             put("contents", "hello")
@@ -94,7 +93,7 @@ class ServiceClientsTest {
             assertEquals("test-access-key", typedDataRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(null, typedDataRequest.headers["Authorization"])
             assertEquals(
-                """{"network":"80002","walletAddress":"0xabc","typedData":{"contents":"hello"},"signature":"0xtyped"}""",
+                """{"network":"80002","walletId":"wallet-id","typedData":{"contents":"hello"},"signature":"0xtyped"}""",
                 requireNotNull(typedDataRequest.body).utf8(),
             )
             assertEquals(false, typedDataIsValid)
@@ -251,12 +250,17 @@ class ServiceClientsTest {
                     projectAccessKey = "test-access-key",
                     environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
                 )
+            client.wallet.restoreSession(
+                OMSClientSessionSnapshot(
+                    walletId = "wallet-id",
+                    walletAddress = "0xwallet",
+                ),
+            )
 
             val failure =
                 runCatching {
                     client.wallet.isValidMessageSignature(
                         network = OMSClientNetworks.requireSupported("80002"),
-                        walletAddress = "0xabc",
                         message = "hello",
                         signature = "0xsig",
                     )

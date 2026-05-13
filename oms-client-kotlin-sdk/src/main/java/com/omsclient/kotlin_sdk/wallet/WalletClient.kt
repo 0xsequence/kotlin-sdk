@@ -138,8 +138,6 @@ class WalletClient internal constructor(
 
     private fun requireWalletAddress(): String = requireNotNull(address) { "No wallet selected" }
 
-    private fun activeWalletId(): String? = session.snapshot()?.walletId?.takeIf { it.isNotBlank() }
-
     internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
         requireNoActiveWalletSession()
         clearPendingOidcRedirectAuth()
@@ -586,23 +584,17 @@ class WalletClient internal constructor(
 
     /**
      * Validates [signature] for [message] through the WaaS public wallet RPC.
-     *
-     * If neither [walletAddress] nor [walletId] is provided, the active wallet
-     * session id is used when available.
      */
     suspend fun isValidMessageSignature(
-        network: Network? = null,
-        walletAddress: String? = null,
-        walletId: String? = null,
+        network: Network,
         message: String,
         signature: String,
     ): Boolean {
         val response =
             publicClient.isValidMessageSignature(
                 IsValidMessageSignatureRequest(
-                    network = network?.chainId,
-                    walletAddress = walletAddress?.takeIf { it.isNotBlank() },
-                    walletId = validationWalletId(walletAddress, walletId),
+                    network = network.chainId,
+                    walletId = requireWalletId(),
                     message = message,
                     signature = signature,
                 ),
@@ -612,23 +604,17 @@ class WalletClient internal constructor(
 
     /**
      * Validates [signature] for EIP-712 [typedData] through the WaaS public wallet RPC.
-     *
-     * If neither [walletAddress] nor [walletId] is provided, the active wallet
-     * session id is used when available.
      */
     suspend fun isValidTypedDataSignature(
-        network: Network? = null,
-        walletAddress: String? = null,
-        walletId: String? = null,
+        network: Network,
         typedData: JsonElement,
         signature: String,
     ): Boolean {
         val response =
             publicClient.isValidTypedDataSignature(
                 IsValidTypedDataSignatureRequest(
-                    network = network?.chainId,
-                    walletAddress = walletAddress?.takeIf { it.isNotBlank() },
-                    walletId = validationWalletId(walletAddress, walletId),
+                    network = network.chainId,
+                    walletId = requireWalletId(),
                     typedData = typedData,
                     signature = signature,
                 ),
@@ -872,13 +858,6 @@ class WalletClient internal constructor(
                     signer = signer,
                 ),
         )
-
-    private fun validationWalletId(
-        walletAddress: String?,
-        walletId: String?,
-    ): String? =
-        walletId?.takeIf { it.isNotBlank() }
-            ?: if (walletAddress.isNullOrBlank()) activeWalletId() else null
 
     private fun defaultPublicHeaders(): Map<String, String> =
         mapOf(

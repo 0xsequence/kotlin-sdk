@@ -142,7 +142,6 @@ Use the selected wallet:
 
 ```kotlin
 val network = Network.POLYGON_AMOY
-val walletAddress = requireNotNull(client.wallet.address)
 
 val signResult = client.wallet.signMessage(
     network = network,
@@ -151,7 +150,6 @@ val signResult = client.wallet.signMessage(
 
 val verifyResult = client.wallet.isValidMessageSignature(
     network = network,
-    walletAddress = walletAddress,
     message = "hello from android",
     signature = signResult.signature,
 )

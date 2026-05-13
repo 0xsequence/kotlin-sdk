@@ -245,9 +245,7 @@ fun parseUnits(
 
 ```kotlin
 suspend fun wallet.isValidMessageSignature(
-    network: Network? = null,
-    walletAddress: String? = null,
-    walletId: String? = null,
+    network: Network,
     message: String,
     signature: String,
 ): Boolean
@@ -255,9 +253,7 @@ suspend fun wallet.isValidMessageSignature(
 
 ```kotlin
 suspend fun wallet.isValidTypedDataSignature(
-    network: Network? = null,
-    walletAddress: String? = null,
-    walletId: String? = null,
+    network: Network,
     typedData: JsonElement,
     signature: String,
 ): Boolean

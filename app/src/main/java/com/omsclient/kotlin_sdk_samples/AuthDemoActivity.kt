@@ -286,7 +286,6 @@ class AuthDemoActivity : AppCompatActivity() {
                 val result =
                     sdk.wallet.isValidMessageSignature(
                         network = selectedNetwork,
-                        walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
                         message = requireNotNull(lastSignedMessage) { "No signed message available" },
                         signature = requireNotNull(lastSignedSignature) { "No signature available" },
                     )
