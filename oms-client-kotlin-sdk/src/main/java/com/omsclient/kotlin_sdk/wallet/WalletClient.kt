@@ -11,6 +11,8 @@ import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.generated.waas.IsValidMessageSignatureRequest
+import com.omsclient.kotlin_sdk.generated.waas.IsValidTypedDataSignatureRequest
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageResponse
@@ -19,6 +21,7 @@ import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletClient
+import com.omsclient.kotlin_sdk.generated.waas.WaasWalletPublicClient
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
@@ -29,6 +32,7 @@ import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
+import com.omsclient.kotlin_sdk.network.OMSClientWebRpcTransport
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
@@ -36,6 +40,7 @@ import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonElement
 import java.math.BigInteger
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
@@ -67,6 +72,12 @@ class WalletClient internal constructor(
             projectAccessKey = projectAccessKey,
             environment = environment,
             transport = transport,
+        )
+    private val publicClient: WaasWalletPublicClient =
+        WaasWalletPublicClient(
+            baseUrl = environment.walletApiBaseUrl(),
+            transport = OMSClientWebRpcTransport(transport),
+            headers = { defaultPublicHeaders() },
         )
 
     internal val hasPendingSignIn: Boolean
@@ -572,6 +583,46 @@ class WalletClient internal constructor(
     }
 
     /**
+     * Validates [signature] for [message] through the WaaS public wallet RPC.
+     */
+    suspend fun isValidMessageSignature(
+        network: Network,
+        message: String,
+        signature: String,
+    ): Boolean {
+        val response =
+            publicClient.isValidMessageSignature(
+                IsValidMessageSignatureRequest(
+                    network = network.chainId,
+                    walletId = requireWalletId(),
+                    message = message,
+                    signature = signature,
+                ),
+            )
+        return response.isValid
+    }
+
+    /**
+     * Validates [signature] for EIP-712 [typedData] through the WaaS public wallet RPC.
+     */
+    suspend fun isValidTypedDataSignature(
+        network: Network,
+        typedData: JsonElement,
+        signature: String,
+    ): Boolean {
+        val response =
+            publicClient.isValidTypedDataSignature(
+                IsValidTypedDataSignatureRequest(
+                    network = network.chainId,
+                    walletId = requireWalletId(),
+                    typedData = typedData,
+                    signature = signature,
+                ),
+            )
+        return response.isValid
+    }
+
+    /**
      * Sends a native-value transaction from the currently selected wallet on
      * [network].
      */
@@ -806,6 +857,12 @@ class WalletClient internal constructor(
                     httpClient = transport,
                     signer = signer,
                 ),
+        )
+
+    private fun defaultPublicHeaders(): Map<String, String> =
+        mapOf(
+            OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
+            "Accept" to "application/json",
         )
 }
 

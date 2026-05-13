@@ -284,19 +284,18 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { signatureStatusView.text = "Signature status: verification failed." },
             ) {
                 val result =
-                    sdk.utils.verifySignature(
+                    sdk.wallet.isValidMessageSignature(
                         network = selectedNetwork,
-                        walletAddress = requireNotNull(sdk.wallet.address) { "No wallet selected" },
                         message = requireNotNull(lastSignedMessage) { "No signed message available" },
                         signature = requireNotNull(lastSignedSignature) { "No signature available" },
                     )
                 signatureStatusView.text =
-                    if (result.isValid) {
+                    if (result) {
                         "Signature status: valid on chain ${selectedNetwork.chainId}."
                     } else {
-                        "Signature status: invalid. API status=${result.status}."
+                        "Signature status: invalid on chain ${selectedNetwork.chainId}."
                     }
-                appendLog("Verify signature => isValid=${result.isValid} status=${result.status}")
+                appendLog("Verify signature => isValid=$result")
             }
         }
 
