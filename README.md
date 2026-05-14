@@ -142,6 +142,10 @@ Use the selected wallet:
 
 ```kotlin
 val network = Network.POLYGON_AMOY
+val typedDataJson =
+    buildJsonObject {
+        put("contents", "hello from android")
+    }
 
 val signResult = client.wallet.signMessage(
     network = network,
@@ -152,6 +156,11 @@ val verifyResult = client.wallet.isValidMessageSignature(
     network = network,
     message = "hello from android",
     signature = signResult.signature,
+)
+
+val typedSignature = client.wallet.signTypedData(
+    network = network,
+    typedData = typedDataJson,
 )
 
 val txResult = client.wallet.sendTransaction(
@@ -176,7 +185,7 @@ val rawAmount = parseUnits("1.5", 18)
 val displayAmount = formatUnits(rawAmount, 18)
 ```
 
-For contract calls or transaction parameters beyond `to` and `value`, use the request overload:
+For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:
 
 ```kotlin
 val network = Network.POLYGON_AMOY
@@ -189,6 +198,21 @@ val txResult = client.wallet.sendTransaction(
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
+)
+```
+
+For WaaS ABI-style contract calls, use `callContract`:
+
+```kotlin
+val txResult = client.wallet.callContract(
+    network = network,
+    contract = "0xContractAddress",
+    method = "transfer(address,uint256)",
+    args =
+        listOf(
+            AbiArg(type = "address", value = JsonPrimitive("0xRecipient")),
+            AbiArg(type = "uint256", value = JsonPrimitive("1000000000000000000")),
+        ),
 )
 ```
 
@@ -213,6 +237,20 @@ The selector receives `FeeOptionWithBalance` values. `balance` is the selected
 wallet's raw indexer balance for that fee token when available. `available` is
 formatted with the token decimals, while `availableRaw` keeps the raw integer
 value. `decimals` is exposed as a regular `Int`.
+
+To refresh a transaction later or manage active wallet credentials:
+
+```kotlin
+val status = client.wallet.getTransactionStatus(txnId = txResult.txnId)
+val credentials = client.wallet.listAccess(pageSize = 25u)
+client.wallet.listAccessPages(pageSize = 25u).collect { page ->
+    renderCredentials(page.credentials)
+}
+
+credentials
+    .firstOrNull { !it.isCaller }
+    ?.let { client.wallet.revokeAccess(targetCredentialId = it.credentialId) }
+```
 
 If your app may need to choose between multiple wallets, use the selector overload:
 

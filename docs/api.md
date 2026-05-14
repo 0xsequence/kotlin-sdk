@@ -182,6 +182,13 @@ suspend fun client.wallet.signMessage(
 ```
 
 ```kotlin
+suspend fun client.wallet.signTypedData(
+    network: Network,
+    typedData: JsonElement,
+): SignTypedDataResponse
+```
+
+```kotlin
 suspend fun client.wallet.sendTransaction(
     network: Network,
     to: String,
@@ -198,16 +205,62 @@ suspend fun client.wallet.sendTransaction(
 ): SendTransactionResponse
 ```
 
+```kotlin
+suspend fun client.wallet.callContract(
+    network: Network,
+    contract: String,
+    method: String,
+    args: List<AbiArg>? = null,
+    mode: TransactionMode = TransactionMode.Relayer,
+    selectFeeOption: FeeOptionSelector? = null,
+): SendTransactionResponse
+```
+
+```kotlin
+suspend fun client.wallet.getTransactionStatus(
+    txnId: String,
+): TransactionStatusResponse
+```
+
+```kotlin
+suspend fun client.wallet.listAccess(
+    pageSize: UInt? = null,
+): List<CredentialInfo>
+```
+
+```kotlin
+fun client.wallet.listAccessPages(
+    pageSize: UInt? = null,
+): Flow<ListAccessResponse>
+```
+
+```kotlin
+suspend fun client.wallet.listAccessPage(
+    pageSize: UInt? = null,
+    cursor: String? = null,
+): ListAccessResponse
+```
+
+```kotlin
+suspend fun client.wallet.revokeAccess(
+    targetCredentialId: String,
+)
+```
+
 When a prepared transaction includes fee options, `selectFeeOption` receives the
 available options enriched with the selected wallet's matching token balance
 when available. When no selector is provided, `sendTransaction` uses the first
 required fee option, or no fee option when the transaction is sponsored.
 `value` is a raw base-unit integer; use `parseUnits` to convert human-entered
 decimal values before sending.
-After execution, `sendTransaction` polls the WaaS status endpoint briefly for an
-executed status or transaction hash. If the transaction remains pending when
-polling times out, the response contains the `txnId`, `status =
+After execution, `sendTransaction` and `callContract` poll the WaaS status
+endpoint briefly for an executed status or transaction hash. If the transaction
+remains pending when polling times out, the response contains the `txnId`, `status =
 TransactionStatus.Pending`, and `txHash = null`.
+Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
+WaaS cursors and returns all credentials, `listAccessPages` emits each page as a
+`Flow`, and `listAccessPage` exposes one page at a time for manual cursor
+pagination.
 
 ## Networks
 
@@ -383,6 +436,46 @@ data class SignMessageResponse(
 )
 ```
 
+```kotlin
+data class SignTypedDataResponse(
+    val signature: String,
+)
+```
+
+```kotlin
+data class AbiArg(
+    val type: String,
+    val value: JsonElement,
+)
+```
+
+```kotlin
+data class CredentialInfo(
+    val credentialId: String,
+    val expiresAt: String,
+    val isCaller: Boolean,
+)
+```
+
+```kotlin
+data class ListAccessResponse(
+    val credentials: List<CredentialInfo>,
+    val page: Page,
+)
+
+data class Page(
+    val limit: UInt? = null,
+    val cursor: String? = null,
+)
+```
+
+```kotlin
+data class TransactionStatusResponse(
+    val status: TransactionStatus,
+    val txnHash: String? = null,
+)
+```
+
 ## Recommended Usage
 
 ```kotlin
@@ -416,7 +509,7 @@ val wallet = client.completeEmailAuth("123456") { wallets ->
 }
 ```
 
-For contract calls or transaction parameters beyond `to` and `value`:
+For raw calldata or transaction parameters beyond `to` and `value`:
 
 ```kotlin
 val network = Network.POLYGON_AMOY
@@ -429,6 +522,21 @@ val txResult = client.wallet.sendTransaction(
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
+)
+```
+
+For WaaS ABI-style contract calls:
+
+```kotlin
+val txResult = client.wallet.callContract(
+    network = network,
+    contract = "0xContractAddress",
+    method = "transfer(address,uint256)",
+    args =
+        listOf(
+            AbiArg(type = "address", value = JsonPrimitive("0xRecipient")),
+            AbiArg(type = "uint256", value = JsonPrimitive("1000000000000000000")),
+        ),
 )
 ```
 
