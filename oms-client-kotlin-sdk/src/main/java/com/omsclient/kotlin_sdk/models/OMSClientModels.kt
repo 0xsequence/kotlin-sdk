@@ -5,6 +5,7 @@ import java.math.BigInteger
 typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
 typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
 typealias TransactionStatusResponse = com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
+typealias SignTypedDataResponse = com.omsclient.kotlin_sdk.generated.waas.SignTypedDataResponse
 typealias AbiArg = com.omsclient.kotlin_sdk.generated.waas.AbiArg
 typealias CredentialInfo = com.omsclient.kotlin_sdk.generated.waas.CredentialInfo
 typealias ListAccessResponse = com.omsclient.kotlin_sdk.generated.waas.ListAccessResponse

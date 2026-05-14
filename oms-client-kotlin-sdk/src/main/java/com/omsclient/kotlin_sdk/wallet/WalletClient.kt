@@ -21,7 +21,6 @@ import com.omsclient.kotlin_sdk.generated.waas.RevokeAccessRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageResponse
 import com.omsclient.kotlin_sdk.generated.waas.SignTypedDataRequest
-import com.omsclient.kotlin_sdk.generated.waas.SignTypedDataResponse
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
@@ -38,6 +37,7 @@ import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.models.ListAccessResponse
 import com.omsclient.kotlin_sdk.models.Page
+import com.omsclient.kotlin_sdk.models.SignTypedDataResponse
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.models.TransactionMode
 import com.omsclient.kotlin_sdk.models.TransactionStatusResponse
@@ -52,7 +52,6 @@ import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import java.math.BigInteger
