@@ -4,6 +4,7 @@ import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
@@ -141,6 +142,22 @@ class WalletPayloadBuilderTest {
     }
 
     @Test
+    fun prepareEthereumContractCallPayloadMatchesWaasRequestShape() {
+        assertEquals(
+            "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"contract\":\"0xcontract\",\"method\":\"mint()\",\"mode\":\"relayer\"}",
+            WaasWalletApi.PrepareEthereumContractCall.encodeRequest(
+                PrepareEthereumContractCallRequest(
+                    network = "80002",
+                    walletId = "wallet-0",
+                    contract = "0xcontract",
+                    method = "mint()",
+                    mode = TransactionMode.Relayer,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun walletApiEndpointsMatchCSdk() {
         assertEquals("/rpc/Wallet", WaasWalletApi.basePath)
         assertEquals("/CommitVerifier", WaasWalletApi.CommitVerifier.path)
@@ -148,8 +165,12 @@ class WalletPayloadBuilderTest {
         assertEquals("/UseWallet", WaasWalletApi.UseWallet.path)
         assertEquals("/CreateWallet", WaasWalletApi.CreateWallet.path)
         assertEquals("/SignMessage", WaasWalletApi.SignMessage.path)
+        assertEquals("/SignTypedData", WaasWalletApi.SignTypedData.path)
         assertEquals("/PrepareEthereumTransaction", WaasWalletApi.PrepareEthereumTransaction.path)
+        assertEquals("/PrepareEthereumContractCall", WaasWalletApi.PrepareEthereumContractCall.path)
         assertEquals("/Execute", WaasWalletApi.Execute.path)
         assertEquals("/TransactionStatus", WaasWalletApi.TransactionStatus.path)
+        assertEquals("/ListAccess", WaasWalletApi.ListAccess.path)
+        assertEquals("/RevokeAccess", WaasWalletApi.RevokeAccess.path)
     }
 }
