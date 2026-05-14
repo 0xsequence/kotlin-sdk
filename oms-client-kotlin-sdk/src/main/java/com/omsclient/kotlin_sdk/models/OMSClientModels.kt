@@ -4,6 +4,11 @@ import java.math.BigInteger
 
 typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
 typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
+typealias TransactionStatusResponse = com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
+typealias AbiArg = com.omsclient.kotlin_sdk.generated.waas.AbiArg
+typealias CredentialInfo = com.omsclient.kotlin_sdk.generated.waas.CredentialInfo
+typealias ListAccessResponse = com.omsclient.kotlin_sdk.generated.waas.ListAccessResponse
+typealias Page = com.omsclient.kotlin_sdk.generated.waas.Page
 typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
 typealias FeeOptionSelection = com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection
 typealias FeeOptionSelector = suspend (List<FeeOptionWithBalance>) -> FeeOptionSelection?
