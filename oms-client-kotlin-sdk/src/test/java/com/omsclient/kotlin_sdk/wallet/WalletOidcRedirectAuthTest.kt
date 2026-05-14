@@ -283,6 +283,84 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
+    fun handleOidcRedirectCallbackCanReturnWalletSelectionWithoutActivatingWallet() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://issuer.example",
+                                    sub = "oidc-sub-123",
+                                ),
+                            email = "user@example.com",
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+
+            val environment =
+                OMSClientEnvironment(
+                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                )
+            val sessionStore = InMemorySessionStore()
+            val redirectStore = InMemoryOidcRedirectAuthStore()
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment = environment,
+                    transport = OMSClientHttpClient(),
+                    sessionStore = sessionStore,
+                    oidcRedirectAuthStore = redirectStore,
+                    nonceGenerator = { 1710000116L },
+                    oidcNonceGenerator = { "nonce-123" },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            val provider =
+                OidcProviderConfig(
+                    issuer = "https://issuer.example",
+                    clientId = "client-123",
+                    authorizationUrl = "https://issuer.example/oauth/authorize",
+                )
+
+            val started =
+                client.startOidcRedirectAuth(
+                    provider = provider,
+                    redirectUri = "omsclientkotlindemo://auth/callback",
+                )
+            val result =
+                client.handleOidcRedirectCallback(
+                    callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}&scope=openid",
+                    selectWallet = { error("Selector should not be called") },
+                    autoActivate = false,
+                )
+
+            requireNotNull(server.takeRequest())
+            requireNotNull(server.takeRequest())
+            assertTrue(result is OidcRedirectAuthResult.WalletSelection)
+            val selection = result as OidcRedirectAuthResult.WalletSelection
+            assertEquals(listOf("wallet-def"), selection.wallets.map { it.id })
+            assertEquals("credential-123", selection.credential.credentialId)
+            assertNull(client.address)
+            assertTrue(client.hasPendingSignIn)
+            assertFalse(client.canResumeOidcRedirectAuth)
+            assertNull(redirectStore.pending)
+            assertEquals(1, redirectStore.clearCalls)
+            assertNull(sessionStore.snapshot)
+        }
+
+    @Test
     fun handleOidcRedirectCallbackReturnsNoPendingAuthWithoutClearingActiveSession() =
         runBlocking {
             val activeSession = activeSessionSnapshot()

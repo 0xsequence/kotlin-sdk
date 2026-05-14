@@ -134,7 +134,8 @@ if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
 fresh SDK instance restores completed wallet sessions, including the session
 expiry, login type, and email returned by the wallet API, but not email OTP
 pending state. Completed auth requests ask the wallet API for a one-week
-session lifetime. If auth completes but wallet selection, wallet creation, or
+session lifetime. Auth completion loads all wallet pages before selecting or
+creating a wallet. If auth completes but wallet selection, wallet creation, or
 session persistence fails, the SDK clears the in-memory auth session instead of
 retaining unrecoverable transient state.
 
@@ -287,6 +288,18 @@ If your app may need to choose between multiple wallets, use the selector overlo
 ```kotlin
 val wallet = client.completeEmailAuth("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets)
+}
+```
+
+To opt out of automatic activation and drive wallet selection yourself:
+
+```kotlin
+when (val result = client.completeEmailAuth("123456", autoActivate = false)) {
+    is CompleteAuthResult.WalletSelection -> {
+        val picked = showWalletPickerAndWaitForChoice(result.wallets)
+        client.wallet.useWallet(picked.id)
+    }
+    is CompleteAuthResult.Activated -> Unit
 }
 ```
 

@@ -4,6 +4,8 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CredentialInfo
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.generated.waas.ListWalletsResponse
+import com.omsclient.kotlin_sdk.generated.waas.Page
 import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
@@ -48,11 +50,13 @@ internal fun completeAuthResponseBody(
     wallets: List<Wallet>,
     identity: Identity = identityFixture(IdentityType.Email),
     email: String? = "user@example.com",
+    page: Page? = null,
 ): String =
     WebRpcJson.encodeToString(
         CompleteAuthResponse(
             identity = identity,
             wallets = wallets,
+            page = page,
             email = email,
             credential = credentialFixture(),
         ),
@@ -71,6 +75,17 @@ internal fun walletResponseBody(
     reference: String? = null,
     type: WalletType = WalletType.Ethereum,
 ): String = """{"wallet":${WebRpcJson.encodeToString(walletFixture(walletId, address, reference, type))}}"""
+
+internal fun listWalletsResponseBody(
+    wallets: List<Wallet>,
+    page: Page? = null,
+): String =
+    WebRpcJson.encodeToString(
+        ListWalletsResponse(
+            wallets = wallets,
+            page = page,
+        ),
+    )
 
 internal fun fakeJwt(exp: Long): String {
     val encoder = Base64.getUrlEncoder().withoutPadding()

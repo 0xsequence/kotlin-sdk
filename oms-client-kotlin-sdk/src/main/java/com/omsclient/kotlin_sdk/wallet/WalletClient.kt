@@ -14,6 +14,7 @@ import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.IsValidMessageSignatureRequest
 import com.omsclient.kotlin_sdk.generated.waas.IsValidTypedDataSignatureRequest
 import com.omsclient.kotlin_sdk.generated.waas.ListAccessRequest
+import com.omsclient.kotlin_sdk.generated.waas.ListWalletsRequest
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.PrepareResponse
@@ -204,9 +205,47 @@ class WalletClient internal constructor(
         idToken: String,
         issuer: String,
         audience: String,
+        autoActivate: Boolean,
+        walletType: WalletType = environment.defaultWalletType,
+    ): CompleteAuthResult =
+        signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = issuer,
+            audience = audience,
+            walletType = walletType,
+            autoActivate = autoActivate,
+            selectWallet = { wallets ->
+                require(wallets.size == 1) {
+                    "Multiple wallets are available. Call signInWithOidcIdToken(idToken, issuer, audience, walletType, selectWallet) to choose one."
+                }
+                wallets.single()
+            },
+        )
+
+    internal suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
         walletType: WalletType = environment.defaultWalletType,
         selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): Wallet {
+    ): Wallet =
+        signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = issuer,
+            audience = audience,
+            walletType = walletType,
+            autoActivate = true,
+            selectWallet = selectWallet,
+        ).requireActivatedWallet()
+
+    private suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        walletType: WalletType,
+        autoActivate: Boolean,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): CompleteAuthResult {
         requireNoActiveWalletSession()
         clearPendingOidcRedirectAuth()
         try {
@@ -240,7 +279,7 @@ class WalletClient internal constructor(
                     signOut()
                     throw throwable
                 }
-            return resolveAuthenticatedWallet(auth, walletType, selectWallet)
+            return completeWalletAuth(auth, walletType, autoActivate, selectWallet)
         } catch (throwable: Throwable) {
             signOut()
             throw throwable
@@ -327,6 +366,17 @@ class WalletClient internal constructor(
     internal suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
         selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): OidcRedirectAuthResult =
+        handleOidcRedirectCallback(
+            callbackUrl = callbackUrl,
+            autoActivate = true,
+            selectWallet = selectWallet,
+        )
+
+    internal suspend fun handleOidcRedirectCallback(
+        callbackUrl: String?,
+        autoActivate: Boolean,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
     ): OidcRedirectAuthResult {
         if (callbackUrl.isNullOrBlank()) {
             return OidcRedirectAuthResult.NotOidcRedirectCallback
@@ -371,9 +421,18 @@ class WalletClient internal constructor(
                         lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
                     ),
                 )
-            OidcRedirectAuthResult.Completed(
-                resolveAuthenticatedWallet(auth, pending.walletType, selectWallet),
-            )
+            when (val result = completeWalletAuth(auth, pending.walletType, autoActivate, selectWallet)) {
+                is CompleteAuthResult.Activated -> {
+                    OidcRedirectAuthResult.Completed(result.wallet)
+                }
+
+                is CompleteAuthResult.WalletSelection -> {
+                    OidcRedirectAuthResult.WalletSelection(
+                        wallets = result.wallets,
+                        credential = result.credential,
+                    )
+                }
+            }
         } catch (throwable: CancellationException) {
             clearPendingAuth = false
             throw throwable
@@ -428,6 +487,23 @@ class WalletClient internal constructor(
             },
         )
 
+    internal suspend fun completeEmailAuth(
+        code: String,
+        autoActivate: Boolean,
+        walletType: WalletType = environment.defaultWalletType,
+    ): CompleteAuthResult =
+        completeEmailAuth(
+            code = code,
+            walletType = walletType,
+            autoActivate = autoActivate,
+            selectWallet = { wallets ->
+                require(wallets.size == 1) {
+                    "Multiple wallets are available. Call completeEmailAuth(code, selectWallet) to choose one."
+                }
+                wallets.single()
+            },
+        )
+
     /**
      * Completes the email OTP flow and returns the selected wallet.
      *
@@ -438,9 +514,22 @@ class WalletClient internal constructor(
         code: String,
         walletType: WalletType = environment.defaultWalletType,
         selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): Wallet {
+    ): Wallet =
+        completeEmailAuth(
+            code = code,
+            walletType = walletType,
+            autoActivate = true,
+            selectWallet = selectWallet,
+        ).requireActivatedWallet()
+
+    private suspend fun completeEmailAuth(
+        code: String,
+        walletType: WalletType,
+        autoActivate: Boolean,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): CompleteAuthResult {
         val auth = confirmEmailSignIn(code)
-        return resolveAuthenticatedWallet(auth, walletType, selectWallet)
+        return completeWalletAuth(auth, walletType, autoActivate, selectWallet)
     }
 
     internal suspend fun resolveWallet(
@@ -458,8 +547,12 @@ class WalletClient internal constructor(
             },
         )
 
-    internal suspend fun useWallet(walletId: String): Wallet {
-        session.requireSnapshot()
+    /**
+     * Activates an existing wallet by its WaaS wallet id.
+     */
+    suspend fun useWallet(walletId: String): WalletActivationResult {
+        requireWalletSelectionOrActiveSession()
+        requireActiveCredential()
         val wallet =
             waasClient()
                 .useWallet(
@@ -473,15 +566,28 @@ class WalletClient internal constructor(
             walletAddress = wallet.address,
         )
         persistCurrentSession()
-        return wallet
+        return WalletActivationResult(
+            walletAddress = wallet.address,
+            wallet = wallet,
+        )
     }
 
-    internal suspend fun createWallet(walletType: WalletType = environment.defaultWalletType): Wallet {
-        session.requireSnapshot()
+    /**
+     * Creates and activates a new wallet for the authenticated user.
+     */
+    suspend fun createWallet(
+        walletType: WalletType = environment.defaultWalletType,
+        reference: String? = null,
+    ): WalletActivationResult {
+        requireWalletSelectionOrActiveSession()
+        requireActiveCredential()
         val wallet =
             waasClient()
                 .createWallet(
-                    CreateWalletRequest(type = walletType),
+                    CreateWalletRequest(
+                        type = walletType,
+                        reference = reference,
+                    ),
                 ).wallet
 
         session.activateWallet(
@@ -489,44 +595,124 @@ class WalletClient internal constructor(
             walletAddress = wallet.address,
         )
         persistCurrentSession()
-        return wallet
+        return WalletActivationResult(
+            walletAddress = wallet.address,
+            wallet = wallet,
+        )
     }
 
-    private suspend fun resolveAuthenticatedWallet(
+    /**
+     * Lists all wallets available to the authenticated credential.
+     */
+    suspend fun listWallets(): List<Wallet> {
+        requireWalletSelectionOrActiveSession()
+        requireActiveCredential()
+        val wallets = mutableListOf<Wallet>()
+        var cursor: String? = null
+        do {
+            val response =
+                waasClient().listWallets(
+                    ListWalletsRequest(
+                        page = cursor?.let { Page(cursor = it) },
+                    ),
+                )
+            wallets += response.wallets
+            cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
+        } while (cursor != null)
+        return wallets
+    }
+
+    private fun requireWalletSelectionOrActiveSession() {
+        val snapshot = session.requireSnapshot()
+        check(!snapshot.walletId.isNullOrBlank() || !snapshot.expiresAt.isNullOrBlank()) {
+            "No authenticated wallet session"
+        }
+    }
+
+    private suspend fun walletsFromAuthResponse(completeAuth: CompleteAuthResponse): List<Wallet> {
+        val wallets = completeAuth.wallets.toMutableList()
+        var cursor = completeAuth.page?.cursor?.takeIf { it.isNotBlank() }
+        while (cursor != null) {
+            val response =
+                waasClient().listWallets(
+                    ListWalletsRequest(
+                        page = Page(cursor = cursor),
+                    ),
+                )
+            wallets += response.wallets
+            cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
+        }
+        return wallets
+    }
+
+    private suspend fun completeWalletAuth(
         completeAuth: CompleteAuthResponse,
         walletType: WalletType,
+        autoActivate: Boolean,
         selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): Wallet {
+    ): CompleteAuthResult {
         session.markAuthVerified(
             expiresAt = completeAuth.credential.expiresAt,
             loginType = completeAuth.identity.toSessionLoginType(),
             sessionEmail = completeAuth.email,
         )
         return try {
-            val candidateWallets = completeAuth.wallets.filter { it.type == walletType }
-            when {
-                candidateWallets.isEmpty() -> {
-                    createWallet(walletType)
-                }
+            val wallets = walletsFromAuthResponse(completeAuth)
+            if (!autoActivate) {
+                CompleteAuthResult.WalletSelection(
+                    wallets = wallets,
+                    credential = completeAuth.credential,
+                )
+            } else {
+                val candidateWallets = wallets.filter { it.type == walletType }
+                val activated =
+                    when {
+                        candidateWallets.isEmpty() -> {
+                            createWallet(walletType)
+                        }
 
-                candidateWallets.size == 1 -> {
-                    val selected = candidateWallets.single()
-                    useWallet(selected.id)
-                }
+                        candidateWallets.size == 1 -> {
+                            useWallet(candidateWallets.single().id)
+                        }
 
-                else -> {
-                    val selected = selectWallet(candidateWallets)
-                    require(candidateWallets.contains(selected)) {
-                        "Selected wallet is not one of the available options"
+                        else -> {
+                            val selected = selectWallet(candidateWallets)
+                            require(candidateWallets.contains(selected)) {
+                                "Selected wallet is not one of the available options"
+                            }
+                            useWallet(selected.id)
+                        }
                     }
-                    useWallet(selected.id)
-                }
+                CompleteAuthResult.Activated(
+                    walletAddress = activated.walletAddress,
+                    wallet = activated.wallet,
+                    wallets = if (candidateWallets.isEmpty()) wallets + activated.wallet else wallets,
+                    credential = completeAuth.credential,
+                )
             }
         } catch (throwable: Throwable) {
             signOut()
             throw throwable
         }
     }
+
+    private suspend fun resolveAuthenticatedWallet(
+        completeAuth: CompleteAuthResponse,
+        walletType: WalletType,
+        selectWallet: suspend (List<Wallet>) -> Wallet,
+    ): Wallet =
+        completeWalletAuth(
+            completeAuth = completeAuth,
+            walletType = walletType,
+            autoActivate = true,
+            selectWallet = selectWallet,
+        ).requireActivatedWallet()
+
+    private fun CompleteAuthResult.requireActivatedWallet(): Wallet =
+        when (this) {
+            is CompleteAuthResult.Activated -> wallet
+            is CompleteAuthResult.WalletSelection -> error("Auth completed without wallet activation")
+        }
 
     private suspend fun restorePendingOidcRedirectAuth(pending: PendingOidcRedirectAuth) {
         requireActiveCredential()

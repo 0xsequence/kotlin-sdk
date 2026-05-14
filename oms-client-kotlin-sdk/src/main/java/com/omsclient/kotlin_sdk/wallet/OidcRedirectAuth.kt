@@ -4,6 +4,7 @@ import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
+import com.omsclient.kotlin_sdk.models.CredentialInfo
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -44,6 +45,11 @@ data class StartOidcRedirectAuthResult(
 sealed interface OidcRedirectAuthResult {
     data class Completed(
         val wallet: Wallet,
+    ) : OidcRedirectAuthResult
+
+    data class WalletSelection(
+        val wallets: List<Wallet>,
+        val credential: CredentialInfo,
     ) : OidcRedirectAuthResult
 
     data object NotOidcRedirectCallback : OidcRedirectAuthResult

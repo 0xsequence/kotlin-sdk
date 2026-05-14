@@ -12,6 +12,7 @@ import com.omsclient.kotlin_sdk.storage.AndroidKeystoreSessionStore
 import com.omsclient.kotlin_sdk.storage.AndroidOidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.wallet.AndroidKeystoreP256CredentialSigner
+import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
 import com.omsclient.kotlin_sdk.wallet.CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.OidcProviderConfig
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
@@ -151,6 +152,25 @@ class OMSClient internal constructor(
         )
 
     /**
+     * Signs in with an OIDC ID token and either activates a wallet automatically
+     * or returns the available wallets for app-driven selection.
+     */
+    suspend fun signInWithOidcIdToken(
+        idToken: String,
+        issuer: String,
+        audience: String,
+        autoActivate: Boolean,
+        walletType: WalletType = environment.defaultWalletType,
+    ): CompleteAuthResult =
+        wallet.signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = issuer,
+            audience = audience,
+            autoActivate = autoActivate,
+            walletType = walletType,
+        )
+
+    /**
      * Signs in with an OIDC ID token and lets the app select from multiple
      * available wallets when more than one wallet matches [walletType].
      */
@@ -197,7 +217,8 @@ class OMSClient internal constructor(
      * This method is idempotent and safe to call for every incoming app link.
      * Unrelated links return [OidcRedirectAuthResult.NotOidcRedirectCallback],
      * stale callbacks return [OidcRedirectAuthResult.NoPendingAuth], and a
-     * successful callback returns [OidcRedirectAuthResult.Completed].
+     * successful callback returns [OidcRedirectAuthResult.Completed] or
+     * [OidcRedirectAuthResult.WalletSelection] when [autoActivate] is false.
      */
     suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
@@ -214,6 +235,26 @@ class OMSClient internal constructor(
         )
 
     /**
+     * Safely handles an incoming OIDC authorization-code PKCE redirect callback
+     * and optionally returns wallets for app-driven selection.
+     */
+    suspend fun handleOidcRedirectCallback(
+        callbackUrl: String?,
+        autoActivate: Boolean,
+        selectWallet: suspend (List<Wallet>) -> Wallet = { wallets ->
+            require(wallets.size == 1) {
+                "Multiple wallets are available. Provide selectWallet to choose one."
+            }
+            wallets.single()
+        },
+    ): OidcRedirectAuthResult =
+        wallet.handleOidcRedirectCallback(
+            callbackUrl = callbackUrl,
+            autoActivate = autoActivate,
+            selectWallet = selectWallet,
+        )
+
+    /**
      * Completes email OTP authentication and resolves the only available wallet
      * for the requested [walletType].
      */
@@ -223,6 +264,21 @@ class OMSClient internal constructor(
     ): Wallet =
         wallet.completeEmailAuth(
             code = code,
+            walletType = walletType,
+        )
+
+    /**
+     * Completes email OTP authentication and either activates a wallet
+     * automatically or returns the available wallets for app-driven selection.
+     */
+    suspend fun completeEmailAuth(
+        code: String,
+        autoActivate: Boolean,
+        walletType: WalletType = environment.defaultWalletType,
+    ): CompleteAuthResult =
+        wallet.completeEmailAuth(
+            code = code,
+            autoActivate = autoActivate,
             walletType = walletType,
         )
 

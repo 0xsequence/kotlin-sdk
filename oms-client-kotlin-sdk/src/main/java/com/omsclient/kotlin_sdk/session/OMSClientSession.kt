@@ -135,21 +135,32 @@ internal class OMSClientSession(
         walletId: String,
         walletAddress: String,
     ) {
-        val current =
+        val activated =
             when (val current = state) {
-                is SessionState.AwaitingWalletResolution -> current
-                else -> error("No authenticated wallet resolution in progress")
+                is SessionState.AwaitingWalletResolution -> {
+                    SessionState.ActiveSession(
+                        walletId = walletId,
+                        walletAddress = walletAddress,
+                        signerAddress = current.signerAddress,
+                        signerKeyType = current.signerKeyType,
+                        expiresAt = current.expiresAt,
+                        loginType = current.loginType,
+                        sessionEmail = current.sessionEmail,
+                    )
+                }
+
+                is SessionState.ActiveSession -> {
+                    current.copy(
+                        walletId = walletId,
+                        walletAddress = walletAddress,
+                    )
+                }
+
+                else -> {
+                    error("No authenticated wallet resolution in progress")
+                }
             }
-        state =
-            SessionState.ActiveSession(
-                walletId = walletId,
-                walletAddress = walletAddress,
-                signerAddress = current.signerAddress,
-                signerKeyType = current.signerKeyType,
-                expiresAt = current.expiresAt,
-                loginType = current.loginType,
-                sessionEmail = current.sessionEmail,
-            )
+        state = activated
     }
 
     fun requireSnapshot(): OMSClientSessionSnapshot =

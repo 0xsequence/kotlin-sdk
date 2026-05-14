@@ -371,6 +371,14 @@ class AuthDemoActivity : AppCompatActivity() {
                     appendLog("Google redirect sign-in complete: ${result.wallet.address}")
                 }
 
+                is OidcRedirectAuthResult.WalletSelection -> {
+                    val wallet = result.wallets.first()
+                    val activated = sdk.wallet.useWallet(wallet.id)
+                    consumeIntentData()
+                    renderSignedInWallet(activated.wallet, "Google redirect login complete")
+                    appendLog("Google redirect sign-in complete: ${activated.wallet.address}")
+                }
+
                 is OidcRedirectAuthResult.Failed -> {
                     consumeIntentData()
                     showEmailStep()
