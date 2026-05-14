@@ -239,4 +239,28 @@ class WalletAccessTest {
                 requireNotNull(secondListRequest.body).utf8(),
             )
         }
+
+    @Test
+    fun revokeAccessRequiresActiveCredential() =
+        runBlocking {
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    credentialSigner = MockWebCryptoCredentialSigner(available = false),
+                )
+            client.restoreSession(activeSessionSnapshot())
+
+            val error =
+                runCatching {
+                    client.revokeAccess(targetCredentialId = "credential-2")
+                }.exceptionOrNull()
+
+            assertTrue(error is IllegalStateException)
+            assertEquals(0, server.requestCount)
+        }
 }
