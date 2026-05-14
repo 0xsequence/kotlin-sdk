@@ -127,7 +127,7 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
-    fun startOidcRedirectAuthReplacesPersistedPendingRedirectAuth() =
+    fun startOidcRedirectAuthReplacesActiveSessionAndPersistedPendingRedirectAuth() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -137,21 +137,24 @@ class WalletOidcRedirectAuthTest {
                     .build(),
             )
 
+            val activeSession = activeSessionSnapshot()
             val environment =
                 OMSClientEnvironment(
                     walletApiUrl = server.url("/rpc/Wallet/").toString(),
                 )
+            val sessionStore = InMemorySessionStore(activeSession)
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
                 WalletClient(
                     projectAccessKey = "test-access-key",
                     environment = environment,
                     transport = OMSClientHttpClient(),
-                    sessionStore = InMemorySessionStore(),
+                    sessionStore = sessionStore,
                     oidcRedirectAuthStore = redirectStore,
                     oidcNonceGenerator = { "nonce-new" },
                     privateKeyFactory = ::fixedPrivateKeyBytes,
                 )
+            client.restoreSession(activeSession)
             val provider =
                 OidcProviderConfig(
                     issuer = "https://issuer.example",
@@ -173,7 +176,10 @@ class WalletOidcRedirectAuthTest {
             assertEquals("omsclientkotlindemo://auth/callback", redirectStore.pending?.redirectUri)
             assertTrue(client.canResumeOidcRedirectAuth)
             assertEquals("oidc-verifier-new", client.snapshotSession()?.verifier)
-            assertEquals(0, redirectStore.clearCalls)
+            assertNull(client.snapshotSession()?.walletId)
+            assertNull(client.snapshotSession()?.walletAddress)
+            assertNull(sessionStore.snapshot)
+            assertEquals(1, redirectStore.clearCalls)
             assertEquals(result.state, queryParams(result.authorizationUrl)["state"])
         }
 
@@ -274,7 +280,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals("0xdef", client.address)
             assertFalse(client.canResumeOidcRedirectAuth)
             assertNull(redirectStore.pending)
-            assertEquals(1, redirectStore.clearCalls)
+            assertEquals(2, redirectStore.clearCalls)
             assertEquals("wallet-def", sessionStore.snapshot?.walletId)
             assertEquals("0xdef", sessionStore.snapshot?.walletAddress)
             assertEquals("2026-01-01T00:00:00Z", sessionStore.snapshot?.expiresAt)
@@ -356,7 +362,7 @@ class WalletOidcRedirectAuthTest {
             assertTrue(client.hasPendingSignIn)
             assertFalse(client.canResumeOidcRedirectAuth)
             assertNull(redirectStore.pending)
-            assertEquals(1, redirectStore.clearCalls)
+            assertEquals(2, redirectStore.clearCalls)
             assertNull(sessionStore.snapshot)
         }
 
@@ -472,7 +478,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals(OidcRedirectAuthResult.NotOidcRedirectCallback, result)
             assertTrue(client.canResumeOidcRedirectAuth)
             assertEquals("oidc-verifier-123", client.snapshotSession()?.verifier)
-            assertEquals(0, redirectStore.clearCalls)
+            assertEquals(1, redirectStore.clearCalls)
             assertEquals(1, server.requestCount)
         }
 
@@ -520,7 +526,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals(OidcRedirectAuthResult.NotOidcRedirectCallback, result)
             assertTrue(client.canResumeOidcRedirectAuth)
             assertEquals("oidc-verifier-123", client.snapshotSession()?.verifier)
-            assertEquals(0, redirectStore.clearCalls)
+            assertEquals(1, redirectStore.clearCalls)
             assertEquals(1, server.requestCount)
         }
 
@@ -568,7 +574,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals(OidcRedirectAuthResult.NotOidcRedirectCallback, result)
             assertTrue(client.canResumeOidcRedirectAuth)
             assertEquals("oidc-verifier-123", client.snapshotSession()?.verifier)
-            assertEquals(0, redirectStore.clearCalls)
+            assertEquals(1, redirectStore.clearCalls)
             assertEquals(1, server.requestCount)
         }
 
@@ -623,7 +629,7 @@ class WalletOidcRedirectAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.canResumeOidcRedirectAuth)
             assertNull(redirectStore.pending)
-            assertEquals(1, redirectStore.clearCalls)
+            assertEquals(2, redirectStore.clearCalls)
             assertEquals(1, server.requestCount)
         }
 }

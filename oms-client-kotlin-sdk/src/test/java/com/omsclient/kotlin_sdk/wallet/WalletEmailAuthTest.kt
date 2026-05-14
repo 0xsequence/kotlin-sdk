@@ -162,9 +162,18 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun startEmailAuthRejectsWhenWalletSessionIsActive() =
+    fun startEmailAuthReplacesActiveWalletSessionWithPendingAuth() =
         runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                    .build(),
+            )
+
             val activeSession = activeSessionSnapshot()
+            val store = InMemorySessionStore(activeSession)
             val client =
                 WalletClient(
                     projectAccessKey = "test-access-key",
@@ -173,19 +182,22 @@ class WalletEmailAuthTest {
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    privateKeyFactory = { error("Credential should not be created") },
+                    sessionStore = store,
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
                 )
             client.restoreSession(activeSession)
 
-            val failure =
-                runCatching {
-                    client.startEmailAuth("user@example.com")
-                }.exceptionOrNull()
+            val response = client.startEmailAuth("user@example.com")
+            val request = requireNotNull(server.takeRequest())
 
-            assertEquals("Cannot start a new login while a wallet session is active", failure?.message)
-            assertEquals(activeSession, client.snapshotSession())
-            assertEquals(0, server.requestCount)
+            val session = client.snapshotSession()
+            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("verifier-123", response.verifier)
+            assertEquals("challenge", session?.challenge)
+            assertEquals("verifier-123", session?.verifier)
+            assertNull(session?.walletId)
+            assertNull(session?.walletAddress)
+            assertNull(store.snapshot)
         }
 
     @Test

@@ -52,7 +52,9 @@ email returned by the wallet API, but not pending email OTP state. Completed aut
 requests use a one-week wallet API session lifetime. Auth completion loads all
 wallet pages before selecting or creating a wallet. If auth completes but wallet
 resolution or session persistence fails, the SDK clears the in-memory auth
-session instead of leaving transient state active.
+session instead of leaving transient state active. Starting a new email, OIDC
+ID-token, or OIDC redirect auth flow replaces any existing wallet session so
+expired or stale sessions do not block re-authentication.
 
 The Android `OMSClient(context, ...)` constructor signs wallet API requests with
 a non-extractable Android Keystore P-256 credential using the
@@ -140,13 +142,6 @@ sealed interface OidcRedirectAuthResult {
     data object NoPendingAuth : OidcRedirectAuthResult
     data class Failed(val error: Throwable) : OidcRedirectAuthResult
 }
-```
-
-```kotlin
-suspend fun client.handleOidcRedirectCallback(
-    callbackUrl: String?,
-    selectWallet: suspend (List<Wallet>) -> Wallet = { wallets -> wallets.single() },
-): OidcRedirectAuthResult
 ```
 
 ```kotlin

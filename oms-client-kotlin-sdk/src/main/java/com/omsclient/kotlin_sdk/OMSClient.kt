@@ -212,7 +212,8 @@ class OMSClient internal constructor(
         )
 
     /**
-     * Safely handles an incoming OIDC authorization-code PKCE redirect callback.
+     * Safely handles an incoming OIDC authorization-code PKCE redirect callback
+     * and optionally returns wallets for app-driven selection.
      *
      * This method is idempotent and safe to call for every incoming app link.
      * Unrelated links return [OidcRedirectAuthResult.NotOidcRedirectCallback],
@@ -222,25 +223,7 @@ class OMSClient internal constructor(
      */
     suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
-        selectWallet: suspend (List<Wallet>) -> Wallet = { wallets ->
-            require(wallets.size == 1) {
-                "Multiple wallets are available. Provide selectWallet to choose one."
-            }
-            wallets.single()
-        },
-    ): OidcRedirectAuthResult =
-        wallet.handleOidcRedirectCallback(
-            callbackUrl = callbackUrl,
-            selectWallet = selectWallet,
-        )
-
-    /**
-     * Safely handles an incoming OIDC authorization-code PKCE redirect callback
-     * and optionally returns wallets for app-driven selection.
-     */
-    suspend fun handleOidcRedirectCallback(
-        callbackUrl: String?,
-        autoActivate: Boolean,
+        autoActivate: Boolean = true,
         selectWallet: suspend (List<Wallet>) -> Wallet = { wallets ->
             require(wallets.size == 1) {
                 "Multiple wallets are available. Provide selectWallet to choose one."

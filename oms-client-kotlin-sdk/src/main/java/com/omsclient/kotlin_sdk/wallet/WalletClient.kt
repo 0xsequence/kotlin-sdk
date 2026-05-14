@@ -154,8 +154,7 @@ class WalletClient internal constructor(
     private fun requireWalletAddress(): String = requireNotNull(address) { "No wallet selected" }
 
     internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
-        requireNoActiveWalletSession()
-        clearPendingOidcRedirectAuth()
+        clearSession(clearOidcRedirectAuth = true)
         return try {
             val signerAddress = signer.credentialId()
             val response =
@@ -246,8 +245,7 @@ class WalletClient internal constructor(
         autoActivate: Boolean,
         selectWallet: suspend (List<Wallet>) -> Wallet,
     ): CompleteAuthResult {
-        requireNoActiveWalletSession()
-        clearPendingOidcRedirectAuth()
+        clearSession(clearOidcRedirectAuth = true)
         try {
             val signerAddress = signer.credentialId()
             val response =
@@ -293,11 +291,11 @@ class WalletClient internal constructor(
         relayRedirectUri: String? = provider.relayRedirectUri,
         authorizeParams: Map<String, String> = emptyMap(),
     ): StartOidcRedirectAuthResult {
-        requireNoActiveWalletSession()
         val redirectAuthStore =
             requireNotNull(oidcRedirectAuthStore) {
                 "OIDC redirect auth requires an OIDC redirect auth store"
             }
+        clearSession(clearOidcRedirectAuth = true)
         return try {
             val signerAddress = signer.credentialId()
             val oauthRedirectUri = relayRedirectUri ?: redirectUri
@@ -365,18 +363,13 @@ class WalletClient internal constructor(
 
     internal suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
-        selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): OidcRedirectAuthResult =
-        handleOidcRedirectCallback(
-            callbackUrl = callbackUrl,
-            autoActivate = true,
-            selectWallet = selectWallet,
-        )
-
-    internal suspend fun handleOidcRedirectCallback(
-        callbackUrl: String?,
-        autoActivate: Boolean,
-        selectWallet: suspend (List<Wallet>) -> Wallet,
+        autoActivate: Boolean = true,
+        selectWallet: suspend (List<Wallet>) -> Wallet = { wallets ->
+            require(wallets.size == 1) {
+                "Multiple wallets are available. Provide selectWallet to choose one."
+            }
+            wallets.single()
+        },
     ): OidcRedirectAuthResult {
         if (callbackUrl.isNullOrBlank()) {
             return OidcRedirectAuthResult.NotOidcRedirectCallback
@@ -733,13 +726,6 @@ class WalletClient internal constructor(
     private fun persistCurrentSession() {
         val snapshot = session.snapshot() ?: return
         sessionStore?.save(snapshot)
-    }
-
-    private fun requireNoActiveWalletSession() {
-        val snapshot = session.snapshot()
-        check(snapshot?.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
-            "Cannot start a new login while a wallet session is active"
-        }
     }
 
     private fun Identity.toSessionLoginType(): OMSClientSessionLoginType? =

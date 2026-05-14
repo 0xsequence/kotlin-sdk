@@ -77,7 +77,10 @@ val client = OMSClient(
 
 ## Example Flow
 
-`OMSClient` restores a persisted session automatically when it is created. Start email sign-in only if no wallet is currently selected:
+`OMSClient` restores a persisted session automatically when it is created. Apps
+can hide sign-in controls while a wallet is selected, but starting a new auth
+flow intentionally replaces any existing wallet session so users can re-auth or
+switch accounts:
 
 ```kotlin
 if (client.wallet.address == null) {
