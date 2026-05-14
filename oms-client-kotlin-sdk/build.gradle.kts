@@ -61,7 +61,8 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
-    api(libs.kotlinx.coroutines.android)
+    api(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.web3j.crypto) {
         exclude(group = "io.vertx", module = "vertx-core")
     }
