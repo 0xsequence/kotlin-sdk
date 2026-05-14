@@ -519,7 +519,7 @@ class WalletTransactionTest {
             val request = requireNotNull(server.takeRequest())
 
             assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
-            assertEquals("0xstatus", result.txnHash)
+            assertEquals("0xstatus", result.txHash)
             assertEquals("/rpc/Wallet/TransactionStatus", request.target)
             assertEquals(
                 WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
@@ -527,5 +527,55 @@ class WalletTransactionTest {
             )
             assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertNotNull(request.headers["Authorization"])
+        }
+
+    @Test
+    fun getTransactionStatusReturnsPendingAndUnknownStatuses() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"pending"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"unexpected"}""")
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                ),
+                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+                        ),
+                    nonceGenerator = { 1710000113L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val pending = client.getTransactionStatus(txnId = "txn-pending")
+            val unknown = client.getTransactionStatus(txnId = "txn-unknown")
+
+            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Pending, pending.status)
+            assertEquals(null, pending.txHash)
+            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.UNKNOWN_DEFAULT, unknown.status)
+            assertEquals(null, unknown.txHash)
         }
 }
