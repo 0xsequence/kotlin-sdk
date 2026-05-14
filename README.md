@@ -44,7 +44,7 @@ val client = OMSClient(
 
 That constructor uses secure persisted session storage by default.
 Wallet API requests are signed with a non-extractable Android Keystore P-256
-credential (`webcrypto-secp256r1`), so the private credential key is not written
+credential (`ecdsa-p256-sha256`), so the private credential key is not written
 to app storage.
 Only completed wallet sessions are restored automatically. Pending auth state is
 not exposed through `client.session`; email OTP pending state is kept in memory,

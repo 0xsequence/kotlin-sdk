@@ -22,13 +22,13 @@ Current Kotlin parity coverage:
   - full payload parity for ID-token metadata plus `handle = base64url(sha256(full JWT string))`
   - tested in `WalletPayloadBuilderTest.oidcCommitVerifierPayloadMatchesParityVector()`
 - `SignMessage`
-  - full payload / preimage / digest / signature / authorization header vector
+  - full payload / preimage / digest / signature / wallet signature header vector
   - tested in `WalletRequestSignerVectorTest.signMessageVectorMatchesCSdk()`
 - `SendTransaction`
-  - full payload / preimage / digest / signature / authorization header vector
+  - full payload / preimage / digest / signature / wallet signature header vector
   - tested in `WalletRequestSignerVectorTest.sendTransactionVectorMatchesCSdk()`
 - `CompleteAuth`
-  - full payload / preimage / digest / signature / authorization header vector
+  - full payload / preimage / digest / signature / wallet signature header vector
   - tested in `WalletRequestSignerVectorTest.completeAuthVectorMatchesCSdk()`
   - answer-hash parity vector for `challenge + code -> sha256 -> base64url(no padding) -> answer`
   - tested in `WalletPayloadBuilderTest.completeAuthPayloadFromCodeMatchesParityVector()`
@@ -93,9 +93,10 @@ Reference C SDK behavior:
 ```text
 POST /rpc/Wallet/CompleteAuth
 nonce: 1710000002
+scope: proj_1
 
 {"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
-- expected digest / signature / authorization header:
+- expected digest / signature / wallet signature header:
   derived by `WalletRequestSignerVectorTest.completeAuthVectorMatchesCSdk()`

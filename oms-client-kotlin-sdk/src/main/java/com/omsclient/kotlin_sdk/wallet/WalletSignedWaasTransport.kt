@@ -28,9 +28,9 @@ internal class WalletSignedWaasTransport(
                 payload = body,
                 requestPathPrefix = WaasWalletApi.basePath,
             )
-        val authorizationHeader =
-            WalletRequestSigner.buildWalletAuthorizationHeader(
-                keyType = signer.keyType,
+        val walletSignatureHeader =
+            WalletRequestSigner.buildWalletSignatureHeader(
+                signingAlgorithm = signer.signingAlgorithm,
                 scope = environment.authorizationScope,
                 credentialId = signer.credentialId(),
                 nonce = nonce,
@@ -42,7 +42,7 @@ internal class WalletSignedWaasTransport(
                 baseUrl = baseUrl,
                 path = WaasWalletApi.basePath + endpoint,
                 body = body,
-                headers = defaultHeaders(headers, authorizationHeader),
+                headers = defaultHeaders(headers, walletSignatureHeader),
             )
 
         return WebRpcHttpResponse(
@@ -60,13 +60,14 @@ internal class WalletSignedWaasTransport(
 
     private fun defaultHeaders(
         headers: Map<String, String>,
-        authorizationHeader: String,
+        walletSignatureHeader: String,
     ): Map<String, String> =
         linkedMapOf(
             OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
             "Origin" to "http://localhost:3000",
             "Accept" to "application/json",
-            "Authorization" to authorizationHeader.removePrefix(OMSClientEnvironment.authorizationHeaderPrefix),
+            OMSClientEnvironment.walletSignatureHeaderName to
+                walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
         ).apply {
             putAll(headers)
         }

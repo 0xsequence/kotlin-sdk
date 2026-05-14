@@ -5,7 +5,7 @@ import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
@@ -144,7 +144,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.GoogleAuth, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
-            assertEquals(KeyType.Ethereum_Secp256k1, store.snapshot?.signerKeyType)
+            assertEquals(SigningAlgorithm.ECDSA_P256K_EIP191, store.snapshot?.signerKeyType)
             assertNull(store.snapshot?.verifier)
             assertNull(store.snapshot?.challenge)
             assertNull(store.privateKeyHex)

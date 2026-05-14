@@ -171,7 +171,7 @@ class WalletClient internal constructor(
                 challenge = response.challenge,
                 verifier = response.verifier,
                 signerAddress = signerAddress,
-                signerKeyType = signer.keyType,
+                signerKeyType = signer.signingAlgorithm,
             )
 
             response
@@ -230,7 +230,7 @@ class WalletClient internal constructor(
                 challenge = response.challenge,
                 verifier = response.verifier,
                 signerAddress = signerAddress,
-                signerKeyType = signer.keyType,
+                signerKeyType = signer.signingAlgorithm,
             )
 
             val auth =
@@ -287,7 +287,7 @@ class WalletClient internal constructor(
                 challenge = response.challenge,
                 verifier = response.verifier,
                 signerAddress = signerAddress,
-                signerKeyType = signer.keyType,
+                signerKeyType = signer.signingAlgorithm,
             )
             redirectAuthStore.save(
                 PendingOidcRedirectAuth(
@@ -299,7 +299,7 @@ class WalletClient internal constructor(
                     authorizationScope = environment.authorizationScope,
                     walletType = walletType,
                     signerAddress = signerAddress,
-                    signerKeyType = signer.keyType,
+                    signerKeyType = signer.signingAlgorithm,
                 ),
             )
 
@@ -764,6 +764,8 @@ class WalletClient internal constructor(
      * size and returns the combined credential list.
      */
     suspend fun listAccess(pageSize: UInt? = null): List<CredentialInfo> {
+        session.requireSnapshot()
+        requireActiveCredential()
         val credentials = mutableListOf<CredentialInfo>()
         listAccessPages(pageSize = pageSize).collect { response ->
             credentials += response.credentials
@@ -785,7 +787,7 @@ class WalletClient internal constructor(
                         cursor = cursor,
                     )
                 emit(response)
-                cursor = response.page.cursor?.takeIf { it.isNotBlank() }
+                cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
             } while (cursor != null)
         }
 

@@ -55,7 +55,7 @@ auth session instead of leaving transient state active.
 
 The Android `OMSClient(context, ...)` constructor signs wallet API requests with
 a non-extractable Android Keystore P-256 credential using the
-`webcrypto-secp256r1` key type. Persisted wallet sessions store wallet metadata
+`ecdsa-p256-sha256` signing algorithm. Persisted wallet sessions store wallet metadata
 only; the credential private key remains owned by Android Keystore and is not
 written to SDK session storage.
 
@@ -461,7 +461,7 @@ data class CredentialInfo(
 ```kotlin
 data class ListAccessResponse(
     val credentials: List<CredentialInfo>,
-    val page: Page,
+    val page: Page? = null,
 )
 
 data class Page(

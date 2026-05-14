@@ -2,7 +2,7 @@ package com.omsclient.kotlin_sdk.storage
 
 import android.content.Context
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import org.json.JSONObject
 import java.io.File
@@ -64,7 +64,7 @@ internal class AndroidKeystoreSessionStore(
         val walletId: String? = null,
         val walletAddress: String? = null,
         val signerAddress: String? = null,
-        val signerKeyType: KeyType? = null,
+        val signerKeyType: SigningAlgorithm? = null,
         val expiresAt: String? = null,
         val loginType: OMSClientSessionLoginType? = null,
         val sessionEmail: String? = null,
@@ -94,8 +94,8 @@ internal class AndroidKeystoreSessionStore(
                         jsonObject
                             .optString("signerKeyType")
                             .ifBlank { null }
-                            ?.let(KeyType::fromWireValue)
-                            ?.takeIf { it != KeyType.UNKNOWN_DEFAULT },
+                            ?.let(::signingAlgorithmFromPersistedWireValue)
+                            ?.takeIf { it != SigningAlgorithm.UNKNOWN_DEFAULT },
                     expiresAt = jsonObject.optString("expiresAt").ifBlank { null },
                     loginType =
                         jsonObject
@@ -109,6 +109,13 @@ internal class AndroidKeystoreSessionStore(
                     sessionEmail = jsonObject.optString("sessionEmail").ifBlank { null },
                 )
             }
+
+            private fun signingAlgorithmFromPersistedWireValue(value: String): SigningAlgorithm =
+                when (value) {
+                    "ethereum-secp256k1" -> SigningAlgorithm.ECDSA_P256K_EIP191
+                    "webcrypto-secp256r1" -> SigningAlgorithm.ECDSA_P256_SHA256
+                    else -> SigningAlgorithm.fromWireValue(value)
+                }
         }
     }
 

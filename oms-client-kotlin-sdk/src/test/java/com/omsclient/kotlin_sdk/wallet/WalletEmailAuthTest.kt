@@ -8,7 +8,7 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
@@ -101,8 +101,8 @@ class WalletEmailAuthTest {
             assertEquals("http://localhost:3000", request.headers["Origin"])
             assertEquals("application/json", request.headers["Accept"])
             assertEquals(
-                expectedSignedRequest.authorizationHeader.removePrefix("Authorization: "),
-                request.headers["Authorization"],
+                expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
+                request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
             assertEquals("challenge", response.challenge)
             assertEquals("verifier-123", response.verifier)
@@ -115,7 +115,7 @@ class WalletEmailAuthTest {
                 WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
                 session?.signerAddress,
             )
-            assertEquals(KeyType.Ethereum_Secp256k1, session?.signerKeyType)
+            assertEquals(SigningAlgorithm.ECDSA_P256K_EIP191, session?.signerKeyType)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
@@ -186,7 +186,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun startEmailAuthUsesWebCryptoCredentialSignerAuthorizationHeader() =
+    fun startEmailAuthUsesWebCryptoCredentialSignerWalletSignatureHeader() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -215,11 +215,11 @@ class WalletEmailAuthTest {
 
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
             assertEquals(
-                "webcrypto-secp256r1 scope=\"${environment.authorizationScope}\"," +
+                "alg=\"ecdsa-p256-sha256\",scope=\"${environment.authorizationScope}\"," +
                     "cred=\"${signer.credentialIdValue}\",nonce=42,sig=\"${signer.signatureValue}\"",
-                request.headers["Authorization"],
+                request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
-            assertEquals(KeyType.WebCrypto_Secp256r1, client.snapshotSession()?.signerKeyType)
+            assertEquals(SigningAlgorithm.ECDSA_P256_SHA256, client.snapshotSession()?.signerKeyType)
             assertEquals(1, signer.signCalls)
         }
 
@@ -270,8 +270,8 @@ class WalletEmailAuthTest {
 
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
             assertEquals(
-                expectedSignedRequest.authorizationHeader.removePrefix("Authorization: "),
-                request.headers["Authorization"],
+                expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
+                request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
         }
 
@@ -390,8 +390,8 @@ class WalletEmailAuthTest {
             assertEquals("/rpc/Wallet/CompleteAuth", request.target)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
             assertEquals(
-                expectedSignedRequest.authorizationHeader.removePrefix("Authorization: "),
-                request.headers["Authorization"],
+                expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
+                request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
             assertEquals("user@example.com", response.email)
             assertEquals(IdentityType.Email, response.identity.type)

@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk
 
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSession
@@ -57,7 +57,7 @@ class OMSClientTest {
                             authorizationScope = "proj_1",
                             walletType = WalletType.Ethereum,
                             signerAddress = "0xsigner",
-                            signerKeyType = KeyType.Ethereum_Secp256k1,
+                            signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
                         ),
                     ),
             )

@@ -143,7 +143,7 @@ class WalletAccessTest {
                 requireNotNull(revokeRequest.body).utf8(),
             )
             assertEquals("test-access-key", revokeRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
-            assertNotNull(revokeRequest.headers["Authorization"])
+            assertNotNull(revokeRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
         }
 
     @Test
@@ -217,9 +217,9 @@ class WalletAccessTest {
 
             assertEquals(2, pages.size)
             assertEquals(listOf("credential-1"), pages[0].credentials.map { it.credentialId })
-            assertEquals("next", pages[0].page.cursor)
+            assertEquals("next", pages[0].page?.cursor)
             assertEquals(listOf("credential-2"), pages[1].credentials.map { it.credentialId })
-            assertEquals(null, pages[1].page.cursor)
+            assertEquals(null, pages[1].page?.cursor)
             assertEquals(
                 WaasWalletApi.ListAccess.encodeRequest(
                     ListAccessRequest(

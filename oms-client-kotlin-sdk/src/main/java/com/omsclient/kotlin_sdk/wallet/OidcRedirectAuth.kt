@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
@@ -94,7 +94,7 @@ internal data class PendingOidcRedirectAuth(
     val authorizationScope: String,
     val walletType: WalletType,
     val signerAddress: String,
-    val signerKeyType: KeyType? = null,
+    val signerKeyType: SigningAlgorithm? = null,
 )
 
 internal interface OidcRedirectAuthStore {

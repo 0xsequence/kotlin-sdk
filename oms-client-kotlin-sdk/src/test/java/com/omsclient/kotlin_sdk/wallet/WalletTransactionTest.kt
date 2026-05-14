@@ -526,7 +526,7 @@ class WalletTransactionTest {
                 requireNotNull(request.body).utf8(),
             )
             assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
-            assertNotNull(request.headers["Authorization"])
+            assertNotNull(request.headers[OMSClientEnvironment.walletSignatureHeaderName])
         }
 
     @Test
