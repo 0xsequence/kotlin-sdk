@@ -20,7 +20,10 @@ Until the package is published, use the source directly from this repository.
 - persisted wallet session metadata
 - wallet selection and wallet creation flows
 - message signing
-- transaction sending
+- typed-data signing
+- transaction sending and contract calls
+- transaction status lookup
+- wallet access listing and revocation
 - signature verification through the generated WaaS public client
 - token balance lookups through the indexer service
 - unit formatting and parsing helpers for raw token amounts

@@ -251,6 +251,22 @@ suspend fun client.wallet.signTypedData(
 ```
 
 ```kotlin
+suspend fun client.wallet.isValidMessageSignature(
+    network: Network,
+    message: String,
+    signature: String,
+): Boolean
+```
+
+```kotlin
+suspend fun client.wallet.isValidTypedDataSignature(
+    network: Network,
+    typedData: JsonElement,
+    signature: String,
+): Boolean
+```
+
+```kotlin
 suspend fun client.wallet.sendTransaction(
     network: Network,
     to: String,
@@ -357,22 +373,6 @@ fun parseUnits(
     value: String,
     decimals: Int,
 ): BigInteger
-```
-
-```kotlin
-suspend fun wallet.isValidMessageSignature(
-    network: Network,
-    message: String,
-    signature: String,
-): Boolean
-```
-
-```kotlin
-suspend fun wallet.isValidTypedDataSignature(
-    network: Network,
-    typedData: JsonElement,
-    signature: String,
-): Boolean
 ```
 
 ## Indexer Service
