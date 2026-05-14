@@ -144,7 +144,37 @@ Use the selected wallet:
 val network = Network.POLYGON_AMOY
 val typedDataJson =
     buildJsonObject {
-        put("contents", "hello from android")
+        putJsonObject("types") {
+            putJsonArray("EIP712Domain") {
+                add(buildJsonObject {
+                    put("name", "name")
+                    put("type", "string")
+                })
+                add(buildJsonObject {
+                    put("name", "version")
+                    put("type", "string")
+                })
+                add(buildJsonObject {
+                    put("name", "chainId")
+                    put("type", "uint256")
+                })
+            }
+            putJsonArray("Message") {
+                add(buildJsonObject {
+                    put("name", "contents")
+                    put("type", "string")
+                })
+            }
+        }
+        put("primaryType", "Message")
+        putJsonObject("domain") {
+            put("name", "OMS Client")
+            put("version", "1")
+            put("chainId", JsonPrimitive(network.chainId.toLong()))
+        }
+        putJsonObject("message") {
+            put("contents", "hello from android")
+        }
     }
 
 val signResult = client.wallet.signMessage(

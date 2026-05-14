@@ -260,7 +260,8 @@ TransactionStatus.Pending`, and `txHash = null`.
 Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
 WaaS cursors and returns all credentials, `listAccessPages` emits each page as a
 `Flow`, and `listAccessPage` exposes one page at a time for manual cursor
-pagination.
+pagination. Pass `pageSize` when fetching credentials that may span multiple
+pages so each request uses an explicit limit.
 
 ## Networks
 
@@ -472,7 +473,7 @@ data class Page(
 ```kotlin
 data class TransactionStatusResponse(
     val status: TransactionStatus,
-    val txnHash: String? = null,
+    val txHash: String? = null,
 )
 ```
 
