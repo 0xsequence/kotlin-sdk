@@ -49,13 +49,16 @@ flow, not from session state. Always pass incoming app-link URLs to
 app can show sign-in UI and let the user start again. Persisted session restore
 revives completed wallet sessions, including the session expiry, login type, and
 email returned by the wallet API, but not pending email OTP state. Completed auth
-requests use a one-week wallet API session lifetime. If auth completes but
-wallet resolution or session persistence fails, the SDK clears the in-memory
-auth session instead of leaving transient state active.
+requests use a one-week wallet API session lifetime. Auth completion loads all
+wallet pages before selecting or creating a wallet. If auth completes but wallet
+resolution or session persistence fails, the SDK clears the in-memory auth
+session instead of leaving transient state active. Starting a new email, OIDC
+ID-token, or OIDC redirect auth flow replaces any existing wallet session so
+expired or stale sessions do not block re-authentication.
 
 The Android `OMSClient(context, ...)` constructor signs wallet API requests with
 a non-extractable Android Keystore P-256 credential using the
-`webcrypto-secp256r1` key type. Persisted wallet sessions store wallet metadata
+`ecdsa-p256-sha256` signing algorithm. Persisted wallet sessions store wallet metadata
 only; the credential private key remains owned by Android Keystore and is not
 written to SDK session storage.
 
@@ -131,6 +134,10 @@ suspend fun client.startOidcRedirectAuth(
 ```kotlin
 sealed interface OidcRedirectAuthResult {
     data class Completed(val wallet: Wallet) : OidcRedirectAuthResult
+    data class WalletSelection(
+        val wallets: List<Wallet>,
+        val credential: CredentialInfo,
+    ) : OidcRedirectAuthResult
     data object NotOidcRedirectCallback : OidcRedirectAuthResult
     data object NoPendingAuth : OidcRedirectAuthResult
     data class Failed(val error: Throwable) : OidcRedirectAuthResult
@@ -140,6 +147,7 @@ sealed interface OidcRedirectAuthResult {
 ```kotlin
 suspend fun client.handleOidcRedirectCallback(
     callbackUrl: String?,
+    autoActivate: Boolean = true,
     selectWallet: suspend (List<Wallet>) -> Wallet = { wallets -> wallets.single() },
 ): OidcRedirectAuthResult
 ```
@@ -150,14 +158,39 @@ completed wallet session so Android can resume after the browser redirect. Open
 Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
 handler is idempotent and safe to call from `onCreate` / `onNewIntent`: unrelated
 links return `NotOidcRedirectCallback`, stale links return `NoPendingAuth`, and
-successful auth returns `Completed`. Starting a new auth flow clears or replaces
-stale redirect state, and `signOut()` clears it.
+successful auth returns `Completed` or `WalletSelection` when `autoActivate` is
+false. Starting a new auth flow clears or replaces stale redirect state, and
+`signOut()` clears it.
+
+```kotlin
+sealed interface CompleteAuthResult {
+    data class Activated(
+        val walletAddress: String,
+        val wallet: Wallet,
+        val wallets: List<Wallet>,
+        val credential: CredentialInfo,
+    ) : CompleteAuthResult
+
+    data class WalletSelection(
+        val wallets: List<Wallet>,
+        val credential: CredentialInfo,
+    ) : CompleteAuthResult
+}
+```
 
 ```kotlin
 suspend fun client.completeEmailAuth(
     code: String,
     walletType: WalletType = WalletType.Ethereum,
 ): Wallet
+```
+
+```kotlin
+suspend fun client.completeEmailAuth(
+    code: String,
+    autoActivate: Boolean,
+    walletType: WalletType = WalletType.Ethereum,
+): CompleteAuthResult
 ```
 
 ```kotlin
@@ -168,6 +201,11 @@ suspend fun client.completeEmailAuth(
 ): Wallet
 ```
 
+Auth completion loads all wallet pages before selecting or creating a wallet.
+Pass `autoActivate = false` to return `CompleteAuthResult.WalletSelection`
+without selecting or creating a wallet; then call `client.wallet.useWallet(...)`
+or `client.wallet.createWallet(...)`.
+
 ## Wallet
 
 ```kotlin
@@ -175,10 +213,57 @@ val client.wallet.address: String?
 ```
 
 ```kotlin
+data class WalletActivationResult(
+    val walletAddress: String,
+    val wallet: Wallet,
+)
+```
+
+```kotlin
+suspend fun client.wallet.listWallets(): List<Wallet>
+```
+
+```kotlin
+suspend fun client.wallet.useWallet(
+    walletId: String,
+): WalletActivationResult
+```
+
+```kotlin
+suspend fun client.wallet.createWallet(
+    walletType: WalletType = WalletType.Ethereum,
+    reference: String? = null,
+): WalletActivationResult
+```
+
+```kotlin
 suspend fun client.wallet.signMessage(
     network: Network,
     message: String,
 ): SignMessageResponse
+```
+
+```kotlin
+suspend fun client.wallet.signTypedData(
+    network: Network,
+    typedData: JsonElement,
+): SignTypedDataResponse
+```
+
+```kotlin
+suspend fun client.wallet.isValidMessageSignature(
+    network: Network,
+    message: String,
+    signature: String,
+): Boolean
+```
+
+```kotlin
+suspend fun client.wallet.isValidTypedDataSignature(
+    network: Network,
+    typedData: JsonElement,
+    signature: String,
+): Boolean
 ```
 
 ```kotlin
@@ -198,16 +283,63 @@ suspend fun client.wallet.sendTransaction(
 ): SendTransactionResponse
 ```
 
+```kotlin
+suspend fun client.wallet.callContract(
+    network: Network,
+    contract: String,
+    method: String,
+    args: List<AbiArg>? = null,
+    mode: TransactionMode = TransactionMode.Relayer,
+    selectFeeOption: FeeOptionSelector? = null,
+): SendTransactionResponse
+```
+
+```kotlin
+suspend fun client.wallet.getTransactionStatus(
+    txnId: String,
+): TransactionStatusResponse
+```
+
+```kotlin
+suspend fun client.wallet.listAccess(
+    pageSize: UInt? = null,
+): List<CredentialInfo>
+```
+
+```kotlin
+fun client.wallet.listAccessPages(
+    pageSize: UInt? = null,
+): Flow<ListAccessResponse>
+```
+
+```kotlin
+suspend fun client.wallet.listAccessPage(
+    pageSize: UInt? = null,
+    cursor: String? = null,
+): ListAccessResponse
+```
+
+```kotlin
+suspend fun client.wallet.revokeAccess(
+    targetCredentialId: String,
+)
+```
+
 When a prepared transaction includes fee options, `selectFeeOption` receives the
 available options enriched with the selected wallet's matching token balance
 when available. When no selector is provided, `sendTransaction` uses the first
 required fee option, or no fee option when the transaction is sponsored.
 `value` is a raw base-unit integer; use `parseUnits` to convert human-entered
 decimal values before sending.
-After execution, `sendTransaction` polls the WaaS status endpoint briefly for an
-executed status or transaction hash. If the transaction remains pending when
-polling times out, the response contains the `txnId`, `status =
+After execution, `sendTransaction` and `callContract` poll the WaaS status
+endpoint briefly for an executed status or transaction hash. If the transaction
+remains pending when polling times out, the response contains the `txnId`, `status =
 TransactionStatus.Pending`, and `txHash = null`.
+Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
+WaaS cursors and returns all credentials, `listAccessPages` emits each page as a
+`Flow`, and `listAccessPage` exposes one page at a time for manual cursor
+pagination. Pass `pageSize` when fetching credentials that may span multiple
+pages so each request uses an explicit limit.
 
 ## Networks
 
@@ -241,22 +373,6 @@ fun parseUnits(
     value: String,
     decimals: Int,
 ): BigInteger
-```
-
-```kotlin
-suspend fun wallet.isValidMessageSignature(
-    network: Network,
-    message: String,
-    signature: String,
-): Boolean
-```
-
-```kotlin
-suspend fun wallet.isValidTypedDataSignature(
-    network: Network,
-    typedData: JsonElement,
-    signature: String,
-): Boolean
 ```
 
 ## Indexer Service
@@ -383,6 +499,46 @@ data class SignMessageResponse(
 )
 ```
 
+```kotlin
+data class SignTypedDataResponse(
+    val signature: String,
+)
+```
+
+```kotlin
+data class AbiArg(
+    val type: String,
+    val value: JsonElement,
+)
+```
+
+```kotlin
+data class CredentialInfo(
+    val credentialId: String,
+    val expiresAt: String,
+    val isCaller: Boolean,
+)
+```
+
+```kotlin
+data class ListAccessResponse(
+    val credentials: List<CredentialInfo>,
+    val page: Page? = null,
+)
+
+data class Page(
+    val limit: UInt? = null,
+    val cursor: String? = null,
+)
+```
+
+```kotlin
+data class TransactionStatusResponse(
+    val status: TransactionStatus,
+    val txHash: String? = null,
+)
+```
+
 ## Recommended Usage
 
 ```kotlin
@@ -416,7 +572,19 @@ val wallet = client.completeEmailAuth("123456") { wallets ->
 }
 ```
 
-For contract calls or transaction parameters beyond `to` and `value`:
+To opt out of automatic wallet activation and drive selection in your own UI:
+
+```kotlin
+when (val result = client.completeEmailAuth("123456", autoActivate = false)) {
+    is CompleteAuthResult.WalletSelection -> {
+        val picked = showWalletPickerAndWaitForChoice(result.wallets)
+        client.wallet.useWallet(picked.id)
+    }
+    is CompleteAuthResult.Activated -> Unit
+}
+```
+
+For raw calldata or transaction parameters beyond `to` and `value`:
 
 ```kotlin
 val network = Network.POLYGON_AMOY
@@ -429,6 +597,21 @@ val txResult = client.wallet.sendTransaction(
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
+)
+```
+
+For WaaS ABI-style contract calls:
+
+```kotlin
+val txResult = client.wallet.callContract(
+    network = network,
+    contract = "0xContractAddress",
+    method = "transfer(address,uint256)",
+    args =
+        listOf(
+            AbiArg(type = "address", value = JsonPrimitive("0xRecipient")),
+            AbiArg(type = "uint256", value = JsonPrimitive("1000000000000000000")),
+        ),
 )
 ```
 

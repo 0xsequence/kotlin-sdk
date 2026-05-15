@@ -4,7 +4,9 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CredentialInfo
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.ListWalletsResponse
+import com.omsclient.kotlin_sdk.generated.waas.Page
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
@@ -48,11 +50,13 @@ internal fun completeAuthResponseBody(
     wallets: List<Wallet>,
     identity: Identity = identityFixture(IdentityType.Email),
     email: String? = "user@example.com",
+    page: Page? = null,
 ): String =
     WebRpcJson.encodeToString(
         CompleteAuthResponse(
             identity = identity,
             wallets = wallets,
+            page = page,
             email = email,
             credential = credentialFixture(),
         ),
@@ -71,6 +75,17 @@ internal fun walletResponseBody(
     reference: String? = null,
     type: WalletType = WalletType.Ethereum,
 ): String = """{"wallet":${WebRpcJson.encodeToString(walletFixture(walletId, address, reference, type))}}"""
+
+internal fun listWalletsResponseBody(
+    wallets: List<Wallet>,
+    page: Page? = null,
+): String =
+    WebRpcJson.encodeToString(
+        ListWalletsResponse(
+            wallets = wallets,
+            page = page,
+        ),
+    )
 
 internal fun fakeJwt(exp: Long): String {
     val encoder = Base64.getUrlEncoder().withoutPadding()
@@ -91,7 +106,7 @@ internal fun activeSessionSnapshot(): OMSClientSessionSnapshot =
         walletId = "wallet-active",
         walletAddress = "0xactive",
         signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-        signerKeyType = KeyType.Ethereum_Secp256k1,
+        signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
     )
 
 internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
@@ -104,7 +119,7 @@ internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
         authorizationScope = "proj_1",
         walletType = WalletType.Ethereum,
         signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-        signerKeyType = KeyType.Ethereum_Secp256k1,
+        signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
     )
 
 internal fun uriOriginAndPath(url: String): String {
@@ -179,7 +194,7 @@ internal class InMemoryOidcRedirectAuthStore(
 }
 
 internal class TrackingCredentialSigner : CredentialSigner {
-    override val keyType: KeyType = KeyType.Ethereum_Secp256k1
+    override val signingAlgorithm: SigningAlgorithm = SigningAlgorithm.ECDSA_P256K_EIP191
     var signCalls: Int = 0
         private set
 
@@ -200,7 +215,7 @@ internal class TrackingCredentialSigner : CredentialSigner {
 internal class MockWebCryptoCredentialSigner(
     private var available: Boolean = true,
 ) : CredentialSigner {
-    override val keyType: KeyType = KeyType.WebCrypto_Secp256r1
+    override val signingAlgorithm: SigningAlgorithm = SigningAlgorithm.ECDSA_P256_SHA256
     val credentialIdValue: String = "0x04" + "11".repeat(64)
     val signatureValue: String = "0x" + "22".repeat(64)
     var signCalls: Int = 0

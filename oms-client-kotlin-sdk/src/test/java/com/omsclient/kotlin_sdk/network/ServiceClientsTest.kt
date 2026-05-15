@@ -72,6 +72,7 @@ class ServiceClientsTest {
             assertEquals("/rpc/WalletPublic/IsValidMessageSignature", messageRequest.target)
             assertEquals("test-access-key", messageRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(null, messageRequest.headers["Authorization"])
+            assertEquals(null, messageRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
             assertEquals(
                 """{"network":"80002","walletId":"wallet-id","message":"hello","signature":"0xmessage"}""",
                 requireNotNull(messageRequest.body).utf8(),
@@ -92,6 +93,7 @@ class ServiceClientsTest {
             assertEquals("/rpc/WalletPublic/IsValidTypedDataSignature", typedDataRequest.target)
             assertEquals("test-access-key", typedDataRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(null, typedDataRequest.headers["Authorization"])
+            assertEquals(null, typedDataRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
             assertEquals(
                 """{"network":"80002","walletId":"wallet-id","typedData":{"contents":"hello"},"signature":"0xtyped"}""",
                 requireNotNull(typedDataRequest.body).utf8(),

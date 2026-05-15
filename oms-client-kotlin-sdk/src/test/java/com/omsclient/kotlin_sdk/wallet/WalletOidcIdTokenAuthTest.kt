@@ -5,7 +5,7 @@ import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
@@ -144,7 +144,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.GoogleAuth, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
-            assertEquals(KeyType.Ethereum_Secp256k1, store.snapshot?.signerKeyType)
+            assertEquals(SigningAlgorithm.ECDSA_P256K_EIP191, store.snapshot?.signerKeyType)
             assertNull(store.snapshot?.verifier)
             assertNull(store.snapshot?.challenge)
             assertNull(store.privateKeyHex)
@@ -216,9 +216,43 @@ class WalletOidcIdTokenAuthTest {
         }
 
     @Test
-    fun signInWithOidcIdTokenRejectsWhenWalletSessionIsActive() =
+    fun signInWithOidcIdTokenReplacesActiveWalletSession() =
         runBlocking {
+            val idToken = fakeJwt(exp = 1910000100L)
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":""}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://accounts.google.com",
+                                    sub = "google-sub-123",
+                                ),
+                            email = "user@example.com",
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
+                    .build(),
+            )
+
             val activeSession = activeSessionSnapshot()
+            val store = InMemorySessionStore(activeSession)
             val client =
                 WalletClient(
                     projectAccessKey = "test-access-key",
@@ -227,23 +261,27 @@ class WalletOidcIdTokenAuthTest {
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    privateKeyFactory = { error("Credential should not be created") },
+                    sessionStore = store,
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
                 )
             client.restoreSession(activeSession)
 
-            val failure =
-                runCatching {
-                    client.signInWithOidcIdToken(
-                        idToken = fakeJwt(exp = 1910000100L),
-                        issuer = "https://accounts.google.com",
-                        audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
-                    )
-                }.exceptionOrNull()
+            val wallet =
+                client.signInWithOidcIdToken(
+                    idToken = idToken,
+                    issuer = "https://accounts.google.com",
+                    audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+                )
+            val commitRequest = requireNotNull(server.takeRequest())
+            val completeAuthRequest = requireNotNull(server.takeRequest())
+            val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("Cannot start a new login while a wallet session is active", failure?.message)
-            assertEquals(activeSession, client.snapshotSession())
-            assertEquals(0, server.requestCount)
+            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
+            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("0xdef", wallet.address)
+            assertEquals("wallet-def", client.snapshotSession()?.walletId)
+            assertEquals("0xdef", store.snapshot?.walletAddress)
         }
 
     @Test

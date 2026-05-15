@@ -1,7 +1,10 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.OMSClientNetworks
+import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
+import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.models.AbiArg
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest
 import com.omsclient.kotlin_sdk.models.TransactionMode
@@ -9,6 +12,7 @@ import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
@@ -376,5 +380,202 @@ class WalletTransactionTest {
             assertEquals(400L, delays[3])
             assertEquals(2_000L, delays[4])
             assertEquals(2_000L, delays[5])
+        }
+
+    @Test
+    fun callContractMatchesWaasRequestShape() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """
+                        {
+                          "txnId": "contract-txn",
+                          "status": "quoted",
+                          "feeOptions": [],
+                          "sponsored": true,
+                          "expiresAt": "2026-04-27T00:00:00Z"
+                        }
+                        """.trimIndent(),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"pending"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"executed","txnHash":"0xcontract"}""")
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                ),
+                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+                        ),
+                    nonceGenerator = { 1710000109L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val args =
+                listOf(
+                    AbiArg(type = "address", value = JsonPrimitive("0xrecipient")),
+                    AbiArg(type = "uint256", value = JsonPrimitive("1000")),
+                )
+            val result =
+                client.callContract(
+                    network = OMSClientNetworks.requireSupported("80002"),
+                    contract = "0xcontract",
+                    method = "transfer(address,uint256)",
+                    args = args,
+                    mode = TransactionMode.Native,
+                )
+            val prepareRequest = requireNotNull(server.takeRequest())
+            val executeRequest = requireNotNull(server.takeRequest())
+            val statusRequest = requireNotNull(server.takeRequest())
+
+            assertEquals("contract-txn", result.txnId)
+            assertEquals("0xcontract", result.txHash)
+            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
+            assertEquals("/rpc/Wallet/PrepareEthereumContractCall", prepareRequest.target)
+            assertEquals(
+                WaasWalletApi.PrepareEthereumContractCall.encodeRequest(
+                    PrepareEthereumContractCallRequest(
+                        walletId = "wallet-main",
+                        network = "80002",
+                        contract = "0xcontract",
+                        method = "transfer(address,uint256)",
+                        args = args,
+                        mode = TransactionMode.Native,
+                    ),
+                ),
+                requireNotNull(prepareRequest.body).utf8(),
+            )
+            assertEquals("/rpc/Wallet/Execute", executeRequest.target)
+            assertEquals("/rpc/Wallet/TransactionStatus", statusRequest.target)
+            assertEquals(
+                WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "contract-txn")),
+                requireNotNull(statusRequest.body).utf8(),
+            )
+        }
+
+    @Test
+    fun getTransactionStatusUsesSignedWaasRequest() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"executed","txnHash":"0xstatus"}""")
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                ),
+                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+                        ),
+                    nonceGenerator = { 1710000110L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val result = client.getTransactionStatus(txnId = "txn-1")
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
+            assertEquals("0xstatus", result.txHash)
+            assertEquals("/rpc/Wallet/TransactionStatus", request.target)
+            assertEquals(
+                WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertNotNull(request.headers[OMSClientEnvironment.walletSignatureHeaderName])
+        }
+
+    @Test
+    fun getTransactionStatusReturnsPendingAndUnknownStatuses() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"pending"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"unexpected"}""")
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                ),
+                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+                        ),
+                    nonceGenerator = { 1710000113L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val pending = client.getTransactionStatus(txnId = "txn-pending")
+            val unknown = client.getTransactionStatus(txnId = "txn-unknown")
+
+            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Pending, pending.status)
+            assertEquals(null, pending.txHash)
+            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.UNKNOWN_DEFAULT, unknown.status)
+            assertEquals(null, unknown.txHash)
         }
 }

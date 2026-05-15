@@ -1,7 +1,7 @@
 package com.omsclient.kotlin_sdk.session
 
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 
 internal data class OMSClientSessionSnapshot(
     val challenge: String? = null,
@@ -9,7 +9,7 @@ internal data class OMSClientSessionSnapshot(
     val walletId: String? = null,
     val walletAddress: String? = null,
     val signerAddress: String? = null,
-    val signerKeyType: KeyType? = null,
+    val signerKeyType: SigningAlgorithm? = null,
     val expiresAt: String? = null,
     val loginType: OMSClientSessionLoginType? = null,
     val sessionEmail: String? = null,
@@ -34,7 +34,7 @@ internal class OMSClientSession(
             val challenge: String,
             val verifier: String,
             val signerAddress: String,
-            val signerKeyType: KeyType?,
+            val signerKeyType: SigningAlgorithm?,
         ) : SessionState {
             override fun snapshot(): OMSClientSessionSnapshot =
                 OMSClientSessionSnapshot(
@@ -47,7 +47,7 @@ internal class OMSClientSession(
 
         data class AwaitingWalletResolution(
             val signerAddress: String,
-            val signerKeyType: KeyType?,
+            val signerKeyType: SigningAlgorithm?,
             val expiresAt: String,
             val loginType: OMSClientSessionLoginType?,
             val sessionEmail: String?,
@@ -66,7 +66,7 @@ internal class OMSClientSession(
             val walletId: String,
             val walletAddress: String,
             val signerAddress: String?,
-            val signerKeyType: KeyType?,
+            val signerKeyType: SigningAlgorithm?,
             val expiresAt: String?,
             val loginType: OMSClientSessionLoginType?,
             val sessionEmail: String?,
@@ -100,7 +100,7 @@ internal class OMSClientSession(
         challenge: String,
         verifier: String,
         signerAddress: String,
-        signerKeyType: KeyType?,
+        signerKeyType: SigningAlgorithm?,
     ) {
         state =
             SessionState.PendingAuth(
@@ -135,21 +135,32 @@ internal class OMSClientSession(
         walletId: String,
         walletAddress: String,
     ) {
-        val current =
+        val activated =
             when (val current = state) {
-                is SessionState.AwaitingWalletResolution -> current
-                else -> error("No authenticated wallet resolution in progress")
+                is SessionState.AwaitingWalletResolution -> {
+                    SessionState.ActiveSession(
+                        walletId = walletId,
+                        walletAddress = walletAddress,
+                        signerAddress = current.signerAddress,
+                        signerKeyType = current.signerKeyType,
+                        expiresAt = current.expiresAt,
+                        loginType = current.loginType,
+                        sessionEmail = current.sessionEmail,
+                    )
+                }
+
+                is SessionState.ActiveSession -> {
+                    current.copy(
+                        walletId = walletId,
+                        walletAddress = walletAddress,
+                    )
+                }
+
+                else -> {
+                    error("No authenticated wallet resolution in progress")
+                }
             }
-        state =
-            SessionState.ActiveSession(
-                walletId = walletId,
-                walletAddress = walletAddress,
-                signerAddress = current.signerAddress,
-                signerKeyType = current.signerKeyType,
-                expiresAt = current.expiresAt,
-                loginType = current.loginType,
-                sessionEmail = current.sessionEmail,
-            )
+        state = activated
     }
 
     fun requireSnapshot(): OMSClientSessionSnapshot =

@@ -1,6 +1,7 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
+import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import org.web3j.crypto.ECKeyPair
 import org.web3j.crypto.Hash
 import org.web3j.crypto.Keys
@@ -16,7 +17,7 @@ internal data class SignedWalletRequest(
     val digestHex: String,
     val address: String,
     val signature: String,
-    val authorizationHeader: String,
+    val walletSignatureHeader: String,
 )
 
 internal object WalletRequestSigner {
@@ -75,27 +76,29 @@ internal object WalletRequestSigner {
         preimage: String,
     ): String = signWalletRequestPreimage(privateKeyFromHex(privateKeyHex), preimage)
 
-    fun buildWalletAuthorizationHeader(
+    fun buildWalletSignatureHeader(
         scope: String,
         address: String,
         nonce: String,
         signature: String,
     ): String =
-        buildWalletAuthorizationHeader(
-            keyType = KeyType.Ethereum_Secp256k1,
+        buildWalletSignatureHeader(
+            signingAlgorithm = SigningAlgorithm.ECDSA_P256K_EIP191,
             scope = scope,
             credentialId = address,
             nonce = nonce,
             signature = signature,
         )
 
-    fun buildWalletAuthorizationHeader(
-        keyType: KeyType,
+    fun buildWalletSignatureHeader(
+        signingAlgorithm: SigningAlgorithm,
         scope: String,
         credentialId: String,
         nonce: String,
         signature: String,
-    ): String = "Authorization: ${keyType.wireValue} scope=\"$scope\",cred=\"$credentialId\",nonce=$nonce,sig=\"$signature\""
+    ): String =
+        "${OMSClientEnvironment.walletSignatureHeaderPrefix}alg=\"${signingAlgorithm.wireValue}\"," +
+            "scope=\"$scope\",cred=\"$credentialId\",nonce=$nonce,sig=\"$signature\""
 
     fun signWalletRequest(
         endpoint: String,
@@ -116,8 +119,8 @@ internal object WalletRequestSigner {
         val digestHex = walletRequestPreimageDigestHex(preimage)
         val address = walletAddressFromPrivateKey(privateKey)
         val signature = signWalletDigestHexEip191(privateKey, digestHex)
-        val authorizationHeader =
-            buildWalletAuthorizationHeader(
+        val walletSignatureHeader =
+            buildWalletSignatureHeader(
                 scope = scope,
                 address = address,
                 nonce = nonce,
@@ -130,7 +133,7 @@ internal object WalletRequestSigner {
             digestHex = digestHex,
             address = address,
             signature = signature,
-            authorizationHeader = authorizationHeader,
+            walletSignatureHeader = walletSignatureHeader,
         )
     }
 

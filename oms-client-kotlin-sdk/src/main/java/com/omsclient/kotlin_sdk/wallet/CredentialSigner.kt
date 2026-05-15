@@ -1,9 +1,9 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.generated.waas.KeyType
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 
 internal interface CredentialSigner {
-    val keyType: KeyType
+    val signingAlgorithm: SigningAlgorithm
 
     suspend fun credentialId(): String
 

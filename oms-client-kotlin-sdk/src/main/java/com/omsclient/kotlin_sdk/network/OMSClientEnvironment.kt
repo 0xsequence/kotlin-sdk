@@ -42,7 +42,8 @@ class OMSClientEnvironment(
 
     companion object {
         internal const val accessKeyHeaderName: String = "X-Access-Key"
-        internal const val authorizationHeaderPrefix: String = "Authorization: "
+        internal const val walletSignatureHeaderName: String = "OMS-Wallet-Signature"
+        internal const val walletSignatureHeaderPrefix: String = "$walletSignatureHeaderName: "
         internal const val authorizationScopeDefault: String = "proj_1"
         internal const val demoAuthorizationScopeDefault: String = "proj_1"
         const val walletApiUrlDefault: String = "https://d1sctl7y41hot5.cloudfront.net/rpc/Wallet"

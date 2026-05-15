@@ -33,7 +33,7 @@ class WalletRequestSignerVectorTest {
         val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
-        val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
+        val header = WalletRequestSigner.buildWalletSignatureHeader(scope, derivedAddress, nonce, signature)
 
         assertEquals(
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"message\":\"hello\"}",
@@ -43,6 +43,7 @@ class WalletRequestSignerVectorTest {
         assertTrue(digest.startsWith("0x"))
         assertEquals(derivedAddress, WalletRequestSigner.walletAddressFromPrivateKeyHex(privateKeyHex))
         assertTrue(signature.startsWith("0x"))
+        assertTrue(header.startsWith("OMS-Wallet-Signature: alg=\"ecdsa-p256k-eip191\","))
         assertTrue(header.contains("scope=\"proj_1\""))
 
         val signedRequest =
@@ -54,7 +55,7 @@ class WalletRequestSignerVectorTest {
                 privateKeyHex = privateKeyHex,
             )
         assertEquals(signature, signedRequest.signature)
-        assertEquals(header, signedRequest.authorizationHeader)
+        assertEquals(header, signedRequest.walletSignatureHeader)
     }
 
     @Test
@@ -74,7 +75,7 @@ class WalletRequestSignerVectorTest {
         val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
-        val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
+        val header = WalletRequestSigner.buildWalletSignatureHeader(scope, derivedAddress, nonce, signature)
 
         assertEquals(
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"to\":\"0xE5E8B483FfC05967FcFed58cc98D053265af6D99\",\"value\":\"1000\",\"mode\":\"relayer\"}",
@@ -106,7 +107,7 @@ class WalletRequestSignerVectorTest {
         val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
         val digest = WalletRequestSigner.walletRequestPreimageDigestHex(preimage)
         val signature = WalletRequestSigner.signWalletDigestHexEip191(privateKeyHex, digest)
-        val header = WalletRequestSigner.buildWalletAuthorizationHeader(scope, derivedAddress, nonce, signature)
+        val header = WalletRequestSigner.buildWalletSignatureHeader(scope, derivedAddress, nonce, signature)
 
         assertEquals(
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"verifier\":\"verifier-123\",\"answer\":\"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M\"}",
@@ -126,6 +127,6 @@ class WalletRequestSignerVectorTest {
                 privateKeyHex = privateKeyHex,
             )
         assertEquals(signature, signedRequest.signature)
-        assertEquals(header, signedRequest.authorizationHeader)
+        assertEquals(header, signedRequest.walletSignatureHeader)
     }
 }

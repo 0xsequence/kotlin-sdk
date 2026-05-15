@@ -20,7 +20,10 @@ Until the package is published, use the source directly from this repository.
 - persisted wallet session metadata
 - wallet selection and wallet creation flows
 - message signing
-- transaction sending
+- typed-data signing
+- transaction sending and contract calls
+- transaction status lookup
+- wallet access listing and revocation
 - signature verification through the generated WaaS public client
 - token balance lookups through the indexer service
 - unit formatting and parsing helpers for raw token amounts
@@ -44,7 +47,7 @@ val client = OMSClient(
 
 That constructor uses secure persisted session storage by default.
 Wallet API requests are signed with a non-extractable Android Keystore P-256
-credential (`webcrypto-secp256r1`), so the private credential key is not written
+credential (`ecdsa-p256-sha256`), so the private credential key is not written
 to app storage.
 Only completed wallet sessions are restored automatically. Pending auth state is
 not exposed through `client.session`; email OTP pending state is kept in memory,
@@ -77,7 +80,10 @@ val client = OMSClient(
 
 ## Example Flow
 
-`OMSClient` restores a persisted session automatically when it is created. Start email sign-in only if no wallet is currently selected:
+`OMSClient` restores a persisted session automatically when it is created. Apps
+can hide sign-in controls while a wallet is selected, but starting a new auth
+flow intentionally replaces any existing wallet session so users can re-auth or
+switch accounts:
 
 ```kotlin
 if (client.wallet.address == null) {
@@ -134,7 +140,8 @@ if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
 fresh SDK instance restores completed wallet sessions, including the session
 expiry, login type, and email returned by the wallet API, but not email OTP
 pending state. Completed auth requests ask the wallet API for a one-week
-session lifetime. If auth completes but wallet selection, wallet creation, or
+session lifetime. Auth completion loads all wallet pages before selecting or
+creating a wallet. If auth completes but wallet selection, wallet creation, or
 session persistence fails, the SDK clears the in-memory auth session instead of
 retaining unrecoverable transient state.
 
@@ -142,6 +149,40 @@ Use the selected wallet:
 
 ```kotlin
 val network = Network.POLYGON_AMOY
+val typedDataJson =
+    buildJsonObject {
+        putJsonObject("types") {
+            putJsonArray("EIP712Domain") {
+                add(buildJsonObject {
+                    put("name", "name")
+                    put("type", "string")
+                })
+                add(buildJsonObject {
+                    put("name", "version")
+                    put("type", "string")
+                })
+                add(buildJsonObject {
+                    put("name", "chainId")
+                    put("type", "uint256")
+                })
+            }
+            putJsonArray("Message") {
+                add(buildJsonObject {
+                    put("name", "contents")
+                    put("type", "string")
+                })
+            }
+        }
+        put("primaryType", "Message")
+        putJsonObject("domain") {
+            put("name", "OMS Client")
+            put("version", "1")
+            put("chainId", JsonPrimitive(network.chainId.toLong()))
+        }
+        putJsonObject("message") {
+            put("contents", "hello from android")
+        }
+    }
 
 val signResult = client.wallet.signMessage(
     network = network,
@@ -152,6 +193,11 @@ val verifyResult = client.wallet.isValidMessageSignature(
     network = network,
     message = "hello from android",
     signature = signResult.signature,
+)
+
+val typedSignature = client.wallet.signTypedData(
+    network = network,
+    typedData = typedDataJson,
 )
 
 val txResult = client.wallet.sendTransaction(
@@ -176,7 +222,7 @@ val rawAmount = parseUnits("1.5", 18)
 val displayAmount = formatUnits(rawAmount, 18)
 ```
 
-For contract calls or transaction parameters beyond `to` and `value`, use the request overload:
+For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:
 
 ```kotlin
 val network = Network.POLYGON_AMOY
@@ -189,6 +235,21 @@ val txResult = client.wallet.sendTransaction(
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
+)
+```
+
+For WaaS ABI-style contract calls, use `callContract`:
+
+```kotlin
+val txResult = client.wallet.callContract(
+    network = network,
+    contract = "0xContractAddress",
+    method = "transfer(address,uint256)",
+    args =
+        listOf(
+            AbiArg(type = "address", value = JsonPrimitive("0xRecipient")),
+            AbiArg(type = "uint256", value = JsonPrimitive("1000000000000000000")),
+        ),
 )
 ```
 
@@ -214,11 +275,37 @@ wallet's raw indexer balance for that fee token when available. `available` is
 formatted with the token decimals, while `availableRaw` keeps the raw integer
 value. `decimals` is exposed as a regular `Int`.
 
+To refresh a transaction later or manage active wallet credentials:
+
+```kotlin
+val status = client.wallet.getTransactionStatus(txnId = txResult.txnId)
+val credentials = client.wallet.listAccess(pageSize = 25u)
+client.wallet.listAccessPages(pageSize = 25u).collect { page ->
+    renderCredentials(page.credentials)
+}
+
+credentials
+    .firstOrNull { !it.isCaller }
+    ?.let { client.wallet.revokeAccess(targetCredentialId = it.credentialId) }
+```
+
 If your app may need to choose between multiple wallets, use the selector overload:
 
 ```kotlin
 val wallet = client.completeEmailAuth("123456") { wallets ->
     showWalletPickerAndWaitForChoice(wallets)
+}
+```
+
+To opt out of automatic activation and drive wallet selection yourself:
+
+```kotlin
+when (val result = client.completeEmailAuth("123456", autoActivate = false)) {
+    is CompleteAuthResult.WalletSelection -> {
+        val picked = showWalletPickerAndWaitForChoice(result.wallets)
+        client.wallet.useWallet(picked.id)
+    }
+    is CompleteAuthResult.Activated -> Unit
 }
 ```
 
