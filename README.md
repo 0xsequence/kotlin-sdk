@@ -89,9 +89,9 @@ switch accounts:
 if (client.wallet.address == null) {
     client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    when (val result = client.completeEmailAuth("123456")) {
-        is CompleteAuthResult.WalletSelected -> showWallet(result.wallet)
-        is CompleteAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
+    val result = client.completeEmailAuth("123456")
+    if (result is CompleteAuthResult.WalletSelected) {
+        showWallet(result.wallet)
     }
 }
 ```
@@ -99,18 +99,19 @@ if (client.wallet.address == null) {
 For OIDC ID-token flows such as Google Sign-In with Credential Manager:
 
 ```kotlin
-when (
-    val result =
-        client.signInWithOidcIdToken(
-            idToken = googleIdToken,
-            issuer = "https://accounts.google.com",
-            audience = "YOUR_WEB_CLIENT_ID",
-        )
-) {
-    is CompleteAuthResult.WalletSelected -> showWallet(result.wallet)
-    is CompleteAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
+val result =
+    client.signInWithOidcIdToken(
+        idToken = googleIdToken,
+        issuer = "https://accounts.google.com",
+        audience = "YOUR_WEB_CLIENT_ID",
+    )
+if (result is CompleteAuthResult.WalletSelected) {
+    showWallet(result.wallet)
 }
 ```
+
+The default automatic mode selects an existing wallet or creates one before
+returning. Use manual mode when your app needs to present wallet choices.
 
 For OIDC authorization-code PKCE redirect flows, start the redirect, open the
 returned URL with your browser or Custom Tabs, then safely handle incoming app
@@ -126,7 +127,6 @@ val started = client.startOidcRedirectAuth(
 
 when (val result = client.handleOidcRedirectCallback(intent.data?.toString())) {
     is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
-    is OidcRedirectAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
     is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)

@@ -197,7 +197,8 @@ suspend fun client.completeEmailAuth(
 ```
 
 Auth completion loads all wallet pages before selecting or creating a wallet.
-Handle `CompleteAuthResult.WalletSelected` for the automatic path. Pass
+The default automatic path returns `CompleteAuthResult.WalletSelected` after
+selecting an existing wallet or creating one. Pass
 `walletSelection = WalletSelectionBehavior.Manual` to return
 `CompleteAuthResult.WalletSelection` without selecting or creating a wallet.
 Then call `pendingSelection.selectWallet(...)` or
@@ -560,9 +561,9 @@ val client = OMSClient(
 if (client.wallet.address == null) {
     client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    when (val result = client.completeEmailAuth("123456")) {
-        is CompleteAuthResult.WalletSelected -> showWallet(result.wallet)
-        is CompleteAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
+    val result = client.completeEmailAuth("123456")
+    if (result is CompleteAuthResult.WalletSelected) {
+        showWallet(result.wallet)
     }
 }
 ```
@@ -570,18 +571,19 @@ if (client.wallet.address == null) {
 For OIDC ID-token flows:
 
 ```kotlin
-when (
-    val result =
-        client.signInWithOidcIdToken(
-            idToken = googleIdToken,
-            issuer = "https://accounts.google.com",
-            audience = "YOUR_WEB_CLIENT_ID",
-        )
-) {
-    is CompleteAuthResult.WalletSelected -> showWallet(result.wallet)
-    is CompleteAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
+val result =
+    client.signInWithOidcIdToken(
+        idToken = googleIdToken,
+        issuer = "https://accounts.google.com",
+        audience = "YOUR_WEB_CLIENT_ID",
+    )
+if (result is CompleteAuthResult.WalletSelected) {
+    showWallet(result.wallet)
 }
 ```
+
+The default automatic mode selects an existing wallet or creates one before
+returning. Use manual mode when your app needs to present wallet choices.
 
 To use your own wallet-selection UI:
 
