@@ -25,61 +25,35 @@ unit tests, Android lint for both modules, and sample app assembly.
 - `docs/` - public API notes and request-signing parity vectors.
 - `.github/workflows/android-ci.yml` - CI workflow for PRs and `master`.
 
-## Evidence Sources
-
-- `README.md`
-- `settings.gradle.kts`
-- `build.gradle.kts`
-- `oms-client-kotlin-sdk/build.gradle.kts`
-- `app/build.gradle.kts`
-- `gradle/libs.versions.toml`
-- `gradle.properties`
-- `.github/workflows/android-ci.yml`
-- `docs/api.md`
-- `docs/complete_auth_vectors.md`
-- `oms-client-kotlin-sdk/src/test/`
-- `oms-client-kotlin-sdk/src/androidTest/`
-
 ## Development Commands
 
 - `./gradlew --build-cache :oms-client-kotlin-sdk:testDebugUnitTest :oms-client-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug`
   - CI-equivalent check from `.github/workflows/android-ci.yml`.
-  - Status: executed successfully.
 - `./gradlew :oms-client-kotlin-sdk:testDebugUnitTest`
   - Run SDK JVM unit tests. Use for most library logic changes.
-  - Status: executed successfully as part of the CI-equivalent command.
 - `./gradlew :oms-client-kotlin-sdk:lintDebug`
   - Run Android lint for the SDK module.
-  - Status: executed successfully as part of the CI-equivalent command.
 - `./gradlew :app:lintDebug`
   - Run Android lint for the sample app.
-  - Status: executed successfully as part of the CI-equivalent command.
 - `./gradlew :app:assembleDebug`
   - Build the sample debug APK and verify the SDK integrates into the app.
-  - Status: executed successfully as part of the CI-equivalent command.
 - `./gradlew ktlintCheck`
   - Run local Kotlin style lint for both modules. New violations should fail
     this check.
-  - Status: executed successfully.
 - `tools/install-git-hooks.sh`
   - Configure this checkout to use `tools/git-hooks`; the pre-push hook runs
     `./gradlew ktlintCheck`.
-  - Status: executed successfully in this checkout.
 - `./gradlew ktlintFormat`
   - Auto-format Kotlin files where ktlint can safely correct violations.
-  - Status: executed successfully; it rewrites source files.
 - `./gradlew :oms-client-kotlin-sdk:connectedDebugAndroidTest`
   - Run local/manual instrumented SDK tests on a connected Android device or
     emulator. Use this when changing Android Keystore, credential, nonce, or
     platform session behavior.
-  - Status: defined, not run; intentionally not part of CI and requires a
-    connected Android runtime.
 - `./gradlew :oms-client-kotlin-sdk:publishToMavenLocal`
   - Publish the SDK artifact to the local Maven cache for packaging checks.
-  - Status: defined, not run; it mutates the local Maven cache.
 
-No separate install command is documented. Use the Gradle wrapper; it resolves
-dependencies from Google Maven, Maven Central, and the Gradle Plugin Portal.
+Use the Gradle wrapper; it resolves dependencies from Google Maven, Maven
+Central, and the Gradle Plugin Portal.
 
 ## Verification Workflow
 
@@ -115,16 +89,17 @@ result.
 - `OMSClientEnvironment`, `OMSClientHttpClient`, and `OMSClientJson` define
   service routing and JSON behavior. Preserve existing serialization defaults
   unless tests and API docs are updated together.
-- Generated WaaS models are re-exported through client-facing model aliases in
-  `OMSClientModels.kt`. Avoid leaking new generated types into public API
-  without checking the docs and tests.
+- Some public models are client-facing aliases in `OMSClientModels.kt`, while
+  auth, wallet selection, and signing APIs also expose generated WaaS types
+  documented in `docs/api.md`. Check the docs and tests before changing that
+  public boundary.
 - Search for existing models, helper functions, serializers, and test fixtures
   before adding new ones. Do not add shallow wrappers unless they enforce a real
   invariant or isolate a real external boundary.
 - Refactors should be thin vertical slices that leave the project compiling and
   testable after each step.
 
-## High-Risk Areas and Change Hotspots
+## High-Risk Areas
 
 - `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/generated/waas/WaasWalletClient.kt`
   is generated WebRPC code and the largest production source file. Do not hand
@@ -135,10 +110,10 @@ result.
   `AndroidKeystoreP256CredentialSigner.kt`, and `AndroidKeystoreSessionStore.kt`
   handle auth state, credentials, nonces, signing, and persisted sessions. Treat
   behavior changes here as security-sensitive and add regression tests.
-- `WalletClientTest.kt` is large and central. Add narrowly scoped tests near the
-  behavior being changed instead of broad setup rewrites.
-- Git history includes renamed `polygon-*` paths, so churn data is noisy. Use
-  current paths and tests as the source of truth for new work.
+- Wallet auth, signing, access, session, and transaction tests live under
+  `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/`. Add
+  narrowly scoped tests near the behavior being changed instead of broad setup
+  rewrites.
 
 ## Code Style
 
@@ -217,7 +192,6 @@ result.
 
 ## PR / Commit Guidance
 
-- No repository PR template or commit convention was found.
 - Branch names should be plain and descriptive, such as `fix-login-timeout` or
   `add-wallet-tests`. Do not add a `codex/` prefix unless the user explicitly
   asks for that exact prefix.

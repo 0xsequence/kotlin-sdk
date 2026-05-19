@@ -56,7 +56,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import java.math.BigInteger
-import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse as WaasTransactionStatusResponse
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 
@@ -924,9 +923,7 @@ class WalletClient internal constructor(
     suspend fun getTransactionStatus(txnId: String): TransactionStatusResponse {
         session.requireSnapshot()
         requireActiveCredential()
-        return waasClient()
-            .transactionStatus(TransactionStatusRequest(txnId = txnId))
-            .toClientTransactionStatusResponse()
+        return waasClient().transactionStatus(TransactionStatusRequest(txnId = txnId))
     }
 
     /**
@@ -1041,7 +1038,7 @@ class WalletClient internal constructor(
         return ClientSendTransactionResponse(
             txnId = prepared.txnId,
             status = status.status.takeIf { it != TransactionStatus.UNKNOWN_DEFAULT } ?: executed.status,
-            txHash = status.txHash,
+            txnHash = status.txnHash,
         )
     }
 
@@ -1168,9 +1165,8 @@ class WalletClient internal constructor(
         do {
             lastStatus =
                 transactionStatus(TransactionStatusRequest(txnId = txnId))
-                    .toClientTransactionStatusResponse()
             completedStatusPolls += 1
-            if (lastStatus.status == TransactionStatus.Executed || !lastStatus.txHash.isNullOrBlank()) {
+            if (lastStatus.status == TransactionStatus.Executed || !lastStatus.txnHash.isNullOrBlank()) {
                 return lastStatus
             }
             if (lastStatus.status == TransactionStatus.UNKNOWN_DEFAULT) {
@@ -1209,12 +1205,6 @@ class WalletClient internal constructor(
         mapOf(
             OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
             "Accept" to "application/json",
-        )
-
-    private fun WaasTransactionStatusResponse.toClientTransactionStatusResponse(): TransactionStatusResponse =
-        TransactionStatusResponse(
-            status = status,
-            txHash = txnHash,
         )
 }
 

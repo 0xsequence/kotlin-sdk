@@ -313,20 +313,20 @@ class AuthDemoActivity : AppCompatActivity() {
                         value = parseUnits(transactionValueInput.text.toString(), 18),
                         selectFeeOption = ::selectFeeOption,
                     )
-                lastTransactionHash = result.txHash
-                lastTransactionHashView.text = "Last tx hash: ${result.txHash ?: "pending"}"
+                lastTransactionHash = result.txnHash
+                lastTransactionHashView.text = "Last transaction hash: ${result.txnHash ?: "pending"}"
                 transactionStatusView.text = "Transaction status: ${result.status} on chain ${network.chainId}."
-                openExplorerButton.visibility = if (result.txHash == null) View.GONE else View.VISIBLE
-                appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txHash ?: "pending"}")
+                openExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
+                appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
             }
         }
 
         openExplorerButton.setOnClickListener {
-            val txHash = lastTransactionHash ?: return@setOnClickListener
+            val txnHash = lastTransactionHash ?: return@setOnClickListener
             startActivity(
                 Intent(
                     Intent.ACTION_VIEW,
-                    Uri.parse(explorerUrlFor(selectedNetwork.chainId, txHash)),
+                    Uri.parse(explorerUrlFor(selectedNetwork.chainId, txnHash)),
                 ),
             )
         }
@@ -608,7 +608,7 @@ class AuthDemoActivity : AppCompatActivity() {
         lastTransactionHash = null
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: ready to sign."
-        lastTransactionHashView.text = "Last tx hash: none"
+        lastTransactionHashView.text = "Last transaction hash: none"
         transactionStatusView.text = "Transaction status: ready to send."
         openExplorerButton.visibility = View.GONE
     }
@@ -641,7 +641,7 @@ class AuthDemoActivity : AppCompatActivity() {
         logoutButton.visibility = View.VISIBLE
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: ready to sign."
-        lastTransactionHashView.text = "Last tx hash: none"
+        lastTransactionHashView.text = "Last transaction hash: none"
         transactionStatusView.text = "Transaction status: ready to send."
         openExplorerButton.visibility = View.GONE
 
@@ -659,7 +659,7 @@ class AuthDemoActivity : AppCompatActivity() {
         walletAddressView.text = addressLabel("Wallet address", null)
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: waiting for a message."
-        lastTransactionHashView.text = "Last tx hash: none"
+        lastTransactionHashView.text = "Last transaction hash: none"
         transactionStatusView.text = "Transaction status: waiting to send."
         logoutButton.visibility = View.GONE
         authCard.visibility = View.VISIBLE
@@ -740,12 +740,12 @@ class AuthDemoActivity : AppCompatActivity() {
 
         private fun explorerUrlFor(
             chainId: String,
-            txHash: String,
+            txnHash: String,
         ): String =
             when (chainId) {
-                "80002" -> "https://amoy.polygonscan.com/tx/$txHash"
-                "137" -> "https://polygonscan.com/tx/$txHash"
-                else -> "https://amoy.polygonscan.com/tx/$txHash"
+                "80002" -> "https://amoy.polygonscan.com/tx/$txnHash"
+                "137" -> "https://polygonscan.com/tx/$txnHash"
+                else -> "https://amoy.polygonscan.com/tx/$txnHash"
             }
 
         private fun networkLabel(network: Network): String = "${network.displayName} (${network.chainId})"

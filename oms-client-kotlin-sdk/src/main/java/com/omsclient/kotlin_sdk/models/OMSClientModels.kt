@@ -4,6 +4,7 @@ import java.math.BigInteger
 
 typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
 typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
+typealias TransactionStatusResponse = com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
 typealias SignTypedDataResponse = com.omsclient.kotlin_sdk.generated.waas.SignTypedDataResponse
 typealias AbiArg = com.omsclient.kotlin_sdk.generated.waas.AbiArg
 typealias CredentialInfo = com.omsclient.kotlin_sdk.generated.waas.CredentialInfo
@@ -36,12 +37,7 @@ data class SendTransactionRequest(
 data class SendTransactionResponse(
     val txnId: String,
     val status: TransactionStatus,
-    val txHash: String?,
-)
-
-data class TransactionStatusResponse(
-    val status: TransactionStatus,
-    val txHash: String? = null,
+    val txnHash: String?,
 )
 
 data class TokenBalancesPage(

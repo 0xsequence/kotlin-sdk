@@ -242,7 +242,7 @@ class WalletTransactionTest {
             val executedStatusRequest = requireNotNull(server.takeRequest())
 
             assertEquals("txn-1", result.txnId)
-            assertEquals("0xdeadbeef", result.txHash)
+            assertEquals("0xdeadbeef", result.txnHash)
             assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
             assertEquals("/rpc/Wallet/PrepareEthereumTransaction", prepareRequest.target)
             assertEquals(
@@ -374,7 +374,7 @@ class WalletTransactionTest {
                         ),
                 )
 
-            assertEquals("0xdeadbeef", result.txHash)
+            assertEquals("0xdeadbeef", result.txnHash)
             assertEquals(6, delays.size)
             assertEquals(400L, delays[0])
             assertEquals(400L, delays[3])
@@ -457,7 +457,7 @@ class WalletTransactionTest {
             val statusRequest = requireNotNull(server.takeRequest())
 
             assertEquals("contract-txn", result.txnId)
-            assertEquals("0xcontract", result.txHash)
+            assertEquals("0xcontract", result.txnHash)
             assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
             assertEquals("/rpc/Wallet/PrepareEthereumContractCall", prepareRequest.target)
             assertEquals(
@@ -519,7 +519,7 @@ class WalletTransactionTest {
             val request = requireNotNull(server.takeRequest())
 
             assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
-            assertEquals("0xstatus", result.txHash)
+            assertEquals("0xstatus", result.txnHash)
             assertEquals("/rpc/Wallet/TransactionStatus", request.target)
             assertEquals(
                 WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
@@ -574,8 +574,8 @@ class WalletTransactionTest {
             val unknown = client.getTransactionStatus(txnId = "txn-unknown")
 
             assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Pending, pending.status)
-            assertEquals(null, pending.txHash)
+            assertEquals(null, pending.txnHash)
             assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.UNKNOWN_DEFAULT, unknown.status)
-            assertEquals(null, unknown.txHash)
+            assertEquals(null, unknown.txnHash)
         }
 }

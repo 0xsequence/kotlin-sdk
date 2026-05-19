@@ -1,35 +1,27 @@
 # Request Signing Parity
 
 This document summarizes the Kotlin SDK request-signing parity coverage against
-the canonical C SDK vectors.
+the canonical wallet request-signing vectors.
 
-The canonical full vector set lives in:
-
-- `https://github.com/0xsequence/c-sdk/blob/master/tests/request_signing_vectors.md`
-
-The matching C test coverage lives in:
-
-- `https://github.com/0xsequence/c-sdk/blob/master/tests/sequence_request_signing_test.c`
-
-The matching Kotlin test coverage lives in:
+The Kotlin test coverage lives in:
 
 - `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/WalletRequestSignerVectorTest.kt`
 - `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/WalletPayloadBuilderTest.kt`
 
-Current Kotlin parity coverage:
+Kotlin parity coverage:
 
 - `CommitVerifier` (`OIDC`)
   - full payload parity for ID-token metadata plus `handle = base64url(sha256(full JWT string))`
   - tested in `WalletPayloadBuilderTest.oidcCommitVerifierPayloadMatchesParityVector()`
 - `SignMessage`
   - full payload / preimage / digest / signature / wallet signature header vector
-  - tested in `WalletRequestSignerVectorTest.signMessageVectorMatchesCSdk()`
-- `SendTransaction`
+  - tested in `WalletRequestSignerVectorTest.signMessageVectorMatchesParityVector()`
+- `PrepareEthereumTransaction`
   - full payload / preimage / digest / signature / wallet signature header vector
-  - tested in `WalletRequestSignerVectorTest.sendTransactionVectorMatchesCSdk()`
+  - tested in `WalletRequestSignerVectorTest.prepareEthereumTransactionVectorMatchesParityVector()`
 - `CompleteAuth`
   - full payload / preimage / digest / signature / wallet signature header vector
-  - tested in `WalletRequestSignerVectorTest.completeAuthVectorMatchesCSdk()`
+  - tested in `WalletRequestSignerVectorTest.completeAuthVectorMatchesParityVector()`
   - answer-hash parity vector for `challenge + code -> sha256 -> base64url(no padding) -> answer`
   - tested in `WalletPayloadBuilderTest.completeAuthPayloadFromCodeMatchesParityVector()`
 
@@ -50,14 +42,12 @@ request-signing flow.
 {"identityType":"oidc","authMode":"id-token","metadata":{"iss":"https://accounts.google.com","aud":"demo-web-client-id","exp":"1910000100"},"handle":"nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY"}
 ```
 
-Reference C SDK behavior:
+CompleteAuth answer behavior:
 
-- `https://github.com/0xsequence/c-sdk/blob/master/lib/wallet/sequence_connector.c`
-- current logic:
-  1. concatenate `challenge + code`
-  2. compute `sha256` over the UTF-8 bytes
-  3. URL-safe base64-encode the digest without padding
-  4. pass that value as `answer` into `CompleteAuth`
+1. Concatenate `challenge + code`.
+2. Compute `sha256` over the UTF-8 bytes.
+3. URL-safe base64-encode the digest without padding.
+4. Pass that value as `answer` into `CompleteAuth`.
 
 ## CompleteAuth Answer Hash Vector
 
@@ -99,4 +89,4 @@ scope: proj_1
 ```
 
 - expected digest / signature / wallet signature header:
-  derived by `WalletRequestSignerVectorTest.completeAuthVectorMatchesCSdk()`
+  derived by `WalletRequestSignerVectorTest.completeAuthVectorMatchesParityVector()`
