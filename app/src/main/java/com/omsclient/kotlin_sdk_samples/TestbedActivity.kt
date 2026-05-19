@@ -162,7 +162,7 @@ class TestbedActivity : AppCompatActivity() {
                         to = transactionToInput.text.toString().trim(),
                         value = parseUnits(transactionValueInput.text.toString(), 18),
                     )
-                appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txHash ?: "pending"}")
+                appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
             }
         }
     }
