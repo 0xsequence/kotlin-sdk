@@ -89,18 +89,27 @@ switch accounts:
 if (client.wallet.address == null) {
     client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    client.completeEmailAuth("123456")
+    when (val result = client.completeEmailAuth("123456")) {
+        is CompleteAuthResult.WalletSelected -> showWallet(result.wallet)
+        is CompleteAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
+    }
 }
 ```
 
 For OIDC ID-token flows such as Google Sign-In with Credential Manager:
 
 ```kotlin
-val wallet = client.signInWithOidcIdToken(
-    idToken = googleIdToken,
-    issuer = "https://accounts.google.com",
-    audience = "YOUR_WEB_CLIENT_ID",
-)
+when (
+    val result =
+        client.signInWithOidcIdToken(
+            idToken = googleIdToken,
+            issuer = "https://accounts.google.com",
+            audience = "YOUR_WEB_CLIENT_ID",
+        )
+) {
+    is CompleteAuthResult.WalletSelected -> showWallet(result.wallet)
+    is CompleteAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
+}
 ```
 
 For OIDC authorization-code PKCE redirect flows, start the redirect, open the
@@ -117,6 +126,7 @@ val started = client.startOidcRedirectAuth(
 
 when (val result = client.handleOidcRedirectCallback(intent.data?.toString())) {
     is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
+    is OidcRedirectAuthResult.WalletSelection -> showWalletSelection(result.pendingSelection)
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
     is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
@@ -307,23 +317,26 @@ credentials
     ?.let { client.wallet.revokeAccess(targetCredentialId = it.credentialId) }
 ```
 
-If your app may need to choose between multiple wallets, use the selector overload:
+To use your own wallet-selection UI:
 
 ```kotlin
-val wallet = client.completeEmailAuth("123456") { wallets ->
-    showWalletPickerAndWaitForChoice(wallets)
-}
-```
-
-To opt out of automatic activation and drive wallet selection yourself:
-
-```kotlin
-when (val result = client.completeEmailAuth("123456", autoActivate = false)) {
+when (
+    val result =
+        client.completeEmailAuth(
+            code = "123456",
+            walletSelection = WalletSelectionBehavior.Manual,
+        )
+) {
     is CompleteAuthResult.WalletSelection -> {
-        val picked = showWalletPickerAndWaitForChoice(result.wallets)
-        client.wallet.useWallet(picked.id)
+        val pendingSelection = result.pendingSelection
+        if (pendingSelection.wallets.isEmpty()) {
+            pendingSelection.createAndSelectWallet()
+        } else {
+            val picked = showWalletPickerAndWaitForChoice(pendingSelection.wallets)
+            pendingSelection.selectWallet(picked.id)
+        }
     }
-    is CompleteAuthResult.Activated -> Unit
+    is CompleteAuthResult.WalletSelected -> Unit
 }
 ```
 
