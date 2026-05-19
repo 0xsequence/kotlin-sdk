@@ -25,7 +25,7 @@ Until the package is published, use the source directly from this repository.
 - transaction status lookup
 - wallet access listing and revocation
 - signature verification through the generated WaaS public client
-- token balance lookups through the indexer service
+- native and token balance lookups through the indexer service
 - unit formatting and parsing helpers for raw token amounts
 
 ## Requirements
@@ -210,7 +210,7 @@ val txResult = client.wallet.sendTransaction(
 `sendTransaction` prepares and executes the transaction, then polls the WaaS
 status endpoint briefly for an executed status or transaction hash. If the
 transaction is still pending when polling times out, the response keeps the
-`txnId` with `status = TransactionStatus.Pending` and `txHash = null`.
+`txnId` with `status = TransactionStatus.Pending` and `txnHash = null`.
 Transaction values are raw base-unit integers. Use `parseUnits` to convert
 human-entered decimal values before sending. Import the helpers from
 `com.omsclient.kotlin_sdk.utils`.
@@ -220,6 +220,24 @@ For raw token amount formatting and parsing:
 ```kotlin
 val rawAmount = parseUnits("1.5", 18)
 val displayAmount = formatUnits(rawAmount, 18)
+```
+
+For indexer balance lookups:
+
+```kotlin
+val walletAddress = requireNotNull(client.wallet.address)
+
+val nativeBalance = client.indexer.getNativeTokenBalance(
+    network = network,
+    walletAddress = walletAddress,
+)
+
+val tokenBalances = client.indexer.getTokenBalances(
+    network = network,
+    contractAddress = "0xTokenContract",
+    walletAddress = walletAddress,
+    includeMetadata = true,
+)
 ```
 
 For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:

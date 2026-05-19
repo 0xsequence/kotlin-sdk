@@ -86,10 +86,23 @@ suspend fun client.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
+    autoActivate: Boolean,
+    walletType: WalletType = WalletType.Ethereum,
+): CompleteAuthResult
+```
+
+```kotlin
+suspend fun client.signInWithOidcIdToken(
+    idToken: String,
+    issuer: String,
+    audience: String,
     walletType: WalletType = WalletType.Ethereum,
     selectWallet: suspend (List<Wallet>) -> Wallet,
 ): Wallet
 ```
+
+Pass `autoActivate = false` for OIDC ID-token auth when the app needs to show
+its own wallet-selection UI before activating or creating a wallet.
 
 ```kotlin
 data class OidcProviderConfig(
@@ -164,16 +177,19 @@ false. Starting a new auth flow clears or replaces stale redirect state, and
 
 ```kotlin
 sealed interface CompleteAuthResult {
+    val wallets: List<Wallet>
+    val credential: CredentialInfo
+
     data class Activated(
         val walletAddress: String,
         val wallet: Wallet,
-        val wallets: List<Wallet>,
-        val credential: CredentialInfo,
+        override val wallets: List<Wallet>,
+        override val credential: CredentialInfo,
     ) : CompleteAuthResult
 
     data class WalletSelection(
-        val wallets: List<Wallet>,
-        val credential: CredentialInfo,
+        override val wallets: List<Wallet>,
+        override val credential: CredentialInfo,
     ) : CompleteAuthResult
 }
 ```
@@ -334,7 +350,7 @@ decimal values before sending.
 After execution, `sendTransaction` and `callContract` poll the WaaS status
 endpoint briefly for an executed status or transaction hash. If the transaction
 remains pending when polling times out, the response contains the `txnId`, `status =
-TransactionStatus.Pending`, and `txHash = null`.
+TransactionStatus.Pending`, and `txnHash = null`.
 Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
 WaaS cursors and returns all credentials, `listAccessPages` emits each page as a
 `Flow`, and `listAccessPage` exposes one page at a time for manual cursor
@@ -386,6 +402,17 @@ suspend fun indexer.getTokenBalances(
 ): TokenBalancesResult
 ```
 
+```kotlin
+suspend fun indexer.getNativeTokenBalance(
+    network: Network,
+    walletAddress: String,
+): TokenBalance?
+```
+
+`getNativeTokenBalance` returns null when the indexer response has no native
+balance object. The wallet client also uses it internally to enrich fee option
+balances.
+
 ## Environment
 
 ```kotlin
@@ -407,6 +434,7 @@ fun OMSClientEnvironment.Companion.demoDefaults(): OMSClientEnvironment
 ```kotlin
 typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
 typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
+typealias TransactionStatusResponse = com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
 typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
 typealias FeeOptionSelection = com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection
 typealias FeeOptionSelector = suspend (List<FeeOptionWithBalance>) -> FeeOptionSelection?
@@ -435,7 +463,14 @@ data class SendTransactionRequest(
 data class SendTransactionResponse(
     val txnId: String,
     val status: TransactionStatus,
-    val txHash: String?,
+    val txnHash: String?,
+)
+```
+
+```kotlin
+data class TransactionStatusResponse(
+    val status: TransactionStatus,
+    val txnHash: String? = null,
 )
 ```
 
@@ -468,7 +503,8 @@ data class TokenBalancesResult(
 )
 ```
 
-Wallet auth, wallet selection, and signing models now come from the generated waas package:
+Additional auth, wallet selection, signing, and access models come from the
+generated waas package:
 
 ```kotlin
 com.omsclient.kotlin_sdk.generated.waas
@@ -529,13 +565,6 @@ data class ListAccessResponse(
 data class Page(
     val limit: UInt? = null,
     val cursor: String? = null,
-)
-```
-
-```kotlin
-data class TransactionStatusResponse(
-    val status: TransactionStatus,
-    val txHash: String? = null,
 )
 ```
 
