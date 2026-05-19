@@ -18,8 +18,10 @@ data class WalletSelectionResult(
  */
 enum class WalletSelectionBehavior {
     /**
-     * Selects an existing wallet for the requested wallet type, or creates and
-     * selects one when none exists.
+     * Selects the only existing wallet for the requested wallet type, or
+     * creates and selects one when none exists. Auth completion fails when
+     * multiple matching wallets exist; use [Manual] when the app needs to
+     * present wallet choices.
      */
     Automatic,
 

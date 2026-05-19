@@ -181,10 +181,11 @@ class OMSClient internal constructor(
      *
      * This method is idempotent and safe to call for every incoming app link.
      * Unrelated links return [OidcRedirectAuthResult.NotOidcRedirectCallback],
-     * stale callbacks return [OidcRedirectAuthResult.NoPendingAuth], and a
-     * successful callback returns [OidcRedirectAuthResult.Completed] or
-     * [OidcRedirectAuthResult.WalletSelection] when [walletSelection] is
-     * [WalletSelectionBehavior.Manual].
+     * stale callbacks return [OidcRedirectAuthResult.NoPendingAuth], and
+     * provider or completion failures return [OidcRedirectAuthResult.Failed].
+     * With [WalletSelectionBehavior.Automatic], a successful callback returns
+     * [OidcRedirectAuthResult.Completed]. With [WalletSelectionBehavior.Manual],
+     * a successful callback returns [OidcRedirectAuthResult.WalletSelection].
      */
     suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
