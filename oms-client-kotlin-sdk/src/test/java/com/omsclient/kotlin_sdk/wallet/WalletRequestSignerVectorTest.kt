@@ -19,7 +19,7 @@ class WalletRequestSignerVectorTest {
     private val scope = "proj_1"
 
     @Test
-    fun signMessageVectorMatchesCSdk() {
+    fun signMessageVectorMatchesParityVector() {
         val endpoint = WaasWalletApi.SignMessage.path
         val nonce = "1710000000"
         val payload =
@@ -59,7 +59,7 @@ class WalletRequestSignerVectorTest {
     }
 
     @Test
-    fun prepareEthereumTransactionVectorMatchesCSdk() {
+    fun prepareEthereumTransactionVectorMatchesParityVector() {
         val endpoint = WaasWalletApi.PrepareEthereumTransaction.path
         val nonce = "1710000001"
         val payload =
@@ -88,7 +88,7 @@ class WalletRequestSignerVectorTest {
     }
 
     @Test
-    fun completeAuthVectorMatchesCSdk() {
+    fun completeAuthVectorMatchesParityVector() {
         val endpoint = WaasWalletApi.CompleteAuth.path
         val nonce = "1710000002"
         val payload =

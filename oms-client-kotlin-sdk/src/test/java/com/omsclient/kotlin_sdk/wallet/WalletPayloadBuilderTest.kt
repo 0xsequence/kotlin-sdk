@@ -46,7 +46,7 @@ class WalletPayloadBuilderTest {
     }
 
     @Test
-    fun commitVerifierPayloadMatchesCSdk() {
+    fun commitVerifierPayloadMatchesParityVector() {
         assertEquals(
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"metadata\":{},\"handle\":\"user@example.com\"}",
             WaasWalletApi.CommitVerifier.encodeRequest(
@@ -61,7 +61,7 @@ class WalletPayloadBuilderTest {
     }
 
     @Test
-    fun completeAuthPayloadMatchesCSdk() {
+    fun completeAuthPayloadMatchesParityVector() {
         assertEquals(
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"verifier\":\"verifier-123\",\"answer\":\"0xdeadbeef\"}",
             WaasWalletApi.CompleteAuth.encodeRequest(
@@ -101,7 +101,7 @@ class WalletPayloadBuilderTest {
     }
 
     @Test
-    fun useWalletPayloadMatchesCSdk() {
+    fun useWalletPayloadMatchesParityVector() {
         assertEquals(
             "{\"walletId\":\"wallet-0\"}",
             WaasWalletApi.UseWallet.encodeRequest(
@@ -113,7 +113,7 @@ class WalletPayloadBuilderTest {
     }
 
     @Test
-    fun createWalletPayloadMatchesCSdk() {
+    fun createWalletPayloadMatchesParityVector() {
         assertEquals(
             "{\"type\":\"ethereum\"}",
             WaasWalletApi.CreateWallet.encodeRequest(
@@ -158,7 +158,7 @@ class WalletPayloadBuilderTest {
     }
 
     @Test
-    fun walletApiEndpointsMatchCSdk() {
+    fun walletApiEndpointsMatchGeneratedSchema() {
         assertEquals("/rpc/Wallet", WaasWalletApi.basePath)
         assertEquals("/CommitVerifier", WaasWalletApi.CommitVerifier.path)
         assertEquals("/CompleteAuth", WaasWalletApi.CompleteAuth.path)
