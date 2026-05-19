@@ -536,7 +536,7 @@ class WalletEmailAuthTest {
                 )
             client.startEmailAuth("user@example.com")
 
-            val resolved = client.completeEmailAuth("123456")
+            val resolved = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
             val commitRequest = requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
@@ -618,7 +618,7 @@ class WalletEmailAuthTest {
                 )
             client.startEmailAuth("user@example.com")
 
-            val resolved = client.completeEmailAuth("123456")
+            val resolved = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
             val commitRequest = requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val listWalletsRequest = requireNotNull(server.takeRequest())
@@ -650,7 +650,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun completeEmailAuthSelectorReceivesMatchingWalletsFromAllPages() =
+    fun manualCompleteEmailAuthReceivesMatchingWalletsFromAllPages() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -702,11 +702,15 @@ class WalletEmailAuthTest {
                 )
             client.startEmailAuth("user@example.com")
 
-            val resolved =
-                client.completeEmailAuth("123456") { wallets ->
-                    assertEquals(listOf("wallet-aaa", "wallet-bbb"), wallets.map { it.id })
-                    wallets[1]
-                }
+            val result =
+                client.completeEmailAuth(
+                    code = "123456",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+            assertTrue(result is CompleteAuthResult.WalletSelection)
+            val selection = result as CompleteAuthResult.WalletSelection
+            assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
+            val resolved = selection.pendingSelection.selectWallet("wallet-bbb")
 
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
@@ -714,12 +718,12 @@ class WalletEmailAuthTest {
             val useWalletRequest = requireNotNull(server.takeRequest())
             assertEquals("/rpc/Wallet/ListWallets", listWalletsRequest.target)
             assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
-            assertEquals("wallet-bbb", resolved.id)
+            assertEquals("wallet-bbb", resolved.wallet.id)
             assertEquals("0xbbb", client.address)
         }
 
     @Test
-    fun completeEmailAuthCanReturnWalletSelectionWithoutActivatingWallet() =
+    fun completeEmailAuthCanReturnWalletSelectionWithoutSelectingWallet() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -765,15 +769,20 @@ class WalletEmailAuthTest {
                 )
             client.startEmailAuth("user@example.com")
 
-            val result = client.completeEmailAuth("123456", autoActivate = false)
+            val result =
+                client.completeEmailAuth(
+                    code = "123456",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
 
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
             val listWalletsRequest = requireNotNull(server.takeRequest())
             assertTrue(result is CompleteAuthResult.WalletSelection)
             val selection = result as CompleteAuthResult.WalletSelection
-            assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.wallets.map { it.id })
-            assertEquals("credential-123", selection.credential.credentialId)
+            assertEquals(WalletType.Ethereum, selection.pendingSelection.walletType)
+            assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
+            assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
             assertEquals("/rpc/Wallet/ListWallets", listWalletsRequest.target)
             assertNull(client.address)
             assertTrue(client.hasPendingSignIn)
@@ -788,12 +797,12 @@ class WalletEmailAuthTest {
                     .build(),
             )
 
-            val activated = client.useWallet("wallet-bbb")
+            val selected = selection.pendingSelection.selectWallet("wallet-bbb")
             val useWalletRequest = requireNotNull(server.takeRequest())
 
             assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
-            assertEquals("wallet-bbb", activated.wallet.id)
-            assertEquals("0xbbb", activated.walletAddress)
+            assertEquals("wallet-bbb", selected.wallet.id)
+            assertEquals("0xbbb", selected.walletAddress)
             assertEquals("wallet-bbb", store.snapshot?.walletId)
             assertEquals("0xbbb", store.snapshot?.walletAddress)
             assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
@@ -802,7 +811,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun createWalletActivatesWalletAfterManualAuthSelection() =
+    fun pendingWalletSelectionCreatesRequestedWalletTypeWhenNoMatchingWalletExists() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -817,7 +826,15 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = emptyList(),
+                            wallets =
+                                listOf(
+                                    walletFixture(
+                                        walletId = "wallet-other",
+                                        address = "0xother",
+                                        reference = "other",
+                                        type = WalletType.UNKNOWN_DEFAULT,
+                                    ),
+                                ),
                         ),
                     ).build(),
             )
@@ -837,8 +854,14 @@ class WalletEmailAuthTest {
                 )
             client.startEmailAuth("user@example.com")
 
-            val result = client.completeEmailAuth("123456", autoActivate = false)
+            val result =
+                client.completeEmailAuth(
+                    code = "123456",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
             assertTrue(result is CompleteAuthResult.WalletSelection)
+            val selection = result as CompleteAuthResult.WalletSelection
+            assertTrue(selection.pendingSelection.wallets.isEmpty())
 
             server.enqueue(
                 MockResponse
@@ -848,7 +871,7 @@ class WalletEmailAuthTest {
                     .build(),
             )
 
-            val activated = client.createWallet(reference = "fresh")
+            val selected = selection.pendingSelection.createAndSelectWallet(reference = "fresh")
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
             val createWalletRequest = requireNotNull(server.takeRequest())
@@ -863,8 +886,8 @@ class WalletEmailAuthTest {
                 ),
                 requireNotNull(createWalletRequest.body).utf8(),
             )
-            assertEquals("wallet-new", activated.wallet.id)
-            assertEquals("0xnew", activated.walletAddress)
+            assertEquals("wallet-new", selected.wallet.id)
+            assertEquals("0xnew", selected.walletAddress)
             assertEquals("wallet-new", store.snapshot?.walletId)
             assertEquals("0xnew", store.snapshot?.walletAddress)
         }
@@ -947,7 +970,7 @@ class WalletEmailAuthTest {
             assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
 
-            val wallet = client.completeEmailAuth("123456")
+            val wallet = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
 
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
@@ -1024,7 +1047,7 @@ class WalletEmailAuthTest {
 
             assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
             assertEquals(
-                "Multiple wallets are available. Call completeEmailAuth(code, selectWallet) to choose one.",
+                "Multiple wallets are available. Use WalletSelectionBehavior.Manual to choose one.",
                 failure?.message,
             )
             assertFalse(client.hasPendingSignIn)
@@ -1033,7 +1056,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun completeEmailAuthUsesSelectorWhenMultipleWalletsAreAvailable() =
+    fun pendingWalletSelectionUsesSelectedWallet() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -1085,10 +1108,13 @@ class WalletEmailAuthTest {
                 ),
             )
 
-            val selectedWallet =
-                client.completeEmailAuth("123456") { wallets ->
-                    wallets[1]
-                }
+            val result =
+                client.completeEmailAuth(
+                    code = "123456",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+            assertTrue(result is CompleteAuthResult.WalletSelection)
+            val selectedWallet = (result as CompleteAuthResult.WalletSelection).pendingSelection.selectWallet("wallet-bbb")
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
@@ -1102,71 +1128,8 @@ class WalletEmailAuthTest {
                 ),
                 requireNotNull(useWalletRequest.body).utf8(),
             )
-            assertEquals("0xbbb", selectedWallet.address)
+            assertEquals("0xbbb", selectedWallet.wallet.address)
             assertEquals("0xbbb", client.address)
-        }
-
-    @Test
-    fun completeEmailAuthClearsSessionWhenSelectorThrows() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            identity =
-                                identityFixture(
-                                    type = IdentityType.Email,
-                                    iss = "issuer-123",
-                                    sub = "sub-123",
-                                ),
-                            email = "user@example.com",
-                            wallets =
-                                listOf(
-                                    walletFixture("wallet-aaa", "0xaaa", "first"),
-                                    walletFixture("wallet-bbb", "0xbbb", "second"),
-                                ),
-                        ),
-                    ).build(),
-            )
-
-            val store = InMemorySessionStore()
-            val client =
-                WalletClient(
-                    projectAccessKey = "test-access-key",
-                    environment =
-                        OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
-                        ),
-                    transport = OMSClientHttpClient(),
-                    sessionStore = store,
-                    nonceGenerator = { 1710000113L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
-                )
-            client.startEmailAuth("user@example.com")
-
-            val failure =
-                runCatching {
-                    client.completeEmailAuth("123456") { error("selector failed") }
-                }.exceptionOrNull()
-
-            requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
-            assertEquals("selector failed", failure?.message)
-            assertNull(client.snapshotSession())
-            assertFalse(client.hasPendingSignIn)
-            assertNull(client.signerAddress)
-            assertNull(client.address)
-            assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
         }
 
     @Test

@@ -45,7 +45,7 @@ internal class OMSClientSession(
                 )
         }
 
-        data class AwaitingWalletResolution(
+        data class AwaitingWalletSelection(
             val signerAddress: String,
             val signerKeyType: SigningAlgorithm?,
             val expiresAt: String,
@@ -122,7 +122,7 @@ internal class OMSClientSession(
                 else -> error("No active pending auth challenge")
             }
         state =
-            SessionState.AwaitingWalletResolution(
+            SessionState.AwaitingWalletSelection(
                 signerAddress = current.signerAddress,
                 signerKeyType = current.signerKeyType,
                 expiresAt = expiresAt,
@@ -131,13 +131,13 @@ internal class OMSClientSession(
             )
     }
 
-    fun activateWallet(
+    fun selectWallet(
         walletId: String,
         walletAddress: String,
     ) {
-        val activated =
+        val selected =
             when (val current = state) {
-                is SessionState.AwaitingWalletResolution -> {
+                is SessionState.AwaitingWalletSelection -> {
                     SessionState.ActiveSession(
                         walletId = walletId,
                         walletAddress = walletAddress,
@@ -157,10 +157,10 @@ internal class OMSClientSession(
                 }
 
                 else -> {
-                    error("No authenticated wallet resolution in progress")
+                    error("No authenticated wallet selection in progress")
                 }
             }
-        state = activated
+        state = selected
     }
 
     fun requireSnapshot(): OMSClientSessionSnapshot =
@@ -207,7 +207,7 @@ internal class OMSClientSession(
             }
 
             !snapshot.signerAddress.isNullOrBlank() -> {
-                SessionState.AwaitingWalletResolution(
+                SessionState.AwaitingWalletSelection(
                     signerAddress = snapshot.signerAddress,
                     signerKeyType = snapshot.signerKeyType,
                     expiresAt = snapshot.expiresAt.orEmpty(),

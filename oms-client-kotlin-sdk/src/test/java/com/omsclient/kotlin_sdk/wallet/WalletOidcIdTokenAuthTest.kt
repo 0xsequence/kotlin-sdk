@@ -87,12 +87,13 @@ class WalletOidcIdTokenAuthTest {
                     privateKeyFactory = ::fixedPrivateKeyBytes,
                 )
 
-            val wallet =
+            val result =
                 client.signInWithOidcIdToken(
                     idToken = idToken,
                     issuer = "https://accounts.google.com",
                     audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
                 )
+            val wallet = (result as CompleteAuthResult.WalletSelected).wallet
             val commitRequest = requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
@@ -152,6 +153,73 @@ class WalletOidcIdTokenAuthTest {
         }
 
     @Test
+    fun signInWithOidcIdTokenCanReturnWalletSelectionWithoutSelectingWallet() =
+        runBlocking {
+            val idToken = fakeJwt(exp = 1910000100L)
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":""}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://accounts.google.com",
+                                    sub = "google-sub-123",
+                                ),
+                            email = "user@example.com",
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+
+            val environment =
+                OMSClientEnvironment(
+                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                )
+            val store = InMemorySessionStore()
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment = environment,
+                    transport = OMSClientHttpClient(),
+                    sessionStore = store,
+                    nonceGenerator = { 1710000112L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+
+            val result =
+                client.signInWithOidcIdToken(
+                    idToken = idToken,
+                    issuer = "https://accounts.google.com",
+                    audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+
+            requireNotNull(server.takeRequest())
+            requireNotNull(server.takeRequest())
+            assertTrue(result is CompleteAuthResult.WalletSelection)
+            val selection = result as CompleteAuthResult.WalletSelection
+            assertEquals(environment.defaultWalletType, selection.pendingSelection.walletType)
+            assertEquals(listOf("wallet-def"), selection.pendingSelection.wallets.map { it.id })
+            assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
+            assertNull(client.address)
+            assertTrue(client.hasPendingSignIn)
+            assertEquals("user@example.com", client.snapshotSession()?.sessionEmail)
+            assertNull(client.snapshotSession()?.walletId)
+            assertNull(store.snapshot)
+            assertEquals(2, server.requestCount)
+        }
+
+    @Test
     fun signInWithOidcIdTokenClearsPendingOidcRedirectAuth() =
         runBlocking {
             val idToken = fakeJwt(exp = 1910000100L)
@@ -202,12 +270,13 @@ class WalletOidcIdTokenAuthTest {
                     privateKeyFactory = ::fixedPrivateKeyBytes,
                 )
 
-            val wallet =
+            val result =
                 client.signInWithOidcIdToken(
                     idToken = idToken,
                     issuer = "https://accounts.google.com",
                     audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
                 )
+            val wallet = (result as CompleteAuthResult.WalletSelected).wallet
 
             assertEquals("0xdef", wallet.address)
             assertNull(redirectStore.pending)
@@ -266,12 +335,13 @@ class WalletOidcIdTokenAuthTest {
                 )
             client.restoreSession(activeSession)
 
-            val wallet =
+            val result =
                 client.signInWithOidcIdToken(
                     idToken = idToken,
                     issuer = "https://accounts.google.com",
                     audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
                 )
+            val wallet = (result as CompleteAuthResult.WalletSelected).wallet
             val commitRequest = requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
