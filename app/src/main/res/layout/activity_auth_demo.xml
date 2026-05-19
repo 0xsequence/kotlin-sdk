@@ -108,6 +108,15 @@
                     android:textColor="@color/slate_700"
                     android:textSize="13sp" />
 
+                <com.google.android.material.checkbox.MaterialCheckBox
+                    android:id="@+id/manualWalletSelectionCheckbox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="Use manual wallet selection"
+                    android:textColor="@color/slate_900"
+                    android:textSize="14sp" />
+
                 <LinearLayout
                     android:id="@+id/emailStepContainer"
                     android:layout_width="match_parent"
