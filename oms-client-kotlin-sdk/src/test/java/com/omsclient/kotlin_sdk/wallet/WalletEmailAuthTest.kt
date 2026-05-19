@@ -987,7 +987,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun completeEmailAuthReturnsWalletSelectionRequiredForMultipleWallets() =
+    fun completeEmailAuthSelectsFirstMatchingWalletWhenMultipleWalletsExist() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -1014,7 +1014,7 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
+                    .body(walletResponseBody(walletId = "wallet-aaa", address = "0xaaa", reference = "first"))
                     .build(),
             )
 
@@ -1039,20 +1039,30 @@ class WalletEmailAuthTest {
                 ),
             )
 
-            val failure =
-                runCatching {
-                    client.completeEmailAuth("123456")
-                }.exceptionOrNull()
+            val result = client.completeEmailAuth("123456")
             val completeAuthRequest = requireNotNull(server.takeRequest())
+            val useWalletRequest = requireNotNull(server.takeRequest())
 
             assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
             assertEquals(
-                "Multiple wallets are available. Use WalletSelectionBehavior.Manual to choose one.",
-                failure?.message,
+                WaasWalletApi.UseWallet.encodeRequest(
+                    UseWalletRequest(
+                        walletId = "wallet-aaa",
+                    ),
+                ),
+                requireNotNull(useWalletRequest.body).utf8(),
             )
+            assertTrue(result is CompleteAuthResult.WalletSelected)
+            val selected = result as CompleteAuthResult.WalletSelected
+            assertEquals("wallet-aaa", selected.wallet.id)
+            assertEquals("0xaaa", selected.walletAddress)
             assertFalse(client.hasPendingSignIn)
-            assertNull(client.signerAddress)
-            assertNull(client.address)
+            assertEquals(
+                WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                client.signerAddress,
+            )
+            assertEquals("0xaaa", client.address)
         }
 
     @Test

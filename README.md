@@ -86,11 +86,11 @@ flow intentionally replaces any existing wallet session so users can re-auth or
 switch accounts:
 
 By default email OTP and OIDC ID-token auth completion use
-`WalletSelectionBehavior.Automatic`. They select the only wallet for the
-requested wallet type, create one when none exists, and return
+`WalletSelectionBehavior.Automatic`. They select a wallet for the requested
+wallet type, create one when none exists, and return
 `CompleteAuthResult.WalletSelected`. If more than one matching wallet exists,
-automatic mode fails instead of returning a manual-selection result; use manual
-mode for apps that need to support choosing between multiple wallets.
+automatic mode selects the first matching wallet returned by WaaS. Use manual
+mode for apps that need to let users choose between multiple wallets.
 
 ```kotlin
 if (client.wallet.address == null) {

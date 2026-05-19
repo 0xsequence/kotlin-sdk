@@ -579,12 +579,8 @@ class WalletClient internal constructor(
                             createWallet(walletType)
                         }
 
-                        candidateWallets.size == 1 -> {
-                            useWallet(candidateWallets.single().id)
-                        }
-
                         else -> {
-                            error("Multiple wallets are available. Use WalletSelectionBehavior.Manual to choose one.")
+                            useWallet(candidateWallets.first().id)
                         }
                     }
                 CompleteAuthResult.WalletSelected(

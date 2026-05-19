@@ -204,13 +204,14 @@ Auth completion loads all wallet pages before selecting or creating a wallet.
 In `WalletSelectionBehavior.Automatic`, auth completion:
 
 - creates and selects a wallet when no wallet matches `walletType`
-- selects the only matching wallet when exactly one exists
-- fails when multiple wallets match, because the app must choose with manual mode
+- selects the first matching wallet returned by WaaS when one or more wallets
+  match `walletType`
 
 Automatic email and OIDC ID-token auth return
 `CompleteAuthResult.WalletSelected` on success. Automatic OIDC redirect auth
 returns `OidcRedirectAuthResult.Completed` on success. Automatic mode does not
-fall back to `WalletSelection`; use manual mode if the user may need to choose.
+fall back to `WalletSelection`; use manual mode when the user should choose
+between wallets.
 
 In `WalletSelectionBehavior.Manual`, auth completion returns
 `CompleteAuthResult.WalletSelection` or `OidcRedirectAuthResult.WalletSelection`
