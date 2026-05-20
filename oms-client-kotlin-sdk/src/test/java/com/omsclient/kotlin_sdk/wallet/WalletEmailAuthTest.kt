@@ -22,7 +22,9 @@ import com.omsclient.kotlin_sdk.models.TransactionMode
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
@@ -35,6 +37,7 @@ import org.junit.Before
 import org.junit.Test
 import org.web3j.utils.Numeric
 import java.math.BigInteger
+import java.util.concurrent.TimeUnit
 
 class WalletEmailAuthTest {
     private lateinit var server: MockWebServer
@@ -890,6 +893,341 @@ class WalletEmailAuthTest {
             assertEquals("0xnew", selected.walletAddress)
             assertEquals("wallet-new", store.snapshot?.walletId)
             assertEquals("0xnew", store.snapshot?.walletAddress)
+        }
+
+    @Test
+    fun concurrentPendingWalletSelectionCreateCallsSendOnlyOneWalletRequest() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            wallets = emptyList(),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-new", address = "0xnew", reference = "fresh"))
+                    .bodyDelay(500, TimeUnit.MILLISECONDS)
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-duplicate", address = "0xduplicate", reference = "fresh"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    nonceGenerator = { 1710000110L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            client.startEmailAuth("user@example.com")
+            val result =
+                client.completeEmailAuth(
+                    code = "123456",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+            val pendingSelection = (result as CompleteAuthResult.WalletSelection).pendingSelection
+            requireNotNull(server.takeRequest())
+            requireNotNull(server.takeRequest())
+
+            val firstCreate =
+                async {
+                    pendingSelection.createAndSelectWallet(reference = "fresh")
+                }
+            yield()
+            val createWalletRequest = requireNotNull(server.takeRequest(1, TimeUnit.SECONDS))
+            val secondCreate =
+                async {
+                    runCatching {
+                        pendingSelection.createAndSelectWallet(reference = "fresh")
+                    }
+                }
+            yield()
+            val duplicateCreateWalletRequest = server.takeRequest(100, TimeUnit.MILLISECONDS)
+            val selected = firstCreate.await()
+            val secondFailure = secondCreate.await().exceptionOrNull()
+
+            assertEquals("/rpc/Wallet/CreateWallet", createWalletRequest.target)
+            assertNull(duplicateCreateWalletRequest)
+            assertEquals("wallet-new", selected.wallet.id)
+            assertEquals("Pending wallet selection is no longer active", secondFailure?.message)
+            assertEquals(3, server.requestCount)
+        }
+
+    @Test
+    fun stalePendingWalletSelectionFromEarlierManualAuthCannotSelectOrCreateForNewManualAuth() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"old-verifier","loginHint":"old@example.com","challenge":"old-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            email = "old@example.com",
+                            wallets = listOf(walletFixture("wallet-old", "0xold", "old")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"new-verifier","loginHint":"new@example.com","challenge":"new-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            email = "new@example.com",
+                            wallets = listOf(walletFixture("wallet-new", "0xnew", "new")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-old", address = "0xold", reference = "old"))
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-stale", address = "0xstale", reference = "stale"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    nonceGenerator = { 1710000110L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            client.startEmailAuth("old@example.com")
+            val oldResult =
+                client.completeEmailAuth(
+                    code = "111111",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+            val oldPendingSelection = (oldResult as CompleteAuthResult.WalletSelection).pendingSelection
+            client.startEmailAuth("new@example.com")
+            val newResult =
+                client.completeEmailAuth(
+                    code = "222222",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+            assertTrue(newResult is CompleteAuthResult.WalletSelection)
+            val requestCountBeforeStaleSelection = server.requestCount
+
+            val selectFailure =
+                runCatching {
+                    oldPendingSelection.selectWallet("wallet-old")
+                }.exceptionOrNull()
+            val createFailure =
+                runCatching {
+                    oldPendingSelection.createAndSelectWallet(reference = "stale")
+                }.exceptionOrNull()
+
+            assertEquals("Pending wallet selection is no longer active", selectFailure?.message)
+            assertEquals("Pending wallet selection is no longer active", createFailure?.message)
+            assertEquals(requestCountBeforeStaleSelection, server.requestCount)
+            assertNull(client.address)
+            assertTrue(client.hasPendingSignIn)
+        }
+
+    @Test
+    fun pendingWalletSelectionCannotBeReusedAfterSuccessfulSelection() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb", "second")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    nonceGenerator = { 1710000110L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            client.startEmailAuth("user@example.com")
+            val result =
+                client.completeEmailAuth(
+                    code = "123456",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+            val pendingSelection = (result as CompleteAuthResult.WalletSelection).pendingSelection
+
+            val selected = pendingSelection.selectWallet("wallet-bbb")
+            val requestCountAfterSelection = server.requestCount
+            val reuseFailure =
+                runCatching {
+                    pendingSelection.selectWallet("wallet-bbb")
+                }.exceptionOrNull()
+
+            assertEquals("wallet-bbb", selected.wallet.id)
+            assertEquals("0xbbb", client.address)
+            assertEquals("Pending wallet selection is no longer active", reuseFailure?.message)
+            assertEquals(requestCountAfterSelection, server.requestCount)
+        }
+
+    @Test
+    fun stalePendingWalletSelectionCannotCreateAfterNewAutomaticAuthSelectsWallet() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"old-verifier","loginHint":"old@example.com","challenge":"old-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            email = "old@example.com",
+                            wallets = listOf(walletFixture("wallet-old", "0xold", "old")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"new-verifier","loginHint":"new@example.com","challenge":"new-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            email = "new@example.com",
+                            wallets = listOf(walletFixture("wallet-new", "0xnew", "new")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-new", address = "0xnew", reference = "new"))
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-stale", address = "0xstale", reference = "stale"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    projectAccessKey = "test-access-key",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    nonceGenerator = { 1710000110L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            client.startEmailAuth("old@example.com")
+            val oldResult =
+                client.completeEmailAuth(
+                    code = "111111",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                )
+            val oldPendingSelection = (oldResult as CompleteAuthResult.WalletSelection).pendingSelection
+            client.startEmailAuth("new@example.com")
+            client.completeEmailAuth(code = "222222")
+            val requestCountBeforeStaleSelection = server.requestCount
+
+            val createFailure =
+                runCatching {
+                    oldPendingSelection.createAndSelectWallet(reference = "stale")
+                }.exceptionOrNull()
+
+            assertEquals("0xnew", client.address)
+            assertEquals("Pending wallet selection is no longer active", createFailure?.message)
+            assertEquals(requestCountBeforeStaleSelection, server.requestCount)
         }
 
     @Test

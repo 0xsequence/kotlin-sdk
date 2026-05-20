@@ -3,6 +3,8 @@ package com.omsclient.kotlin_sdk.wallet
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.models.CredentialInfo
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Result returned after selecting or creating a wallet.
@@ -41,21 +43,27 @@ class PendingWalletSelection internal constructor(
     private val selectWalletAction: suspend (String) -> WalletSelectionResult,
     private val createAndSelectWalletAction: suspend (String?) -> WalletSelectionResult,
 ) {
+    private val selectionMutex = Mutex()
+
     /**
      * Selects one of [wallets] and persists it as the active wallet session.
      */
-    suspend fun selectWallet(walletId: String): WalletSelectionResult {
-        require(wallets.any { it.id == walletId }) {
-            "Selected wallet is not one of the available options"
+    suspend fun selectWallet(walletId: String): WalletSelectionResult =
+        selectionMutex.withLock {
+            require(wallets.any { it.id == walletId }) {
+                "Selected wallet is not one of the available options"
+            }
+            selectWalletAction(walletId)
         }
-        return selectWalletAction(walletId)
-    }
 
     /**
      * Creates a new wallet for [walletType], selects it, and persists it as the
      * active wallet session.
      */
-    suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult = createAndSelectWalletAction(reference)
+    suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult =
+        selectionMutex.withLock {
+            createAndSelectWalletAction(reference)
+        }
 }
 
 /**

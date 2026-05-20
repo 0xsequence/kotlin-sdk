@@ -22,6 +22,7 @@ import com.omsclient.kotlin_sdk.generated.waas.RevokeAccessRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageResponse
 import com.omsclient.kotlin_sdk.generated.waas.SignTypedDataRequest
+import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
@@ -451,23 +452,12 @@ class WalletClient internal constructor(
     suspend fun useWallet(walletId: String): WalletSelectionResult {
         requireWalletSelectionOrActiveSession()
         requireActiveCredential()
-        val wallet =
-            waasClient()
-                .useWallet(
-                    UseWalletRequest(
-                        walletId = walletId,
-                    ),
-                ).wallet
-
+        val wallet = requestUseWallet(walletId)
         session.selectWallet(
             walletId = wallet.id,
             walletAddress = wallet.address,
         )
-        persistCurrentSession()
-        return WalletSelectionResult(
-            walletAddress = wallet.address,
-            wallet = wallet,
-        )
+        return persistSelectedWallet(wallet)
     }
 
     /**
@@ -479,19 +469,82 @@ class WalletClient internal constructor(
     ): WalletSelectionResult {
         requireWalletSelectionOrActiveSession()
         requireActiveCredential()
-        val wallet =
-            waasClient()
-                .createWallet(
-                    CreateWalletRequest(
-                        type = walletType,
-                        reference = reference,
-                    ),
-                ).wallet
-
+        val wallet = requestCreateWallet(walletType, reference)
         session.selectWallet(
             walletId = wallet.id,
             walletAddress = wallet.address,
         )
+        return persistSelectedWallet(wallet)
+    }
+
+    private suspend fun useWalletForPendingSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: SigningAlgorithm?,
+        walletId: String,
+    ): WalletSelectionResult {
+        session.requirePendingWalletSelection(
+            pendingWalletSelectionId = pendingWalletSelectionId,
+            signerAddress = signerAddress,
+            signerKeyType = signerKeyType,
+        )
+        requireActiveCredential()
+        val wallet = requestUseWallet(walletId)
+        session.selectWalletForPendingSelection(
+            pendingWalletSelectionId = pendingWalletSelectionId,
+            signerAddress = signerAddress,
+            signerKeyType = signerKeyType,
+            walletId = wallet.id,
+            walletAddress = wallet.address,
+        )
+        return persistSelectedWallet(wallet)
+    }
+
+    private suspend fun createWalletForPendingSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: SigningAlgorithm?,
+        walletType: WalletType,
+        reference: String?,
+    ): WalletSelectionResult {
+        session.requirePendingWalletSelection(
+            pendingWalletSelectionId = pendingWalletSelectionId,
+            signerAddress = signerAddress,
+            signerKeyType = signerKeyType,
+        )
+        requireActiveCredential()
+        val wallet = requestCreateWallet(walletType, reference)
+        session.selectWalletForPendingSelection(
+            pendingWalletSelectionId = pendingWalletSelectionId,
+            signerAddress = signerAddress,
+            signerKeyType = signerKeyType,
+            walletId = wallet.id,
+            walletAddress = wallet.address,
+        )
+        return persistSelectedWallet(wallet)
+    }
+
+    private suspend fun requestUseWallet(walletId: String): Wallet =
+        waasClient()
+            .useWallet(
+                UseWalletRequest(
+                    walletId = walletId,
+                ),
+            ).wallet
+
+    private suspend fun requestCreateWallet(
+        walletType: WalletType,
+        reference: String?,
+    ): Wallet =
+        waasClient()
+            .createWallet(
+                CreateWalletRequest(
+                    type = walletType,
+                    reference = reference,
+                ),
+            ).wallet
+
+    private fun persistSelectedWallet(wallet: Wallet): WalletSelectionResult {
         persistCurrentSession()
         return WalletSelectionResult(
             walletAddress = wallet.address,
@@ -548,11 +601,15 @@ class WalletClient internal constructor(
         walletType: WalletType,
         walletSelection: WalletSelectionBehavior,
     ): CompleteAuthResult {
-        session.markAuthVerified(
-            expiresAt = completeAuth.credential.expiresAt,
-            loginType = completeAuth.identity.toSessionLoginType(),
-            sessionEmail = completeAuth.email,
-        )
+        val pendingWalletSelectionId =
+            session.markAuthVerified(
+                expiresAt = completeAuth.credential.expiresAt,
+                loginType = completeAuth.identity.toSessionLoginType(),
+                sessionEmail = completeAuth.email,
+            )
+        val pendingSnapshot = session.requireSnapshot()
+        val pendingSignerAddress = requireNotNull(pendingSnapshot.signerAddress) { "No active signer" }
+        val pendingSignerKeyType = pendingSnapshot.signerKeyType
         return try {
             val wallets = walletsFromAuthResponse(completeAuth)
             if (walletSelection == WalletSelectionBehavior.Manual) {
@@ -562,9 +619,19 @@ class WalletClient internal constructor(
                             walletType = walletType,
                             wallets = wallets.filter { it.type == walletType },
                             credential = completeAuth.credential,
-                            selectWalletAction = { walletId -> useWallet(walletId) },
+                            selectWalletAction = { walletId ->
+                                useWalletForPendingSelection(
+                                    pendingWalletSelectionId = pendingWalletSelectionId,
+                                    signerAddress = pendingSignerAddress,
+                                    signerKeyType = pendingSignerKeyType,
+                                    walletId = walletId,
+                                )
+                            },
                             createAndSelectWalletAction = { reference ->
-                                createWallet(
+                                createWalletForPendingSelection(
+                                    pendingWalletSelectionId = pendingWalletSelectionId,
+                                    signerAddress = pendingSignerAddress,
+                                    signerKeyType = pendingSignerKeyType,
                                     walletType = walletType,
                                     reference = reference,
                                 )
