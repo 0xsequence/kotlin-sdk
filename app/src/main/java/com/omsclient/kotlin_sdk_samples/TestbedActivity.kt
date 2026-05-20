@@ -9,6 +9,7 @@ import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.parseUnits
+import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -117,11 +118,12 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.confirmCodeButton).setOnClickListener {
             launchAction("Confirm email code and resolve wallet") { sdk ->
+                val result = sdk.completeEmailAuth(code = requireText(codeInput, "Verification code"))
                 val wallet =
-                    sdk.completeEmailAuth(
-                        code = requireText(codeInput, "Verification code"),
-                        selectWallet = { wallets -> wallets.first() },
-                    )
+                    when (result) {
+                        is CompleteAuthResult.WalletSelected -> result.wallet
+                        is CompleteAuthResult.WalletSelection -> error("Manual wallet selection is not available in testbed")
+                    }
                 balancesWalletAddressInput.setText(wallet.address)
                 appendLog(buildAuthSummary(wallet.address))
                 renderSession()

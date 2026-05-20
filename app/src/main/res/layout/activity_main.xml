@@ -24,7 +24,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="End-to-end sample mirroring the C demo flow: balances, email auth, wallet resolution, sign, verify, and send."
+            android:text="End-to-end sample mirroring the C demo flow: balances, email auth, wallet selection, sign, verify, and send."
             android:textColor="@color/slate_700"
             android:textSize="14sp" />
 

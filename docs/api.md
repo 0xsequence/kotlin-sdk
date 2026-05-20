@@ -51,7 +51,7 @@ revives completed wallet sessions, including the session expiry, login type, and
 email returned by the wallet API, but not pending email OTP state. Completed auth
 requests use a one-week wallet API session lifetime. Auth completion loads all
 wallet pages before selecting or creating a wallet. If auth completes but wallet
-resolution or session persistence fails, the SDK clears the in-memory auth
+selection or session persistence fails, the SDK clears the in-memory auth
 session instead of leaving transient state active. Starting a new email, OIDC
 ID-token, or OIDC redirect auth flow replaces any existing wallet session so
 expired or stale sessions do not block re-authentication.
@@ -77,32 +77,14 @@ suspend fun client.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
-    walletType: WalletType = WalletType.Ethereum,
-): Wallet
-```
-
-```kotlin
-suspend fun client.signInWithOidcIdToken(
-    idToken: String,
-    issuer: String,
-    audience: String,
-    autoActivate: Boolean,
+    walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
 ): CompleteAuthResult
 ```
 
-```kotlin
-suspend fun client.signInWithOidcIdToken(
-    idToken: String,
-    issuer: String,
-    audience: String,
-    walletType: WalletType = WalletType.Ethereum,
-    selectWallet: suspend (List<Wallet>) -> Wallet,
-): Wallet
-```
-
-Pass `autoActivate = false` for OIDC ID-token auth when the app needs to show
-its own wallet-selection UI before activating or creating a wallet.
+Pass `walletSelection = WalletSelectionBehavior.Manual` for OIDC ID-token auth
+when the app needs to show its own wallet-selection UI before selecting or
+creating a wallet.
 
 ```kotlin
 data class OidcProviderConfig(
@@ -148,8 +130,7 @@ suspend fun client.startOidcRedirectAuth(
 sealed interface OidcRedirectAuthResult {
     data class Completed(val wallet: Wallet) : OidcRedirectAuthResult
     data class WalletSelection(
-        val wallets: List<Wallet>,
-        val credential: CredentialInfo,
+        val pendingSelection: PendingWalletSelection,
     ) : OidcRedirectAuthResult
     data object NotOidcRedirectCallback : OidcRedirectAuthResult
     data object NoPendingAuth : OidcRedirectAuthResult
@@ -160,8 +141,7 @@ sealed interface OidcRedirectAuthResult {
 ```kotlin
 suspend fun client.handleOidcRedirectCallback(
     callbackUrl: String?,
-    autoActivate: Boolean = true,
-    selectWallet: suspend (List<Wallet>) -> Wallet = { wallets -> wallets.single() },
+    walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
 ): OidcRedirectAuthResult
 ```
 
@@ -171,25 +151,41 @@ completed wallet session so Android can resume after the browser redirect. Open
 Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
 handler is idempotent and safe to call from `onCreate` / `onNewIntent`: unrelated
 links return `NotOidcRedirectCallback`, stale links return `NoPendingAuth`, and
-successful auth returns `Completed` or `WalletSelection` when `autoActivate` is
-false. Starting a new auth flow clears or replaces stale redirect state, and
-`signOut()` clears it.
+provider or completion failures return `Failed`. With
+`WalletSelectionBehavior.Automatic`, successful callbacks return `Completed`.
+With `WalletSelectionBehavior.Manual`, successful callbacks return
+`WalletSelection`. Starting a new auth flow clears or replaces stale redirect
+state, and `signOut()` clears it.
 
 ```kotlin
-sealed interface CompleteAuthResult {
+enum class WalletSelectionBehavior {
+    Automatic,
+    Manual,
+}
+```
+
+```kotlin
+class PendingWalletSelection {
+    val walletType: WalletType
     val wallets: List<Wallet>
     val credential: CredentialInfo
 
-    data class Activated(
+    suspend fun selectWallet(walletId: String): WalletSelectionResult
+    suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult
+}
+```
+
+```kotlin
+sealed interface CompleteAuthResult {
+    data class WalletSelected(
         val walletAddress: String,
         val wallet: Wallet,
-        override val wallets: List<Wallet>,
-        override val credential: CredentialInfo,
+        val wallets: List<Wallet>,
+        val credential: CredentialInfo,
     ) : CompleteAuthResult
 
     data class WalletSelection(
-        override val wallets: List<Wallet>,
-        override val credential: CredentialInfo,
+        val pendingSelection: PendingWalletSelection,
     ) : CompleteAuthResult
 }
 ```
@@ -197,30 +193,35 @@ sealed interface CompleteAuthResult {
 ```kotlin
 suspend fun client.completeEmailAuth(
     code: String,
-    walletType: WalletType = WalletType.Ethereum,
-): Wallet
-```
-
-```kotlin
-suspend fun client.completeEmailAuth(
-    code: String,
-    autoActivate: Boolean,
+    walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
 ): CompleteAuthResult
 ```
 
-```kotlin
-suspend fun client.completeEmailAuth(
-    code: String,
-    walletType: WalletType = WalletType.Ethereum,
-    selectWallet: suspend (List<Wallet>) -> Wallet,
-): Wallet
-```
-
 Auth completion loads all wallet pages before selecting or creating a wallet.
-Pass `autoActivate = false` to return `CompleteAuthResult.WalletSelection`
-without selecting or creating a wallet; then call `client.wallet.useWallet(...)`
-or `client.wallet.createWallet(...)`.
+`walletType` defines which wallet type is eligible.
+
+In `WalletSelectionBehavior.Automatic`, auth completion:
+
+- creates and selects a wallet when no wallet matches `walletType`
+- selects the first matching wallet returned by WaaS when one or more wallets
+  match `walletType`
+
+Automatic email and OIDC ID-token auth return
+`CompleteAuthResult.WalletSelected` on success. Automatic OIDC redirect auth
+returns `OidcRedirectAuthResult.Completed` on success. Automatic mode does not
+fall back to `WalletSelection`; use manual mode when the user should choose
+between wallets.
+
+In `WalletSelectionBehavior.Manual`, auth completion returns
+`CompleteAuthResult.WalletSelection` or `OidcRedirectAuthResult.WalletSelection`
+with a `PendingWalletSelection`. No wallet is selected or created until the app
+calls `pendingSelection.selectWallet(...)` or
+`pendingSelection.createAndSelectWallet(...)`. `pendingSelection.wallets`
+contains existing wallets filtered to `walletType`.
+
+Use manual mode up front for apps that need to support choosing between multiple
+wallets for the same wallet type.
 
 ## Wallet
 
@@ -229,7 +230,7 @@ val client.wallet.address: String?
 ```
 
 ```kotlin
-data class WalletActivationResult(
+data class WalletSelectionResult(
     val walletAddress: String,
     val wallet: Wallet,
 )
@@ -242,14 +243,14 @@ suspend fun client.wallet.listWallets(): List<Wallet>
 ```kotlin
 suspend fun client.wallet.useWallet(
     walletId: String,
-): WalletActivationResult
+): WalletSelectionResult
 ```
 
 ```kotlin
 suspend fun client.wallet.createWallet(
     walletType: WalletType = WalletType.Ethereum,
     reference: String? = null,
-): WalletActivationResult
+): WalletSelectionResult
 ```
 
 ```kotlin
@@ -570,46 +571,104 @@ data class Page(
 
 ## Recommended Usage
 
-```kotlin
-val client = OMSClient(
-    context = context,
-    projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
-)
+### Automatic Wallet Selection
 
+```kotlin
 if (client.wallet.address == null) {
     client.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    val wallet = client.completeEmailAuth("123456")
+    val result = client.completeEmailAuth("123456")
+    check(result is CompleteAuthResult.WalletSelected)
+    showWallet(result.wallet)
 }
 ```
 
 For OIDC ID-token flows:
 
 ```kotlin
-val wallet = client.signInWithOidcIdToken(
-    idToken = googleIdToken,
-    issuer = "https://accounts.google.com",
-    audience = "YOUR_WEB_CLIENT_ID",
-)
+val result =
+    client.signInWithOidcIdToken(
+        idToken = googleIdToken,
+        issuer = "https://accounts.google.com",
+        audience = "YOUR_WEB_CLIENT_ID",
+    )
+check(result is CompleteAuthResult.WalletSelected)
+showWallet(result.wallet)
 ```
 
-If your app needs to choose between multiple wallets:
+For OIDC redirect flows:
 
 ```kotlin
-val wallet = client.completeEmailAuth("123456") { wallets ->
-    showWalletPickerAndWaitForChoice(wallets) // wallets: List<Wallet>
+when (val result = client.handleOidcRedirectCallback(intent.data?.toString())) {
+    is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
+    OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
+    OidcRedirectAuthResult.NoPendingAuth -> Unit
+    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
 }
 ```
 
-To opt out of automatic wallet activation and drive selection in your own UI:
+### Manual Wallet Selection
+
+Use manual mode when the app needs to present wallet choices:
 
 ```kotlin
-when (val result = client.completeEmailAuth("123456", autoActivate = false)) {
-    is CompleteAuthResult.WalletSelection -> {
-        val picked = showWalletPickerAndWaitForChoice(result.wallets)
-        client.wallet.useWallet(picked.id)
+val result =
+    client.completeEmailAuth(
+        code = "123456",
+        walletSelection = WalletSelectionBehavior.Manual,
+    )
+check(result is CompleteAuthResult.WalletSelection)
+
+val selected = selectOrCreateWallet(result.pendingSelection)
+showWallet(selected.wallet)
+```
+
+OIDC ID-token auth uses the same `walletSelection` argument on
+`signInWithOidcIdToken(...)`.
+
+The picker can always offer "Create New Wallet" as a separate option from the
+existing wallet list:
+
+```kotlin
+private suspend fun selectOrCreateWallet(
+    pendingSelection: PendingWalletSelection,
+): WalletSelectionResult {
+    val choice =
+        showWalletPickerAndWaitForChoice(
+            wallets = pendingSelection.wallets,
+            includeCreateNewWallet = true,
+        )
+
+    return when (choice) {
+        WalletPickerChoice.CreateNew ->
+            pendingSelection.createAndSelectWallet()
+        is WalletPickerChoice.Existing ->
+            pendingSelection.selectWallet(choice.wallet.id)
     }
-    is CompleteAuthResult.Activated -> Unit
+}
+```
+
+`WalletPickerChoice` is app UI state in this example. Both SDK calls return the
+selected wallet and persist it as the active wallet session.
+
+For OIDC redirect flows, pass the same behavior to the callback handler:
+
+```kotlin
+when (
+    val result =
+        client.handleOidcRedirectCallback(
+            callbackUrl = intent.data?.toString(),
+            walletSelection = WalletSelectionBehavior.Manual,
+        )
+) {
+    is OidcRedirectAuthResult.WalletSelection -> {
+        val selected = selectOrCreateWallet(result.pendingSelection)
+        showWallet(selected.wallet)
+    }
+    is OidcRedirectAuthResult.Completed -> error("Expected manual wallet selection")
+    OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
+    OidcRedirectAuthResult.NoPendingAuth -> Unit
+    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
 }
 ```
 

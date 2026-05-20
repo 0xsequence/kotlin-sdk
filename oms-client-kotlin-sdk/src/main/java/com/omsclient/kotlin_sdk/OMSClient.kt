@@ -2,7 +2,6 @@ package com.omsclient.kotlin_sdk
 
 import android.content.Context
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
-import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
@@ -19,6 +18,7 @@ import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.StartOidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.wallet.WalletClient
+import com.omsclient.kotlin_sdk.wallet.WalletSelectionBehavior
 import okhttp3.OkHttpClient
 import java.net.URI
 import java.security.MessageDigest
@@ -135,58 +135,22 @@ class OMSClient internal constructor(
     suspend fun startEmailAuth(email: String): CommitVerifierResponse = wallet.startEmailAuth(email)
 
     /**
-     * Signs in with an OIDC ID token and resolves the only available wallet for
-     * the requested [walletType].
+     * Signs in with an OIDC ID token and either selects a wallet automatically
+     * or returns a pending wallet selection for app-driven selection.
      */
     suspend fun signInWithOidcIdToken(
         idToken: String,
         issuer: String,
         audience: String,
-        walletType: WalletType = environment.defaultWalletType,
-    ): Wallet =
-        wallet.signInWithOidcIdToken(
-            idToken = idToken,
-            issuer = issuer,
-            audience = audience,
-            walletType = walletType,
-        )
-
-    /**
-     * Signs in with an OIDC ID token and either activates a wallet automatically
-     * or returns the available wallets for app-driven selection.
-     */
-    suspend fun signInWithOidcIdToken(
-        idToken: String,
-        issuer: String,
-        audience: String,
-        autoActivate: Boolean,
+        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = environment.defaultWalletType,
     ): CompleteAuthResult =
         wallet.signInWithOidcIdToken(
             idToken = idToken,
             issuer = issuer,
             audience = audience,
-            autoActivate = autoActivate,
+            walletSelection = walletSelection,
             walletType = walletType,
-        )
-
-    /**
-     * Signs in with an OIDC ID token and lets the app select from multiple
-     * available wallets when more than one wallet matches [walletType].
-     */
-    suspend fun signInWithOidcIdToken(
-        idToken: String,
-        issuer: String,
-        audience: String,
-        walletType: WalletType = environment.defaultWalletType,
-        selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): Wallet =
-        wallet.signInWithOidcIdToken(
-            idToken = idToken,
-            issuer = issuer,
-            audience = audience,
-            walletType = walletType,
-            selectWallet = selectWallet,
         )
 
     /**
@@ -217,67 +181,35 @@ class OMSClient internal constructor(
      *
      * This method is idempotent and safe to call for every incoming app link.
      * Unrelated links return [OidcRedirectAuthResult.NotOidcRedirectCallback],
-     * stale callbacks return [OidcRedirectAuthResult.NoPendingAuth], and a
-     * successful callback returns [OidcRedirectAuthResult.Completed] or
-     * [OidcRedirectAuthResult.WalletSelection] when [autoActivate] is false.
+     * stale callbacks return [OidcRedirectAuthResult.NoPendingAuth], and
+     * provider or completion failures return [OidcRedirectAuthResult.Failed].
+     * With [WalletSelectionBehavior.Automatic], a successful callback returns
+     * [OidcRedirectAuthResult.Completed]. With [WalletSelectionBehavior.Manual],
+     * a successful callback returns [OidcRedirectAuthResult.WalletSelection].
      */
     suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
-        autoActivate: Boolean = true,
-        selectWallet: suspend (List<Wallet>) -> Wallet = { wallets ->
-            require(wallets.size == 1) {
-                "Multiple wallets are available. Provide selectWallet to choose one."
-            }
-            wallets.single()
-        },
+        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     ): OidcRedirectAuthResult =
         wallet.handleOidcRedirectCallback(
             callbackUrl = callbackUrl,
-            autoActivate = autoActivate,
-            selectWallet = selectWallet,
+            walletSelection = walletSelection,
         )
 
     /**
-     * Completes email OTP authentication and resolves the only available wallet
-     * for the requested [walletType].
+     * Completes email OTP authentication and either selects a wallet
+     * automatically or returns a pending wallet selection for app-driven
+     * selection.
      */
     suspend fun completeEmailAuth(
         code: String,
-        walletType: WalletType = environment.defaultWalletType,
-    ): Wallet =
-        wallet.completeEmailAuth(
-            code = code,
-            walletType = walletType,
-        )
-
-    /**
-     * Completes email OTP authentication and either activates a wallet
-     * automatically or returns the available wallets for app-driven selection.
-     */
-    suspend fun completeEmailAuth(
-        code: String,
-        autoActivate: Boolean,
+        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = environment.defaultWalletType,
     ): CompleteAuthResult =
         wallet.completeEmailAuth(
             code = code,
-            autoActivate = autoActivate,
+            walletSelection = walletSelection,
             walletType = walletType,
-        )
-
-    /**
-     * Completes email OTP authentication and lets the app select from multiple
-     * available wallets when more than one wallet matches [walletType].
-     */
-    suspend fun completeEmailAuth(
-        code: String,
-        walletType: WalletType = environment.defaultWalletType,
-        selectWallet: suspend (List<Wallet>) -> Wallet,
-    ): Wallet =
-        wallet.completeEmailAuth(
-            code = code,
-            walletType = walletType,
-            selectWallet = selectWallet,
         )
 
     /**

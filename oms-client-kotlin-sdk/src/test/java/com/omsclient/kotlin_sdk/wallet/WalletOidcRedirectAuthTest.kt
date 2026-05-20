@@ -250,7 +250,6 @@ class WalletOidcRedirectAuthTest {
             val result =
                 client.handleOidcRedirectCallback(
                     callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}&scope=openid",
-                    selectWallet = { wallets -> wallets.first() },
                 )
             val wallet = (result as OidcRedirectAuthResult.Completed).wallet
             val commitRequest = requireNotNull(server.takeRequest())
@@ -289,7 +288,7 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
-    fun handleOidcRedirectCallbackCanReturnWalletSelectionWithoutActivatingWallet() =
+    fun handleOidcRedirectCallbackCanReturnWalletSelectionWithoutSelectingWallet() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -348,16 +347,16 @@ class WalletOidcRedirectAuthTest {
             val result =
                 client.handleOidcRedirectCallback(
                     callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}&scope=openid",
-                    selectWallet = { error("Selector should not be called") },
-                    autoActivate = false,
+                    walletSelection = WalletSelectionBehavior.Manual,
                 )
 
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
             assertTrue(result is OidcRedirectAuthResult.WalletSelection)
             val selection = result as OidcRedirectAuthResult.WalletSelection
-            assertEquals(listOf("wallet-def"), selection.wallets.map { it.id })
-            assertEquals("credential-123", selection.credential.credentialId)
+            assertEquals(WalletType.Ethereum, selection.pendingSelection.walletType)
+            assertEquals(listOf("wallet-def"), selection.pendingSelection.wallets.map { it.id })
+            assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
             assertNull(client.address)
             assertTrue(client.hasPendingSignIn)
             assertFalse(client.canResumeOidcRedirectAuth)
@@ -388,7 +387,6 @@ class WalletOidcRedirectAuthTest {
             val result =
                 client.handleOidcRedirectCallback(
                     callbackUrl = "omsclientkotlindemo://auth/callback?code=old-code&state=old-state",
-                    selectWallet = { wallets -> wallets.first() },
                 )
 
             assertEquals(OidcRedirectAuthResult.NoPendingAuth, result)
@@ -416,7 +414,6 @@ class WalletOidcRedirectAuthTest {
             val result =
                 client.handleOidcRedirectCallback(
                     callbackUrl = "omsclientkotlindemo://auth/callback",
-                    selectWallet = { wallets -> wallets.first() },
                 )
 
             assertEquals(OidcRedirectAuthResult.NotOidcRedirectCallback, result)
@@ -472,7 +469,6 @@ class WalletOidcRedirectAuthTest {
             val result =
                 client.handleOidcRedirectCallback(
                     callbackUrl = "otherapp://auth/callback?code=auth-code&state=${started.state}",
-                    selectWallet = { wallets -> wallets.first() },
                 )
 
             assertEquals(OidcRedirectAuthResult.NotOidcRedirectCallback, result)
@@ -520,7 +516,6 @@ class WalletOidcRedirectAuthTest {
             val result =
                 client.handleOidcRedirectCallback(
                     callbackUrl = "omsclientkotlindemo://auth/callback?error=access_denied&error_description=User%20cancelled",
-                    selectWallet = { wallets -> wallets.first() },
                 )
 
             assertEquals(OidcRedirectAuthResult.NotOidcRedirectCallback, result)
@@ -568,7 +563,6 @@ class WalletOidcRedirectAuthTest {
             val result =
                 client.handleOidcRedirectCallback(
                     callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=invalid-state",
-                    selectWallet = { wallets -> wallets.first() },
                 )
 
             assertEquals(OidcRedirectAuthResult.NotOidcRedirectCallback, result)
@@ -621,7 +615,6 @@ class WalletOidcRedirectAuthTest {
                             "?error=access_denied" +
                             "&error_description=User%20cancelled" +
                             "&state=${started.state}",
-                    selectWallet = { wallets -> wallets.first() },
                 )
 
             val failure = (result as OidcRedirectAuthResult.Failed).error

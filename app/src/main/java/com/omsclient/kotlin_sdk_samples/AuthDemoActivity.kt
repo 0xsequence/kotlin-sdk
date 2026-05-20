@@ -4,14 +4,25 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Bundle
+import android.text.TextUtils
 import android.util.Log
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
+import android.widget.LinearLayout
+import android.widget.LinearLayout.LayoutParams
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabColorSchemeParams
 import androidx.browser.customtabs.CustomTabsIntent
@@ -25,6 +36,7 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.google.android.material.button.MaterialButton
+import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
@@ -35,8 +47,11 @@ import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.parseUnits
+import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
 import com.omsclient.kotlin_sdk.wallet.OidcProviders
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
+import com.omsclient.kotlin_sdk.wallet.PendingWalletSelection
+import com.omsclient.kotlin_sdk.wallet.WalletSelectionBehavior
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -82,6 +97,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var cancelCodeStepButton: MaterialButton
     private lateinit var startGoogleSignInButton: MaterialButton
     private lateinit var startGoogleRedirectSignInButton: MaterialButton
+    private lateinit var manualWalletSelectionCheckbox: MaterialCheckBox
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
@@ -136,6 +152,7 @@ class AuthDemoActivity : AppCompatActivity() {
         cancelCodeStepButton = findViewById(R.id.cancelCodeStepButton)
         startGoogleSignInButton = findViewById(R.id.startGoogleSignInButton)
         startGoogleRedirectSignInButton = findViewById(R.id.startGoogleRedirectSignInButton)
+        manualWalletSelectionCheckbox = findViewById(R.id.manualWalletSelectionCheckbox)
     }
 
     private fun populateDefaults() {
@@ -155,21 +172,33 @@ class AuthDemoActivity : AppCompatActivity() {
                     appendLog("Google sign-in error: ${describeThrowable(it)}")
                 },
             ) {
-                val wallet =
-                    try {
-                        val idToken = requestGoogleIdToken()
-                        sdk.signInWithOidcIdToken(
-                            idToken = idToken,
-                            issuer = DemoConfig.googleIssuer,
-                            audience = DemoConfig.demoGoogleWebClientId,
-                            selectWallet = { wallets -> wallets.first() },
-                        )
-                    } catch (throwable: Throwable) {
-                        sdk.signOut()
-                        throw throwable
+                try {
+                    val idToken = requestGoogleIdToken()
+                    when (
+                        val result =
+                            sdk.signInWithOidcIdToken(
+                                idToken = idToken,
+                                issuer = DemoConfig.googleIssuer,
+                                audience = DemoConfig.demoGoogleWebClientId,
+                                walletSelection = currentWalletSelectionBehavior(),
+                            )
+                    ) {
+                        is CompleteAuthResult.WalletSelected -> {
+                            renderSignedInWallet(result.wallet, "Google login complete")
+                            appendLog("Google sign-in complete: ${result.wallet.address}")
+                        }
+
+                        is CompleteAuthResult.WalletSelection -> {
+                            completePendingWalletSelection(
+                                pendingSelection = result.pendingSelection,
+                                status = "Google login complete",
+                            )
+                        }
                     }
-                renderSignedInWallet(wallet, "Google login complete")
-                appendLog("Google sign-in complete: ${wallet.address}")
+                } catch (throwable: Throwable) {
+                    sdk.signOut()
+                    throw throwable
+                }
             }
         }
 
@@ -230,13 +259,41 @@ class AuthDemoActivity : AppCompatActivity() {
                 onStart = { authStatusView.text = "Confirming code and resolving wallet..." },
                 onFailure = { authStatusView.text = "Code confirmation failed: ${it.message ?: "Unknown error"}" },
             ) {
-                val wallet =
-                    sdk.completeEmailAuth(
-                        code = requireText(codeInput, "Verification code"),
-                        selectWallet = { wallets -> wallets.first() },
-                    )
+                val code = requireText(codeInput, "Verification code")
                 codeInput.text?.clear()
-                renderSignedInWallet(wallet, "Email login complete")
+                if (manualWalletSelectionCheckbox.isChecked) {
+                    when (
+                        val result =
+                            sdk.completeEmailAuth(
+                                code = code,
+                                walletSelection = WalletSelectionBehavior.Manual,
+                            )
+                    ) {
+                        is CompleteAuthResult.WalletSelection -> {
+                            completePendingWalletSelection(
+                                pendingSelection = result.pendingSelection,
+                                status = "Email login complete",
+                            )
+                        }
+
+                        is CompleteAuthResult.WalletSelected -> {
+                            renderSignedInWallet(result.wallet, "Email login complete")
+                        }
+                    }
+                } else {
+                    when (val result = sdk.completeEmailAuth(code = code)) {
+                        is CompleteAuthResult.WalletSelected -> {
+                            renderSignedInWallet(result.wallet, "Email login complete")
+                        }
+
+                        is CompleteAuthResult.WalletSelection -> {
+                            completePendingWalletSelection(
+                                pendingSelection = result.pendingSelection,
+                                status = "Email login complete",
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -362,7 +419,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 val result =
                     sdk.handleOidcRedirectCallback(
                         callbackUrl = callbackUrl,
-                        selectWallet = { wallets -> wallets.first() },
+                        walletSelection = currentWalletSelectionBehavior(),
                     )
             ) {
                 is OidcRedirectAuthResult.Completed -> {
@@ -372,11 +429,11 @@ class AuthDemoActivity : AppCompatActivity() {
                 }
 
                 is OidcRedirectAuthResult.WalletSelection -> {
-                    val wallet = result.wallets.first()
-                    val activated = sdk.wallet.useWallet(wallet.id)
                     consumeIntentData()
-                    renderSignedInWallet(activated.wallet, "Google redirect login complete")
-                    appendLog("Google redirect sign-in complete: ${activated.wallet.address}")
+                    completePendingWalletSelection(
+                        pendingSelection = result.pendingSelection,
+                        status = "Google redirect login complete",
+                    )
                 }
 
                 is OidcRedirectAuthResult.Failed -> {
@@ -551,6 +608,265 @@ class AuthDemoActivity : AppCompatActivity() {
         clipboard.setPrimaryClip(ClipData.newPlainText("Wallet address", address))
         Toast.makeText(this, "Wallet address copied", Toast.LENGTH_SHORT).show()
     }
+
+    private fun currentWalletSelectionBehavior(): WalletSelectionBehavior =
+        if (manualWalletSelectionCheckbox.isChecked) {
+            WalletSelectionBehavior.Manual
+        } else {
+            WalletSelectionBehavior.Automatic
+        }
+
+    private suspend fun completePendingWalletSelection(
+        pendingSelection: PendingWalletSelection,
+        status: String,
+    ) {
+        authStatusView.text = "Select a wallet to finish sign-in."
+        appendLog(
+            "Wallet selection required: type=${pendingSelection.walletType} count=${pendingSelection.wallets.size}",
+        )
+        val choice =
+            try {
+                requestWalletSelectionChoice(pendingSelection)
+            } catch (throwable: Throwable) {
+                sdk.signOut()
+                showEmailStep()
+                throw throwable
+            }
+        val selected =
+            when (choice) {
+                is ManualWalletChoice.Existing -> pendingSelection.selectWallet(choice.walletId)
+                ManualWalletChoice.Create -> pendingSelection.createAndSelectWallet()
+            }
+        renderSignedInWallet(selected.wallet, status)
+    }
+
+    private suspend fun requestWalletSelectionChoice(pendingSelection: PendingWalletSelection): ManualWalletChoice =
+        suspendCancellableCoroutine { continuation ->
+            var resumed = false
+
+            fun resumeOnce(choice: ManualWalletChoice) {
+                if (!resumed) {
+                    resumed = true
+                    continuation.resume(choice)
+                }
+            }
+
+            fun cancelOnce() {
+                if (!resumed) {
+                    resumed = true
+                    continuation.resumeWithException(IllegalStateException("Wallet selection cancelled"))
+                }
+            }
+
+            var dialog: AlertDialog? = null
+            val content =
+                walletSelectionDialogContent(pendingSelection) { choice ->
+                    when (choice) {
+                        is ManualWalletChoice.Existing -> appendLog("Selected wallet: ${choice.walletId}")
+                        ManualWalletChoice.Create -> appendLog("Creating new ${pendingSelection.walletType} wallet")
+                    }
+                    resumeOnce(choice)
+                    dialog?.dismiss()
+                }
+            dialog =
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Select wallet")
+                    .setView(content)
+                    .setNegativeButton("Cancel") { _, _ -> cancelOnce() }
+                    .setOnCancelListener {
+                        appendLog("Wallet selection cancelled")
+                        cancelOnce()
+                    }.show()
+            continuation.invokeOnCancellation { dialog?.dismiss() }
+        }
+
+    private fun walletSelectionDialogContent(
+        pendingSelection: PendingWalletSelection,
+        onChoice: (ManualWalletChoice) -> Unit,
+    ): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(4), dp(24), dp(8))
+            addView(walletSelectionSectionLabel("Wallets"))
+            if (pendingSelection.wallets.isEmpty()) {
+                addWalletSelectionRow(
+                    title = "No ${pendingSelection.walletType} wallets",
+                    subtitle = "Create a wallet to continue",
+                    enabled = false,
+                    topMargin = dp(8),
+                )
+            } else {
+                pendingSelection.wallets.forEach { wallet ->
+                    addWalletSelectionRow(
+                        title = shortWalletAddress(wallet.address),
+                        subtitle = walletSelectionSubtitle(wallet),
+                        leadingText = "0x",
+                        topMargin = dp(8),
+                    ) {
+                        onChoice(ManualWalletChoice.Existing(wallet.id))
+                    }
+                }
+            }
+
+            addView(walletSelectionSectionLabel("Create"), verticalLayoutParams(topMargin = dp(18)))
+            addWalletSelectionRow(
+                title = "Create New Wallet",
+                subtitle = "${pendingSelection.walletType} wallet",
+                leadingText = "+",
+                topMargin = dp(8),
+            ) {
+                onChoice(ManualWalletChoice.Create)
+            }
+        }
+
+    private fun LinearLayout.addWalletSelectionRow(
+        title: String,
+        subtitle: String,
+        leadingText: String? = null,
+        enabled: Boolean = true,
+        topMargin: Int = 0,
+        onClick: (() -> Unit)? = null,
+    ) {
+        addView(
+            walletSelectionRow(
+                title = title,
+                subtitle = subtitle,
+                leadingText = leadingText,
+                enabled = enabled,
+                onClick = onClick,
+            ),
+            verticalLayoutParams(topMargin = topMargin),
+        )
+    }
+
+    private fun walletSelectionSectionLabel(text: String): TextView =
+        TextView(this).apply {
+            this.text = text
+            setTextColor(ContextCompat.getColor(this@AuthDemoActivity, R.color.slate_500))
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = true
+        }
+
+    private fun walletSelectionRow(
+        title: String,
+        subtitle: String,
+        leadingText: String?,
+        enabled: Boolean,
+        onClick: (() -> Unit)?,
+    ): View {
+        val row =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isEnabled = enabled
+                isClickable = enabled && onClick != null
+                isFocusable = enabled && onClick != null
+                background = walletSelectionRowBackground(enabled)
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                minimumHeight = dp(64)
+                alpha = if (enabled) 1f else 0.72f
+                onClick?.let { listener -> setOnClickListener { listener() } }
+            }
+
+        leadingText?.let {
+            row.addView(walletSelectionLeadingText(it))
+        }
+
+        val labels =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+        labels.addView(
+            TextView(this).apply {
+                text = title
+                setTextColor(ContextCompat.getColor(this@AuthDemoActivity, R.color.slate_900))
+                textSize = 16f
+                typeface = Typeface.DEFAULT_BOLD
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+            },
+        )
+        labels.addView(
+            TextView(this).apply {
+                text = subtitle
+                setTextColor(ContextCompat.getColor(this@AuthDemoActivity, R.color.slate_500))
+                textSize = 13f
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            },
+        )
+        row.addView(labels, LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        return row
+    }
+
+    private fun walletSelectionLeadingText(text: String): TextView =
+        TextView(this).apply {
+            this.text = text
+            gravity = Gravity.CENTER
+            setTextColor(ContextCompat.getColor(this@AuthDemoActivity, R.color.slate_900))
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            background = walletSelectionLeadingBackground()
+            layoutParams =
+                LayoutParams(dp(38), dp(38)).apply {
+                    marginEnd = dp(12)
+                }
+        }
+
+    private fun walletSelectionRowBackground(enabled: Boolean): RippleDrawable {
+        val fill =
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(ContextCompat.getColor(this@AuthDemoActivity, R.color.surface_700))
+                setStroke(dp(1), ContextCompat.getColor(this@AuthDemoActivity, R.color.sand_300))
+            }
+        val mask =
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.WHITE)
+            }
+        val rippleColor =
+            if (enabled) {
+                ContextCompat.getColor(this, R.color.sand_200)
+            } else {
+                Color.TRANSPARENT
+            }
+        return RippleDrawable(ColorStateList.valueOf(rippleColor), fill, mask)
+    }
+
+    private fun walletSelectionLeadingBackground(): GradientDrawable =
+        GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(8).toFloat()
+            setColor(ContextCompat.getColor(this@AuthDemoActivity, R.color.surface_900))
+            setStroke(dp(1), ContextCompat.getColor(this@AuthDemoActivity, R.color.sand_300))
+        }
+
+    private fun verticalLayoutParams(topMargin: Int = 0): LayoutParams =
+        LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            this.topMargin = topMargin
+        }
+
+    private fun walletSelectionSubtitle(wallet: Wallet): String =
+        listOfNotNull(
+            wallet.reference?.takeIf { it.isNotBlank() },
+            wallet.type.toString(),
+            wallet.id.takeIf { it.isNotBlank() },
+        ).joinToString(" / ")
+
+    private fun shortWalletAddress(address: String): String =
+        if (address.length > 18) {
+            "${address.take(10)}...${address.takeLast(6)}"
+        } else {
+            address
+        }
 
     private suspend fun selectFeeOption(feeOptions: List<FeeOptionWithBalance>): FeeOptionSelection? {
         if (feeOptions.isEmpty()) return null
@@ -727,6 +1043,16 @@ class AuthDemoActivity : AppCompatActivity() {
             codeInput.requestFocus()
             codeInput.setSelection(codeInput.text?.length ?: 0)
         }
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private sealed interface ManualWalletChoice {
+        data class Existing(
+            val walletId: String,
+        ) : ManualWalletChoice
+
+        data object Create : ManualWalletChoice
     }
 
     companion object {
