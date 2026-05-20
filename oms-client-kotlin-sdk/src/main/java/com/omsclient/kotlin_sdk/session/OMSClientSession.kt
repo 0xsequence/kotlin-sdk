@@ -51,6 +51,7 @@ internal class OMSClientSession(
             val expiresAt: String,
             val loginType: OMSClientSessionLoginType?,
             val sessionEmail: String?,
+            val pendingWalletSelectionId: Long?,
         ) : SessionState {
             override fun snapshot(): OMSClientSessionSnapshot =
                 OMSClientSessionSnapshot(
@@ -85,6 +86,7 @@ internal class OMSClientSession(
     }
 
     private var state: SessionState = initialSnapshot.toSessionState()
+    private var nextPendingWalletSelectionId: Long = 1L
 
     fun snapshot(): OMSClientSessionSnapshot? = state.snapshot()
 
@@ -115,12 +117,13 @@ internal class OMSClientSession(
         expiresAt: String,
         loginType: OMSClientSessionLoginType?,
         sessionEmail: String?,
-    ) {
+    ): Long {
         val current =
             when (val current = state) {
                 is SessionState.PendingAuth -> current
                 else -> error("No active pending auth challenge")
             }
+        val pendingWalletSelectionId = nextPendingWalletSelectionId++
         state =
             SessionState.AwaitingWalletSelection(
                 signerAddress = current.signerAddress,
@@ -128,7 +131,9 @@ internal class OMSClientSession(
                 expiresAt = expiresAt,
                 loginType = loginType,
                 sessionEmail = sessionEmail,
+                pendingWalletSelectionId = pendingWalletSelectionId,
             )
+        return pendingWalletSelectionId
     }
 
     fun selectWallet(
@@ -163,6 +168,26 @@ internal class OMSClientSession(
         state = selected
     }
 
+    fun selectWalletForPendingSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: SigningAlgorithm?,
+        walletId: String,
+        walletAddress: String,
+    ) {
+        val current = currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
+        state =
+            SessionState.ActiveSession(
+                walletId = walletId,
+                walletAddress = walletAddress,
+                signerAddress = current.signerAddress,
+                signerKeyType = current.signerKeyType,
+                expiresAt = current.expiresAt,
+                loginType = current.loginType,
+                sessionEmail = current.sessionEmail,
+            )
+    }
+
     fun requireSnapshot(): OMSClientSessionSnapshot =
         state.snapshot()
             ?: error("No active OMS Client session")
@@ -180,6 +205,33 @@ internal class OMSClientSession(
                 error("No active pending auth challenge")
             }
         }
+
+    fun requirePendingWalletSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: SigningAlgorithm?,
+    ) {
+        currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
+    }
+
+    private fun currentPendingWalletSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: SigningAlgorithm?,
+    ): SessionState.AwaitingWalletSelection {
+        val current =
+            when (val current = state) {
+                is SessionState.AwaitingWalletSelection -> current
+                else -> error("Pending wallet selection is no longer active")
+            }
+        check(current.pendingWalletSelectionId == pendingWalletSelectionId) {
+            "Pending wallet selection is no longer active"
+        }
+        check(current.signerAddress == signerAddress && current.signerKeyType == signerKeyType) {
+            "Pending wallet selection is no longer active"
+        }
+        return current
+    }
 
     private fun OMSClientSessionSnapshot?.toSessionState(): SessionState {
         val snapshot = this ?: return SessionState.NoSession
@@ -213,6 +265,7 @@ internal class OMSClientSession(
                     expiresAt = snapshot.expiresAt.orEmpty(),
                     loginType = snapshot.loginType,
                     sessionEmail = snapshot.sessionEmail,
+                    pendingWalletSelectionId = null,
                 )
             }
 
