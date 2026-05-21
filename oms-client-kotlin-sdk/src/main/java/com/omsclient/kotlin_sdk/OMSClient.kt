@@ -1,8 +1,6 @@
 package com.omsclient.kotlin_sdk
 
 import android.content.Context
-import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
@@ -11,14 +9,9 @@ import com.omsclient.kotlin_sdk.storage.AndroidKeystoreSessionStore
 import com.omsclient.kotlin_sdk.storage.AndroidOidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
 import com.omsclient.kotlin_sdk.wallet.AndroidKeystoreP256CredentialSigner
-import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
 import com.omsclient.kotlin_sdk.wallet.CredentialSigner
-import com.omsclient.kotlin_sdk.wallet.OidcProviderConfig
-import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
-import com.omsclient.kotlin_sdk.wallet.StartOidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.wallet.WalletClient
-import com.omsclient.kotlin_sdk.wallet.WalletSelectionBehavior
 import okhttp3.OkHttpClient
 import java.net.URI
 import java.security.MessageDigest
@@ -27,13 +20,13 @@ import java.time.Instant
 /**
  * Main entry point for OMS Client.
  *
- * Auth and session lifecycle methods live on this class. Wallet operations for
- * the currently selected wallet are available through [wallet].
+ * Wallet auth, session lifecycle, signing, and transaction methods live on
+ * [wallet]. Indexer methods live on [indexer].
  */
 class OMSClient internal constructor(
     publicApiKey: String,
     projectId: String,
-    private val environment: OMSClientEnvironment = OMSClientEnvironment(),
+    environment: OMSClientEnvironment = OMSClientEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
     walletSession: OMSClientSession = OMSClientSession(),
     sessionStore: OMSClientSecureSessionStore? = null,
@@ -123,100 +116,6 @@ class OMSClient internal constructor(
                 nonceStoreName = scopedCredentialNonceStoreName(projectId, environment),
             ),
     )
-
-    /**
-     * Starts email OTP authentication.
-     *
-     * The returned verifier response can be shown or inspected by the app, and
-     * the OTP can later be completed with [completeEmailAuth].
-     */
-    suspend fun startEmailAuth(email: String): CommitVerifierResponse = wallet.startEmailAuth(email)
-
-    /**
-     * Signs in with an OIDC ID token and either selects a wallet automatically
-     * or returns a pending wallet selection for app-driven selection.
-     */
-    suspend fun signInWithOidcIdToken(
-        idToken: String,
-        issuer: String,
-        audience: String,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-        walletType: WalletType = environment.defaultWalletType,
-    ): CompleteAuthResult =
-        wallet.signInWithOidcIdToken(
-            idToken = idToken,
-            issuer = issuer,
-            audience = audience,
-            walletSelection = walletSelection,
-            walletType = walletType,
-        )
-
-    /**
-     * Starts OIDC authorization-code PKCE redirect authentication.
-     *
-     * Open the returned [StartOidcRedirectAuthResult.authorizationUrl] in a
-     * browser or Custom Tabs. After the provider redirects back to the app,
-     * pass the callback URL to [handleOidcRedirectCallback].
-     */
-    suspend fun startOidcRedirectAuth(
-        provider: OidcProviderConfig,
-        redirectUri: String,
-        walletType: WalletType = environment.defaultWalletType,
-        relayRedirectUri: String? = provider.relayRedirectUri,
-        authorizeParams: Map<String, String> = emptyMap(),
-    ): StartOidcRedirectAuthResult =
-        wallet.startOidcRedirectAuth(
-            provider = provider,
-            redirectUri = redirectUri,
-            walletType = walletType,
-            relayRedirectUri = relayRedirectUri,
-            authorizeParams = authorizeParams,
-        )
-
-    /**
-     * Safely handles an incoming OIDC authorization-code PKCE redirect callback
-     * and optionally returns wallets for app-driven selection.
-     *
-     * This method is idempotent and safe to call for every incoming app link.
-     * Unrelated links return [OidcRedirectAuthResult.NotOidcRedirectCallback],
-     * stale callbacks return [OidcRedirectAuthResult.NoPendingAuth], and
-     * provider or completion failures return [OidcRedirectAuthResult.Failed].
-     * With [WalletSelectionBehavior.Automatic], a successful callback returns
-     * [OidcRedirectAuthResult.Completed]. With [WalletSelectionBehavior.Manual],
-     * a successful callback returns [OidcRedirectAuthResult.WalletSelection].
-     */
-    suspend fun handleOidcRedirectCallback(
-        callbackUrl: String?,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-    ): OidcRedirectAuthResult =
-        wallet.handleOidcRedirectCallback(
-            callbackUrl = callbackUrl,
-            walletSelection = walletSelection,
-        )
-
-    /**
-     * Completes email OTP authentication and either selects a wallet
-     * automatically or returns a pending wallet selection for app-driven
-     * selection.
-     */
-    suspend fun completeEmailAuth(
-        code: String,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-        walletType: WalletType = environment.defaultWalletType,
-    ): CompleteAuthResult =
-        wallet.completeEmailAuth(
-            code = code,
-            walletSelection = walletSelection,
-            walletType = walletType,
-        )
-
-    /**
-     * Signs out of the current account and clears all in-memory and persisted
-     * session material.
-     */
-    fun signOut() {
-        wallet.signOut()
-    }
 
     companion object {
         internal fun scopedSessionKeyAlias(

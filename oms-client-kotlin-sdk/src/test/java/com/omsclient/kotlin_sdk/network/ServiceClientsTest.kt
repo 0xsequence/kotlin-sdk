@@ -2,7 +2,9 @@ package com.omsclient.kotlin_sdk.network
 
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkException
+import com.omsclient.kotlin_sdk.OmsSdkOperation
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import kotlinx.coroutines.runBlocking
@@ -272,9 +274,11 @@ class ServiceClientsTest {
                         message = "hello",
                         signature = "0xsig",
                     )
-                }.exceptionOrNull() as? WebRpcError
+                }.exceptionOrNull() as? OmsSdkException
 
             requireNotNull(failure)
+            assertEquals(OmsSdkErrorCode.InvalidResponse, failure.code)
+            assertEquals(OmsSdkOperation.WalletIsValidMessageSignature, failure.operation)
             assertEquals("endpoint error", failure.message)
             assertEquals(400, failure.status)
             assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))

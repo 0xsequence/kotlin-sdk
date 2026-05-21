@@ -279,7 +279,7 @@ class WalletOidcRedirectAuthTest {
                 requireNotNull(useWalletRequest.body).utf8(),
             )
             assertEquals("0xdef", wallet.address)
-            assertEquals("0xdef", client.address)
+            assertEquals("0xdef", client.walletAddress)
             assertFalse(client.canResumeOidcRedirectAuth)
             assertNull(redirectStore.pending)
             assertEquals(2, redirectStore.clearCalls)
@@ -358,10 +358,10 @@ class WalletOidcRedirectAuthTest {
             requireNotNull(server.takeRequest())
             assertTrue(result is OidcRedirectAuthResult.WalletSelection)
             val selection = result as OidcRedirectAuthResult.WalletSelection
-            assertEquals(WalletType.Ethereum, selection.pendingSelection.walletType)
+            assertEquals(com.omsclient.kotlin_sdk.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-def"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertTrue(client.hasPendingSignIn)
             assertFalse(client.canResumeOidcRedirectAuth)
             assertNull(redirectStore.pending)
@@ -396,7 +396,7 @@ class WalletOidcRedirectAuthTest {
 
             assertEquals(OidcRedirectAuthResult.NoPendingAuth, result)
             assertEquals(activeSession, client.snapshotSession())
-            assertEquals("0xactive", client.address)
+            assertEquals("0xactive", client.walletAddress)
             assertEquals(0, redirectStore.clearCalls)
             assertEquals(0, server.requestCount)
         }

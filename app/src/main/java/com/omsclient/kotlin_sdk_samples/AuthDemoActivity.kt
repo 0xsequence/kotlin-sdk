@@ -41,10 +41,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
-import com.omsclient.kotlin_sdk.generated.waas.Wallet
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
+import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
+import com.omsclient.kotlin_sdk.models.Wallet
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
@@ -177,7 +177,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     val idToken = requestGoogleIdToken()
                     when (
                         val result =
-                            sdk.signInWithOidcIdToken(
+                            sdk.wallet.signInWithOidcIdToken(
                                 idToken = idToken,
                                 issuer = DemoConfig.googleIssuer,
                                 audience = DemoConfig.demoGoogleWebClientId,
@@ -197,7 +197,7 @@ class AuthDemoActivity : AppCompatActivity() {
                         }
                     }
                 } catch (throwable: Throwable) {
-                    sdk.signOut()
+                    sdk.wallet.signOut()
                     throw throwable
                 }
             }
@@ -216,7 +216,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 },
             ) {
                 val started =
-                    sdk.startOidcRedirectAuth(
+                    sdk.wallet.startOidcRedirectAuth(
                         provider =
                             OidcProviders.google(
                                 clientId = DemoConfig.demoGoogleWebClientId,
@@ -236,20 +236,20 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { authStatusView.text = "Email sign-in failed: ${it.message ?: "Unknown error"}" },
             ) {
                 val email = requireText(emailInput, "Email")
-                val response = sdk.startEmailAuth(email)
+                sdk.wallet.startEmailAuth(email)
                 authStatusView.text =
                     buildString {
                         append("Code requested for ")
-                        append(response.loginHint ?: email)
+                        append(email)
                     }
                 showPendingCodeStep()
                 emailInput.text?.clear()
-                appendLog("Verifier committed: verifier=${response.verifier}")
+                appendLog("Email verifier committed for $email")
             }
         }
 
         cancelCodeStepButton.setOnClickListener {
-            sdk.signOut()
+            sdk.wallet.signOut()
             codeInput.text?.clear()
             showEmailStep()
         }
@@ -265,7 +265,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 if (manualWalletSelectionCheckbox.isChecked) {
                     when (
                         val result =
-                            sdk.completeEmailAuth(
+                            sdk.wallet.completeEmailAuth(
                                 code = code,
                                 walletSelection = WalletSelectionBehavior.Manual,
                             )
@@ -282,7 +282,7 @@ class AuthDemoActivity : AppCompatActivity() {
                         }
                     }
                 } else {
-                    when (val result = sdk.completeEmailAuth(code = code)) {
+                    when (val result = sdk.wallet.completeEmailAuth(code = code)) {
                         is CompleteAuthResult.WalletSelected -> {
                             renderSignedInWallet(result.wallet, "Email login complete")
                         }
@@ -299,7 +299,7 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         logoutButton.setOnClickListener {
-            sdk.signOut()
+            sdk.wallet.signOut()
             lastSignedMessage = null
             lastSignedSignature = null
             lastTransactionHash = null
@@ -328,8 +328,8 @@ class AuthDemoActivity : AppCompatActivity() {
                         message = message,
                     )
                 lastSignedMessage = message
-                lastSignedSignature = result.signature
-                lastSignatureView.text = "Last signature: ${result.signature}"
+                lastSignedSignature = result
+                lastSignatureView.text = "Last signature: $result"
                 signatureStatusView.text = "Signature status: signed. Ready to verify."
                 appendLog("Signed message on chain ${network.id}")
             }
@@ -418,7 +418,7 @@ class AuthDemoActivity : AppCompatActivity() {
         ) {
             when (
                 val result =
-                    sdk.handleOidcRedirectCallback(
+                    sdk.wallet.handleOidcRedirectCallback(
                         callbackUrl = callbackUrl,
                         walletSelection = currentWalletSelectionBehavior(),
                     )
@@ -547,22 +547,26 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun describeThrowable(throwable: Throwable): String =
         buildString {
-            if (throwable is WebRpcError) {
-                append("WebRpcError(")
-                append("error=")
-                append(throwable.error)
-                append(", code=")
-                append(throwable.code)
-                append(", status=")
-                append(throwable.status)
-                append(", kind=")
-                append(throwable.errorKind.name)
+            if (throwable is OmsSdkException) {
+                append("OmsSdkException(")
+                append("code=")
+                append(throwable.code.name)
+                throwable.operation?.let {
+                    append(", operation=")
+                    append(it.id)
+                }
+                throwable.status?.let {
+                    append(", status=")
+                    append(it)
+                }
+                throwable.txnId?.let {
+                    append(", txnId=")
+                    append(it)
+                }
+                append(", retryable=")
+                append(throwable.retryable)
                 append(", message=")
                 append(throwable.message)
-                if (throwable.causeString.isNotBlank()) {
-                    append(", cause=")
-                    append(throwable.causeString)
-                }
                 append(")")
                 return@buildString
             }
@@ -629,7 +633,7 @@ class AuthDemoActivity : AppCompatActivity() {
             try {
                 requestWalletSelectionChoice(pendingSelection)
             } catch (throwable: Throwable) {
-                sdk.signOut()
+                sdk.wallet.signOut()
                 showEmailStep()
                 throw throwable
             }

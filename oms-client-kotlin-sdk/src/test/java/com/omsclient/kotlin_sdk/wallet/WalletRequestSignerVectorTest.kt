@@ -6,8 +6,8 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
+import com.omsclient.kotlin_sdk.generated.waas.TransactionMode
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
-import com.omsclient.kotlin_sdk.models.TransactionMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

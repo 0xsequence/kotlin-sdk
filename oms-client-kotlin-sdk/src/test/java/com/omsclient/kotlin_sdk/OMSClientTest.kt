@@ -34,7 +34,7 @@ class OMSClientTest {
                 sessionStore = StubSecureSessionStore(snapshot),
             )
 
-        assertEquals("0xwallet", sdk.wallet.address)
+        assertEquals("0xwallet", sdk.wallet.walletAddress)
         assertEquals("0xwallet", sdk.session.walletAddress)
         assertEquals(Instant.parse("2026-01-01T00:00:00Z"), sdk.session.expiresAt)
         assertEquals(OMSClientSessionLoginType.Email, sdk.session.loginType)
@@ -88,9 +88,9 @@ class OMSClientTest {
                 sessionStore = store,
             )
 
-        sdk.signOut()
+        sdk.wallet.signOut()
 
-        assertNull(sdk.wallet.address)
+        assertNull(sdk.wallet.walletAddress)
         assertNull(sdk.session.walletAddress)
         assertNull(sdk.session.expiresAt)
         assertNull(sdk.session.loginType)

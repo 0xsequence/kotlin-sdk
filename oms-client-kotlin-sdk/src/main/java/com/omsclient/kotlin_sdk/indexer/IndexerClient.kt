@@ -3,6 +3,7 @@ package com.omsclient.kotlin_sdk.indexer
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.models.TokenBalancesPage
+import com.omsclient.kotlin_sdk.models.TokenBalancesPageRequest
 import com.omsclient.kotlin_sdk.models.TokenBalancesResult
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
@@ -27,9 +28,10 @@ class IndexerClient internal constructor(
      */
     suspend fun getTokenBalances(
         network: Network,
-        contractAddress: String,
+        contractAddress: String? = null,
         walletAddress: String,
         includeMetadata: Boolean,
+        page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
     ): TokenBalancesResult {
         val response =
             transport.postJson(
@@ -38,11 +40,11 @@ class IndexerClient internal constructor(
                 body =
                     buildJsonObject {
                         putJsonObject("page") {
-                            put("page", 0)
-                            put("pageSize", 40)
+                            put("page", page.page)
+                            put("pageSize", page.pageSize)
                             put("more", false)
                         }
-                        put("contractAddress", contractAddress)
+                        contractAddress?.let { put("contractAddress", it) }
                         put("accountAddress", walletAddress)
                         put("includeMetadata", includeMetadata)
                     }.toString(),
