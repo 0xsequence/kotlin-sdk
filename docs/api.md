@@ -66,17 +66,17 @@ written to SDK session storage. `publicApiKey` is sent as `X-Access-Key`;
 scope.
 
 ```kotlin
-fun client.signOut()
+fun client.wallet.signOut()
 ```
 
 ```kotlin
-suspend fun client.startEmailAuth(
+suspend fun client.wallet.startEmailAuth(
     email: String,
-): CommitVerifierResponse
+)
 ```
 
 ```kotlin
-suspend fun client.signInWithOidcIdToken(
+suspend fun client.wallet.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
@@ -120,7 +120,7 @@ data class StartOidcRedirectAuthResult(
 ```
 
 ```kotlin
-suspend fun client.startOidcRedirectAuth(
+suspend fun client.wallet.startOidcRedirectAuth(
     provider: OidcProviderConfig,
     redirectUri: String,
     walletType: WalletType = WalletType.Ethereum,
@@ -142,7 +142,7 @@ sealed interface OidcRedirectAuthResult {
 ```
 
 ```kotlin
-suspend fun client.handleOidcRedirectCallback(
+suspend fun client.wallet.handleOidcRedirectCallback(
     callbackUrl: String?,
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
 ): OidcRedirectAuthResult
@@ -194,7 +194,7 @@ sealed interface CompleteAuthResult {
 ```
 
 ```kotlin
-suspend fun client.completeEmailAuth(
+suspend fun client.wallet.completeEmailAuth(
     code: String,
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
@@ -229,7 +229,7 @@ wallets for the same wallet type.
 ## Wallet
 
 ```kotlin
-val client.wallet.address: String?
+val client.wallet.walletAddress: String?
 ```
 
 ```kotlin
@@ -260,14 +260,14 @@ suspend fun client.wallet.createWallet(
 suspend fun client.wallet.signMessage(
     network: Network,
     message: String,
-): SignMessageResponse
+): String
 ```
 
 ```kotlin
 suspend fun client.wallet.signTypedData(
     network: Network,
     typedData: JsonElement,
-): SignTypedDataResponse
+): String
 ```
 
 ```kotlin
@@ -291,6 +291,8 @@ suspend fun client.wallet.sendTransaction(
     network: Network,
     to: String,
     value: BigInteger,
+    waitForStatus: Boolean = true,
+    statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
 ): SendTransactionResponse
 ```
@@ -299,6 +301,8 @@ suspend fun client.wallet.sendTransaction(
 suspend fun client.wallet.sendTransaction(
     network: Network,
     request: SendTransactionRequest,
+    waitForStatus: Boolean = true,
+    statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
 ): SendTransactionResponse
 ```
@@ -310,6 +314,8 @@ suspend fun client.wallet.callContract(
     method: String,
     args: List<AbiArg>? = null,
     mode: TransactionMode = TransactionMode.Relayer,
+    waitForStatus: Boolean = true,
+    statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
 ): SendTransactionResponse
 ```
@@ -343,7 +349,7 @@ suspend fun client.wallet.listAccessPage(
 suspend fun client.wallet.getIdToken(
     ttlSeconds: UInt? = null,
     customClaims: Map<String, JsonElement>? = null,
-): GetIdTokenResponse
+): String
 ```
 
 ```kotlin
@@ -359,9 +365,11 @@ required fee option, or no fee option when the transaction is sponsored.
 `value` is a raw base-unit integer; use `parseUnits` to convert human-entered
 decimal values before sending.
 After execution, `sendTransaction` and `callContract` poll the WaaS status
-endpoint briefly for an executed status or transaction hash. If the transaction
-remains pending when polling times out, the response contains the `txnId`, `status =
-TransactionStatus.Pending`, and `txnHash = null`.
+endpoint briefly for an executed status or transaction hash. Pass
+`waitForStatus = false` to return immediately after execute, or pass
+`statusPolling` to tune the fast poll count, intervals, and timeout. If the
+transaction remains pending when polling times out, the response contains the
+`txnId`, `status = TransactionStatus.Pending`, and `txnHash = null`.
 Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
 WaaS cursors and returns all credentials, `listAccessPages` emits each page as a
 `Flow`, and `listAccessPage` exposes one page at a time for manual cursor
@@ -432,9 +440,10 @@ fun parseUnits(
 ```kotlin
 suspend fun indexer.getTokenBalances(
     network: Network,
-    contractAddress: String,
+    contractAddress: String? = null,
     walletAddress: String,
     includeMetadata: Boolean,
+    page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
 ): TokenBalancesResult
 ```
 
@@ -445,9 +454,10 @@ suspend fun indexer.getNativeTokenBalance(
 ): TokenBalance?
 ```
 
-`getNativeTokenBalance` returns null when the indexer response has no native
-balance object. The wallet client also uses it internally to enrich fee option
-balances.
+`contractAddress` can be omitted to query balances across token contracts.
+`page` defaults to page `0` with page size `40`. `getNativeTokenBalance` returns
+null when the indexer response has no native balance object. The wallet client
+also uses it internally to enrich fee option balances.
 
 ## Environment
 
@@ -465,16 +475,106 @@ class OMSClientEnvironment(
 fun OMSClientEnvironment.Companion.demoDefaults(): OMSClientEnvironment
 ```
 
+## Errors
+
+Public SDK APIs throw `OmsSdkException` when the SDK can classify a failure
+without exposing generated WebRPC internals.
+
+```kotlin
+enum class OmsSdkErrorCode {
+    HttpError,
+    InvalidResponse,
+    RequestFailed,
+    AuthCommitmentConsumed,
+    SessionMissing,
+    WalletSelectionStale,
+    WalletSelectionUnavailable,
+    WalletSelectionInFlight,
+    TransactionStatusLookupFailed,
+    ValidationError,
+}
+```
+
+```kotlin
+open class OmsSdkException(
+    val code: OmsSdkErrorCode,
+    val operation: OmsSdkOperation?,
+    val status: Int?,
+    val txnId: String?,
+    val retryable: Boolean,
+) : RuntimeException
+```
+
+```kotlin
+enum class OmsSdkOperation(
+    val id: String,
+) {
+    WalletStartEmailAuth,
+    WalletCompleteEmailAuth,
+    WalletStartOidcRedirectAuth,
+    WalletSendTransaction,
+    // ...
+}
+```
+
 ## Public Models
 
 ```kotlin
-typealias TransactionMode = com.omsclient.kotlin_sdk.generated.waas.TransactionMode
-typealias TransactionStatus = com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
-typealias TransactionStatusResponse = com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse
-typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
-typealias FeeOptionSelection = com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection
-typealias FeeOptionSelector = suspend (List<FeeOptionWithBalance>) -> FeeOptionSelection?
-typealias GetIdTokenResponse = com.omsclient.kotlin_sdk.generated.waas.GetIDTokenResponse
+enum class WalletType {
+    Ethereum,
+    UNKNOWN_DEFAULT,
+}
+
+enum class TransactionMode {
+    Native,
+    Relayer,
+    UNKNOWN_DEFAULT,
+}
+
+enum class TransactionStatus {
+    Quoted,
+    Pending,
+    Executed,
+    UNKNOWN_DEFAULT,
+}
+```
+
+```kotlin
+data class Wallet(
+    val id: String,
+    val type: WalletType,
+    val address: String,
+    val reference: String? = null,
+)
+```
+
+```kotlin
+data class FeeToken(
+    val network: String,
+    val name: String,
+    val symbol: String,
+    val type: String,
+    val decimals: UInt? = null,
+    val logoUrl: String,
+    val contractAddress: String? = null,
+    val tokenId: String? = null,
+)
+```
+
+```kotlin
+data class FeeOption(
+    val token: FeeToken,
+    val value: String,
+    val displayValue: String,
+)
+
+data class FeeOptionSelection(
+    val token: String,
+)
+
+fun interface FeeOptionSelector {
+    suspend fun select(feeOptions: List<FeeOptionWithBalance>): FeeOptionSelection?
+}
 ```
 
 ```kotlin
@@ -505,9 +605,52 @@ data class SendTransactionResponse(
 ```
 
 ```kotlin
+data class TransactionStatusPollingOptions(
+    val fastPollIntervalMillis: Long = 400L,
+    val fastPollCount: Int = 5,
+    val pollIntervalMillis: Long = 2_000L,
+    val timeoutMillis: Long = 60_000L,
+)
+```
+
+```kotlin
 data class TransactionStatusResponse(
     val status: TransactionStatus,
     val txnHash: String? = null,
+)
+```
+
+```kotlin
+data class AbiArg(
+    val type: String,
+    val value: JsonElement,
+)
+```
+
+```kotlin
+data class CredentialInfo(
+    val credentialId: String,
+    val expiresAt: String,
+    val isCaller: Boolean,
+)
+```
+
+```kotlin
+data class ListAccessResponse(
+    val credentials: List<CredentialInfo>,
+    val page: Page? = null,
+)
+
+data class Page(
+    val limit: UInt? = null,
+    val cursor: String? = null,
+)
+```
+
+```kotlin
+data class TokenBalancesPageRequest(
+    val page: Int = 0,
+    val pageSize: Int = 40,
 )
 ```
 
@@ -540,86 +683,15 @@ data class TokenBalancesResult(
 )
 ```
 
-Additional auth, wallet selection, signing, and access models come from the
-generated waas package:
-
-```kotlin
-com.omsclient.kotlin_sdk.generated.waas
-```
-
-Common public return types from that package include:
-
-```kotlin
-data class CommitVerifierResponse(
-    val verifier: String,
-    val loginHint: String? = null,
-    val challenge: String,
-)
-```
-
-```kotlin
-data class Wallet(
-    val id: String,
-    val type: WalletType,
-    val address: String,
-    val reference: String? = null,
-)
-```
-
-```kotlin
-data class SignMessageResponse(
-    val signature: String,
-)
-```
-
-```kotlin
-data class SignTypedDataResponse(
-    val signature: String,
-)
-```
-
-```kotlin
-data class GetIdTokenResponse(
-    val idToken: String,
-)
-```
-
-```kotlin
-data class AbiArg(
-    val type: String,
-    val value: JsonElement,
-)
-```
-
-```kotlin
-data class CredentialInfo(
-    val credentialId: String,
-    val expiresAt: String,
-    val isCaller: Boolean,
-)
-```
-
-```kotlin
-data class ListAccessResponse(
-    val credentials: List<CredentialInfo>,
-    val page: Page? = null,
-)
-
-data class Page(
-    val limit: UInt? = null,
-    val cursor: String? = null,
-)
-```
-
 ## Recommended Usage
 
 ### Automatic Wallet Selection
 
 ```kotlin
-if (client.wallet.address == null) {
-    client.startEmailAuth("user@example.com")
+if (client.wallet.walletAddress == null) {
+    client.wallet.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    val result = client.completeEmailAuth("123456")
+    val result = client.wallet.completeEmailAuth("123456")
     check(result is CompleteAuthResult.WalletSelected)
     showWallet(result.wallet)
 }
@@ -629,7 +701,7 @@ For OIDC ID-token flows:
 
 ```kotlin
 val result =
-    client.signInWithOidcIdToken(
+    client.wallet.signInWithOidcIdToken(
         idToken = googleIdToken,
         issuer = "https://accounts.google.com",
         audience = "YOUR_WEB_CLIENT_ID",
@@ -641,7 +713,7 @@ showWallet(result.wallet)
 For OIDC redirect flows:
 
 ```kotlin
-when (val result = client.handleOidcRedirectCallback(intent.data?.toString())) {
+when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
     is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
@@ -655,7 +727,7 @@ Use manual mode when the app needs to present wallet choices:
 
 ```kotlin
 val result =
-    client.completeEmailAuth(
+    client.wallet.completeEmailAuth(
         code = "123456",
         walletSelection = WalletSelectionBehavior.Manual,
     )
@@ -698,7 +770,7 @@ For OIDC redirect flows, pass the same behavior to the callback handler:
 ```kotlin
 when (
     val result =
-        client.handleOidcRedirectCallback(
+        client.wallet.handleOidcRedirectCallback(
             callbackUrl = intent.data?.toString(),
             walletSelection = WalletSelectionBehavior.Manual,
         )
