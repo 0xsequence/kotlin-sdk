@@ -5,7 +5,7 @@ import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
-import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
 import org.junit.Assert.assertEquals
@@ -31,7 +31,7 @@ class OMSClientTest {
                 publicApiKey = "test-access-key",
                 projectId = "test-project-id",
                 walletSession = OMSClientSession(),
-                sessionStore = StubSecureSessionStore(snapshot),
+                sessionStore = StubSessionMetadataStore(snapshot),
             )
 
         assertEquals("0xwallet", sdk.wallet.walletAddress)
@@ -73,7 +73,7 @@ class OMSClientTest {
     @Test
     fun signOutClearsWalletSessionAndStore() {
         val store =
-            MutableSecureSessionStore(
+            MutableSessionMetadataStore(
                 OMSClientSessionSnapshot(
                     walletId = "wallet-main",
                     walletAddress = "0xwallet",
@@ -225,9 +225,9 @@ class OMSClientTest {
         val oidcRedirectAuthFileName: String,
     )
 
-    private class StubSecureSessionStore(
+    private class StubSessionMetadataStore(
         private val snapshot: OMSClientSessionSnapshot?,
-    ) : OMSClientSecureSessionStore {
+    ) : OMSClientSessionMetadataStore {
         override fun load(): OMSClientSessionSnapshot? = snapshot
 
         override fun save(snapshot: OMSClientSessionSnapshot) = Unit
@@ -245,9 +245,9 @@ class OMSClientTest {
         override fun clear() = Unit
     }
 
-    private class MutableSecureSessionStore(
+    private class MutableSessionMetadataStore(
         var snapshot: OMSClientSessionSnapshot?,
-    ) : OMSClientSecureSessionStore {
+    ) : OMSClientSessionMetadataStore {
         var clearCalls = 0
 
         override fun load(): OMSClientSessionSnapshot? = snapshot

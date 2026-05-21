@@ -11,7 +11,7 @@ import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
-import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertTrue
 import org.web3j.utils.Numeric
@@ -143,7 +143,7 @@ private fun String.urlDecode(): String = URLDecoder.decode(this, Charsets.UTF_8.
 internal class InMemorySessionStore(
     var snapshot: OMSClientSessionSnapshot? = null,
     var privateKeyHex: String? = null,
-) : OMSClientSecureSessionStore {
+) : OMSClientSessionMetadataStore {
     var saveCalls: Int = 0
         private set
     var savedPrivateKeyHex: String? = null
@@ -162,7 +162,7 @@ internal class InMemorySessionStore(
     }
 }
 
-internal class FailingSaveSessionStore : OMSClientSecureSessionStore {
+internal class FailingSaveSessionStore : OMSClientSessionMetadataStore {
     var clearCalls: Int = 0
         private set
 

@@ -5,9 +5,9 @@ import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSession
-import com.omsclient.kotlin_sdk.storage.AndroidKeystoreSessionStore
 import com.omsclient.kotlin_sdk.storage.AndroidOidcRedirectAuthStore
-import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.storage.AndroidSessionMetadataStore
+import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.wallet.AndroidKeystoreP256CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.CredentialSigner
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
@@ -29,7 +29,7 @@ class OMSClient internal constructor(
     environment: OMSClientEnvironment = OMSClientEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
     walletSession: OMSClientSession = OMSClientSession(),
-    sessionStore: OMSClientSecureSessionStore? = null,
+    sessionStore: OMSClientSessionMetadataStore? = null,
     oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
     credentialSigner: CredentialSigner? = null,
 ) {
@@ -83,8 +83,11 @@ class OMSClient internal constructor(
         get() = OMSClientNetworks.supportedNetworks
 
     /**
-     * Creates an Android-backed client with persisted metadata storage for
-     * completed wallet sessions.
+     * Creates an Android-backed client with completed-session metadata storage
+     * and a non-extractable Android Keystore request-signing credential.
+     *
+     * Persisted metadata can restore wallet/session state, but cannot authorize
+     * wallet API requests without the matching Keystore credential.
      */
     constructor(
         context: Context,
@@ -99,7 +102,7 @@ class OMSClient internal constructor(
         okHttpClient = okHttpClient,
         walletSession = OMSClientSession(),
         sessionStore =
-            AndroidKeystoreSessionStore(
+            AndroidSessionMetadataStore(
                 context = context.applicationContext,
                 fileName = scopedSessionFileName(projectId, environment),
             ),

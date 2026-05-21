@@ -56,7 +56,7 @@ import com.omsclient.kotlin_sdk.network.OMSClientWebRpcTransport
 import com.omsclient.kotlin_sdk.runOmsOperation
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
-import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.toOmsSdkException
 import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
@@ -76,7 +76,7 @@ class WalletClient internal constructor(
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
     private val session: OMSClientSession = OMSClientSession(),
-    private val sessionStore: OMSClientSecureSessionStore? = null,
+    private val sessionStore: OMSClientSessionMetadataStore? = null,
     private val oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
     private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
     private val oidcNonceGenerator: () -> String = OidcRedirectAuth::generateNonce,

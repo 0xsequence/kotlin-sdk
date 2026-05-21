@@ -57,13 +57,21 @@ session instead of leaving transient state active. Starting a new email, OIDC
 ID-token, or OIDC redirect auth flow replaces any existing wallet session so
 expired or stale sessions do not block re-authentication.
 
-The Android `OMSClient(context, ...)` constructor signs wallet API requests with
-a non-extractable Android Keystore P-256 credential using the
-`ecdsa-p256-sha256` signing algorithm. Persisted wallet sessions store wallet metadata
-only; the credential private key remains owned by Android Keystore and is not
-written to SDK session storage. `publicApiKey` is sent as `X-Access-Key`;
-`projectId` is used as the wallet request signing scope and OIDC redirect state
-scope.
+The Android `OMSClient(context, ...)` constructor separates authorization from
+session restore:
+
+- wallet API requests are authorized by a non-extractable Android Keystore P-256
+  credential using `ecdsa-p256-sha256`
+- completed-session metadata and temporary OIDC redirect state are stored in
+  app-private no-backup files
+
+Completed-session metadata is limited to restorable wallet state: wallet
+id/address, signer address/algorithm, expiry, login type, and optional email. It
+is not wallet authorization material: by itself it cannot sign requests or
+access a wallet. Restore succeeds only while the matching Keystore credential
+still exists, and wallet operations must sign fresh requests with that
+credential. `publicApiKey` is sent as `X-Access-Key`; `projectId` is used as the
+wallet request signing scope and OIDC redirect state scope.
 
 ```kotlin
 fun client.wallet.signOut()

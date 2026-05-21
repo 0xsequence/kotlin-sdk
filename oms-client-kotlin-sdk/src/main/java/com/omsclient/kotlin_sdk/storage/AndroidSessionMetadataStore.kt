@@ -7,10 +7,10 @@ import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import org.json.JSONObject
 import java.io.File
 
-internal class AndroidKeystoreSessionStore(
+internal class AndroidSessionMetadataStore(
     context: Context,
     private val fileName: String = DEFAULT_FILE_NAME,
-) : OMSClientSecureSessionStore {
+) : OMSClientSessionMetadataStore {
     private val sessionFile = File(context.noBackupFilesDir, fileName)
 
     override fun load(): OMSClientSessionSnapshot? {

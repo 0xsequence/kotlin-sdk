@@ -47,15 +47,22 @@ val client = OMSClient(
 )
 ```
 
-That constructor uses persisted wallet-session metadata storage by default.
-Wallet API requests are signed with a non-extractable Android Keystore P-256
-credential (`ecdsa-p256-sha256`), so the private credential key is not written
-to app storage. `publicApiKey` is sent as the API access key, while `projectId`
-is used as the WaaS signing scope.
-Only completed wallet sessions are restored automatically. Pending auth state is
-not exposed through `client.session`; email OTP pending state is kept in memory,
-while OIDC redirect verifier/state is stored internally only so incoming app
-links can be handled.
+That constructor separates wallet authorization from session restore. Wallet API
+requests are authorized by a non-extractable Android Keystore P-256 credential
+(`ecdsa-p256-sha256`), so the private credential key is never written to SDK
+session storage.
+
+The SDK persists only completed-session metadata in app-private no-backup
+storage: wallet id/address, signer address/algorithm, expiry, login type, and
+optional session email. This metadata is not wallet authorization material: by
+itself it cannot sign requests or access a wallet. Restore succeeds only while
+the matching Keystore credential still exists, and wallet operations must sign
+fresh requests with that credential. `publicApiKey` is sent as the API access
+key, while `projectId` is used as the WaaS signing scope.
+
+Pending email OTP state is kept in memory. OIDC redirect state is stored only to
+complete the browser redirect flow and is cleared when the flow completes, fails,
+or is replaced.
 
 If you need a custom environment:
 
