@@ -55,7 +55,8 @@ class WalletSigningTest {
                 )
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -92,7 +93,8 @@ class WalletSigningTest {
 
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),

@@ -53,7 +53,12 @@ class ServiceClientsTest {
                 OMSClientEnvironment(
                     walletApiUrl = server.url("/rpc/Wallet/").toString(),
                 )
-            val client = OMSClient(projectAccessKey = "test-access-key", environment = environment)
+            val client =
+                OMSClient(
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
+                    environment = environment,
+                )
             client.wallet.restoreSession(
                 OMSClientSessionSnapshot(
                     walletId = "wallet-id",
@@ -249,7 +254,8 @@ class ServiceClientsTest {
 
             val client =
                 OMSClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
                 )
             client.wallet.restoreSession(

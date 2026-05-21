@@ -8,11 +8,10 @@ class OMSClientEnvironment(
     val walletApiUrl: String = walletApiUrlDefault,
     val apiRpcUrl: String = apiRpcUrlDefault,
     val indexerUrlTemplate: String = indexerUrlTemplateDefault,
-    internal val authorizationScope: String = authorizationScopeDefault,
 ) {
     internal val defaultWalletType: WalletType = WalletType.Ethereum
 
-    fun indexerUrlFor(network: Network): String = indexerUrlTemplate.replace("{value}", network.indexerName)
+    fun indexerUrlFor(network: Network): String = indexerUrlTemplate.replace("{value}", network.name)
 
     internal fun walletApiBaseUrl(): String {
         val uri = URI(walletApiUrl)
@@ -25,28 +24,24 @@ class OMSClientEnvironment(
 
         return walletApiBaseUrl() == other.walletApiBaseUrl() &&
             apiRpcUrl == other.apiRpcUrl &&
-            indexerUrlTemplate == other.indexerUrlTemplate &&
-            authorizationScope == other.authorizationScope
+            indexerUrlTemplate == other.indexerUrlTemplate
     }
 
     override fun hashCode(): Int {
         var result = walletApiBaseUrl().hashCode()
         result = 31 * result + apiRpcUrl.hashCode()
         result = 31 * result + indexerUrlTemplate.hashCode()
-        result = 31 * result + authorizationScope.hashCode()
         return result
     }
 
     override fun toString(): String =
-        "OMSClientEnvironment(walletApiUrl=$walletApiUrl, apiRpcUrl=$apiRpcUrl, indexerUrlTemplate=$indexerUrlTemplate, authorizationScope=$authorizationScope)"
+        "OMSClientEnvironment(walletApiUrl=$walletApiUrl, apiRpcUrl=$apiRpcUrl, indexerUrlTemplate=$indexerUrlTemplate)"
 
     companion object {
         internal const val accessKeyHeaderName: String = "X-Access-Key"
         internal const val walletSignatureHeaderName: String = "OMS-Wallet-Signature"
         internal const val walletSignatureHeaderPrefix: String = "$walletSignatureHeaderName: "
-        internal const val authorizationScopeDefault: String = "proj_1"
-        internal const val demoAuthorizationScopeDefault: String = "proj_1"
-        const val walletApiUrlDefault: String = "https://d1sctl7y41hot5.cloudfront.net/rpc/Wallet"
+        const val walletApiUrlDefault: String = "https://d26giflyqapd29.cloudfront.net"
         const val apiRpcUrlDefault: String = "https://api.sequence.app/rpc/API"
         const val indexerUrlTemplateDefault: String = "https://{value}-indexer.sequence.app/rpc/Indexer/"
 
@@ -57,7 +52,6 @@ class OMSClientEnvironment(
             OMSClientEnvironment(
                 apiRpcUrl = devApiRpcUrlDefault,
                 indexerUrlTemplate = devIndexerUrlTemplateDefault,
-                authorizationScope = demoAuthorizationScopeDefault,
             )
     }
 }

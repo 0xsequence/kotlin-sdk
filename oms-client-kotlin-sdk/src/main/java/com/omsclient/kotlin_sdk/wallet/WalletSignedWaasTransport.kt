@@ -7,8 +7,8 @@ import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 
 internal class WalletSignedWaasTransport(
-    private val projectAccessKey: String,
-    private val environment: OMSClientEnvironment,
+    private val publicApiKey: String,
+    private val projectId: String,
     private val httpClient: OMSClientHttpClient,
     private val signer: CredentialSigner,
 ) : WebRpcTransport {
@@ -24,14 +24,14 @@ internal class WalletSignedWaasTransport(
             WalletRequestSigner.buildWalletRequestPreimage(
                 endpoint = endpoint,
                 nonce = nonce,
-                scope = environment.authorizationScope,
+                scope = projectId,
                 payload = body,
                 requestPathPrefix = WaasWalletApi.basePath,
             )
         val walletSignatureHeader =
             WalletRequestSigner.buildWalletSignatureHeader(
                 signingAlgorithm = signer.signingAlgorithm,
-                scope = environment.authorizationScope,
+                scope = projectId,
                 credentialId = signer.credentialId(),
                 nonce = nonce,
                 signature = signer.sign(preimage),
@@ -63,7 +63,7 @@ internal class WalletSignedWaasTransport(
         walletSignatureHeader: String,
     ): Map<String, String> =
         linkedMapOf(
-            OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
+            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
             "Origin" to "http://localhost:3000",
             "Accept" to "application/json",
             OMSClientEnvironment.walletSignatureHeaderName to

@@ -61,7 +61,8 @@ import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTrans
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 
 class WalletClient internal constructor(
-    private val projectAccessKey: String,
+    private val publicApiKey: String,
+    private val projectId: String,
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
     private val session: OMSClientSession = OMSClientSession(),
@@ -84,7 +85,7 @@ class WalletClient internal constructor(
         )
     private val indexerClient: IndexerClient =
         IndexerClient(
-            projectAccessKey = projectAccessKey,
+            publicApiKey = publicApiKey,
             environment = environment,
             transport = transport,
         )
@@ -280,7 +281,7 @@ class WalletClient internal constructor(
             val state =
                 OidcRedirectAuth.encodeState(
                     nonce = nonce,
-                    scope = environment.authorizationScope,
+                    scope = projectId,
                     redirectUri = redirectUri.takeIf { oauthRedirectUri != redirectUri },
                 )
 
@@ -297,7 +298,7 @@ class WalletClient internal constructor(
                     nonce = nonce,
                     redirectUri = redirectUri,
                     issuer = provider.issuer,
-                    authorizationScope = environment.authorizationScope,
+                    projectId = projectId,
                     walletType = walletType,
                     signerAddress = signerAddress,
                     signerKeyType = signer.signingAlgorithm,
@@ -1169,8 +1170,8 @@ class WalletClient internal constructor(
             baseUrl = environment.walletApiBaseUrl(),
             transport =
                 WalletSignedWaasTransport(
-                    projectAccessKey = projectAccessKey,
-                    environment = environment,
+                    publicApiKey = publicApiKey,
+                    projectId = projectId,
                     httpClient = transport,
                     signer = signer,
                 ),
@@ -1178,7 +1179,7 @@ class WalletClient internal constructor(
 
     private fun defaultPublicHeaders(): Map<String, String> =
         mapOf(
-            OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
+            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
             "Accept" to "application/json",
         )
 }

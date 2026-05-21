@@ -31,7 +31,8 @@ import java.time.Instant
  * the currently selected wallet are available through [wallet].
  */
 class OMSClient internal constructor(
-    projectAccessKey: String,
+    publicApiKey: String,
+    projectId: String,
     private val environment: OMSClientEnvironment = OMSClientEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
     walletSession: OMSClientSession = OMSClientSession(),
@@ -43,7 +44,8 @@ class OMSClient internal constructor(
 
     val wallet: WalletClient =
         WalletClient(
-            projectAccessKey = projectAccessKey,
+            publicApiKey = publicApiKey,
+            projectId = projectId,
             environment = environment,
             transport = transport,
             session = walletSession,
@@ -54,7 +56,7 @@ class OMSClient internal constructor(
 
     val indexer: IndexerClient =
         IndexerClient(
-            projectAccessKey = projectAccessKey,
+            publicApiKey = publicApiKey,
             environment = environment,
             transport = transport,
         )
@@ -94,35 +96,49 @@ class OMSClient internal constructor(
     fun network(chainId: String): Network? = supportedNetworks.firstOrNull { it.chainId == chainId }
 
     /**
+     * Returns a supported network by numeric chain id, or null when the chain id
+     * is not supported by this SDK build.
+     */
+    fun network(chainId: Int): Network? = findNetworkById(chainId)
+
+    /**
+     * Returns a supported network by registry name, or null when the name is not
+     * supported by this SDK build.
+     */
+    fun networkByName(name: String): Network? = findNetworkByName(name)
+
+    /**
      * Creates an Android-backed client with persisted secure storage for
      * completed wallet sessions.
      */
     constructor(
         context: Context,
-        projectAccessKey: String,
+        publicApiKey: String,
+        projectId: String,
         environment: OMSClientEnvironment = OMSClientEnvironment(),
         okHttpClient: OkHttpClient = OkHttpClient(),
     ) : this(
-        projectAccessKey = projectAccessKey,
+        publicApiKey = publicApiKey,
+        projectId = projectId,
         environment = environment,
         okHttpClient = okHttpClient,
         walletSession = OMSClientSession(),
         sessionStore =
             AndroidKeystoreSessionStore(
                 context = context.applicationContext,
-                alias = scopedSessionKeyAlias(environment),
-                fileName = scopedSessionFileName(environment),
+                alias = scopedSessionKeyAlias(projectId, environment),
+                fileName = scopedSessionFileName(projectId, environment),
             ),
         oidcRedirectAuthStore =
             AndroidOidcRedirectAuthStore(
                 context = context.applicationContext,
-                fileName = scopedOidcRedirectAuthFileName(environment),
+                fileName = scopedOidcRedirectAuthFileName(projectId, environment),
             ),
         credentialSigner =
             AndroidKeystoreP256CredentialSigner(
                 context = context.applicationContext,
-                alias = scopedCredentialKeyAlias(environment),
-                nonceStoreName = scopedCredentialNonceStoreName(environment),
+                alias = scopedCredentialKeyAlias(projectId, environment),
+                nonceStoreName = scopedCredentialNonceStoreName(projectId, environment),
             ),
     )
 
@@ -221,27 +237,40 @@ class OMSClient internal constructor(
     }
 
     companion object {
-        internal fun scopedSessionKeyAlias(environment: OMSClientEnvironment): String =
-            "oms-client-session-${scopedSessionSuffix(environment)}"
+        internal fun scopedSessionKeyAlias(
+            projectId: String,
+            environment: OMSClientEnvironment,
+        ): String = "oms-client-session-${scopedSessionSuffix(projectId, environment)}"
 
-        internal fun scopedSessionFileName(environment: OMSClientEnvironment): String =
-            "oms-client-session-${scopedSessionSuffix(environment)}.json"
+        internal fun scopedSessionFileName(
+            projectId: String,
+            environment: OMSClientEnvironment,
+        ): String = "oms-client-session-${scopedSessionSuffix(projectId, environment)}.json"
 
-        internal fun scopedCredentialKeyAlias(environment: OMSClientEnvironment): String =
-            "oms-client-credential-${scopedSessionSuffix(environment)}"
+        internal fun scopedCredentialKeyAlias(
+            projectId: String,
+            environment: OMSClientEnvironment,
+        ): String = "oms-client-credential-${scopedSessionSuffix(projectId, environment)}"
 
-        internal fun scopedCredentialNonceStoreName(environment: OMSClientEnvironment): String =
-            "oms-client-credential-nonces-${scopedSessionSuffix(environment)}"
+        internal fun scopedCredentialNonceStoreName(
+            projectId: String,
+            environment: OMSClientEnvironment,
+        ): String = "oms-client-credential-nonces-${scopedSessionSuffix(projectId, environment)}"
 
-        internal fun scopedOidcRedirectAuthFileName(environment: OMSClientEnvironment): String =
-            "oms-client-oidc-redirect-auth-${scopedSessionSuffix(environment)}.json"
+        internal fun scopedOidcRedirectAuthFileName(
+            projectId: String,
+            environment: OMSClientEnvironment,
+        ): String = "oms-client-oidc-redirect-auth-${scopedSessionSuffix(projectId, environment)}.json"
 
-        private fun scopedSessionSuffix(environment: OMSClientEnvironment): String {
+        private fun scopedSessionSuffix(
+            projectId: String,
+            environment: OMSClientEnvironment,
+        ): String {
             val source =
                 buildString {
                     append(normalizedWalletApiOrigin(environment.walletApiUrl))
                     append('\u0000')
-                    append(environment.authorizationScope)
+                    append(projectId)
                 }
             return MessageDigest
                 .getInstance("SHA-256")

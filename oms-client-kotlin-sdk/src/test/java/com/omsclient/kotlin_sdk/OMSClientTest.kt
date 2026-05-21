@@ -28,7 +28,8 @@ class OMSClientTest {
             )
         val sdk =
             OMSClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 sessionStore = StubSecureSessionStore(snapshot),
             )
@@ -44,7 +45,8 @@ class OMSClientTest {
     fun sessionStateOnlyReflectsCompletedWalletSession() {
         val sdk =
             OMSClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 oidcRedirectAuthStore =
                     StubOidcRedirectAuthStore(
@@ -54,7 +56,7 @@ class OMSClientTest {
                             nonce = "nonce-123",
                             redirectUri = "omsclientkotlindemo://auth/callback",
                             issuer = "https://issuer.example",
-                            authorizationScope = "proj_1",
+                            projectId = "test-project-id",
                             walletType = WalletType.Ethereum,
                             signerAddress = "0xsigner",
                             signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
@@ -80,7 +82,8 @@ class OMSClientTest {
             )
         val sdk =
             OMSClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 sessionStore = store,
             )
@@ -98,17 +101,24 @@ class OMSClientTest {
 
     @Test
     fun exposesSupportedNetworks() {
-        val sdk = OMSClient(projectAccessKey = "test-access-key")
+        val sdk = OMSClient(publicApiKey = "test-access-key", projectId = "test-project-id")
 
-        assertEquals(listOf("137", "80002"), sdk.supportedNetworks.map { it.chainId })
-        assertEquals("Polygon Amoy", sdk.network("80002")?.displayName)
-        assertNull(sdk.network("1"))
+        assertEquals(supportedNetworks, sdk.supportedNetworks)
+        assertEquals(16, sdk.supportedNetworks.size)
+        assertEquals(Network.POLYGON, sdk.network("137"))
+        assertEquals(Network.AMOY, sdk.network(80_002))
+        assertEquals(Network.BASE, sdk.networkByName("base"))
+        assertEquals("POL", Network.POLYGON.nativeTokenSymbol)
+        assertEquals("https://amoy.polygonscan.com", Network.AMOY.explorerUrl)
+        assertNull(sdk.network("999999"))
     }
 
     @Test
     fun scopedSessionStorageDiffersAcrossConfigs() {
         val defaultEnvironment = OMSClientEnvironment()
         val demoEnvironment = OMSClientEnvironment.demoDefaults()
+        val projectId = "test-project-id"
+        val otherProjectId = "other-project-id"
         val differentWalletEnvironment =
             OMSClientEnvironment(
                 walletApiUrl = "https://wallet-2.example.com/rpc/Wallet",
@@ -117,20 +127,24 @@ class OMSClientTest {
             )
 
         assertNotEquals(
-            OMSClient.scopedSessionKeyAlias(defaultEnvironment),
-            OMSClient.scopedSessionKeyAlias(differentWalletEnvironment),
+            OMSClient.scopedSessionKeyAlias(projectId, defaultEnvironment),
+            OMSClient.scopedSessionKeyAlias(projectId, differentWalletEnvironment),
         )
         assertNotEquals(
-            OMSClient.scopedSessionFileName(defaultEnvironment),
-            OMSClient.scopedSessionFileName(differentWalletEnvironment),
+            OMSClient.scopedSessionFileName(projectId, defaultEnvironment),
+            OMSClient.scopedSessionFileName(projectId, differentWalletEnvironment),
+        )
+        assertNotEquals(
+            OMSClient.scopedSessionKeyAlias(projectId, defaultEnvironment),
+            OMSClient.scopedSessionKeyAlias(otherProjectId, defaultEnvironment),
         )
         assertEquals(
-            OMSClient.scopedSessionKeyAlias(defaultEnvironment),
-            OMSClient.scopedSessionKeyAlias(demoEnvironment),
+            OMSClient.scopedSessionKeyAlias(projectId, defaultEnvironment),
+            OMSClient.scopedSessionKeyAlias(projectId, demoEnvironment),
         )
         assertEquals(
-            OMSClient.scopedSessionFileName(defaultEnvironment),
-            OMSClient.scopedSessionFileName(demoEnvironment),
+            OMSClient.scopedSessionFileName(projectId, defaultEnvironment),
+            OMSClient.scopedSessionFileName(projectId, demoEnvironment),
         )
     }
 
@@ -152,30 +166,31 @@ class OMSClientTest {
             OMSClientEnvironment(
                 walletApiUrl = "https://wallet.example.com/rpc/Wallet?foo=bar",
             )
+        val projectId = "test-project-id"
 
         assertEquals(
-            OMSClient.scopedSessionKeyAlias(withoutTrailingSlash),
-            OMSClient.scopedSessionKeyAlias(withTrailingSlash),
+            OMSClient.scopedSessionKeyAlias(projectId, withoutTrailingSlash),
+            OMSClient.scopedSessionKeyAlias(projectId, withTrailingSlash),
         )
         assertEquals(
-            OMSClient.scopedSessionFileName(withoutTrailingSlash),
-            OMSClient.scopedSessionFileName(withTrailingSlash),
+            OMSClient.scopedSessionFileName(projectId, withoutTrailingSlash),
+            OMSClient.scopedSessionFileName(projectId, withTrailingSlash),
         )
         assertEquals(
-            OMSClient.scopedSessionKeyAlias(withoutTrailingSlash),
-            OMSClient.scopedSessionKeyAlias(withDifferentPath),
+            OMSClient.scopedSessionKeyAlias(projectId, withoutTrailingSlash),
+            OMSClient.scopedSessionKeyAlias(projectId, withDifferentPath),
         )
         assertEquals(
-            OMSClient.scopedSessionFileName(withoutTrailingSlash),
-            OMSClient.scopedSessionFileName(withDifferentPath),
+            OMSClient.scopedSessionFileName(projectId, withoutTrailingSlash),
+            OMSClient.scopedSessionFileName(projectId, withDifferentPath),
         )
         assertEquals(
-            OMSClient.scopedSessionKeyAlias(withoutTrailingSlash),
-            OMSClient.scopedSessionKeyAlias(withQuery),
+            OMSClient.scopedSessionKeyAlias(projectId, withoutTrailingSlash),
+            OMSClient.scopedSessionKeyAlias(projectId, withQuery),
         )
         assertEquals(
-            OMSClient.scopedSessionFileName(withoutTrailingSlash),
-            OMSClient.scopedSessionFileName(withQuery),
+            OMSClient.scopedSessionFileName(projectId, withoutTrailingSlash),
+            OMSClient.scopedSessionFileName(projectId, withQuery),
         )
     }
 

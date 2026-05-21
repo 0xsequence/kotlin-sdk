@@ -79,7 +79,8 @@ class WalletOidcIdTokenAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -188,7 +189,8 @@ class WalletOidcIdTokenAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -258,7 +260,8 @@ class WalletOidcIdTokenAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -324,7 +327,8 @@ class WalletOidcIdTokenAuthTest {
             val store = InMemorySessionStore(activeSession)
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -380,7 +384,8 @@ class WalletOidcIdTokenAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -428,7 +433,8 @@ class WalletOidcIdTokenAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),

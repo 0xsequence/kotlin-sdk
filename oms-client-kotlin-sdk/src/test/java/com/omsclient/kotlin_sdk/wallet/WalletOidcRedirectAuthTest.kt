@@ -55,7 +55,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -114,7 +115,7 @@ class WalletOidcRedirectAuthTest {
 
             val decodedState = String(Base64.getUrlDecoder().decode(result.state), Charsets.UTF_8)
             assertTrue(decodedState.contains(""""nonce":"nonce-123""""))
-            assertTrue(decodedState.contains(""""scope":"${environment.authorizationScope}""""))
+            assertTrue(decodedState.contains(""""scope":"test-project-id""""))
             assertTrue(decodedState.contains(""""redirect_uri":"omsclientkotlindemo://auth/callback""""))
             assertEquals("oidc-verifier-123", redirectStore.pending?.verifier)
             assertEquals("pkce-challenge", redirectStore.pending?.challenge)
@@ -146,7 +147,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = sessionStore,
@@ -226,7 +228,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = sessionStore,
@@ -323,7 +326,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = sessionStore,
@@ -372,7 +376,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -401,7 +406,8 @@ class WalletOidcRedirectAuthTest {
         runBlocking {
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -444,7 +450,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -492,7 +499,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -539,7 +547,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -586,7 +595,8 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
