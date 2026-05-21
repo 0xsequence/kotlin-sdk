@@ -149,11 +149,6 @@ data class Network(
                 explorerUrl = "https://katanascan.com",
             )
 
-        /**
-         * Backward-compatible alias for the former enum entry name.
-         */
-        val POLYGON_AMOY: Network = AMOY
-
         val entries: List<Network> =
             listOf(
                 MAINNET,
