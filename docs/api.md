@@ -154,7 +154,8 @@ completed wallet session so Android can resume after the browser redirect. Open
 Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
 handler is idempotent and safe to call from `onCreate` / `onNewIntent`: unrelated
 links return `NotOidcRedirectCallback`, stale links return `NoPendingAuth`, and
-provider or completion failures return `Failed`. With
+provider or completion failures return `Failed` with an `OmsSdkException` when
+the SDK can classify the failure. With
 `WalletSelectionBehavior.Automatic`, successful callbacks return `Completed`.
 With `WalletSelectionBehavior.Manual`, successful callbacks return
 `WalletSelection`. Starting a new auth flow clears or replaces stale redirect
@@ -512,10 +513,15 @@ enum class OmsSdkOperation(
     WalletStartEmailAuth,
     WalletCompleteEmailAuth,
     WalletStartOidcRedirectAuth,
+    WalletHandleOidcRedirectCallback,
     WalletSendTransaction,
     // ...
 }
 ```
+
+`RequestFailed` covers classified WebRPC/backend failures, including backend
+error codes newer than the generated WaaS client. `InvalidResponse` is reserved
+for malformed or unparseable responses.
 
 ## Public Models
 
@@ -612,6 +618,11 @@ data class TransactionStatusPollingOptions(
     val timeoutMillis: Long = 60_000L,
 )
 ```
+
+`sendTransaction` and `callContract` use the fast poll interval for the first
+`fastPollCount` status attempts, then use `pollIntervalMillis` until
+`timeoutMillis`. Set `pollIntervalMillis <= 0` to disable slow polling after the
+fast polling phase.
 
 ```kotlin
 data class TransactionStatusResponse(
@@ -710,9 +721,17 @@ check(result is CompleteAuthResult.WalletSelected)
 showWallet(result.wallet)
 ```
 
-For OIDC redirect flows:
+For OIDC redirect flows, start with the default Google provider unless the app
+has its own web client ID or provider configuration:
 
 ```kotlin
+val started = client.wallet.startOidcRedirectAuth(
+    provider = OidcProviders.google(),
+    redirectUri = "yourapp://auth/callback",
+)
+
+// Open started.authorizationUrl.
+
 when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
     is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
@@ -720,6 +739,10 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
     is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
 }
 ```
+
+Use a redirect URI that matches a deep link registered by your app, such as
+`yourapp://auth/callback`. For a custom Google web client ID, call
+`OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
 
 ### Manual Wallet Selection
 

@@ -47,7 +47,7 @@ val client = OMSClient(
 )
 ```
 
-That constructor uses secure persisted session storage by default.
+That constructor uses persisted wallet-session metadata storage by default.
 Wallet API requests are signed with a non-extractable Android Keystore P-256
 credential (`ecdsa-p256-sha256`), so the private credential key is not written
 to app storage. `publicApiKey` is sent as the API access key, while `projectId`

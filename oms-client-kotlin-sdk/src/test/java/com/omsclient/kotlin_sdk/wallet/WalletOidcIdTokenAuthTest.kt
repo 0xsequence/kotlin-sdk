@@ -283,7 +283,6 @@ class WalletOidcIdTokenAuthTest {
 
             assertEquals("0xdef", wallet.address)
             assertNull(redirectStore.pending)
-            assertFalse(client.canResumeOidcRedirectAuth)
             assertEquals(1, redirectStore.clearCalls)
         }
 

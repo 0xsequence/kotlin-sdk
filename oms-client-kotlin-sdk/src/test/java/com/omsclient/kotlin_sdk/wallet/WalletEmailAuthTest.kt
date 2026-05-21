@@ -161,7 +161,6 @@ class WalletEmailAuthTest {
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
             assertEquals("verifier-123", session?.verifier)
             assertNull(redirectStore.pending)
-            assertFalse(client.canResumeOidcRedirectAuth)
             assertEquals(1, redirectStore.clearCalls)
         }
 

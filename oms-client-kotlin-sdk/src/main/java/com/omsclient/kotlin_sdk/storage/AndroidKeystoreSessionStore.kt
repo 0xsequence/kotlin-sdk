@@ -9,7 +9,6 @@ import java.io.File
 
 internal class AndroidKeystoreSessionStore(
     context: Context,
-    @Suppress("UNUSED_PARAMETER") alias: String = DEFAULT_KEY_ALIAS,
     private val fileName: String = DEFAULT_FILE_NAME,
 ) : OMSClientSecureSessionStore {
     private val sessionFile = File(context.noBackupFilesDir, fileName)
@@ -120,7 +119,6 @@ internal class AndroidKeystoreSessionStore(
     }
 
     companion object {
-        private const val DEFAULT_KEY_ALIAS = "oms-client-session-key"
         private const val DEFAULT_FILE_NAME = "oms-client-session.json"
     }
 }

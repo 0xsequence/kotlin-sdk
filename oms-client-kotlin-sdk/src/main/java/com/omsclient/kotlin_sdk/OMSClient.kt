@@ -83,7 +83,7 @@ class OMSClient internal constructor(
         get() = OMSClientNetworks.supportedNetworks
 
     /**
-     * Creates an Android-backed client with persisted secure storage for
+     * Creates an Android-backed client with persisted metadata storage for
      * completed wallet sessions.
      */
     constructor(
@@ -101,7 +101,6 @@ class OMSClient internal constructor(
         sessionStore =
             AndroidKeystoreSessionStore(
                 context = context.applicationContext,
-                alias = scopedSessionKeyAlias(projectId, environment),
                 fileName = scopedSessionFileName(projectId, environment),
             ),
         oidcRedirectAuthStore =
@@ -118,11 +117,6 @@ class OMSClient internal constructor(
     )
 
     companion object {
-        internal fun scopedSessionKeyAlias(
-            projectId: String,
-            environment: OMSClientEnvironment,
-        ): String = "oms-client-session-${scopedSessionSuffix(projectId, environment)}"
-
         internal fun scopedSessionFileName(
             projectId: String,
             environment: OMSClientEnvironment,

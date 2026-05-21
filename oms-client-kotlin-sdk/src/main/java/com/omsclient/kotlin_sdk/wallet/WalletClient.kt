@@ -112,9 +112,6 @@ class WalletClient internal constructor(
             return snapshot.walletAddress.isNullOrBlank()
         }
 
-    val canResumeOidcRedirectAuth: Boolean
-        get() = oidcRedirectAuthStore?.load() != null
-
     /**
      * Address of the currently selected wallet, or null when no wallet is selected.
      */
