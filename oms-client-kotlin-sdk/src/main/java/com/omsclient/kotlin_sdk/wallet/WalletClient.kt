@@ -9,6 +9,7 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest
+import com.omsclient.kotlin_sdk.generated.waas.GetIDTokenRequest
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.IsValidMessageSignatureRequest
@@ -37,6 +38,7 @@ import com.omsclient.kotlin_sdk.models.FeeOption
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
+import com.omsclient.kotlin_sdk.models.GetIdTokenResponse
 import com.omsclient.kotlin_sdk.models.ListAccessResponse
 import com.omsclient.kotlin_sdk.models.Page
 import com.omsclient.kotlin_sdk.models.SignTypedDataResponse
@@ -949,6 +951,24 @@ class WalletClient internal constructor(
             ListAccessRequest(
                 walletId = requireWalletId(),
                 page = accessPage(pageSize, cursor),
+            ),
+        )
+    }
+
+    /**
+     * Returns an ID token for the currently selected wallet.
+     */
+    suspend fun getIdToken(
+        ttlSeconds: UInt? = null,
+        customClaims: Map<String, JsonElement>? = null,
+    ): GetIdTokenResponse {
+        session.requireSnapshot()
+        requireActiveCredential()
+        return waasClient().getIDToken(
+            GetIDTokenRequest(
+                walletId = requireWalletId(),
+                ttlSeconds = ttlSeconds,
+                customClaims = customClaims,
             ),
         )
     }

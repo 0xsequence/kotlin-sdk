@@ -382,6 +382,7 @@ To refresh a transaction later or manage active wallet credentials:
 
 ```kotlin
 val status = client.wallet.getTransactionStatus(txnId = txResult.txnId)
+val idToken = client.wallet.getIdToken(ttlSeconds = 300u).idToken
 val credentials = client.wallet.listAccess(pageSize = 25u)
 client.wallet.listAccessPages(pageSize = 25u).collect { page ->
     renderCredentials(page.credentials)

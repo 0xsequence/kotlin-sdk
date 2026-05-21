@@ -340,6 +340,13 @@ suspend fun client.wallet.listAccessPage(
 ```
 
 ```kotlin
+suspend fun client.wallet.getIdToken(
+    ttlSeconds: UInt? = null,
+    customClaims: Map<String, JsonElement>? = null,
+): GetIdTokenResponse
+```
+
+```kotlin
 suspend fun client.wallet.revokeAccess(
     targetCredentialId: String,
 )
@@ -463,6 +470,7 @@ typealias TransactionStatusResponse = com.omsclient.kotlin_sdk.generated.waas.Tr
 typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
 typealias FeeOptionSelection = com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection
 typealias FeeOptionSelector = suspend (List<FeeOptionWithBalance>) -> FeeOptionSelection?
+typealias GetIdTokenResponse = com.omsclient.kotlin_sdk.generated.waas.GetIDTokenResponse
 ```
 
 ```kotlin
@@ -563,6 +571,12 @@ data class SignMessageResponse(
 ```kotlin
 data class SignTypedDataResponse(
     val signature: String,
+)
+```
+
+```kotlin
+data class GetIdTokenResponse(
+    val idToken: String,
 )
 ```
 
