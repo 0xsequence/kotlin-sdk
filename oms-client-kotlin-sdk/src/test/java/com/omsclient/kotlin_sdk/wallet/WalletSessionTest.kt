@@ -20,7 +20,8 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot, FIXED_PRIVATE_KEY_HEX)
         val client =
             WalletClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
                 privateKeyFactory = ::fixedPrivateKeyBytes,
@@ -48,7 +49,8 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot)
         val client =
             WalletClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
                 credentialSigner = MockWebCryptoCredentialSigner(available = false),
@@ -72,7 +74,8 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot, FIXED_PRIVATE_KEY_HEX)
         val client =
             WalletClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
             )
@@ -91,7 +94,8 @@ class WalletSessionTest {
     fun addressReturnsSelectedWallet() {
         val client =
             WalletClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore =
                     InMemorySessionStore(
@@ -115,7 +119,8 @@ class WalletSessionTest {
     fun restorePersistedSessionIgnoresPendingSnapshots() {
         val client =
             WalletClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore =
                     InMemorySessionStore(
@@ -140,7 +145,8 @@ class WalletSessionTest {
     fun hasPendingSignInIsTrueForInMemoryPendingAuth() {
         val client =
             WalletClient(
-                projectAccessKey = "test-access-key",
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
                 privateKeyFactory = ::fixedPrivateKeyBytes,

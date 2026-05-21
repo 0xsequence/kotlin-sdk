@@ -32,7 +32,8 @@ Until the package is published, use the source directly from this repository.
 
 - Android `minSdk 26`
 - Kotlin/Android app using the Android library module
-- a valid `projectAccessKey`
+- a valid `publicApiKey`
+- a valid `projectId`
 
 ## Quick Start
 
@@ -41,14 +42,16 @@ Create the SDK with the Android-friendly constructor:
 ```kotlin
 val client = OMSClient(
     context = context,
-    projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
+    publicApiKey = "YOUR_PUBLIC_API_KEY",
+    projectId = "YOUR_PROJECT_ID",
 )
 ```
 
 That constructor uses secure persisted session storage by default.
 Wallet API requests are signed with a non-extractable Android Keystore P-256
 credential (`ecdsa-p256-sha256`), so the private credential key is not written
-to app storage.
+to app storage. `publicApiKey` is sent as the API access key, while `projectId`
+is used as the WaaS signing scope.
 Only completed wallet sessions are restored automatically. Pending auth state is
 not exposed through `client.session`; email OTP pending state is kept in memory,
 while OIDC redirect verifier/state is stored internally only so incoming app
@@ -59,7 +62,8 @@ If you need a custom environment:
 ```kotlin
 val client = OMSClient(
     context = context,
-    projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
+    publicApiKey = "YOUR_PUBLIC_API_KEY",
+    projectId = "YOUR_PROJECT_ID",
     environment = OMSClientEnvironment(
         walletApiUrl = "https://...",
         apiRpcUrl = "https://...",
@@ -73,7 +77,8 @@ For demo or staging-style defaults:
 ```kotlin
 val client = OMSClient(
     context = context,
-    projectAccessKey = "YOUR_PROJECT_ACCESS_KEY",
+    publicApiKey = "YOUR_PUBLIC_API_KEY",
+    projectId = "YOUR_PROJECT_ID",
     environment = OMSClientEnvironment.demoDefaults(),
 )
 ```
@@ -228,7 +233,7 @@ retaining unrecoverable transient state.
 Use the selected wallet:
 
 ```kotlin
-val network = Network.POLYGON_AMOY
+val network = Network.AMOY
 val typedDataJson =
     buildJsonObject {
         putJsonObject("types") {
@@ -257,7 +262,7 @@ val typedDataJson =
         putJsonObject("domain") {
             put("name", "OMS Client")
             put("version", "1")
-            put("chainId", JsonPrimitive(network.chainId.toLong()))
+            put("chainId", JsonPrimitive(network.id.toLong()))
         }
         putJsonObject("message") {
             put("contents", "hello from android")
@@ -323,7 +328,7 @@ val tokenBalances = client.indexer.getTokenBalances(
 For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:
 
 ```kotlin
-val network = Network.POLYGON_AMOY
+val network = Network.AMOY
 
 val txResult = client.wallet.sendTransaction(
     network = network,
@@ -377,6 +382,7 @@ To refresh a transaction later or manage active wallet credentials:
 
 ```kotlin
 val status = client.wallet.getTransactionStatus(txnId = txResult.txnId)
+val idToken = client.wallet.getIdToken(ttlSeconds = 300u).idToken
 val credentials = client.wallet.listAccess(pageSize = 25u)
 client.wallet.listAccessPages(pageSize = 25u).collect { page ->
     renderCredentials(page.credentials)

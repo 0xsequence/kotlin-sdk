@@ -95,7 +95,7 @@ internal data class PendingOidcRedirectAuth(
     val nonce: String,
     val redirectUri: String,
     val issuer: String,
-    val authorizationScope: String,
+    val projectId: String,
     val walletType: WalletType,
     val signerAddress: String,
     val signerKeyType: SigningAlgorithm? = null,
@@ -197,7 +197,7 @@ internal object OidcRedirectAuth {
     ) {
         val state = decodeState(encodedState)
         require(state.nonce == pending.nonce) { "OIDC state nonce mismatch" }
-        require(state.scope == pending.authorizationScope) { "OIDC state scope mismatch" }
+        require(state.scope == pending.projectId) { "OIDC state scope mismatch" }
         require(state.redirectUri == null || state.redirectUri == pending.redirectUri) {
             "OIDC state redirect_uri mismatch"
         }

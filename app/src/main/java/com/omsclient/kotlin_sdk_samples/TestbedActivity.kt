@@ -7,6 +7,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
+import com.omsclient.kotlin_sdk.findNetworkById
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
@@ -17,7 +18,8 @@ import kotlinx.coroutines.launch
 class TestbedActivity : AppCompatActivity() {
     private val uiScope = MainScope()
 
-    private lateinit var accessKeyInput: TextInputEditText
+    private lateinit var publicApiKeyInput: TextInputEditText
+    private lateinit var projectIdInput: TextInputEditText
     private lateinit var walletApiUrlInput: TextInputEditText
     private lateinit var apiRpcUrlInput: TextInputEditText
     private lateinit var indexerUrlTemplateInput: TextInputEditText
@@ -54,7 +56,8 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
-        accessKeyInput = findViewById(R.id.accessKeyInput)
+        publicApiKeyInput = findViewById(R.id.publicApiKeyInput)
+        projectIdInput = findViewById(R.id.projectIdInput)
         walletApiUrlInput = findViewById(R.id.walletApiUrlInput)
         apiRpcUrlInput = findViewById(R.id.apiRpcUrlInput)
         indexerUrlTemplateInput = findViewById(R.id.indexerUrlTemplateInput)
@@ -74,7 +77,8 @@ class TestbedActivity : AppCompatActivity() {
 
     private fun populateDefaults() {
         val demoEnvironment = OMSClientEnvironment.demoDefaults()
-        accessKeyInput.setText(DemoConfig.demoProjectAccessKey)
+        publicApiKeyInput.setText(DemoConfig.demoPublicApiKey)
+        projectIdInput.setText(DemoConfig.demoProjectId)
         walletApiUrlInput.setText(demoEnvironment.walletApiUrl)
         apiRpcUrlInput.setText(demoEnvironment.apiRpcUrl)
         indexerUrlTemplateInput.setText(demoEnvironment.indexerUrlTemplate)
@@ -92,7 +96,7 @@ class TestbedActivity : AppCompatActivity() {
             launchAction("Load token balances") { sdk ->
                 val balances =
                     sdk.indexer.getTokenBalances(
-                        network = requireNetwork(sdk, balancesChainIdInput, "Balances chain ID"),
+                        network = requireNetwork(balancesChainIdInput, "Balances chain ID"),
                         contractAddress = requireText(contractAddressInput, "Contract address"),
                         walletAddress = requireText(balancesWalletAddressInput, "Balances wallet address"),
                         includeMetadata = true,
@@ -132,7 +136,7 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.signMessageButton).setOnClickListener {
             launchAction("Sign message") { sdk ->
-                val network = requireNetwork(sdk, messageChainIdInput, "Message chain ID")
+                val network = requireNetwork(messageChainIdInput, "Message chain ID")
                 val message = requireText(messageInput, "Message")
                 val result = sdk.wallet.signMessage(network = network, message = message)
                 lastSignedMessage = message
@@ -145,7 +149,7 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.verifySignatureButton).setOnClickListener {
             launchAction("Verify last signature") { sdk ->
-                val network = requireNetwork(sdk, messageChainIdInput, "Message chain ID")
+                val network = requireNetwork(messageChainIdInput, "Message chain ID")
                 val result =
                     sdk.wallet.isValidMessageSignature(
                         network = network,
@@ -160,7 +164,7 @@ class TestbedActivity : AppCompatActivity() {
             launchAction("Send transaction") { sdk ->
                 val result =
                     sdk.wallet.sendTransaction(
-                        network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
+                        network = requireNetwork(messageChainIdInput, "Message chain ID"),
                         to = transactionToInput.text.toString().trim(),
                         value = parseUnits(transactionValueInput.text.toString(), 18),
                     )
@@ -184,18 +188,21 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun requireSdk(): OMSClient {
-        val projectAccessKey = currentProjectAccessKey()
+        val publicApiKey = currentPublicApiKey()
+        val projectId = currentProjectId()
         val environment = currentEnvironment()
         val existing = runtime
-        if (existing?.projectAccessKey != projectAccessKey || existing.environment != environment) {
+        if (existing?.publicApiKey != publicApiKey || existing.projectId != projectId || existing.environment != environment) {
             runtime =
                 DemoRuntime(
-                    projectAccessKey = projectAccessKey,
+                    publicApiKey = publicApiKey,
+                    projectId = projectId,
                     environment = environment,
                     sdk =
                         OMSClient(
                             context = this,
-                            projectAccessKey = projectAccessKey,
+                            publicApiKey = publicApiKey,
+                            projectId = projectId,
                             environment = environment,
                         ),
                 )
@@ -207,7 +214,9 @@ class TestbedActivity : AppCompatActivity() {
         return requireNotNull(runtime).sdk
     }
 
-    private fun currentProjectAccessKey(): String = requireText(accessKeyInput, "Project access key")
+    private fun currentPublicApiKey(): String = requireText(publicApiKeyInput, "Public API key")
+
+    private fun currentProjectId(): String = requireText(projectIdInput, "Project ID")
 
     private fun currentEnvironment(): OMSClientEnvironment =
         OMSClientEnvironment(
@@ -255,16 +264,17 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun requireNetwork(
-        sdk: OMSClient,
         input: TextInputEditText,
         label: String,
     ): Network {
-        val chainId = requireText(input, label)
-        return requireNotNull(sdk.network(chainId)) { "$label is not supported: $chainId" }
+        val chainId = requireText(input, label).toIntOrNull()
+        requireNotNull(chainId) { "$label must be a numeric chain id" }
+        return requireNotNull(findNetworkById(chainId)) { "$label is not supported: $chainId" }
     }
 
     private data class DemoRuntime(
-        val projectAccessKey: String,
+        val publicApiKey: String,
+        val projectId: String,
         val environment: OMSClientEnvironment,
         val sdk: OMSClient,
     )

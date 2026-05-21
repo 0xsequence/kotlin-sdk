@@ -13,6 +13,7 @@ typealias Page = com.omsclient.kotlin_sdk.generated.waas.Page
 typealias FeeOption = com.omsclient.kotlin_sdk.generated.waas.FeeOption
 typealias FeeOptionSelection = com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection
 typealias FeeOptionSelector = suspend (List<FeeOptionWithBalance>) -> FeeOptionSelection?
+typealias GetIdTokenResponse = com.omsclient.kotlin_sdk.generated.waas.GetIDTokenResponse
 
 data class FeeOptionWithBalance(
     val feeOption: FeeOption,

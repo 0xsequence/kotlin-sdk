@@ -55,10 +55,23 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
-                    android:hint="Access key">
+                    android:hint="Public API key">
 
                     <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/accessKeyInput"
+                        android:id="@+id/publicApiKeyInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textNoSuggestions" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="Project ID">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/projectIdInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="textNoSuggestions" />

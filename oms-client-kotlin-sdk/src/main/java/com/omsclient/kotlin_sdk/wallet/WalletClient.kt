@@ -9,6 +9,7 @@ import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest
+import com.omsclient.kotlin_sdk.generated.waas.GetIDTokenRequest
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.IsValidMessageSignatureRequest
@@ -37,6 +38,7 @@ import com.omsclient.kotlin_sdk.models.FeeOption
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
+import com.omsclient.kotlin_sdk.models.GetIdTokenResponse
 import com.omsclient.kotlin_sdk.models.ListAccessResponse
 import com.omsclient.kotlin_sdk.models.Page
 import com.omsclient.kotlin_sdk.models.SignTypedDataResponse
@@ -61,7 +63,8 @@ import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTrans
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 
 class WalletClient internal constructor(
-    private val projectAccessKey: String,
+    private val publicApiKey: String,
+    private val projectId: String,
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
     private val session: OMSClientSession = OMSClientSession(),
@@ -84,7 +87,7 @@ class WalletClient internal constructor(
         )
     private val indexerClient: IndexerClient =
         IndexerClient(
-            projectAccessKey = projectAccessKey,
+            publicApiKey = publicApiKey,
             environment = environment,
             transport = transport,
         )
@@ -280,7 +283,7 @@ class WalletClient internal constructor(
             val state =
                 OidcRedirectAuth.encodeState(
                     nonce = nonce,
-                    scope = environment.authorizationScope,
+                    scope = projectId,
                     redirectUri = redirectUri.takeIf { oauthRedirectUri != redirectUri },
                 )
 
@@ -297,7 +300,7 @@ class WalletClient internal constructor(
                     nonce = nonce,
                     redirectUri = redirectUri,
                     issuer = provider.issuer,
-                    authorizationScope = environment.authorizationScope,
+                    projectId = projectId,
                     walletType = walletType,
                     signerAddress = signerAddress,
                     signerKeyType = signer.signingAlgorithm,
@@ -736,7 +739,7 @@ class WalletClient internal constructor(
         return waasClient().signMessage(
             SignMessageRequest(
                 walletId = requireWalletId(),
-                network = network.chainId,
+                network = network.id.toString(),
                 message = message,
             ),
         )
@@ -754,7 +757,7 @@ class WalletClient internal constructor(
         return waasClient().signTypedData(
             SignTypedDataRequest(
                 walletId = requireWalletId(),
-                network = network.chainId,
+                network = network.id.toString(),
                 typedData = typedData,
             ),
         )
@@ -771,7 +774,7 @@ class WalletClient internal constructor(
         val response =
             publicClient.isValidMessageSignature(
                 IsValidMessageSignatureRequest(
-                    network = network.chainId,
+                    network = network.id.toString(),
                     walletId = requireWalletId(),
                     message = message,
                     signature = signature,
@@ -791,7 +794,7 @@ class WalletClient internal constructor(
         val response =
             publicClient.isValidTypedDataSignature(
                 IsValidTypedDataSignatureRequest(
-                    network = network.chainId,
+                    network = network.id.toString(),
                     walletId = requireWalletId(),
                     typedData = typedData,
                     signature = signature,
@@ -840,7 +843,7 @@ class WalletClient internal constructor(
             client.prepareEthereumTransaction(
                 PrepareEthereumTransactionRequest(
                     walletId = requireWalletId(),
-                    network = network.chainId,
+                    network = network.id.toString(),
                     to = request.to,
                     value = request.value.toString(),
                     data = request.data,
@@ -875,7 +878,7 @@ class WalletClient internal constructor(
             client.prepareEthereumContractCall(
                 PrepareEthereumContractCallRequest(
                     walletId = requireWalletId(),
-                    network = network.chainId,
+                    network = network.id.toString(),
                     contract = contract,
                     method = method,
                     args = args,
@@ -948,6 +951,24 @@ class WalletClient internal constructor(
             ListAccessRequest(
                 walletId = requireWalletId(),
                 page = accessPage(pageSize, cursor),
+            ),
+        )
+    }
+
+    /**
+     * Returns an ID token for the currently selected wallet.
+     */
+    suspend fun getIdToken(
+        ttlSeconds: UInt? = null,
+        customClaims: Map<String, JsonElement>? = null,
+    ): GetIdTokenResponse {
+        session.requireSnapshot()
+        requireActiveCredential()
+        return waasClient().getIDToken(
+            GetIDTokenRequest(
+                walletId = requireWalletId(),
+                ttlSeconds = ttlSeconds,
+                customClaims = customClaims,
             ),
         )
     }
@@ -1104,7 +1125,7 @@ class WalletClient internal constructor(
                 balance = "0",
                 blockHash = null,
                 blockNumber = null,
-                chainId = network.chainId.toLongOrNull(),
+                chainId = network.id.toLong(),
             )
         }.getOrNull()
 
@@ -1169,8 +1190,8 @@ class WalletClient internal constructor(
             baseUrl = environment.walletApiBaseUrl(),
             transport =
                 WalletSignedWaasTransport(
-                    projectAccessKey = projectAccessKey,
-                    environment = environment,
+                    publicApiKey = publicApiKey,
+                    projectId = projectId,
                     httpClient = transport,
                     signer = signer,
                 ),
@@ -1178,7 +1199,7 @@ class WalletClient internal constructor(
 
     private fun defaultPublicHeaders(): Map<String, String> =
         mapOf(
-            OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
+            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
             "Accept" to "application/json",
         )
 }

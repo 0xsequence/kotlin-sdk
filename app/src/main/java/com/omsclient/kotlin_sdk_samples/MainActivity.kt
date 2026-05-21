@@ -14,7 +14,8 @@ class MainActivity : AppCompatActivity() {
         val sdk =
             OMSClient(
                 context = this,
-                projectAccessKey = DemoConfig.demoProjectAccessKey,
+                publicApiKey = DemoConfig.demoPublicApiKey,
+                projectId = DemoConfig.demoProjectId,
                 environment = OMSClientEnvironment.demoDefaults(),
             )
         if (sdk.wallet.address != null) {

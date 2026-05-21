@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.OMSClientNetworks
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
@@ -42,7 +42,8 @@ class WalletTransactionTest {
         runBlocking {
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -66,7 +67,7 @@ class WalletTransactionTest {
             val error =
                 runCatching {
                     client.sendTransaction(
-                        network = OMSClientNetworks.requireSupported("80002"),
+                        network = Network.AMOY,
                         request =
                             SendTransactionRequest(
                                 to = "0xabc",
@@ -189,7 +190,8 @@ class WalletTransactionTest {
                 )
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -212,7 +214,7 @@ class WalletTransactionTest {
 
             val result =
                 client.sendTransaction(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     request =
                         SendTransactionRequest(
                             to = "0xabc",
@@ -342,7 +344,8 @@ class WalletTransactionTest {
             val delays = mutableListOf<Long>()
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -366,7 +369,7 @@ class WalletTransactionTest {
 
             val result =
                 client.sendTransaction(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     request =
                         SendTransactionRequest(
                             to = "0xabc",
@@ -418,7 +421,8 @@ class WalletTransactionTest {
 
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -446,7 +450,7 @@ class WalletTransactionTest {
                 )
             val result =
                 client.callContract(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     contract = "0xcontract",
                     method = "transfer(address,uint256)",
                     args = args,
@@ -494,7 +498,8 @@ class WalletTransactionTest {
 
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -549,7 +554,8 @@ class WalletTransactionTest {
 
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),

@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.generated.waas.GetIDTokenRequest
 import com.omsclient.kotlin_sdk.generated.waas.ListAccessRequest
 import com.omsclient.kotlin_sdk.generated.waas.Page
 import com.omsclient.kotlin_sdk.generated.waas.RevokeAccessRequest
@@ -9,6 +10,7 @@ import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
@@ -83,7 +85,8 @@ class WalletAccessTest {
 
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -190,7 +193,8 @@ class WalletAccessTest {
 
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),
@@ -241,11 +245,76 @@ class WalletAccessTest {
         }
 
     @Test
+    fun getIdTokenUsesGeneratedWaasRequest() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"idToken":"id-token-value"}""")
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                ),
+                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+                        ),
+                    nonceGenerator = { 1710000113L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val response =
+                client.getIdToken(
+                    ttlSeconds = 300u,
+                    customClaims =
+                        mapOf(
+                            "role" to JsonPrimitive("admin"),
+                        ),
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals("id-token-value", response.idToken)
+            assertEquals("/rpc/Wallet/GetIDToken", request.target)
+            assertEquals(
+                WaasWalletApi.GetIDToken.encodeRequest(
+                    GetIDTokenRequest(
+                        walletId = "wallet-main",
+                        ttlSeconds = 300u,
+                        customClaims =
+                            mapOf(
+                                "role" to JsonPrimitive("admin"),
+                            ),
+                    ),
+                ),
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertNotNull(request.headers[OMSClientEnvironment.walletSignatureHeaderName])
+        }
+
+    @Test
     fun revokeAccessRequiresActiveCredential() =
         runBlocking {
             val client =
                 WalletClient(
-                    projectAccessKey = "test-access-key",
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
                             walletApiUrl = server.url("/rpc/Wallet/").toString(),

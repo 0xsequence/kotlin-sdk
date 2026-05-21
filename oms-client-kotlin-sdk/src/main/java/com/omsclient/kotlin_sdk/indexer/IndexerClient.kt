@@ -18,7 +18,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
 class IndexerClient internal constructor(
-    private val projectAccessKey: String,
+    private val publicApiKey: String,
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
 ) {
@@ -109,13 +109,13 @@ class IndexerClient internal constructor(
             balance = balanceObject.string("balance") ?: balanceObject.string("balanceWei"),
             blockHash = null,
             blockNumber = null,
-            chainId = balanceObject.long("chainId") ?: network.chainId.toLongOrNull(),
+            chainId = balanceObject.long("chainId") ?: network.id.toLong(),
         )
     }
 
     private fun defaultHeaders(): Map<String, String> =
         mapOf(
-            OMSClientEnvironment.accessKeyHeaderName to projectAccessKey,
+            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
             "Accept" to "application/json",
         )
 }
