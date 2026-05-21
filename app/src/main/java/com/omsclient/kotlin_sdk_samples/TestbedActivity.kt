@@ -17,7 +17,8 @@ import kotlinx.coroutines.launch
 class TestbedActivity : AppCompatActivity() {
     private val uiScope = MainScope()
 
-    private lateinit var accessKeyInput: TextInputEditText
+    private lateinit var publicApiKeyInput: TextInputEditText
+    private lateinit var projectIdInput: TextInputEditText
     private lateinit var walletApiUrlInput: TextInputEditText
     private lateinit var apiRpcUrlInput: TextInputEditText
     private lateinit var indexerUrlTemplateInput: TextInputEditText
@@ -54,7 +55,8 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
-        accessKeyInput = findViewById(R.id.accessKeyInput)
+        publicApiKeyInput = findViewById(R.id.publicApiKeyInput)
+        projectIdInput = findViewById(R.id.projectIdInput)
         walletApiUrlInput = findViewById(R.id.walletApiUrlInput)
         apiRpcUrlInput = findViewById(R.id.apiRpcUrlInput)
         indexerUrlTemplateInput = findViewById(R.id.indexerUrlTemplateInput)
@@ -74,7 +76,8 @@ class TestbedActivity : AppCompatActivity() {
 
     private fun populateDefaults() {
         val demoEnvironment = OMSClientEnvironment.demoDefaults()
-        accessKeyInput.setText(DemoConfig.demoProjectAccessKey)
+        publicApiKeyInput.setText(DemoConfig.demoPublicApiKey)
+        projectIdInput.setText(DemoConfig.demoProjectId)
         walletApiUrlInput.setText(demoEnvironment.walletApiUrl)
         apiRpcUrlInput.setText(demoEnvironment.apiRpcUrl)
         indexerUrlTemplateInput.setText(demoEnvironment.indexerUrlTemplate)
@@ -184,18 +187,21 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun requireSdk(): OMSClient {
-        val projectAccessKey = currentProjectAccessKey()
+        val publicApiKey = currentPublicApiKey()
+        val projectId = currentProjectId()
         val environment = currentEnvironment()
         val existing = runtime
-        if (existing?.projectAccessKey != projectAccessKey || existing.environment != environment) {
+        if (existing?.publicApiKey != publicApiKey || existing.projectId != projectId || existing.environment != environment) {
             runtime =
                 DemoRuntime(
-                    projectAccessKey = projectAccessKey,
+                    publicApiKey = publicApiKey,
+                    projectId = projectId,
                     environment = environment,
                     sdk =
                         OMSClient(
                             context = this,
-                            projectAccessKey = projectAccessKey,
+                            publicApiKey = publicApiKey,
+                            projectId = projectId,
                             environment = environment,
                         ),
                 )
@@ -207,7 +213,9 @@ class TestbedActivity : AppCompatActivity() {
         return requireNotNull(runtime).sdk
     }
 
-    private fun currentProjectAccessKey(): String = requireText(accessKeyInput, "Project access key")
+    private fun currentPublicApiKey(): String = requireText(publicApiKeyInput, "Public API key")
+
+    private fun currentProjectId(): String = requireText(projectIdInput, "Project ID")
 
     private fun currentEnvironment(): OMSClientEnvironment =
         OMSClientEnvironment(
@@ -264,7 +272,8 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private data class DemoRuntime(
-        val projectAccessKey: String,
+        val publicApiKey: String,
+        val projectId: String,
         val environment: OMSClientEnvironment,
         val sdk: OMSClient,
     )

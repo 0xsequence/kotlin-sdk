@@ -67,7 +67,8 @@ class AuthDemoActivity : AppCompatActivity() {
     private val sdk by lazy {
         OMSClient(
             context = this,
-            projectAccessKey = DemoConfig.demoProjectAccessKey,
+            publicApiKey = DemoConfig.demoPublicApiKey,
+            projectId = DemoConfig.demoProjectId,
             environment = OMSClientEnvironment.demoDefaults(),
         )
     }
@@ -102,7 +103,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
     private var lastTransactionHash: String? = null
-    private var selectedNetwork: Network = Network.POLYGON_AMOY
+    private var selectedNetwork: Network = Network.AMOY
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -383,7 +384,7 @@ class AuthDemoActivity : AppCompatActivity() {
             startActivity(
                 Intent(
                     Intent.ACTION_VIEW,
-                    Uri.parse(explorerUrlFor(selectedNetwork.chainId, txnHash)),
+                    Uri.parse("${selectedNetwork.explorerUrl}/tx/$txnHash"),
                 ),
             )
         }
@@ -461,8 +462,8 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun configureNetworkPicker() {
         val networks =
-            listOf(Network.POLYGON_AMOY, Network.POLYGON)
-                .filter { network -> sdk.supportedNetworks.any { it.chainId == network.chainId } }
+            listOf(Network.AMOY, Network.POLYGON)
+                .filter { network -> sdk.supportedNetworks.any { it.id == network.id } }
         val labels = networks.map(::networkLabel)
         networkInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
         networkInput.setText(networkLabel(selectedNetwork), false)
@@ -1064,17 +1065,7 @@ class AuthDemoActivity : AppCompatActivity() {
             return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes)
         }
 
-        private fun explorerUrlFor(
-            chainId: String,
-            txnHash: String,
-        ): String =
-            when (chainId) {
-                "80002" -> "https://amoy.polygonscan.com/tx/$txnHash"
-                "137" -> "https://polygonscan.com/tx/$txnHash"
-                else -> "https://amoy.polygonscan.com/tx/$txnHash"
-            }
-
-        private fun networkLabel(network: Network): String = "${network.displayName} (${network.chainId})"
+        private fun networkLabel(network: Network): String = "${network.name} (${network.id})"
 
         private fun feeOptionLabel(option: FeeOptionWithBalance): String =
             buildString {

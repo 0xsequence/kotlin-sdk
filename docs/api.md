@@ -7,7 +7,8 @@ This document describes the intended public API for external consumers of the OM
 ```kotlin
 OMSClient(
     context: Context,
-    projectAccessKey: String,
+    publicApiKey: String,
+    projectId: String,
     environment: OMSClientEnvironment = OMSClientEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
 )
@@ -60,7 +61,9 @@ The Android `OMSClient(context, ...)` constructor signs wallet API requests with
 a non-extractable Android Keystore P-256 credential using the
 `ecdsa-p256-sha256` signing algorithm. Persisted wallet sessions store wallet metadata
 only; the credential private key remains owned by Android Keystore and is not
-written to SDK session storage.
+written to SDK session storage. `publicApiKey` is sent as `X-Access-Key`;
+`projectId` is used as the wallet request signing scope and OIDC redirect state
+scope.
 
 ```kotlin
 fun client.signOut()
@@ -362,17 +365,42 @@ pages so each request uses an explicit limit.
 
 ```kotlin
 val client.supportedNetworks: List<Network>
+val supportedNetworks: List<Network>
 fun client.network(chainId: String): Network?
+fun client.network(chainId: Int): Network?
+fun client.networkByName(name: String): Network?
+fun findNetworkById(chainId: Int): Network?
+fun findNetworkByName(name: String): Network?
 ```
 
 ```kotlin
-enum class Network {
-    POLYGON,
-    POLYGON_AMOY,
-}
+data class Network(
+    val id: Int,
+    val name: String,
+    val nativeTokenSymbol: String,
+    val explorerUrl: String,
+)
+
+Network.MAINNET
+Network.SEPOLIA
+Network.POLYGON
+Network.AMOY
+Network.ARBITRUM
+Network.ARBITRUM_SEPOLIA
+Network.OPTIMISM
+Network.OPTIMISM_SEPOLIA
+Network.BASE
+Network.BASE_SEPOLIA
+Network.BSC
+Network.BSC_TESTNET
+Network.ARBITRUM_NOVA
+Network.AVALANCHE
+Network.AVALANCHE_TESTNET
+Network.KATANA
 ```
 
-Each entry exposes `chainId` and `displayName`.
+Each entry exposes `id`, `name`, `nativeTokenSymbol`, `explorerUrl`, and the
+backward-compatible `chainId` string alias.
 
 ## Utils
 
@@ -675,7 +703,7 @@ when (
 For raw calldata or transaction parameters beyond `to` and `value`:
 
 ```kotlin
-val network = Network.POLYGON_AMOY
+val network = Network.AMOY
 
 val txResult = client.wallet.sendTransaction(
     network = network,
