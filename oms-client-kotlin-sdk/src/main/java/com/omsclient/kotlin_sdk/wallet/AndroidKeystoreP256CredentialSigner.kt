@@ -19,6 +19,12 @@ import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Owns the Android Keystore P-256 credential used to authorize wallet requests.
+ *
+ * The private key is generated inside Android Keystore and is not exported to
+ * SDK session storage. This class persists only the per-credential nonce.
+ */
 internal class AndroidKeystoreP256CredentialSigner(
     context: Context,
     private val alias: String = DEFAULT_KEY_ALIAS,

@@ -83,11 +83,12 @@ class OMSClient internal constructor(
         get() = OMSClientNetworks.supportedNetworks
 
     /**
-     * Creates an Android-backed client with completed-session metadata storage
-     * and a non-extractable Android Keystore request-signing credential.
+     * Creates an Android-backed client with separate session metadata storage
+     * and Android Keystore request signing.
      *
-     * Persisted metadata can restore wallet/session state, but cannot authorize
-     * wallet API requests without the matching Keystore credential.
+     * The metadata store can restore completed wallet/session state, but it
+     * cannot authorize wallet API requests. Request authorization uses a
+     * separate non-extractable Android Keystore P-256 credential.
      */
     constructor(
         context: Context,

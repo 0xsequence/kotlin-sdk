@@ -7,6 +7,12 @@ import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import org.json.JSONObject
 import java.io.File
 
+/**
+ * Stores completed wallet-session metadata in an app-private no-backup file.
+ *
+ * This store does not create, store, or sign with wallet credentials. Wallet
+ * request authorization is handled by the Android Keystore credential signer.
+ */
 internal class AndroidSessionMetadataStore(
     context: Context,
     private val fileName: String = DEFAULT_FILE_NAME,
