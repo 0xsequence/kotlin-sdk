@@ -126,8 +126,8 @@ links from `onCreate` / `onNewIntent`:
 
 ```kotlin
 val started = client.wallet.startOidcRedirectAuth(
-    provider = OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID"),
-    redirectUri = "omsclientkotlindemo://auth/callback",
+    provider = OidcProviders.google(),
+    redirectUri = "yourapp://auth/callback",
 )
 
 // Open started.authorizationUrl.
@@ -139,6 +139,10 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
     is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
 }
 ```
+
+Use a redirect URI that matches a deep link registered by your app, such as
+`yourapp://auth/callback`. If your Google OAuth setup uses a custom web client
+ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
 
 With the default automatic behavior, a successful redirect callback returns
 `OidcRedirectAuthResult.Completed`; `WalletSelection` is only a successful branch
