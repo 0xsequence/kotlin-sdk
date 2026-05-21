@@ -7,6 +7,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
+import com.omsclient.kotlin_sdk.findNetworkById
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
@@ -95,7 +96,7 @@ class TestbedActivity : AppCompatActivity() {
             launchAction("Load token balances") { sdk ->
                 val balances =
                     sdk.indexer.getTokenBalances(
-                        network = requireNetwork(sdk, balancesChainIdInput, "Balances chain ID"),
+                        network = requireNetwork(balancesChainIdInput, "Balances chain ID"),
                         contractAddress = requireText(contractAddressInput, "Contract address"),
                         walletAddress = requireText(balancesWalletAddressInput, "Balances wallet address"),
                         includeMetadata = true,
@@ -135,7 +136,7 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.signMessageButton).setOnClickListener {
             launchAction("Sign message") { sdk ->
-                val network = requireNetwork(sdk, messageChainIdInput, "Message chain ID")
+                val network = requireNetwork(messageChainIdInput, "Message chain ID")
                 val message = requireText(messageInput, "Message")
                 val result = sdk.wallet.signMessage(network = network, message = message)
                 lastSignedMessage = message
@@ -148,7 +149,7 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.verifySignatureButton).setOnClickListener {
             launchAction("Verify last signature") { sdk ->
-                val network = requireNetwork(sdk, messageChainIdInput, "Message chain ID")
+                val network = requireNetwork(messageChainIdInput, "Message chain ID")
                 val result =
                     sdk.wallet.isValidMessageSignature(
                         network = network,
@@ -163,7 +164,7 @@ class TestbedActivity : AppCompatActivity() {
             launchAction("Send transaction") { sdk ->
                 val result =
                     sdk.wallet.sendTransaction(
-                        network = requireNetwork(sdk, messageChainIdInput, "Message chain ID"),
+                        network = requireNetwork(messageChainIdInput, "Message chain ID"),
                         to = transactionToInput.text.toString().trim(),
                         value = parseUnits(transactionValueInput.text.toString(), 18),
                     )
@@ -263,12 +264,12 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun requireNetwork(
-        sdk: OMSClient,
         input: TextInputEditText,
         label: String,
     ): Network {
-        val chainId = requireText(input, label)
-        return requireNotNull(sdk.network(chainId)) { "$label is not supported: $chainId" }
+        val chainId = requireText(input, label).toIntOrNull()
+        requireNotNull(chainId) { "$label must be a numeric chain id" }
+        return requireNotNull(findNetworkById(chainId)) { "$label is not supported: $chainId" }
     }
 
     private data class DemoRuntime(

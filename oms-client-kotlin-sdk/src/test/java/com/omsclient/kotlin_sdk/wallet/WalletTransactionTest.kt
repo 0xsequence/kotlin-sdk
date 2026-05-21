@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.OMSClientNetworks
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
@@ -67,7 +67,7 @@ class WalletTransactionTest {
             val error =
                 runCatching {
                     client.sendTransaction(
-                        network = OMSClientNetworks.requireSupported("80002"),
+                        network = Network.AMOY,
                         request =
                             SendTransactionRequest(
                                 to = "0xabc",
@@ -214,7 +214,7 @@ class WalletTransactionTest {
 
             val result =
                 client.sendTransaction(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     request =
                         SendTransactionRequest(
                             to = "0xabc",
@@ -369,7 +369,7 @@ class WalletTransactionTest {
 
             val result =
                 client.sendTransaction(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     request =
                         SendTransactionRequest(
                             to = "0xabc",
@@ -450,7 +450,7 @@ class WalletTransactionTest {
                 )
             val result =
                 client.callContract(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     contract = "0xcontract",
                     method = "transfer(address,uint256)",
                     args = args,

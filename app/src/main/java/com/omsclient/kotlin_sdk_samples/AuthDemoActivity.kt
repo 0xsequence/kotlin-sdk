@@ -331,7 +331,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 lastSignedSignature = result.signature
                 lastSignatureView.text = "Last signature: ${result.signature}"
                 signatureStatusView.text = "Signature status: signed. Ready to verify."
-                appendLog("Signed message on chain ${network.chainId}")
+                appendLog("Signed message on chain ${network.id}")
             }
         }
 
@@ -349,9 +349,9 @@ class AuthDemoActivity : AppCompatActivity() {
                     )
                 signatureStatusView.text =
                     if (result) {
-                        "Signature status: valid on chain ${selectedNetwork.chainId}."
+                        "Signature status: valid on chain ${selectedNetwork.id}."
                     } else {
-                        "Signature status: invalid on chain ${selectedNetwork.chainId}."
+                        "Signature status: invalid on chain ${selectedNetwork.id}."
                     }
                 appendLog("Verify signature => isValid=$result")
             }
@@ -373,7 +373,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     )
                 lastTransactionHash = result.txnHash
                 lastTransactionHashView.text = "Last transaction hash: ${result.txnHash ?: "pending"}"
-                transactionStatusView.text = "Transaction status: ${result.status} on chain ${network.chainId}."
+                transactionStatusView.text = "Transaction status: ${result.status} on chain ${network.id}."
                 openExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
                 appendLog("Transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
             }

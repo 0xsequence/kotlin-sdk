@@ -262,7 +262,7 @@ val typedDataJson =
         putJsonObject("domain") {
             put("name", "OMS Client")
             put("version", "1")
-            put("chainId", JsonPrimitive(network.chainId.toLong()))
+            put("chainId", JsonPrimitive(network.id.toLong()))
         }
         putJsonObject("message") {
             put("contents", "hello from android")

@@ -12,12 +12,6 @@ data class Network(
     val nativeTokenSymbol: String,
     val explorerUrl: String,
 ) {
-    val chainId: String
-        get() = id.toString()
-
-    val displayName: String
-        get() = name
-
     override fun toString(): String = name
 
     companion object {
@@ -174,10 +168,6 @@ data class Network(
 internal object OMSClientNetworks {
     val supportedNetworks: List<Network> = Network.entries
 
-    fun requireSupported(chainId: String): Network =
-        supportedNetworks.firstOrNull { it.chainId == chainId }
-            ?: error("Unsupported chain id: $chainId")
-
     fun findById(id: Int): Network? = supportedNetworks.firstOrNull { it.id == id }
 
     fun findByName(name: String): Network? = supportedNetworks.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
@@ -190,9 +180,9 @@ val supportedNetworks: List<Network>
     get() = OMSClientNetworks.supportedNetworks
 
 /**
- * Returns a supported network by numeric chain id.
+ * Returns a supported network by id.
  */
-fun findNetworkById(chainId: Int): Network? = OMSClientNetworks.findById(chainId)
+fun findNetworkById(id: Int): Network? = OMSClientNetworks.findById(id)
 
 /**
  * Returns a supported network by registry name.

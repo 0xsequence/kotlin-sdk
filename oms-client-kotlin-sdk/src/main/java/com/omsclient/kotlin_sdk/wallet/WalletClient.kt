@@ -737,7 +737,7 @@ class WalletClient internal constructor(
         return waasClient().signMessage(
             SignMessageRequest(
                 walletId = requireWalletId(),
-                network = network.chainId,
+                network = network.id.toString(),
                 message = message,
             ),
         )
@@ -755,7 +755,7 @@ class WalletClient internal constructor(
         return waasClient().signTypedData(
             SignTypedDataRequest(
                 walletId = requireWalletId(),
-                network = network.chainId,
+                network = network.id.toString(),
                 typedData = typedData,
             ),
         )
@@ -772,7 +772,7 @@ class WalletClient internal constructor(
         val response =
             publicClient.isValidMessageSignature(
                 IsValidMessageSignatureRequest(
-                    network = network.chainId,
+                    network = network.id.toString(),
                     walletId = requireWalletId(),
                     message = message,
                     signature = signature,
@@ -792,7 +792,7 @@ class WalletClient internal constructor(
         val response =
             publicClient.isValidTypedDataSignature(
                 IsValidTypedDataSignatureRequest(
-                    network = network.chainId,
+                    network = network.id.toString(),
                     walletId = requireWalletId(),
                     typedData = typedData,
                     signature = signature,
@@ -841,7 +841,7 @@ class WalletClient internal constructor(
             client.prepareEthereumTransaction(
                 PrepareEthereumTransactionRequest(
                     walletId = requireWalletId(),
-                    network = network.chainId,
+                    network = network.id.toString(),
                     to = request.to,
                     value = request.value.toString(),
                     data = request.data,
@@ -876,7 +876,7 @@ class WalletClient internal constructor(
             client.prepareEthereumContractCall(
                 PrepareEthereumContractCallRequest(
                     walletId = requireWalletId(),
-                    network = network.chainId,
+                    network = network.id.toString(),
                     contract = contract,
                     method = method,
                     args = args,
@@ -1105,7 +1105,7 @@ class WalletClient internal constructor(
                 balance = "0",
                 blockHash = null,
                 blockNumber = null,
-                chainId = network.chainId.toLongOrNull(),
+                chainId = network.id.toLong(),
             )
         }.getOrNull()
 

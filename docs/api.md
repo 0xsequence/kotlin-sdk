@@ -366,10 +366,7 @@ pages so each request uses an explicit limit.
 ```kotlin
 val client.supportedNetworks: List<Network>
 val supportedNetworks: List<Network>
-fun client.network(chainId: String): Network?
-fun client.network(chainId: Int): Network?
-fun client.networkByName(name: String): Network?
-fun findNetworkById(chainId: Int): Network?
+fun findNetworkById(id: Int): Network?
 fun findNetworkByName(name: String): Network?
 ```
 
@@ -399,8 +396,7 @@ Network.AVALANCHE_TESTNET
 Network.KATANA
 ```
 
-Each entry exposes `id`, `name`, `nativeTokenSymbol`, `explorerUrl`, and the
-backward-compatible `chainId` string alias.
+Each entry exposes `id`, `name`, `nativeTokenSymbol`, and `explorerUrl`.
 
 ## Utils
 

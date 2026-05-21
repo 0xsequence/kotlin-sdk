@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.OMSClientNetworks
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.generated.waas.SignTypedDataRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
@@ -71,7 +71,7 @@ class WalletSigningTest {
 
             val result =
                 client.signMessage(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     message = "hello",
                 )
 
@@ -121,7 +121,7 @@ class WalletSigningTest {
                 }
             val result =
                 client.signTypedData(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     typedData = typedData,
                 )
             val request = requireNotNull(server.takeRequest())

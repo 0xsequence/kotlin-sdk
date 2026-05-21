@@ -90,24 +90,6 @@ class OMSClient internal constructor(
         get() = OMSClientNetworks.supportedNetworks
 
     /**
-     * Returns a supported network by chain id, or null when the chain id is not
-     * supported by this SDK build.
-     */
-    fun network(chainId: String): Network? = supportedNetworks.firstOrNull { it.chainId == chainId }
-
-    /**
-     * Returns a supported network by numeric chain id, or null when the chain id
-     * is not supported by this SDK build.
-     */
-    fun network(chainId: Int): Network? = findNetworkById(chainId)
-
-    /**
-     * Returns a supported network by registry name, or null when the name is not
-     * supported by this SDK build.
-     */
-    fun networkByName(name: String): Network? = findNetworkByName(name)
-
-    /**
      * Creates an Android-backed client with persisted secure storage for
      * completed wallet sessions.
      */

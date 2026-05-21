@@ -1,7 +1,7 @@
 package com.omsclient.kotlin_sdk.network
 
+import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
-import com.omsclient.kotlin_sdk.OMSClientNetworks
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
@@ -68,7 +68,7 @@ class ServiceClientsTest {
 
             val messageIsValid =
                 client.wallet.isValidMessageSignature(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     message = "hello",
                     signature = "0xmessage",
                 )
@@ -86,7 +86,7 @@ class ServiceClientsTest {
 
             val typedDataIsValid =
                 client.wallet.isValidTypedDataSignature(
-                    network = OMSClientNetworks.requireSupported("80002"),
+                    network = Network.AMOY,
                     typedData =
                         buildJsonObject {
                             put("contents", "hello")
@@ -143,7 +143,7 @@ class ServiceClientsTest {
 
             val response =
                 client.getTokenBalances(
-                    network = OMSClientNetworks.requireSupported("137"),
+                    network = Network.POLYGON,
                     contractAddress = "0xcontract",
                     walletAddress = "0xwallet",
                     includeMetadata = true,
@@ -184,7 +184,7 @@ class ServiceClientsTest {
 
             val response =
                 client.getTokenBalances(
-                    network = OMSClientNetworks.requireSupported("137"),
+                    network = Network.POLYGON,
                     contractAddress = "0xcontract",
                     walletAddress = "0xwallet",
                     includeMetadata = true,
@@ -226,7 +226,7 @@ class ServiceClientsTest {
 
             val response =
                 client.getNativeTokenBalance(
-                    network = OMSClientNetworks.requireSupported("137"),
+                    network = Network.POLYGON,
                     walletAddress = "0xwallet",
                 )
             val request = requireNotNull(server.takeRequest())
@@ -268,7 +268,7 @@ class ServiceClientsTest {
             val failure =
                 runCatching {
                     client.wallet.isValidMessageSignature(
-                        network = OMSClientNetworks.requireSupported("80002"),
+                        network = Network.AMOY,
                         message = "hello",
                         signature = "0xsig",
                     )
