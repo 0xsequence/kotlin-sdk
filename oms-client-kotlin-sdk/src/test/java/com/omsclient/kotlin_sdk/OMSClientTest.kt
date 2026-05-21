@@ -105,11 +105,34 @@ class OMSClientTest {
 
         assertEquals(supportedNetworks, sdk.supportedNetworks)
         assertEquals(16, sdk.supportedNetworks.size)
+        assertEquals(Network.MAINNET, findNetworkById(1))
+        assertEquals(Network.MAINNET, findNetworkByName("mainnet"))
         assertEquals(Network.POLYGON, findNetworkById(137))
         assertEquals(Network.AMOY, findNetworkById(80_002))
         assertEquals(Network.BASE, findNetworkByName("base"))
         assertEquals("POL", Network.POLYGON.nativeTokenSymbol)
         assertEquals("https://amoy.polygonscan.com", Network.AMOY.explorerUrl)
+        assertEquals(
+            listOf(
+                "Ethereum",
+                "Sepolia",
+                "Polygon",
+                "Polygon Amoy",
+                "Arbitrum",
+                "Arbitrum Sepolia",
+                "Optimism",
+                "Optimism Sepolia",
+                "Base",
+                "Base Sepolia",
+                "BSC",
+                "BSC Testnet",
+                "Arbitrum Nova",
+                "Avalanche",
+                "Avalanche Testnet",
+                "Katana",
+            ),
+            sdk.supportedNetworks.map { it.displayName },
+        )
         assertNull(findNetworkById(999_999))
     }
 

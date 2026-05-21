@@ -11,6 +11,7 @@ data class Network(
     val name: String,
     val nativeTokenSymbol: String,
     val explorerUrl: String,
+    val displayName: String = name,
 ) {
     override fun toString(): String = name
 
@@ -21,6 +22,7 @@ data class Network(
                 name = "mainnet",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://etherscan.io",
+                displayName = "Ethereum",
             )
 
         val SEPOLIA: Network =
@@ -29,6 +31,7 @@ data class Network(
                 name = "sepolia",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://sepolia.etherscan.io",
+                displayName = "Sepolia",
             )
 
         val POLYGON: Network =
@@ -37,6 +40,7 @@ data class Network(
                 name = "polygon",
                 nativeTokenSymbol = "POL",
                 explorerUrl = "https://polygonscan.com",
+                displayName = "Polygon",
             )
 
         val AMOY: Network =
@@ -45,6 +49,7 @@ data class Network(
                 name = "amoy",
                 nativeTokenSymbol = "POL",
                 explorerUrl = "https://amoy.polygonscan.com",
+                displayName = "Polygon Amoy",
             )
 
         val ARBITRUM: Network =
@@ -53,6 +58,7 @@ data class Network(
                 name = "arbitrum",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://arbiscan.io",
+                displayName = "Arbitrum",
             )
 
         val ARBITRUM_SEPOLIA: Network =
@@ -61,6 +67,7 @@ data class Network(
                 name = "arbitrum-sepolia",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://sepolia.arbiscan.io",
+                displayName = "Arbitrum Sepolia",
             )
 
         val OPTIMISM: Network =
@@ -69,6 +76,7 @@ data class Network(
                 name = "optimism",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://optimistic.etherscan.io",
+                displayName = "Optimism",
             )
 
         val OPTIMISM_SEPOLIA: Network =
@@ -77,6 +85,7 @@ data class Network(
                 name = "optimism-sepolia",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://sepolia-optimism.etherscan.io",
+                displayName = "Optimism Sepolia",
             )
 
         val BASE: Network =
@@ -85,6 +94,7 @@ data class Network(
                 name = "base",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://basescan.org",
+                displayName = "Base",
             )
 
         val BASE_SEPOLIA: Network =
@@ -93,6 +103,7 @@ data class Network(
                 name = "base-sepolia",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://sepolia.basescan.org",
+                displayName = "Base Sepolia",
             )
 
         val BSC: Network =
@@ -101,6 +112,7 @@ data class Network(
                 name = "bsc",
                 nativeTokenSymbol = "BNB",
                 explorerUrl = "https://bscscan.com",
+                displayName = "BSC",
             )
 
         val BSC_TESTNET: Network =
@@ -109,6 +121,7 @@ data class Network(
                 name = "bsc-testnet",
                 nativeTokenSymbol = "BNB",
                 explorerUrl = "https://testnet.bscscan.com",
+                displayName = "BSC Testnet",
             )
 
         val ARBITRUM_NOVA: Network =
@@ -117,6 +130,7 @@ data class Network(
                 name = "arbitrum-nova",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://nova.arbiscan.io",
+                displayName = "Arbitrum Nova",
             )
 
         val AVALANCHE: Network =
@@ -125,6 +139,7 @@ data class Network(
                 name = "avalanche",
                 nativeTokenSymbol = "AVAX",
                 explorerUrl = "https://subnets.avax.network/c-chain",
+                displayName = "Avalanche",
             )
 
         val AVALANCHE_TESTNET: Network =
@@ -133,6 +148,7 @@ data class Network(
                 name = "avalanche-testnet",
                 nativeTokenSymbol = "AVAX",
                 explorerUrl = "https://subnets-test.avax.network/c-chain",
+                displayName = "Avalanche Testnet",
             )
 
         val KATANA: Network =
@@ -141,6 +157,7 @@ data class Network(
                 name = "katana",
                 nativeTokenSymbol = "ETH",
                 explorerUrl = "https://katanascan.com",
+                displayName = "Katana",
             )
 
         val entries: List<Network> =

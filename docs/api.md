@@ -383,6 +383,7 @@ data class Network(
     val name: String,
     val nativeTokenSymbol: String,
     val explorerUrl: String,
+    val displayName: String = name,
 )
 
 Network.MAINNET
@@ -403,7 +404,10 @@ Network.AVALANCHE_TESTNET
 Network.KATANA
 ```
 
-Each entry exposes `id`, `name`, `nativeTokenSymbol`, and `explorerUrl`.
+Each entry exposes `id`, `name`, `nativeTokenSymbol`, `explorerUrl`, and
+`displayName`. `name` is also the registry/routing slug for indexer and node
+URLs, while `displayName` is the user-facing label. Ethereum mainnet uses
+`name = "mainnet"` and `displayName = "Ethereum"`.
 
 ## Utils
 
