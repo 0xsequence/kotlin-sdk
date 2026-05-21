@@ -57,6 +57,7 @@ import com.omsclient.kotlin_sdk.runOmsOperation
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.toOmsSdkException
 import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.CancellationException
@@ -401,8 +402,9 @@ class WalletClient internal constructor(
             clearPendingAuth = false
             throw throwable
         } catch (throwable: Throwable) {
+            val failure = throwable.toOmsSdkException(OmsSdkOperation.WalletHandleOidcRedirectCallback)
             clearSession(clearOidcRedirectAuth = false)
-            OidcRedirectAuthResult.Failed(throwable)
+            OidcRedirectAuthResult.Failed(failure)
         } finally {
             if (clearPendingAuth) {
                 redirectAuthStore.clear()

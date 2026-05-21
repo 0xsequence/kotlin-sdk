@@ -33,6 +33,7 @@ enum class OmsSdkOperation(
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),
     WalletGetIdToken("wallet.getIdToken"),
+    WalletHandleOidcRedirectCallback("wallet.handleOidcRedirectCallback"),
     WalletGetTransactionStatus("wallet.getTransactionStatus"),
     WalletIsValidMessageSignature("wallet.isValidMessageSignature"),
     WalletIsValidTypedDataSignature("wallet.isValidTypedDataSignature"),
@@ -209,6 +210,61 @@ internal fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkEx
                 operation = operation,
                 status = status,
                 message = message,
+                cause = this,
+            )
+        }
+    }
+
+internal fun Throwable.toOmsSdkException(operation: OmsSdkOperation): OmsSdkException =
+    when (this) {
+        is OmsSdkException -> {
+            if (this.operation == operation) {
+                this
+            } else {
+                OmsSdkException(
+                    code = code,
+                    operation = operation,
+                    status = status,
+                    txnId = txnId,
+                    retryable = retryable,
+                    message = message ?: operation.id,
+                    cause = this,
+                )
+            }
+        }
+
+        is WebRpcError -> {
+            toOmsSdkException(operation)
+        }
+
+        is WebRpcTransportException -> {
+            OmsRequestException(
+                operation = operation,
+                message = message ?: "WebRPC transport failed",
+                cause = this,
+            )
+        }
+
+        is IllegalArgumentException -> {
+            OmsValidationException(
+                operation = operation,
+                message = message ?: "Validation failed",
+                cause = this,
+            )
+        }
+
+        is IllegalStateException -> {
+            OmsSessionException(
+                operation = operation,
+                message = message ?: "No active wallet session",
+                cause = this,
+            )
+        }
+
+        else -> {
+            OmsRequestException(
+                operation = operation,
+                message = message ?: operation.id,
                 cause = this,
             )
         }
