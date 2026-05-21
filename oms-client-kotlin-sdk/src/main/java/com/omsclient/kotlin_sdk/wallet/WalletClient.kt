@@ -1245,9 +1245,6 @@ class WalletClient internal constructor(
             if (lastStatus.status == TransactionStatus.UNKNOWN_DEFAULT) {
                 return lastStatus
             }
-            if (options.pollIntervalMillis <= 0L) {
-                return lastStatus
-            }
             val remainingMillis = deadline - System.currentTimeMillis()
             if (remainingMillis <= 0L) {
                 return lastStatus
@@ -1258,6 +1255,9 @@ class WalletClient internal constructor(
                 } else {
                     options.pollIntervalMillis
                 }
+            if (nextDelayMillis <= 0L) {
+                return lastStatus
+            }
             transactionStatusDelay(minOf(nextDelayMillis, remainingMillis))
         } while (true)
     }

@@ -195,7 +195,6 @@ internal fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkEx
         }
 
         ErrorKind.WEBRPC_BAD_RESPONSE,
-        ErrorKind.UNKNOWN,
         -> {
             OmsResponseException(
                 operation = operation,
@@ -203,6 +202,24 @@ internal fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkEx
                 message = message,
                 cause = this,
             )
+        }
+
+        ErrorKind.UNKNOWN -> {
+            if (code == ErrorKind.UNKNOWN.code) {
+                OmsResponseException(
+                    operation = operation,
+                    status = status,
+                    message = message,
+                    cause = this,
+                )
+            } else {
+                OmsRequestException(
+                    operation = operation,
+                    status = status,
+                    message = message,
+                    cause = this,
+                )
+            }
         }
 
         else -> {
