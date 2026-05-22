@@ -6,6 +6,7 @@ import com.omsclient.kotlin_sdk.OmsWalletSelectionException
 import com.omsclient.kotlin_sdk.models.CredentialInfo
 import com.omsclient.kotlin_sdk.models.Wallet
 import com.omsclient.kotlin_sdk.models.WalletType
+import com.omsclient.kotlin_sdk.runOmsOperation
 import kotlinx.coroutines.sync.Mutex
 
 /**
@@ -51,18 +52,21 @@ class PendingWalletSelection internal constructor(
      * Selects one of [wallets] and persists it as the active wallet session.
      */
     suspend fun selectWallet(walletId: String): WalletSelectionResult {
-        lockSelection(OmsSdkOperation.PendingWalletSelectionSelectWallet)
-        try {
-            if (wallets.none { it.id == walletId }) {
-                throw OmsWalletSelectionException(
-                    code = OmsSdkErrorCode.WalletSelectionUnavailable,
-                    operation = OmsSdkOperation.PendingWalletSelectionSelectWallet,
-                    message = "Selected wallet is not one of the available options",
-                )
+        val operation = OmsSdkOperation.PendingWalletSelectionSelectWallet
+        return runOmsOperation(operation) {
+            lockSelection(operation)
+            try {
+                if (wallets.none { it.id == walletId }) {
+                    throw OmsWalletSelectionException(
+                        code = OmsSdkErrorCode.WalletSelectionUnavailable,
+                        operation = operation,
+                        message = "Selected wallet is not one of the available options",
+                    )
+                }
+                selectWalletAction(walletId)
+            } finally {
+                selectionMutex.unlock()
             }
-            return selectWalletAction(walletId)
-        } finally {
-            selectionMutex.unlock()
         }
     }
 
@@ -71,11 +75,14 @@ class PendingWalletSelection internal constructor(
      * active wallet session.
      */
     suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult {
-        lockSelection(OmsSdkOperation.PendingWalletSelectionCreateAndSelectWallet)
-        try {
-            return createAndSelectWalletAction(reference)
-        } finally {
-            selectionMutex.unlock()
+        val operation = OmsSdkOperation.PendingWalletSelectionCreateAndSelectWallet
+        return runOmsOperation(operation) {
+            lockSelection(operation)
+            try {
+                createAndSelectWalletAction(reference)
+            } finally {
+                selectionMutex.unlock()
+            }
         }
     }
 
