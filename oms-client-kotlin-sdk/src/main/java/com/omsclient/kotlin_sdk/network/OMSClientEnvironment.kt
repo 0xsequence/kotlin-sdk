@@ -1,7 +1,7 @@
 package com.omsclient.kotlin_sdk.network
 
 import com.omsclient.kotlin_sdk.Network
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.models.WalletType
 import java.net.URI
 
 class OMSClientEnvironment(

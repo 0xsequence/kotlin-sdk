@@ -1,16 +1,16 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.ListWalletsRequest
 import com.omsclient.kotlin_sdk.generated.waas.Page
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
@@ -79,7 +79,7 @@ class WalletEmailAuthTest {
                     privateKeyFactory = ::fixedPrivateKeyBytes,
                 )
 
-            val response = client.startEmailAuth("user@example.com")
+            client.startEmailAuth("user@example.com")
             val request = requireNotNull(server.takeRequest())
 
             val expectedPayload =
@@ -110,9 +110,6 @@ class WalletEmailAuthTest {
                 expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
-            assertEquals("challenge", response.challenge)
-            assertEquals("verifier-123", response.verifier)
-
             val session = client.snapshotSession()
             assertNotNull(session)
             assertEquals("challenge", session?.challenge)
@@ -121,7 +118,7 @@ class WalletEmailAuthTest {
                 WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
                 session?.signerAddress,
             )
-            assertEquals(SigningAlgorithm.ECDSA_P256K_EIP191, session?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256K_EIP191, session?.signerKeyType)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
@@ -155,13 +152,13 @@ class WalletEmailAuthTest {
                     privateKeyFactory = ::fixedPrivateKeyBytes,
                 )
 
-            val response = client.startEmailAuth("user@example.com")
+            client.startEmailAuth("user@example.com")
             val request = requireNotNull(server.takeRequest())
+            val session = client.snapshotSession()
 
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
-            assertEquals("verifier-123", response.verifier)
+            assertEquals("verifier-123", session?.verifier)
             assertNull(redirectStore.pending)
-            assertFalse(client.canResumeOidcRedirectAuth)
             assertEquals(1, redirectStore.clearCalls)
         }
 
@@ -192,12 +189,11 @@ class WalletEmailAuthTest {
                 )
             client.restoreSession(activeSession)
 
-            val response = client.startEmailAuth("user@example.com")
+            client.startEmailAuth("user@example.com")
             val request = requireNotNull(server.takeRequest())
 
             val session = client.snapshotSession()
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
-            assertEquals("verifier-123", response.verifier)
             assertEquals("challenge", session?.challenge)
             assertEquals("verifier-123", session?.verifier)
             assertNull(session?.walletId)
@@ -240,7 +236,7 @@ class WalletEmailAuthTest {
                     "cred=\"${signer.credentialIdValue}\",nonce=42,sig=\"${signer.signatureValue}\"",
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
-            assertEquals(SigningAlgorithm.ECDSA_P256_SHA256, client.snapshotSession()?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, client.snapshotSession()?.signerKeyType)
             assertEquals(1, signer.signCalls)
         }
 
@@ -335,7 +331,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
@@ -343,7 +339,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun confirmEmailSignInUsesStoredSessionAndParsesWallets() =
+    fun completeEmailAuthUsesStoredSessionAndParsesWallets() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -361,6 +357,13 @@ class WalletEmailAuthTest {
                             wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
                         ),
                     ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-abc", address = "0xabc", reference = "demo"))
+                    .build(),
             )
 
             val environment =
@@ -385,8 +388,9 @@ class WalletEmailAuthTest {
                 ),
             )
 
-            val response = client.confirmEmailSignIn("123456")
+            val response = client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected
             val request = requireNotNull(server.takeRequest())
+            val useWalletRequest = requireNotNull(server.takeRequest())
 
             val expectedPayload =
                 WaasWalletApi.CompleteAuth.encodeRequest(
@@ -417,18 +421,41 @@ class WalletEmailAuthTest {
                 expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
-            assertEquals("user@example.com", response.email)
-            assertEquals(IdentityType.Email, response.identity.type)
-            assertEquals("issuer-123", response.identity.iss)
-            assertEquals("sub-123", response.identity.sub)
+            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("user@example.com", client.snapshotSession()?.sessionEmail)
             assertEquals(1, response.wallets.size)
-            assertEquals(WalletType.Ethereum, response.wallets.single().type)
+            assertEquals(com.omsclient.kotlin_sdk.models.WalletType.Ethereum, response.wallets.single().type)
             assertEquals("0xabc", response.wallets.single().address)
         }
 
     @Test
-    fun resolveWalletUsesReturnedWalletIndexWhenSelectingExistingWallet() =
+    fun completeEmailAuthUsesReturnedWalletIndexWhenSelectingExistingWallet() =
         runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                Identity(
+                                    type = IdentityType.Email,
+                                    iss = "issuer-123",
+                                    sub = "sub-123",
+                                ),
+                            email = "user@example.com",
+                            wallets =
+                                listOf(
+                                    Wallet(
+                                        id = "wallet-def",
+                                        type = WalletType.Ethereum,
+                                        address = "0xdef",
+                                        reference = "picked",
+                                    ),
+                                ),
+                        ),
+                    ).build(),
+            )
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -459,28 +486,8 @@ class WalletEmailAuthTest {
                 ),
             )
 
-            val resolved =
-                client.resolveWallet(
-                    CompleteAuthResponse(
-                        identity =
-                            Identity(
-                                type = IdentityType.Email,
-                                iss = "issuer-123",
-                                sub = "sub-123",
-                            ),
-                        email = "user@example.com",
-                        wallets =
-                            listOf(
-                                Wallet(
-                                    id = "wallet-def",
-                                    type = environment.defaultWalletType,
-                                    address = "0xdef",
-                                    reference = "picked",
-                                ),
-                            ),
-                        credential = credentialFixture(),
-                    ),
-                )
+            val resolved = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
+            server.takeRequest()
             val request = requireNotNull(server.takeRequest())
 
             val expectedPayload =
@@ -565,7 +572,7 @@ class WalletEmailAuthTest {
             )
             assertEquals("0xdef", resolved.address)
             assertEquals("wallet-def", resolved.id)
-            assertEquals("0xdef", client.address)
+            assertEquals("0xdef", client.walletAddress)
             assertFalse(client.hasPendingSignIn)
         }
 
@@ -732,7 +739,7 @@ class WalletEmailAuthTest {
             assertEquals("/rpc/Wallet/ListWallets", listWalletsRequest.target)
             assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
             assertEquals("wallet-bbb", resolved.wallet.id)
-            assertEquals("0xbbb", client.address)
+            assertEquals("0xbbb", client.walletAddress)
         }
 
     @Test
@@ -794,11 +801,11 @@ class WalletEmailAuthTest {
             val listWalletsRequest = requireNotNull(server.takeRequest())
             assertTrue(result is CompleteAuthResult.WalletSelection)
             val selection = result as CompleteAuthResult.WalletSelection
-            assertEquals(WalletType.Ethereum, selection.pendingSelection.walletType)
+            assertEquals(com.omsclient.kotlin_sdk.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
             assertEquals("/rpc/Wallet/ListWallets", listWalletsRequest.target)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertTrue(client.hasPendingSignIn)
             assertEquals(3, server.requestCount)
             assertNull(store.snapshot)
@@ -986,7 +993,11 @@ class WalletEmailAuthTest {
             assertEquals("/rpc/Wallet/CreateWallet", createWalletRequest.target)
             assertNull(duplicateCreateWalletRequest)
             assertEquals("wallet-new", selected.wallet.id)
-            assertEquals("Pending wallet selection is no longer active", secondFailure?.message)
+            assertTrue(secondFailure is OmsSdkException)
+            assertEquals(
+                OmsSdkErrorCode.WalletSelectionInFlight,
+                (secondFailure as OmsSdkException).code,
+            )
             assertEquals(3, server.requestCount)
         }
 
@@ -1085,7 +1096,7 @@ class WalletEmailAuthTest {
             assertEquals("Pending wallet selection is no longer active", selectFailure?.message)
             assertEquals("Pending wallet selection is no longer active", createFailure?.message)
             assertEquals(requestCountBeforeStaleSelection, server.requestCount)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertTrue(client.hasPendingSignIn)
         }
 
@@ -1153,7 +1164,7 @@ class WalletEmailAuthTest {
                 }.exceptionOrNull()
 
             assertEquals("wallet-bbb", selected.wallet.id)
-            assertEquals("0xbbb", client.address)
+            assertEquals("0xbbb", client.walletAddress)
             assertEquals("Pending wallet selection is no longer active", reuseFailure?.message)
             assertEquals(requestCountAfterSelection, server.requestCount)
         }
@@ -1241,7 +1252,7 @@ class WalletEmailAuthTest {
                     oldPendingSelection.createAndSelectWallet(reference = "stale")
                 }.exceptionOrNull()
 
-            assertEquals("0xnew", client.address)
+            assertEquals("0xnew", client.walletAddress)
             assertEquals("Pending wallet selection is no longer active", createFailure?.message)
             assertEquals(requestCountBeforeStaleSelection, server.requestCount)
         }
@@ -1320,7 +1331,7 @@ class WalletEmailAuthTest {
                 WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
                 client.signerAddress,
             )
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
@@ -1330,7 +1341,7 @@ class WalletEmailAuthTest {
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
             assertEquals("0xdef", wallet.address)
-            assertEquals("0xdef", client.address)
+            assertEquals("0xdef", client.walletAddress)
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
@@ -1418,7 +1429,7 @@ class WalletEmailAuthTest {
                 WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
                 client.signerAddress,
             )
-            assertEquals("0xaaa", client.address)
+            assertEquals("0xaaa", client.walletAddress)
         }
 
     @Test
@@ -1496,7 +1507,7 @@ class WalletEmailAuthTest {
                 requireNotNull(useWalletRequest.body).utf8(),
             )
             assertEquals("0xbbb", selectedWallet.wallet.address)
-            assertEquals("0xbbb", client.address)
+            assertEquals("0xbbb", client.walletAddress)
         }
 
     @Test
@@ -1562,7 +1573,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
         }
@@ -1630,7 +1641,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
         }
@@ -1698,7 +1709,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertTrue(store.clearCalls > 0)
         }
 }

@@ -1,6 +1,8 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.Network
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
@@ -8,6 +10,8 @@ import com.omsclient.kotlin_sdk.models.AbiArg
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest
 import com.omsclient.kotlin_sdk.models.TransactionMode
+import com.omsclient.kotlin_sdk.models.TransactionStatus
+import com.omsclient.kotlin_sdk.models.TransactionStatusPollingOptions
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
@@ -22,6 +26,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.math.BigInteger
+import com.omsclient.kotlin_sdk.generated.waas.AbiArg as WaasAbiArg
+import com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection as WaasFeeOptionSelection
+import com.omsclient.kotlin_sdk.generated.waas.TransactionMode as WaasTransactionMode
 
 class WalletTransactionTest {
     private lateinit var server: MockWebServer
@@ -76,7 +83,8 @@ class WalletTransactionTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is IllegalArgumentException)
+            assertTrue(error is OmsSdkException)
+            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
         }
 
     @Test
@@ -245,7 +253,7 @@ class WalletTransactionTest {
 
             assertEquals("txn-1", result.txnId)
             assertEquals("0xdeadbeef", result.txnHash)
-            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
+            assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("/rpc/Wallet/PrepareEthereumTransaction", prepareRequest.target)
             assertEquals(
                 WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
@@ -255,7 +263,7 @@ class WalletTransactionTest {
                         to = "0xabc",
                         value = "0",
                         data = "0x1234",
-                        mode = TransactionMode.Native,
+                        mode = WaasTransactionMode.Native,
                     ),
                 ),
                 requireNotNull(prepareRequest.body).utf8(),
@@ -275,7 +283,7 @@ class WalletTransactionTest {
                 WaasWalletApi.Execute.encodeRequest(
                     com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest(
                         txnId = "txn-1",
-                        feeOption = FeeOptionSelection(token = "USDC"),
+                        feeOption = WaasFeeOptionSelection(token = "USDC"),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -386,6 +394,103 @@ class WalletTransactionTest {
         }
 
     @Test
+    fun sendTransactionAppliesFastPollsWhenSlowPollingIsDisabled() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """
+                        {
+                          "txnId": "txn-1",
+                          "status": "quoted",
+                          "feeOptions": [],
+                          "sponsored": true,
+                          "expiresAt": "2026-04-27T00:00:00Z"
+                        }
+                        """.trimIndent(),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"pending"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"pending"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"pending"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"status":"executed","txnHash":"0xdeadbeef"}""")
+                    .build(),
+            )
+
+            val delays = mutableListOf<Long>()
+            val client =
+                WalletClient(
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                ),
+                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
+                        ),
+                    nonceGenerator = { 1710000114L },
+                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    transactionStatusDelay = { delayMillis -> delays += delayMillis },
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request =
+                        SendTransactionRequest(
+                            to = "0xabc",
+                            value = BigInteger.ZERO,
+                        ),
+                    statusPolling =
+                        TransactionStatusPollingOptions(
+                            fastPollIntervalMillis = 1L,
+                            fastPollCount = 3,
+                            pollIntervalMillis = 0L,
+                            timeoutMillis = 1_000L,
+                        ),
+                )
+
+            assertEquals(TransactionStatus.Executed, result.status)
+            assertEquals("0xdeadbeef", result.txnHash)
+            assertEquals(listOf(1L, 1L), delays)
+            assertEquals(5, server.requestCount)
+        }
+
+    @Test
     fun callContractMatchesWaasRequestShape() =
         runBlocking {
             server.enqueue(
@@ -462,7 +567,7 @@ class WalletTransactionTest {
 
             assertEquals("contract-txn", result.txnId)
             assertEquals("0xcontract", result.txnHash)
-            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
+            assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("/rpc/Wallet/PrepareEthereumContractCall", prepareRequest.target)
             assertEquals(
                 WaasWalletApi.PrepareEthereumContractCall.encodeRequest(
@@ -471,8 +576,8 @@ class WalletTransactionTest {
                         network = "80002",
                         contract = "0xcontract",
                         method = "transfer(address,uint256)",
-                        args = args,
-                        mode = TransactionMode.Native,
+                        args = args.map { WaasAbiArg(type = it.type, value = it.value) },
+                        mode = WaasTransactionMode.Native,
                     ),
                 ),
                 requireNotNull(prepareRequest.body).utf8(),
@@ -523,7 +628,7 @@ class WalletTransactionTest {
             val result = client.getTransactionStatus(txnId = "txn-1")
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Executed, result.status)
+            assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("0xstatus", result.txnHash)
             assertEquals("/rpc/Wallet/TransactionStatus", request.target)
             assertEquals(
@@ -579,9 +684,9 @@ class WalletTransactionTest {
             val pending = client.getTransactionStatus(txnId = "txn-pending")
             val unknown = client.getTransactionStatus(txnId = "txn-unknown")
 
-            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.Pending, pending.status)
+            assertEquals(TransactionStatus.Pending, pending.status)
             assertEquals(null, pending.txnHash)
-            assertEquals(com.omsclient.kotlin_sdk.generated.waas.TransactionStatus.UNKNOWN_DEFAULT, unknown.status)
+            assertEquals(TransactionStatus.UNKNOWN_DEFAULT, unknown.status)
             assertEquals(null, unknown.txnHash)
         }
 }

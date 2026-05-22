@@ -2,7 +2,9 @@ package com.omsclient.kotlin_sdk.network
 
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkException
+import com.omsclient.kotlin_sdk.OmsSdkOperation
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import kotlinx.coroutines.runBlocking
@@ -272,11 +274,54 @@ class ServiceClientsTest {
                         message = "hello",
                         signature = "0xsig",
                     )
-                }.exceptionOrNull() as? WebRpcError
+                }.exceptionOrNull() as? OmsSdkException
 
             requireNotNull(failure)
+            assertEquals(OmsSdkErrorCode.InvalidResponse, failure.code)
+            assertEquals(OmsSdkOperation.WalletIsValidMessageSignature, failure.operation)
             assertEquals("endpoint error", failure.message)
             assertEquals(400, failure.status)
             assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
+        }
+
+    @Test
+    fun generatedWalletPublicUnknownBackendErrorCodeIsRequestFailed() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(409)
+                    .body("""{"error":"NewBackendError","code":7999,"msg":"Backend rollout error","status":409}""")
+                    .build(),
+            )
+
+            val client =
+                OMSClient(
+                    publicApiKey = "test-access-key",
+                    projectId = "test-project-id",
+                    environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
+                )
+            client.wallet.restoreSession(
+                OMSClientSessionSnapshot(
+                    walletId = "wallet-id",
+                    walletAddress = "0xwallet",
+                ),
+            )
+
+            val failure =
+                runCatching {
+                    client.wallet.isValidMessageSignature(
+                        network = Network.AMOY,
+                        message = "hello",
+                        signature = "0xsig",
+                    )
+                }.exceptionOrNull() as? OmsSdkException
+
+            requireNotNull(failure)
+            assertEquals(OmsSdkErrorCode.RequestFailed, failure.code)
+            assertEquals(OmsSdkOperation.WalletIsValidMessageSignature, failure.operation)
+            assertEquals("Backend rollout error", failure.message)
+            assertEquals(409, failure.status)
+            assertFalse(failure.retryable)
         }
 }

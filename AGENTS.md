@@ -86,6 +86,10 @@ result.
 - `WalletClient`, request signing, auth completion, wallet selection, fee
   selection, and transaction status polling are central library behavior; prefer
   small, tested changes there.
+- Treat returned wallet-auth action objects such as `PendingWalletSelection` as
+  public SDK operation boundaries. Wrap their network-backed actions with
+  `runOmsOperation` and the matching `PendingWalletSelection...` operation so
+  generated WebRPC and transport exceptions are classified as `OmsSdkException`.
 - `OMSClientEnvironment`, `OMSClientHttpClient`, and `OMSClientJson` define
   service routing and JSON behavior. Preserve existing serialization defaults
   unless tests and API docs are updated together.

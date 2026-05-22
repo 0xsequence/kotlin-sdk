@@ -3,7 +3,6 @@ package com.omsclient.kotlin_sdk.wallet
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,13 +18,19 @@ import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.util.concurrent.ConcurrentHashMap
 
+/**
+ * Owns the Android Keystore P-256 credential used to authorize wallet requests.
+ *
+ * The private key is generated inside Android Keystore and is not exported to
+ * SDK session storage. This class persists only the per-credential nonce.
+ */
 internal class AndroidKeystoreP256CredentialSigner(
     context: Context,
     private val alias: String = DEFAULT_KEY_ALIAS,
     nonceStoreName: String = DEFAULT_NONCE_STORE_NAME,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CredentialSigner {
-    override val signingAlgorithm: SigningAlgorithm = SigningAlgorithm.ECDSA_P256_SHA256
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
 
     private val appContext = context.applicationContext
     private val noncePreferences = appContext.getSharedPreferences(nonceStoreName, Context.MODE_PRIVATE)

@@ -2,9 +2,13 @@ package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkOperation
+import com.omsclient.kotlin_sdk.OmsSessionException
+import com.omsclient.kotlin_sdk.OmsTransactionException
+import com.omsclient.kotlin_sdk.OmsWalletSelectionException
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
-import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
@@ -14,6 +18,7 @@ import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.IsValidMessageSignatureRequest
 import com.omsclient.kotlin_sdk.generated.waas.IsValidTypedDataSignatureRequest
+import com.omsclient.kotlin_sdk.generated.waas.LambdaWebRpcTransport
 import com.omsclient.kotlin_sdk.generated.waas.ListAccessRequest
 import com.omsclient.kotlin_sdk.generated.waas.ListWalletsRequest
 import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
@@ -21,16 +26,13 @@ import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.generated.waas.PrepareResponse
 import com.omsclient.kotlin_sdk.generated.waas.RevokeAccessRequest
 import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
-import com.omsclient.kotlin_sdk.generated.waas.SignMessageResponse
 import com.omsclient.kotlin_sdk.generated.waas.SignTypedDataRequest
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
-import com.omsclient.kotlin_sdk.generated.waas.TransactionStatus
 import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
+import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletClient
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletPublicClient
-import com.omsclient.kotlin_sdk.generated.waas.Wallet
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.generated.waas.WebRpcHttpResponse
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.models.AbiArg
 import com.omsclient.kotlin_sdk.models.CredentialInfo
@@ -38,19 +40,23 @@ import com.omsclient.kotlin_sdk.models.FeeOption
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
-import com.omsclient.kotlin_sdk.models.GetIdTokenResponse
+import com.omsclient.kotlin_sdk.models.FeeToken
 import com.omsclient.kotlin_sdk.models.ListAccessResponse
 import com.omsclient.kotlin_sdk.models.Page
-import com.omsclient.kotlin_sdk.models.SignTypedDataResponse
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.models.TransactionMode
+import com.omsclient.kotlin_sdk.models.TransactionStatus
+import com.omsclient.kotlin_sdk.models.TransactionStatusPollingOptions
 import com.omsclient.kotlin_sdk.models.TransactionStatusResponse
+import com.omsclient.kotlin_sdk.models.Wallet
+import com.omsclient.kotlin_sdk.models.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
-import com.omsclient.kotlin_sdk.network.OMSClientWebRpcTransport
+import com.omsclient.kotlin_sdk.runOmsOperation
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
-import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
+import com.omsclient.kotlin_sdk.toOmsSdkException
 import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.CancellationException
@@ -59,6 +65,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import java.math.BigInteger
+import com.omsclient.kotlin_sdk.generated.waas.AbiArg as WaasAbiArg
+import com.omsclient.kotlin_sdk.generated.waas.CredentialInfo as WaasCredentialInfo
+import com.omsclient.kotlin_sdk.generated.waas.FeeOption as WaasFeeOption
+import com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection as WaasFeeOptionSelection
+import com.omsclient.kotlin_sdk.generated.waas.FeeToken as WaasFeeToken
+import com.omsclient.kotlin_sdk.generated.waas.ListAccessResponse as WaasListAccessResponse
+import com.omsclient.kotlin_sdk.generated.waas.Page as WaasPage
+import com.omsclient.kotlin_sdk.generated.waas.TransactionMode as WaasTransactionMode
+import com.omsclient.kotlin_sdk.generated.waas.TransactionStatus as WaasTransactionStatus
+import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse as WaasTransactionStatusResponse
+import com.omsclient.kotlin_sdk.generated.waas.Wallet as WaasWallet
+import com.omsclient.kotlin_sdk.generated.waas.WalletType as WaasWalletType
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 
@@ -68,7 +86,7 @@ class WalletClient internal constructor(
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
     private val session: OMSClientSession = OMSClientSession(),
-    private val sessionStore: OMSClientSecureSessionStore? = null,
+    private val sessionStore: OMSClientSessionMetadataStore? = null,
     private val oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
     private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
     private val oidcNonceGenerator: () -> String = OidcRedirectAuth::generateNonce,
@@ -85,17 +103,19 @@ class WalletClient internal constructor(
             privateKeyFactory = privateKeyFactory,
             nonceGenerator = { nonceGenerator().toString() },
         )
+    private val gateway: WaasWalletGateway =
+        WaasWalletGateway(
+            publicApiKey = publicApiKey,
+            projectId = projectId,
+            environment = environment,
+            transport = transport,
+            signer = signer,
+        )
     private val indexerClient: IndexerClient =
         IndexerClient(
             publicApiKey = publicApiKey,
             environment = environment,
             transport = transport,
-        )
-    private val publicClient: WaasWalletPublicClient =
-        WaasWalletPublicClient(
-            baseUrl = environment.walletApiBaseUrl(),
-            transport = OMSClientWebRpcTransport(transport),
-            headers = { defaultPublicHeaders() },
         )
 
     internal val hasPendingSignIn: Boolean
@@ -104,13 +124,10 @@ class WalletClient internal constructor(
             return snapshot.walletAddress.isNullOrBlank()
         }
 
-    internal val canResumeOidcRedirectAuth: Boolean
-        get() = oidcRedirectAuthStore?.load() != null
-
     /**
      * Address of the currently selected wallet, or null when no wallet is selected.
      */
-    val address: String?
+    val walletAddress: String?
         get() = session.snapshot()?.walletAddress
 
     internal val signerAddress: String?
@@ -135,7 +152,7 @@ class WalletClient internal constructor(
         return true
     }
 
-    internal fun signOut() {
+    fun signOut() {
         clearSession(clearOidcRedirectAuth = true)
     }
 
@@ -152,54 +169,47 @@ class WalletClient internal constructor(
         oidcRedirectAuthStore?.clear()
     }
 
-    private fun requireWalletId(): String = requireNotNull(session.snapshot()?.walletId) { "No wallet selected" }
+    private fun requireWalletId(): String = session.snapshot()?.walletId ?: throw OmsSessionException(message = "No wallet selected")
 
-    private fun requireWalletAddress(): String = requireNotNull(address) { "No wallet selected" }
+    private fun requireWalletAddress(): String = walletAddress ?: throw OmsSessionException(message = "No wallet selected")
 
-    internal suspend fun startEmailAuth(email: String): CommitVerifierResponse {
-        clearSession(clearOidcRedirectAuth = true)
-        return try {
-            val signerAddress = signer.credentialId()
-            val response =
-                waasClient().commitVerifier(
-                    CommitVerifierRequest(
-                        identityType = IdentityType.Email,
-                        authMode = AuthMode.OTP,
-                        metadata = emptyMap(),
-                        handle = email,
-                    ),
+    suspend fun startEmailAuth(email: String): Unit =
+        runOmsOperation(OmsSdkOperation.WalletStartEmailAuth) {
+            clearSession(clearOidcRedirectAuth = true)
+            try {
+                val signerAddress = signer.credentialId()
+                val response = gateway.commitEmailVerifier(email)
+
+                session.replaceForPendingAuth(
+                    challenge = response.challenge,
+                    verifier = response.verifier,
+                    signerAddress = signerAddress,
+                    signerKeyType = signer.signingAlgorithm,
                 )
-
-            session.replaceForPendingAuth(
-                challenge = response.challenge,
-                verifier = response.verifier,
-                signerAddress = signerAddress,
-                signerKeyType = signer.signingAlgorithm,
-            )
-
-            response
-        } catch (throwable: CancellationException) {
-            throw throwable
-        } catch (throwable: Throwable) {
-            signOut()
-            throw throwable
+            } catch (throwable: CancellationException) {
+                throw throwable
+            } catch (throwable: Throwable) {
+                signOut()
+                throw throwable
+            }
         }
-    }
 
-    internal suspend fun signInWithOidcIdToken(
+    suspend fun signInWithOidcIdToken(
         idToken: String,
         issuer: String,
         audience: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = environment.defaultWalletType,
     ): CompleteAuthResult =
-        completeOidcIdTokenAuth(
-            idToken = idToken,
-            issuer = issuer,
-            audience = audience,
-            walletType = walletType,
-            walletSelection = walletSelection,
-        )
+        runOmsOperation(OmsSdkOperation.WalletSignInWithOidcIdToken) {
+            completeOidcIdTokenAuth(
+                idToken = idToken,
+                issuer = issuer,
+                audience = audience,
+                walletType = walletType,
+                walletSelection = walletSelection,
+            )
+        }
 
     private suspend fun completeOidcIdTokenAuth(
         idToken: String,
@@ -212,18 +222,10 @@ class WalletClient internal constructor(
         try {
             val signerAddress = signer.credentialId()
             val response =
-                waasClient().commitVerifier(
-                    CommitVerifierRequest(
-                        identityType = IdentityType.OIDC,
-                        authMode = AuthMode.IDToken,
-                        metadata =
-                            mapOf(
-                                "iss" to issuer,
-                                "aud" to audience,
-                                "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
-                            ),
-                        handle = OidcIdToken.handleHash(idToken),
-                    ),
+                gateway.commitOidcIdTokenVerifier(
+                    idToken = idToken,
+                    issuer = issuer,
+                    audience = audience,
                 )
 
             session.replaceForPendingAuth(
@@ -235,7 +237,7 @@ class WalletClient internal constructor(
 
             val auth =
                 try {
-                    confirmOidcIdTokenSignIn(idToken)
+                    completeOidcIdTokenSignIn(idToken)
                 } catch (throwable: CancellationException) {
                     throw throwable
                 } catch (throwable: Throwable) {
@@ -251,86 +253,79 @@ class WalletClient internal constructor(
         }
     }
 
-    internal suspend fun startOidcRedirectAuth(
+    suspend fun startOidcRedirectAuth(
         provider: OidcProviderConfig,
         redirectUri: String,
         walletType: WalletType = environment.defaultWalletType,
         relayRedirectUri: String? = provider.relayRedirectUri,
         authorizeParams: Map<String, String> = emptyMap(),
-    ): StartOidcRedirectAuthResult {
-        val redirectAuthStore =
-            requireNotNull(oidcRedirectAuthStore) {
-                "OIDC redirect auth requires an OIDC redirect auth store"
-            }
-        clearSession(clearOidcRedirectAuth = true)
-        return try {
-            val signerAddress = signer.credentialId()
-            val oauthRedirectUri = relayRedirectUri ?: redirectUri
-            val response =
-                waasClient().commitVerifier(
-                    CommitVerifierRequest(
-                        identityType = IdentityType.OIDC,
-                        authMode = AuthMode.AuthCodePKCE,
-                        metadata =
-                            mapOf(
-                                "iss" to provider.issuer,
-                                "aud" to provider.clientId,
-                                "redirect_uri" to oauthRedirectUri,
-                            ),
-                    ),
-                )
-            val nonce = oidcNonceGenerator()
-            val state =
-                OidcRedirectAuth.encodeState(
-                    nonce = nonce,
-                    scope = projectId,
-                    redirectUri = redirectUri.takeIf { oauthRedirectUri != redirectUri },
-                )
+    ): StartOidcRedirectAuthResult =
+        runOmsOperation(OmsSdkOperation.WalletStartOidcRedirectAuth) {
+            val redirectAuthStore =
+                requireNotNull(oidcRedirectAuthStore) {
+                    "OIDC redirect auth requires an OIDC redirect auth store"
+                }
+            clearSession(clearOidcRedirectAuth = true)
+            try {
+                val signerAddress = signer.credentialId()
+                val oauthRedirectUri = relayRedirectUri ?: redirectUri
+                val response =
+                    gateway.commitOidcRedirectVerifier(
+                        provider = provider,
+                        redirectUri = oauthRedirectUri,
+                    )
+                val nonce = oidcNonceGenerator()
+                val state =
+                    OidcRedirectAuth.encodeState(
+                        nonce = nonce,
+                        scope = projectId,
+                        redirectUri = redirectUri.takeIf { oauthRedirectUri != redirectUri },
+                    )
 
-            session.replaceForPendingAuth(
-                challenge = response.challenge,
-                verifier = response.verifier,
-                signerAddress = signerAddress,
-                signerKeyType = signer.signingAlgorithm,
-            )
-            redirectAuthStore.save(
-                PendingOidcRedirectAuth(
-                    verifier = response.verifier,
+                session.replaceForPendingAuth(
                     challenge = response.challenge,
-                    nonce = nonce,
-                    redirectUri = redirectUri,
-                    issuer = provider.issuer,
-                    projectId = projectId,
-                    walletType = walletType,
+                    verifier = response.verifier,
                     signerAddress = signerAddress,
                     signerKeyType = signer.signingAlgorithm,
-                ),
-            )
-
-            val authorizationUrl =
-                OidcRedirectAuth.buildAuthorizationUrl(
-                    provider = provider,
-                    redirectUri = oauthRedirectUri,
-                    state = state,
-                    challenge = response.challenge,
-                    loginHint = response.loginHint,
-                    authorizeParams = provider.authorizeParams + authorizeParams,
+                )
+                redirectAuthStore.save(
+                    PendingOidcRedirectAuth(
+                        verifier = response.verifier,
+                        challenge = response.challenge,
+                        nonce = nonce,
+                        redirectUri = redirectUri,
+                        issuer = provider.issuer,
+                        projectId = projectId,
+                        walletType = walletType.wireValue,
+                        signerAddress = signerAddress,
+                        signerKeyType = signer.signingAlgorithm,
+                    ),
                 )
 
-            StartOidcRedirectAuthResult(
-                authorizationUrl = authorizationUrl,
-                state = state,
-                challenge = response.challenge,
-            )
-        } catch (throwable: CancellationException) {
-            throw throwable
-        } catch (throwable: Throwable) {
-            signOut()
-            throw throwable
-        }
-    }
+                val authorizationUrl =
+                    OidcRedirectAuth.buildAuthorizationUrl(
+                        provider = provider,
+                        redirectUri = oauthRedirectUri,
+                        state = state,
+                        challenge = response.challenge,
+                        loginHint = response.loginHint,
+                        authorizeParams = provider.authorizeParams + authorizeParams,
+                    )
 
-    internal suspend fun handleOidcRedirectCallback(
+                StartOidcRedirectAuthResult(
+                    authorizationUrl = authorizationUrl,
+                    state = state,
+                    challenge = response.challenge,
+                )
+            } catch (throwable: CancellationException) {
+                throw throwable
+            } catch (throwable: Throwable) {
+                signOut()
+                throw throwable
+            }
+        }
+
+    suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     ): OidcRedirectAuthResult {
@@ -368,16 +363,11 @@ class WalletClient internal constructor(
             restorePendingOidcRedirectAuth(pending)
 
             val auth =
-                waasClient().completeAuth(
-                    CompleteAuthRequest(
-                        identityType = IdentityType.OIDC,
-                        authMode = AuthMode.AuthCodePKCE,
-                        verifier = pending.verifier,
-                        answer = code,
-                        lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
-                    ),
+                gateway.completeOidcRedirectAuth(
+                    verifier = pending.verifier,
+                    code = code,
                 )
-            when (val result = completeWalletAuth(auth, pending.walletType, walletSelection)) {
+            when (val result = completeWalletAuth(auth, pending.walletType.toWalletType(), walletSelection)) {
                 is CompleteAuthResult.WalletSelected -> {
                     OidcRedirectAuthResult.Completed(result.wallet)
                 }
@@ -392,8 +382,9 @@ class WalletClient internal constructor(
             clearPendingAuth = false
             throw throwable
         } catch (throwable: Throwable) {
+            val failure = throwable.toOmsSdkException(OmsSdkOperation.WalletHandleOidcRedirectCallback)
             clearSession(clearOidcRedirectAuth = false)
-            OidcRedirectAuthResult.Failed(throwable)
+            OidcRedirectAuthResult.Failed(failure)
         } finally {
             if (clearPendingAuth) {
                 redirectAuthStore.clear()
@@ -401,67 +392,51 @@ class WalletClient internal constructor(
         }
     }
 
-    internal suspend fun confirmEmailSignIn(code: String): CompleteAuthResponse {
+    private suspend fun completeEmailSignIn(code: String): WalletAuthCompletion {
         val snapshot = session.requirePendingAuth()
-        return waasClient().completeAuth(
-            CompleteAuthRequest(
-                identityType = IdentityType.Email,
-                authMode = AuthMode.OTP,
-                verifier = snapshot.verifier,
-                answer = WalletAuthChallenge.hashAnswer(snapshot.challenge, code),
-                lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
-            ),
+        return gateway.completeEmailAuth(
+            verifier = snapshot.verifier,
+            challenge = snapshot.challenge,
+            code = code,
         )
     }
 
-    internal suspend fun confirmOidcIdTokenSignIn(idToken: String): CompleteAuthResponse {
+    private suspend fun completeOidcIdTokenSignIn(idToken: String): WalletAuthCompletion {
         val snapshot = session.requirePendingAuth()
-        return waasClient().completeAuth(
-            CompleteAuthRequest(
-                identityType = IdentityType.OIDC,
-                authMode = AuthMode.IDToken,
-                verifier = snapshot.verifier,
-                answer = idToken,
-                lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
-            ),
+        return gateway.completeOidcIdTokenAuth(
+            verifier = snapshot.verifier,
+            idToken = idToken,
         )
     }
 
-    internal suspend fun completeEmailAuth(
+    suspend fun completeEmailAuth(
         code: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = environment.defaultWalletType,
-    ): CompleteAuthResult {
-        val auth = confirmEmailSignIn(code)
-        return completeWalletAuth(
-            completeAuth = auth,
-            walletType = walletType,
-            walletSelection = walletSelection,
-        )
-    }
-
-    internal suspend fun resolveWallet(
-        completeAuth: CompleteAuthResponse,
-        walletType: WalletType = environment.defaultWalletType,
-    ): Wallet =
-        resolveAuthenticatedWallet(
-            completeAuth = completeAuth,
-            walletType = walletType,
-        )
+    ): CompleteAuthResult =
+        runOmsOperation(OmsSdkOperation.WalletCompleteEmailAuth) {
+            val auth = completeEmailSignIn(code)
+            completeWalletAuth(
+                completeAuth = auth,
+                walletType = walletType,
+                walletSelection = walletSelection,
+            )
+        }
 
     /**
      * Selects an existing wallet by its WaaS wallet id.
      */
-    suspend fun useWallet(walletId: String): WalletSelectionResult {
-        requireWalletSelectionOrActiveSession()
-        requireActiveCredential()
-        val wallet = requestUseWallet(walletId)
-        session.selectWallet(
-            walletId = wallet.id,
-            walletAddress = wallet.address,
-        )
-        return persistSelectedWallet(wallet)
-    }
+    suspend fun useWallet(walletId: String): WalletSelectionResult =
+        runOmsOperation(OmsSdkOperation.WalletUseWallet) {
+            requireWalletSelectionOrActiveSession()
+            requireActiveCredential()
+            val wallet = requestUseWallet(walletId)
+            session.selectWallet(
+                walletId = wallet.id,
+                walletAddress = wallet.address,
+            )
+            persistSelectedWallet(wallet)
+        }
 
     /**
      * Creates and selects a new wallet for the authenticated user.
@@ -469,28 +444,25 @@ class WalletClient internal constructor(
     suspend fun createWallet(
         walletType: WalletType = environment.defaultWalletType,
         reference: String? = null,
-    ): WalletSelectionResult {
-        requireWalletSelectionOrActiveSession()
-        requireActiveCredential()
-        val wallet = requestCreateWallet(walletType, reference)
-        session.selectWallet(
-            walletId = wallet.id,
-            walletAddress = wallet.address,
-        )
-        return persistSelectedWallet(wallet)
-    }
+    ): WalletSelectionResult =
+        runOmsOperation(OmsSdkOperation.WalletCreateWallet) {
+            requireWalletSelectionOrActiveSession()
+            requireActiveCredential()
+            val wallet = requestCreateWallet(walletType, reference)
+            session.selectWallet(
+                walletId = wallet.id,
+                walletAddress = wallet.address,
+            )
+            persistSelectedWallet(wallet)
+        }
 
     private suspend fun useWalletForPendingSelection(
         pendingWalletSelectionId: Long,
         signerAddress: String,
-        signerKeyType: SigningAlgorithm?,
+        signerKeyType: WalletSigningAlgorithm?,
         walletId: String,
     ): WalletSelectionResult {
-        session.requirePendingWalletSelection(
-            pendingWalletSelectionId = pendingWalletSelectionId,
-            signerAddress = signerAddress,
-            signerKeyType = signerKeyType,
-        )
+        requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         requireActiveCredential()
         val wallet = requestUseWallet(walletId)
         session.selectWalletForPendingSelection(
@@ -506,15 +478,11 @@ class WalletClient internal constructor(
     private suspend fun createWalletForPendingSelection(
         pendingWalletSelectionId: Long,
         signerAddress: String,
-        signerKeyType: SigningAlgorithm?,
+        signerKeyType: WalletSigningAlgorithm?,
         walletType: WalletType,
         reference: String?,
     ): WalletSelectionResult {
-        session.requirePendingWalletSelection(
-            pendingWalletSelectionId = pendingWalletSelectionId,
-            signerAddress = signerAddress,
-            signerKeyType = signerKeyType,
-        )
+        requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         requireActiveCredential()
         val wallet = requestCreateWallet(walletType, reference)
         session.selectWalletForPendingSelection(
@@ -527,25 +495,33 @@ class WalletClient internal constructor(
         return persistSelectedWallet(wallet)
     }
 
-    private suspend fun requestUseWallet(walletId: String): Wallet =
-        waasClient()
-            .useWallet(
-                UseWalletRequest(
-                    walletId = walletId,
-                ),
-            ).wallet
+    private fun requirePendingWalletSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: WalletSigningAlgorithm?,
+    ) {
+        try {
+            session.requirePendingWalletSelection(
+                pendingWalletSelectionId = pendingWalletSelectionId,
+                signerAddress = signerAddress,
+                signerKeyType = signerKeyType,
+            )
+        } catch (throwable: IllegalStateException) {
+            throw OmsWalletSelectionException(
+                code = OmsSdkErrorCode.WalletSelectionStale,
+                operation = OmsSdkOperation.PendingWalletSelection,
+                message = throwable.message ?: "Pending wallet selection is no longer active",
+                cause = throwable,
+            )
+        }
+    }
+
+    private suspend fun requestUseWallet(walletId: String): Wallet = gateway.useWallet(walletId)
 
     private suspend fun requestCreateWallet(
         walletType: WalletType,
         reference: String?,
-    ): Wallet =
-        waasClient()
-            .createWallet(
-                CreateWalletRequest(
-                    type = walletType,
-                    reference = reference,
-                ),
-            ).wallet
+    ): Wallet = gateway.createWallet(walletType, reference)
 
     private fun persistSelectedWallet(wallet: Wallet): WalletSelectionResult {
         persistCurrentSession()
@@ -558,56 +534,48 @@ class WalletClient internal constructor(
     /**
      * Lists all wallets available to the authenticated credential.
      */
-    suspend fun listWallets(): List<Wallet> {
-        requireWalletSelectionOrActiveSession()
-        requireActiveCredential()
-        val wallets = mutableListOf<Wallet>()
-        var cursor: String? = null
-        do {
-            val response =
-                waasClient().listWallets(
-                    ListWalletsRequest(
-                        page = cursor?.let { Page(cursor = it) },
-                    ),
-                )
-            wallets += response.wallets
-            cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
-        } while (cursor != null)
-        return wallets
-    }
+    suspend fun listWallets(): List<Wallet> =
+        runOmsOperation(OmsSdkOperation.WalletListWallets) {
+            requireWalletSelectionOrActiveSession()
+            requireActiveCredential()
+            val wallets = mutableListOf<Wallet>()
+            var cursor: String? = null
+            do {
+                val response =
+                    gateway.listWallets(cursor)
+                wallets += response.wallets
+                cursor = response.nextCursor
+            } while (cursor != null)
+            wallets
+        }
 
     private fun requireWalletSelectionOrActiveSession() {
         val snapshot = session.requireSnapshot()
-        check(!snapshot.walletId.isNullOrBlank() || !snapshot.expiresAt.isNullOrBlank()) {
-            "No authenticated wallet session"
+        if (snapshot.walletId.isNullOrBlank() && snapshot.expiresAt.isNullOrBlank()) {
+            throw OmsSessionException(message = "No authenticated wallet session")
         }
     }
 
-    private suspend fun walletsFromAuthResponse(completeAuth: CompleteAuthResponse): List<Wallet> {
+    private suspend fun walletsFromAuthResponse(completeAuth: WalletAuthCompletion): List<Wallet> {
         val wallets = completeAuth.wallets.toMutableList()
-        var cursor = completeAuth.page?.cursor?.takeIf { it.isNotBlank() }
+        var cursor = completeAuth.nextWalletsCursor
         while (cursor != null) {
-            val response =
-                waasClient().listWallets(
-                    ListWalletsRequest(
-                        page = Page(cursor = cursor),
-                    ),
-                )
+            val response = gateway.listWallets(cursor)
             wallets += response.wallets
-            cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
+            cursor = response.nextCursor
         }
         return wallets
     }
 
     private suspend fun completeWalletAuth(
-        completeAuth: CompleteAuthResponse,
+        completeAuth: WalletAuthCompletion,
         walletType: WalletType,
         walletSelection: WalletSelectionBehavior,
     ): CompleteAuthResult {
         val pendingWalletSelectionId =
             session.markAuthVerified(
                 expiresAt = completeAuth.credential.expiresAt,
-                loginType = completeAuth.identity.toSessionLoginType(),
+                loginType = completeAuth.loginType,
                 sessionEmail = completeAuth.email,
             )
         val pendingSnapshot = session.requireSnapshot()
@@ -668,22 +636,6 @@ class WalletClient internal constructor(
         }
     }
 
-    private suspend fun resolveAuthenticatedWallet(
-        completeAuth: CompleteAuthResponse,
-        walletType: WalletType,
-    ): Wallet =
-        completeWalletAuth(
-            completeAuth = completeAuth,
-            walletType = walletType,
-            walletSelection = WalletSelectionBehavior.Automatic,
-        ).requireSelectedWallet()
-
-    private fun CompleteAuthResult.requireSelectedWallet(): Wallet =
-        when (this) {
-            is CompleteAuthResult.WalletSelected -> wallet
-            is CompleteAuthResult.WalletSelection -> error("Auth completed without wallet selection")
-        }
-
     private suspend fun restorePendingOidcRedirectAuth(pending: PendingOidcRedirectAuth) {
         requireActiveCredential()
         val currentSignerAddress = signer.credentialId()
@@ -705,45 +657,22 @@ class WalletClient internal constructor(
         sessionStore?.save(snapshot)
     }
 
-    private fun Identity.toSessionLoginType(): OMSClientSessionLoginType? =
-        when (type) {
-            IdentityType.Email -> {
-                OMSClientSessionLoginType.Email
-            }
-
-            IdentityType.OIDC -> {
-                if (iss == GOOGLE_ISSUER) {
-                    OMSClientSessionLoginType.GoogleAuth
-                } else {
-                    OMSClientSessionLoginType.Oidc
-                }
-            }
-
-            IdentityType.Phone,
-            IdentityType.Passkey,
-            IdentityType.UNKNOWN_DEFAULT,
-            -> {
-                null
-            }
-        }
-
     /**
      * Signs [message] with the currently selected wallet on [network].
      */
     suspend fun signMessage(
         network: Network,
         message: String,
-    ): SignMessageResponse {
-        session.requireSnapshot()
-        requireActiveCredential()
-        return waasClient().signMessage(
-            SignMessageRequest(
+    ): String =
+        runOmsOperation(OmsSdkOperation.WalletSignMessage) {
+            session.requireSnapshot()
+            requireActiveCredential()
+            gateway.signMessage(
                 walletId = requireWalletId(),
-                network = network.id.toString(),
+                network = network,
                 message = message,
-            ),
-        )
-    }
+            )
+        }
 
     /**
      * Signs EIP-712 [typedData] with the currently selected wallet on [network].
@@ -751,17 +680,16 @@ class WalletClient internal constructor(
     suspend fun signTypedData(
         network: Network,
         typedData: JsonElement,
-    ): SignTypedDataResponse {
-        session.requireSnapshot()
-        requireActiveCredential()
-        return waasClient().signTypedData(
-            SignTypedDataRequest(
+    ): String =
+        runOmsOperation(OmsSdkOperation.WalletSignTypedData) {
+            session.requireSnapshot()
+            requireActiveCredential()
+            gateway.signTypedData(
                 walletId = requireWalletId(),
-                network = network.id.toString(),
+                network = network,
                 typedData = typedData,
-            ),
-        )
-    }
+            )
+        }
 
     /**
      * Validates [signature] for [message] through the WaaS public wallet RPC.
@@ -770,18 +698,15 @@ class WalletClient internal constructor(
         network: Network,
         message: String,
         signature: String,
-    ): Boolean {
-        val response =
-            publicClient.isValidMessageSignature(
-                IsValidMessageSignatureRequest(
-                    network = network.id.toString(),
-                    walletId = requireWalletId(),
-                    message = message,
-                    signature = signature,
-                ),
+    ): Boolean =
+        runOmsOperation(OmsSdkOperation.WalletIsValidMessageSignature) {
+            gateway.isValidMessageSignature(
+                walletId = requireWalletId(),
+                network = network,
+                message = message,
+                signature = signature,
             )
-        return response.isValid
-    }
+        }
 
     /**
      * Validates [signature] for EIP-712 [typedData] through the WaaS public wallet RPC.
@@ -790,18 +715,15 @@ class WalletClient internal constructor(
         network: Network,
         typedData: JsonElement,
         signature: String,
-    ): Boolean {
-        val response =
-            publicClient.isValidTypedDataSignature(
-                IsValidTypedDataSignatureRequest(
-                    network = network.id.toString(),
-                    walletId = requireWalletId(),
-                    typedData = typedData,
-                    signature = signature,
-                ),
+    ): Boolean =
+        runOmsOperation(OmsSdkOperation.WalletIsValidTypedDataSignature) {
+            gateway.isValidTypedDataSignature(
+                walletId = requireWalletId(),
+                network = network,
+                typedData = typedData,
+                signature = signature,
             )
-        return response.isValid
-    }
+        }
 
     /**
      * Sends a native-value transaction from the currently selected wallet on
@@ -811,6 +733,8 @@ class WalletClient internal constructor(
         network: Network,
         to: String,
         value: BigInteger,
+        waitForStatus: Boolean = true,
+        statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse =
         sendTransaction(
@@ -821,6 +745,8 @@ class WalletClient internal constructor(
                     value = value,
                 ),
             selectFeeOption = selectFeeOption,
+            waitForStatus = waitForStatus,
+            statusPolling = statusPolling,
         )
 
     /**
@@ -833,31 +759,29 @@ class WalletClient internal constructor(
     suspend fun sendTransaction(
         network: Network,
         request: ClientSendTransactionRequest,
+        waitForStatus: Boolean = true,
+        statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
-    ): ClientSendTransactionResponse {
-        val snapshot = session.requireSnapshot()
-        require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
-        requireActiveCredential()
-        val client = waasClient()
-        val prepared =
-            client.prepareEthereumTransaction(
-                PrepareEthereumTransactionRequest(
+    ): ClientSendTransactionResponse =
+        runOmsOperation(OmsSdkOperation.WalletSendTransaction) {
+            val snapshot = session.requireSnapshot()
+            require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
+            requireActiveCredential()
+            val prepared =
+                gateway.prepareEthereumTransaction(
                     walletId = requireWalletId(),
-                    network = network.id.toString(),
-                    to = request.to,
-                    value = request.value.toString(),
-                    data = request.data,
-                    mode = request.mode,
-                ),
+                    network = network,
+                    request = request,
+                )
+            executePreparedTransaction(
+                network = network,
+                walletAddress = snapshot.walletAddress ?: throw OmsSessionException(message = "No wallet selected"),
+                prepared = prepared,
+                selectFeeOption = selectFeeOption,
+                waitForStatus = waitForStatus,
+                statusPolling = statusPolling,
             )
-        return executePreparedTransaction(
-            client = client,
-            network = network,
-            walletAddress = requireNotNull(snapshot.walletAddress) { "No wallet selected" },
-            prepared = prepared,
-            selectFeeOption = selectFeeOption,
-        )
-    }
+        }
 
     /**
      * Calls a state-changing smart contract function through the WaaS
@@ -869,40 +793,42 @@ class WalletClient internal constructor(
         method: String,
         args: List<AbiArg>? = null,
         mode: TransactionMode = TransactionMode.Relayer,
+        waitForStatus: Boolean = true,
+        statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
-    ): ClientSendTransactionResponse {
-        val snapshot = session.requireSnapshot()
-        requireActiveCredential()
-        val client = waasClient()
-        val prepared =
-            client.prepareEthereumContractCall(
-                PrepareEthereumContractCallRequest(
+    ): ClientSendTransactionResponse =
+        runOmsOperation(OmsSdkOperation.WalletCallContract) {
+            val snapshot = session.requireSnapshot()
+            requireActiveCredential()
+            val prepared =
+                gateway.prepareEthereumContractCall(
                     walletId = requireWalletId(),
-                    network = network.id.toString(),
+                    network = network,
                     contract = contract,
                     method = method,
                     args = args,
                     mode = mode,
-                ),
+                )
+            executePreparedTransaction(
+                network = network,
+                walletAddress = snapshot.walletAddress ?: throw OmsSessionException(message = "No wallet selected"),
+                prepared = prepared,
+                selectFeeOption = selectFeeOption,
+                waitForStatus = waitForStatus,
+                statusPolling = statusPolling,
             )
-        return executePreparedTransaction(
-            client = client,
-            network = network,
-            walletAddress = requireNotNull(snapshot.walletAddress) { "No wallet selected" },
-            prepared = prepared,
-            selectFeeOption = selectFeeOption,
-        )
-    }
+        }
 
     /**
      * Returns the current WaaS execution status for a prepared or submitted
      * transaction.
      */
-    suspend fun getTransactionStatus(txnId: String): TransactionStatusResponse {
-        session.requireSnapshot()
-        requireActiveCredential()
-        return waasClient().transactionStatus(TransactionStatusRequest(txnId = txnId))
-    }
+    suspend fun getTransactionStatus(txnId: String): TransactionStatusResponse =
+        runOmsOperation(OmsSdkOperation.WalletGetTransactionStatus) {
+            session.requireSnapshot()
+            requireActiveCredential()
+            gateway.transactionStatus(txnId)
+        }
 
     /**
      * Returns all credentials that currently have access to the selected wallet.
@@ -910,15 +836,16 @@ class WalletClient internal constructor(
      * When [pageSize] is provided, the SDK follows WaaS cursors using that page
      * size and returns the combined credential list.
      */
-    suspend fun listAccess(pageSize: UInt? = null): List<CredentialInfo> {
-        session.requireSnapshot()
-        requireActiveCredential()
-        val credentials = mutableListOf<CredentialInfo>()
-        listAccessPages(pageSize = pageSize).collect { response ->
-            credentials += response.credentials
+    suspend fun listAccess(pageSize: UInt? = null): List<CredentialInfo> =
+        runOmsOperation(OmsSdkOperation.WalletListAccess) {
+            session.requireSnapshot()
+            requireActiveCredential()
+            val credentials = mutableListOf<CredentialInfo>()
+            listAccessPages(pageSize = pageSize).collect { response ->
+                credentials += response.credentials
+            }
+            credentials
         }
-        return credentials
-    }
 
     /**
      * Emits credential-access pages for the selected wallet until WaaS stops
@@ -944,16 +871,15 @@ class WalletClient internal constructor(
     suspend fun listAccessPage(
         pageSize: UInt? = null,
         cursor: String? = null,
-    ): ListAccessResponse {
-        session.requireSnapshot()
-        requireActiveCredential()
-        return waasClient().listAccess(
-            ListAccessRequest(
+    ): ListAccessResponse =
+        runOmsOperation(OmsSdkOperation.WalletListAccessPage) {
+            session.requireSnapshot()
+            requireActiveCredential()
+            gateway.listAccessPage(
                 walletId = requireWalletId(),
                 page = accessPage(pageSize, cursor),
-            ),
-        )
-    }
+            )
+        }
 
     /**
      * Returns an ID token for the currently selected wallet.
@@ -961,47 +887,46 @@ class WalletClient internal constructor(
     suspend fun getIdToken(
         ttlSeconds: UInt? = null,
         customClaims: Map<String, JsonElement>? = null,
-    ): GetIdTokenResponse {
-        session.requireSnapshot()
-        requireActiveCredential()
-        return waasClient().getIDToken(
-            GetIDTokenRequest(
+    ): String =
+        runOmsOperation(OmsSdkOperation.WalletGetIdToken) {
+            session.requireSnapshot()
+            requireActiveCredential()
+            gateway.getIdToken(
                 walletId = requireWalletId(),
                 ttlSeconds = ttlSeconds,
                 customClaims = customClaims,
-            ),
-        )
-    }
+            )
+        }
 
     /**
      * Revokes a credential's access to the selected wallet.
      *
      * Use [listAccess] or [listAccessPage] to find credential IDs.
      */
-    suspend fun revokeAccess(targetCredentialId: String) {
-        session.requireSnapshot()
-        requireActiveCredential()
-        waasClient().revokeAccess(
-            RevokeAccessRequest(
-                targetCredentialId = targetCredentialId,
+    suspend fun revokeAccess(targetCredentialId: String): Unit =
+        runOmsOperation(OmsSdkOperation.WalletRevokeAccess) {
+            session.requireSnapshot()
+            requireActiveCredential()
+            gateway.revokeAccess(
                 walletId = requireWalletId(),
-            ),
-        )
-    }
+                targetCredentialId = targetCredentialId,
+            )
+        }
 
     private fun requireActiveCredential() {
         if (!signer.hasCredential()) {
             signOut()
-            error("No active wallet session")
+            throw OmsSessionException(message = "No active wallet session")
         }
     }
 
     private suspend fun executePreparedTransaction(
-        client: WaasWalletClient,
         network: Network,
         walletAddress: String,
-        prepared: PrepareResponse,
+        prepared: PreparedWalletTransaction,
         selectFeeOption: FeeOptionSelector?,
+        waitForStatus: Boolean,
+        statusPolling: TransactionStatusPollingOptions?,
     ): ClientSendTransactionResponse {
         val feeOption =
             prepared.feeOptions
@@ -1010,7 +935,7 @@ class WalletClient internal constructor(
                     if (selectFeeOption == null) {
                         feeOptions.defaultSelection(sponsored = prepared.sponsored)
                     } else {
-                        selectFeeOption(
+                        selectFeeOption.select(
                             enrichFeeOptionsWithBalances(
                                 network = network,
                                 walletAddress = walletAddress,
@@ -1019,17 +944,19 @@ class WalletClient internal constructor(
                         )
                     }
                 }
-        val executed =
-            client.execute(
-                ExecuteRequest(
-                    txnId = prepared.txnId,
-                    feeOption = feeOption,
-                ),
+        val executed = gateway.execute(prepared.txnId, feeOption)
+        if (!waitForStatus) {
+            return ClientSendTransactionResponse(
+                txnId = prepared.txnId,
+                status = executed.status,
+                txnHash = null,
             )
+        }
         val status =
-            client.waitForTransactionStatus(
+            waitForTransactionStatus(
                 txnId = prepared.txnId,
                 fallbackStatus = executed.status,
+                options = statusPolling ?: defaultTransactionStatusPollingOptions(),
             )
         return ClientSendTransactionResponse(
             txnId = prepared.txnId,
@@ -1135,12 +1062,11 @@ class WalletClient internal constructor(
             ?.takeIf { it.isNotEmpty() }
             ?.lowercase()
 
-    private fun com.omsclient.kotlin_sdk.generated.waas.FeeToken.isNativeToken(): Boolean =
+    private fun FeeToken.isNativeToken(): Boolean =
         type.equals("native", ignoreCase = true) ||
             (contractAddress.isNullOrBlank() && tokenId.isNullOrBlank())
 
-    private fun com.omsclient.kotlin_sdk.generated.waas.FeeToken.balanceDecimals(): Int? =
-        decimals?.toInt() ?: if (isNativeToken()) 18 else null
+    private fun FeeToken.balanceDecimals(): Int? = decimals?.toInt() ?: if (isNativeToken()) 18 else null
 
     private fun String.formatTokenAmount(decimals: Int?): String =
         decimals?.let { scale ->
@@ -1150,17 +1076,29 @@ class WalletClient internal constructor(
     private fun List<FeeOption>.defaultSelection(sponsored: Boolean): FeeOptionSelection? =
         if (sponsored) null else firstOrNull()?.let { FeeOptionSelection(token = it.token.symbol) }
 
-    private suspend fun WaasWalletClient.waitForTransactionStatus(
+    private suspend fun waitForTransactionStatus(
         txnId: String,
         fallbackStatus: TransactionStatus,
+        options: TransactionStatusPollingOptions,
     ): TransactionStatusResponse {
-        val deadline = System.currentTimeMillis() + transactionStatusPollTimeoutMillis
+        val deadline = System.currentTimeMillis() + options.timeoutMillis
         var lastStatus = TransactionStatusResponse(status = fallbackStatus)
         var completedStatusPolls = 0
 
         do {
             lastStatus =
-                transactionStatus(TransactionStatusRequest(txnId = txnId))
+                try {
+                    gateway.transactionStatus(txnId)
+                } catch (throwable: CancellationException) {
+                    throw throwable
+                } catch (throwable: Throwable) {
+                    throw OmsTransactionException(
+                        operation = OmsSdkOperation.WalletGetTransactionStatus,
+                        txnId = txnId,
+                        message = throwable.message ?: "Transaction status lookup failed",
+                        cause = throwable,
+                    )
+                }
             completedStatusPolls += 1
             if (lastStatus.status == TransactionStatus.Executed || !lastStatus.txnHash.isNullOrBlank()) {
                 return lastStatus
@@ -1168,41 +1106,588 @@ class WalletClient internal constructor(
             if (lastStatus.status == TransactionStatus.UNKNOWN_DEFAULT) {
                 return lastStatus
             }
-            if (transactionStatusPollIntervalMillis <= 0L) {
-                return lastStatus
-            }
             val remainingMillis = deadline - System.currentTimeMillis()
             if (remainingMillis <= 0L) {
                 return lastStatus
             }
             val nextDelayMillis =
-                if (completedStatusPolls < fastTransactionStatusPollCount) {
-                    fastTransactionStatusPollIntervalMillis
+                if (completedStatusPolls < options.fastPollCount) {
+                    options.fastPollIntervalMillis
                 } else {
-                    transactionStatusPollIntervalMillis
+                    options.pollIntervalMillis
                 }
+            if (nextDelayMillis <= 0L) {
+                return lastStatus
+            }
             transactionStatusDelay(minOf(nextDelayMillis, remainingMillis))
         } while (true)
     }
 
-    private fun waasClient(): WaasWalletClient =
-        WaasWalletClient(
+    private fun defaultTransactionStatusPollingOptions(): TransactionStatusPollingOptions =
+        TransactionStatusPollingOptions(
+            fastPollIntervalMillis = fastTransactionStatusPollIntervalMillis,
+            fastPollCount = fastTransactionStatusPollCount,
+            pollIntervalMillis = transactionStatusPollIntervalMillis,
+            timeoutMillis = transactionStatusPollTimeoutMillis,
+        )
+}
+
+private data class VerifierCommitment(
+    val verifier: String,
+    val loginHint: String?,
+    val challenge: String,
+)
+
+private data class WalletAuthCompletion(
+    val loginType: OMSClientSessionLoginType?,
+    val wallets: List<Wallet>,
+    val nextWalletsCursor: String?,
+    val email: String?,
+    val credential: CredentialInfo,
+)
+
+private data class WalletsPage(
+    val wallets: List<Wallet>,
+    val nextCursor: String?,
+)
+
+private data class PreparedWalletTransaction(
+    val txnId: String,
+    val sponsored: Boolean,
+    val feeOptions: List<FeeOption>,
+)
+
+private data class ExecutedWalletTransaction(
+    val status: TransactionStatus,
+)
+
+private class WaasWalletGateway(
+    private val publicApiKey: String,
+    private val projectId: String,
+    private val environment: OMSClientEnvironment,
+    private val transport: OMSClientHttpClient,
+    private val signer: CredentialSigner,
+) {
+    private val publicClient: WaasWalletPublicClient =
+        WaasWalletPublicClient(
             baseUrl = environment.walletApiBaseUrl(),
             transport =
-                WalletSignedWaasTransport(
-                    publicApiKey = publicApiKey,
-                    projectId = projectId,
-                    httpClient = transport,
-                    signer = signer,
-                ),
+                LambdaWebRpcTransport { baseUrl, path, body, headers ->
+                    val response =
+                        transport.postJsonWithStatus(
+                            baseUrl = baseUrl,
+                            path = path,
+                            body = body,
+                            headers = headers,
+                        )
+                    WebRpcHttpResponse(
+                        statusCode = response.statusCode,
+                        body = response.body,
+                    )
+                },
+            headers = { defaultPublicHeaders() },
         )
+
+    suspend fun commitEmailVerifier(email: String): VerifierCommitment =
+        signedClient()
+            .commitVerifier(
+                CommitVerifierRequest(
+                    identityType = IdentityType.Email,
+                    authMode = AuthMode.OTP,
+                    metadata = emptyMap(),
+                    handle = email,
+                ),
+            ).toVerifierCommitment()
+
+    suspend fun commitOidcIdTokenVerifier(
+        idToken: String,
+        issuer: String,
+        audience: String,
+    ): VerifierCommitment =
+        signedClient()
+            .commitVerifier(
+                CommitVerifierRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    metadata =
+                        mapOf(
+                            "iss" to issuer,
+                            "aud" to audience,
+                            "exp" to OidcIdToken.expiresAtEpochSeconds(idToken).toString(),
+                        ),
+                    handle = OidcIdToken.handleHash(idToken),
+                ),
+            ).toVerifierCommitment()
+
+    suspend fun commitOidcRedirectVerifier(
+        provider: OidcProviderConfig,
+        redirectUri: String,
+    ): VerifierCommitment =
+        signedClient()
+            .commitVerifier(
+                CommitVerifierRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.AuthCodePKCE,
+                    metadata =
+                        mapOf(
+                            "iss" to provider.issuer,
+                            "aud" to provider.clientId,
+                            "redirect_uri" to redirectUri,
+                        ),
+                ),
+            ).toVerifierCommitment()
+
+    suspend fun completeEmailAuth(
+        verifier: String,
+        challenge: String,
+        code: String,
+    ): WalletAuthCompletion =
+        signedClient()
+            .completeAuth(
+                CompleteAuthRequest(
+                    identityType = IdentityType.Email,
+                    authMode = AuthMode.OTP,
+                    verifier = verifier,
+                    answer =
+                        WalletAuthChallenge.hashAnswer(
+                            challenge = challenge,
+                            code = code,
+                        ),
+                    lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
+                ),
+            ).toWalletAuthCompletion()
+
+    suspend fun completeOidcIdTokenAuth(
+        verifier: String,
+        idToken: String,
+    ): WalletAuthCompletion =
+        signedClient()
+            .completeAuth(
+                CompleteAuthRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.IDToken,
+                    verifier = verifier,
+                    answer = idToken,
+                    lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
+                ),
+            ).toWalletAuthCompletion()
+
+    suspend fun completeOidcRedirectAuth(
+        verifier: String,
+        code: String,
+    ): WalletAuthCompletion =
+        signedClient()
+            .completeAuth(
+                CompleteAuthRequest(
+                    identityType = IdentityType.OIDC,
+                    authMode = AuthMode.AuthCodePKCE,
+                    verifier = verifier,
+                    answer = code,
+                    lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
+                ),
+            ).toWalletAuthCompletion()
+
+    suspend fun useWallet(walletId: String): Wallet =
+        signedClient()
+            .useWallet(
+                UseWalletRequest(
+                    walletId = walletId,
+                ),
+            ).wallet
+            .toModel()
+
+    suspend fun createWallet(
+        walletType: WalletType,
+        reference: String?,
+    ): Wallet =
+        signedClient()
+            .createWallet(
+                CreateWalletRequest(
+                    type = walletType.toWaas(),
+                    reference = reference,
+                ),
+            ).wallet
+            .toModel()
+
+    suspend fun listWallets(cursor: String?): WalletsPage {
+        val response =
+            signedClient().listWallets(
+                ListWalletsRequest(
+                    page = cursor?.let { WaasPage(cursor = it) },
+                ),
+            )
+        return WalletsPage(
+            wallets = response.wallets.map { it.toModel() },
+            nextCursor = response.page?.cursor?.takeIf { it.isNotBlank() },
+        )
+    }
+
+    suspend fun signMessage(
+        walletId: String,
+        network: Network,
+        message: String,
+    ): String =
+        signedClient()
+            .signMessage(
+                SignMessageRequest(
+                    walletId = walletId,
+                    network = network.id.toString(),
+                    message = message,
+                ),
+            ).signature
+
+    suspend fun signTypedData(
+        walletId: String,
+        network: Network,
+        typedData: JsonElement,
+    ): String =
+        signedClient()
+            .signTypedData(
+                SignTypedDataRequest(
+                    walletId = walletId,
+                    network = network.id.toString(),
+                    typedData = typedData,
+                ),
+            ).signature
+
+    suspend fun isValidMessageSignature(
+        walletId: String,
+        network: Network,
+        message: String,
+        signature: String,
+    ): Boolean =
+        publicClient
+            .isValidMessageSignature(
+                IsValidMessageSignatureRequest(
+                    network = network.id.toString(),
+                    walletId = walletId,
+                    message = message,
+                    signature = signature,
+                ),
+            ).isValid
+
+    suspend fun isValidTypedDataSignature(
+        walletId: String,
+        network: Network,
+        typedData: JsonElement,
+        signature: String,
+    ): Boolean =
+        publicClient
+            .isValidTypedDataSignature(
+                IsValidTypedDataSignatureRequest(
+                    network = network.id.toString(),
+                    walletId = walletId,
+                    typedData = typedData,
+                    signature = signature,
+                ),
+            ).isValid
+
+    suspend fun prepareEthereumTransaction(
+        walletId: String,
+        network: Network,
+        request: ClientSendTransactionRequest,
+    ): PreparedWalletTransaction =
+        signedClient()
+            .prepareEthereumTransaction(
+                PrepareEthereumTransactionRequest(
+                    walletId = walletId,
+                    network = network.id.toString(),
+                    to = request.to,
+                    value = request.value.toString(),
+                    data = request.data,
+                    mode = request.mode.toWaas(),
+                ),
+            ).toPreparedWalletTransaction()
+
+    suspend fun prepareEthereumContractCall(
+        walletId: String,
+        network: Network,
+        contract: String,
+        method: String,
+        args: List<AbiArg>?,
+        mode: TransactionMode,
+    ): PreparedWalletTransaction =
+        signedClient()
+            .prepareEthereumContractCall(
+                PrepareEthereumContractCallRequest(
+                    walletId = walletId,
+                    network = network.id.toString(),
+                    contract = contract,
+                    method = method,
+                    args = args?.map { it.toWaas() },
+                    mode = mode.toWaas(),
+                ),
+            ).toPreparedWalletTransaction()
+
+    suspend fun execute(
+        txnId: String,
+        feeOption: FeeOptionSelection?,
+    ): ExecutedWalletTransaction =
+        ExecutedWalletTransaction(
+            status =
+                signedClient()
+                    .execute(
+                        ExecuteRequest(
+                            txnId = txnId,
+                            feeOption = feeOption?.toWaas(),
+                        ),
+                    ).status
+                    .toModel(),
+        )
+
+    suspend fun transactionStatus(txnId: String): TransactionStatusResponse =
+        signedClient()
+            .transactionStatus(TransactionStatusRequest(txnId = txnId))
+            .toModel()
+
+    suspend fun listAccessPage(
+        walletId: String,
+        page: Page?,
+    ): ListAccessResponse =
+        signedClient()
+            .listAccess(
+                ListAccessRequest(
+                    walletId = walletId,
+                    page = page?.toWaas(),
+                ),
+            ).toModel()
+
+    suspend fun getIdToken(
+        walletId: String,
+        ttlSeconds: UInt?,
+        customClaims: Map<String, JsonElement>?,
+    ): String =
+        signedClient()
+            .getIDToken(
+                GetIDTokenRequest(
+                    walletId = walletId,
+                    ttlSeconds = ttlSeconds,
+                    customClaims = customClaims,
+                ),
+            ).idToken
+
+    suspend fun revokeAccess(
+        walletId: String,
+        targetCredentialId: String,
+    ) {
+        signedClient().revokeAccess(
+            RevokeAccessRequest(
+                targetCredentialId = targetCredentialId,
+                walletId = walletId,
+            ),
+        )
+    }
+
+    private fun signedClient(): WaasWalletClient =
+        WaasWalletClient(
+            baseUrl = environment.walletApiBaseUrl(),
+            transport = signedTransport(),
+        )
+
+    private fun signedTransport(): LambdaWebRpcTransport =
+        LambdaWebRpcTransport { baseUrl, path, body, headers ->
+            val endpoint = resolveEndpoint(path)
+            val nonce = signer.nextNonce()
+            val preimage =
+                WalletRequestSigner.buildWalletRequestPreimage(
+                    endpoint = endpoint,
+                    nonce = nonce,
+                    scope = projectId,
+                    payload = body,
+                    requestPathPrefix = WaasWalletApi.basePath,
+                )
+            val walletSignatureHeader =
+                WalletRequestSigner.buildWalletSignatureHeader(
+                    signingAlgorithm = signer.signingAlgorithm,
+                    scope = projectId,
+                    credentialId = signer.credentialId(),
+                    nonce = nonce,
+                    signature = signer.sign(preimage),
+                )
+            val response =
+                transport.postJsonWithStatus(
+                    baseUrl = baseUrl,
+                    path = WaasWalletApi.basePath + endpoint,
+                    body = body,
+                    headers = defaultSignedHeaders(headers, walletSignatureHeader),
+                )
+            WebRpcHttpResponse(
+                statusCode = response.statusCode,
+                body = response.body,
+            )
+        }
+
+    private fun resolveEndpoint(path: String): String =
+        when {
+            path.startsWith(WaasWalletApi.basePath) -> path.removePrefix(WaasWalletApi.basePath)
+            path.startsWith("/") -> path
+            else -> "/$path"
+        }
+
+    private fun defaultSignedHeaders(
+        headers: Map<String, String>,
+        walletSignatureHeader: String,
+    ): Map<String, String> =
+        linkedMapOf(
+            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
+            "Origin" to "http://localhost:3000",
+            "Accept" to "application/json",
+            OMSClientEnvironment.walletSignatureHeaderName to
+                walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
+        ).apply {
+            putAll(headers)
+        }
 
     private fun defaultPublicHeaders(): Map<String, String> =
         mapOf(
             OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
             "Accept" to "application/json",
         )
+
+    private fun com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse.toVerifierCommitment(): VerifierCommitment =
+        VerifierCommitment(
+            verifier = verifier,
+            loginHint = loginHint,
+            challenge = challenge,
+        )
+
+    private fun CompleteAuthResponse.toWalletAuthCompletion(): WalletAuthCompletion =
+        WalletAuthCompletion(
+            loginType = identity.toSessionLoginType(),
+            wallets = wallets.map { it.toModel() },
+            nextWalletsCursor = page?.cursor?.takeIf { it.isNotBlank() },
+            email = email,
+            credential = credential.toModel(),
+        )
+
+    private fun Identity.toSessionLoginType(): OMSClientSessionLoginType? =
+        when (type) {
+            IdentityType.Email -> {
+                OMSClientSessionLoginType.Email
+            }
+
+            IdentityType.OIDC -> {
+                if (iss == GOOGLE_ISSUER) {
+                    OMSClientSessionLoginType.GoogleAuth
+                } else {
+                    OMSClientSessionLoginType.Oidc
+                }
+            }
+
+            IdentityType.Phone,
+            IdentityType.Passkey,
+            IdentityType.UNKNOWN_DEFAULT,
+            -> {
+                null
+            }
+        }
+
+    private fun WalletType.toWaas(): WaasWalletType =
+        when (this) {
+            WalletType.Ethereum -> WaasWalletType.Ethereum
+            WalletType.UNKNOWN_DEFAULT -> WaasWalletType.UNKNOWN_DEFAULT
+        }
+
+    private fun WaasWalletType.toModel(): WalletType =
+        when (this) {
+            WaasWalletType.Ethereum -> WalletType.Ethereum
+            WaasWalletType.UNKNOWN_DEFAULT -> WalletType.UNKNOWN_DEFAULT
+        }
+
+    private fun TransactionMode.toWaas(): WaasTransactionMode =
+        when (this) {
+            TransactionMode.Native -> WaasTransactionMode.Native
+            TransactionMode.Relayer -> WaasTransactionMode.Relayer
+            TransactionMode.UNKNOWN_DEFAULT -> WaasTransactionMode.UNKNOWN_DEFAULT
+        }
+
+    private fun WaasTransactionStatus.toModel(): TransactionStatus =
+        when (this) {
+            WaasTransactionStatus.Quoted -> TransactionStatus.Quoted
+            WaasTransactionStatus.Pending -> TransactionStatus.Pending
+            WaasTransactionStatus.Executed -> TransactionStatus.Executed
+            WaasTransactionStatus.UNKNOWN_DEFAULT -> TransactionStatus.UNKNOWN_DEFAULT
+        }
+
+    private fun WaasWallet.toModel(): Wallet =
+        Wallet(
+            id = id,
+            type = type.toModel(),
+            address = address,
+            reference = reference,
+        )
+
+    private fun WaasFeeToken.toModel(): FeeToken =
+        FeeToken(
+            network = network,
+            name = name,
+            symbol = symbol,
+            type = type,
+            decimals = decimals,
+            logoUrl = logoUrl,
+            contractAddress = contractAddress,
+            tokenId = tokenId,
+        )
+
+    private fun WaasFeeOption.toModel(): FeeOption =
+        FeeOption(
+            token = token.toModel(),
+            value = value,
+            displayValue = displayValue,
+        )
+
+    private fun FeeOptionSelection.toWaas(): WaasFeeOptionSelection = WaasFeeOptionSelection(token = token)
+
+    private fun Page.toWaas(): WaasPage =
+        WaasPage(
+            limit = limit,
+            cursor = cursor,
+        )
+
+    private fun AbiArg.toWaas(): WaasAbiArg =
+        WaasAbiArg(
+            type = type,
+            value = value,
+        )
+
+    private fun WaasCredentialInfo.toModel(): CredentialInfo =
+        CredentialInfo(
+            credentialId = credentialId,
+            expiresAt = expiresAt,
+            isCaller = isCaller,
+        )
+
+    private fun WaasListAccessResponse.toModel(): ListAccessResponse =
+        ListAccessResponse(
+            credentials = credentials.map { it.toModel() },
+            page =
+                page?.let {
+                    Page(
+                        limit = it.limit,
+                        cursor = it.cursor,
+                    )
+                },
+        )
+
+    private fun WaasTransactionStatusResponse.toModel(): TransactionStatusResponse =
+        TransactionStatusResponse(
+            status = status.toModel(),
+            txnHash = txnHash,
+        )
+
+    private fun PrepareResponse.toPreparedWalletTransaction(): PreparedWalletTransaction =
+        PreparedWalletTransaction(
+            txnId = txnId,
+            sponsored = sponsored,
+            feeOptions = feeOptions.map { it.toModel() },
+        )
 }
+
+private fun String.toWalletType(): WalletType =
+    when (this) {
+        WalletType.Ethereum.wireValue -> WalletType.Ethereum
+        else -> WalletType.UNKNOWN_DEFAULT
+    }
 
 private val DEFAULT_SESSION_LIFETIME_SECONDS: UInt = 604_800u
 private const val GOOGLE_ISSUER: String = "https://accounts.google.com"

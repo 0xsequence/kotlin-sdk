@@ -47,15 +47,23 @@ val client = OMSClient(
 )
 ```
 
-That constructor uses secure persisted session storage by default.
-Wallet API requests are signed with a non-extractable Android Keystore P-256
-credential (`ecdsa-p256-sha256`), so the private credential key is not written
-to app storage. `publicApiKey` is sent as the API access key, while `projectId`
-is used as the WaaS signing scope.
-Only completed wallet sessions are restored automatically. Pending auth state is
-not exposed through `client.session`; email OTP pending state is kept in memory,
-while OIDC redirect verifier/state is stored internally only so incoming app
-links can be handled.
+That constructor wires two separate Android-backed pieces. Wallet API requests
+are authorized by a non-extractable Android Keystore P-256 credential
+(`ecdsa-p256-sha256`) owned by the credential signer, so the private credential
+key is never written to SDK session storage.
+
+Session restore uses a separate metadata store. The SDK persists only
+completed-session metadata in app-private no-backup storage: wallet id/address,
+signer address/algorithm, expiry, login type, and optional session email. This
+metadata is not wallet authorization material: by itself it cannot sign requests
+or access a wallet. Restore succeeds only while the matching Keystore credential
+still exists, and wallet operations must sign fresh requests with that
+credential. `publicApiKey` is sent as the API access key, while `projectId` is
+used as the WaaS signing scope.
+
+Pending email OTP state is kept in memory. OIDC redirect state is stored only to
+complete the browser redirect flow and is cleared when the flow completes, fails,
+or is replaced.
 
 If you need a custom environment:
 
@@ -98,10 +106,10 @@ automatic mode selects the first matching wallet returned by WaaS. Use manual
 mode for apps that need to let users choose between multiple wallets.
 
 ```kotlin
-if (client.wallet.address == null) {
-    client.startEmailAuth("user@example.com")
+if (client.wallet.walletAddress == null) {
+    client.wallet.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    val result = client.completeEmailAuth("123456")
+    val result = client.wallet.completeEmailAuth("123456")
     check(result is CompleteAuthResult.WalletSelected)
     showWallet(result.wallet)
 }
@@ -111,7 +119,7 @@ For OIDC ID-token flows such as Google Sign-In with Credential Manager:
 
 ```kotlin
 val result =
-    client.signInWithOidcIdToken(
+    client.wallet.signInWithOidcIdToken(
         idToken = googleIdToken,
         issuer = "https://accounts.google.com",
         audience = "YOUR_WEB_CLIENT_ID",
@@ -125,20 +133,24 @@ returned URL with your browser or Custom Tabs, then safely handle incoming app
 links from `onCreate` / `onNewIntent`:
 
 ```kotlin
-val started = client.startOidcRedirectAuth(
-    provider = OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID"),
-    redirectUri = "omsclientkotlindemo://auth/callback",
+val started = client.wallet.startOidcRedirectAuth(
+    provider = OidcProviders.google(),
+    redirectUri = "yourapp://auth/callback",
 )
 
 // Open started.authorizationUrl.
 
-when (val result = client.handleOidcRedirectCallback(intent.data?.toString())) {
+when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
     is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
     is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
 }
 ```
+
+Use a redirect URI that matches a deep link registered by your app, such as
+`yourapp://auth/callback`. If your Google OAuth setup uses a custom web client
+ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
 
 With the default automatic behavior, a successful redirect callback returns
 `OidcRedirectAuthResult.Completed`; `WalletSelection` is only a successful branch
@@ -149,7 +161,7 @@ To use your own wallet-selection UI, pass
 
 ```kotlin
 val result =
-    client.completeEmailAuth(
+    client.wallet.completeEmailAuth(
         code = "123456",
         walletSelection = WalletSelectionBehavior.Manual,
     )
@@ -192,7 +204,7 @@ For OIDC redirect auth, pass the same behavior when handling the callback:
 ```kotlin
 when (
     val result =
-        client.handleOidcRedirectCallback(
+        client.wallet.handleOidcRedirectCallback(
             callbackUrl = intent.data?.toString(),
             walletSelection = WalletSelectionBehavior.Manual,
         )
@@ -277,7 +289,7 @@ val signResult = client.wallet.signMessage(
 val verifyResult = client.wallet.isValidMessageSignature(
     network = network,
     message = "hello from android",
-    signature = signResult.signature,
+    signature = signResult,
 )
 
 val typedSignature = client.wallet.signTypedData(
@@ -310,7 +322,7 @@ val displayAmount = formatUnits(rawAmount, 18)
 For indexer balance lookups:
 
 ```kotlin
-val walletAddress = requireNotNull(client.wallet.address)
+val walletAddress = requireNotNull(client.wallet.walletAddress)
 
 val nativeBalance = client.indexer.getNativeTokenBalance(
     network = network,
@@ -382,7 +394,7 @@ To refresh a transaction later or manage active wallet credentials:
 
 ```kotlin
 val status = client.wallet.getTransactionStatus(txnId = txResult.txnId)
-val idToken = client.wallet.getIdToken(ttlSeconds = 300u).idToken
+val idToken = client.wallet.getIdToken(ttlSeconds = 300u)
 val credentials = client.wallet.listAccess(pageSize = 25u)
 client.wallet.listAccessPages(pageSize = 25u).collect { page ->
     renderCredentials(page.credentials)

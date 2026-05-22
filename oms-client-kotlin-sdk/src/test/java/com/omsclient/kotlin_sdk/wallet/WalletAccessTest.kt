@@ -1,5 +1,7 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.generated.waas.GetIDTokenRequest
 import com.omsclient.kotlin_sdk.generated.waas.ListAccessRequest
 import com.omsclient.kotlin_sdk.generated.waas.Page
@@ -279,7 +281,7 @@ class WalletAccessTest {
                 )
             assertTrue(client.restorePersistedSession())
 
-            val response =
+            val idToken =
                 client.getIdToken(
                     ttlSeconds = 300u,
                     customClaims =
@@ -289,7 +291,7 @@ class WalletAccessTest {
                 )
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals("id-token-value", response.idToken)
+            assertEquals("id-token-value", idToken)
             assertEquals("/rpc/Wallet/GetIDToken", request.target)
             assertEquals(
                 WaasWalletApi.GetIDToken.encodeRequest(
@@ -329,7 +331,8 @@ class WalletAccessTest {
                     client.revokeAccess(targetCredentialId = "credential-2")
                 }.exceptionOrNull()
 
-            assertTrue(error is IllegalStateException)
+            assertTrue(error is OmsSdkException)
+            assertEquals(OmsSdkErrorCode.SessionMissing, (error as OmsSdkException).code)
             assertEquals(0, server.requestCount)
         }
 }

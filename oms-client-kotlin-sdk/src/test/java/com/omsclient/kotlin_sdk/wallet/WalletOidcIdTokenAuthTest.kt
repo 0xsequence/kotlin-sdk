@@ -5,7 +5,6 @@ import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
@@ -139,14 +138,14 @@ class WalletOidcIdTokenAuthTest {
                 requireNotNull(useWalletRequest.body).utf8(),
             )
             assertEquals("0xdef", wallet.address)
-            assertEquals("0xdef", client.address)
+            assertEquals("0xdef", client.walletAddress)
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
             assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.GoogleAuth, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
-            assertEquals(SigningAlgorithm.ECDSA_P256K_EIP191, store.snapshot?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256K_EIP191, store.snapshot?.signerKeyType)
             assertNull(store.snapshot?.verifier)
             assertNull(store.snapshot?.challenge)
             assertNull(store.privateKeyHex)
@@ -213,7 +212,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals(environment.defaultWalletType, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-def"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertTrue(client.hasPendingSignIn)
             assertEquals("user@example.com", client.snapshotSession()?.sessionEmail)
             assertNull(client.snapshotSession()?.walletId)
@@ -283,7 +282,6 @@ class WalletOidcIdTokenAuthTest {
 
             assertEquals("0xdef", wallet.address)
             assertNull(redirectStore.pending)
-            assertFalse(client.canResumeOidcRedirectAuth)
             assertEquals(1, redirectStore.clearCalls)
         }
 
@@ -410,7 +408,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertNull(client.signerAddress)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
@@ -460,7 +458,7 @@ class WalletOidcIdTokenAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.address)
+            assertNull(client.walletAddress)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)

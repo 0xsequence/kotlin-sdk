@@ -18,7 +18,7 @@ class MainActivity : AppCompatActivity() {
                 projectId = DemoConfig.demoProjectId,
                 environment = OMSClientEnvironment.demoDefaults(),
             )
-        if (sdk.wallet.address != null) {
+        if (sdk.wallet.walletAddress != null) {
             startActivity(Intent(this, AuthDemoActivity::class.java))
             finish()
             return

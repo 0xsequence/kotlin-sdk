@@ -1,6 +1,5 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import org.web3j.crypto.ECKeyPair
 import org.web3j.crypto.Hash
@@ -83,7 +82,7 @@ internal object WalletRequestSigner {
         signature: String,
     ): String =
         buildWalletSignatureHeader(
-            signingAlgorithm = SigningAlgorithm.ECDSA_P256K_EIP191,
+            signingAlgorithm = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
             scope = scope,
             credentialId = address,
             nonce = nonce,
@@ -91,7 +90,7 @@ internal object WalletRequestSigner {
         )
 
     fun buildWalletSignatureHeader(
-        signingAlgorithm: SigningAlgorithm,
+        signingAlgorithm: WalletSigningAlgorithm,
         scope: String,
         credentialId: String,
         nonce: String,

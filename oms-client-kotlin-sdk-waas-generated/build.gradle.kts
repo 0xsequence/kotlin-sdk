@@ -20,7 +20,7 @@ group = providers.gradleProperty("POM_GROUP_ID").orElse("io.github.0xsequence").
 version = providers.gradleProperty("POM_VERSION_NAME").orElse("0.1.0-SNAPSHOT").get()
 
 android {
-    namespace = "com.omsclient.kotlin_sdk"
+    namespace = "com.omsclient.kotlin_sdk.generated.waas"
     compileSdk {
         version =
             release(
@@ -32,8 +32,6 @@ android {
 
     defaultConfig {
         minSdk = 26
-        consumerProguardFiles("proguard-rules.pro")
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -41,11 +39,9 @@ android {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
             )
         }
     }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -58,36 +54,23 @@ android {
     }
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    exclude("**/generated/**")
-    doLast {
-        delete(destinationDirectory.dir("com/omsclient/kotlin_sdk/generated"))
-    }
-}
+val waasGeneratedSource =
+    layout.projectDirectory.file(
+        "../oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/generated/waas/WaasWalletClient.kt",
+    )
 
-tasks.withType<org.gradle.jvm.tasks.Jar>().configureEach {
-    includeEmptyDirs = false
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    source(waasGeneratedSource)
 }
 
 tasks.matching { it.name == "sourceReleaseJar" }.configureEach {
     this as org.gradle.jvm.tasks.Jar
-    exclude("**/generated/**")
+    from(waasGeneratedSource)
 }
 
 dependencies {
-    implementation(project(":oms-client-kotlin-sdk-waas-generated"))
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.okhttp)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-    api(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.web3j.crypto) {
-        exclude(group = "io.vertx", module = "vertx-core")
-    }
-    testImplementation(libs.junit)
-    testImplementation(libs.mockwebserver3)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.test.runner)
 }
 
 publishing {
@@ -98,11 +81,7 @@ publishing {
                     .gradleProperty("POM_GROUP_ID")
                     .orElse(project.group.toString())
                     .get()
-            artifactId =
-                providers
-                    .gradleProperty("POM_ARTIFACT_ID")
-                    .orElse(project.name)
-                    .get()
+            artifactId = "oms-client-kotlin-sdk-waas-generated"
             version =
                 providers
                     .gradleProperty("POM_VERSION_NAME")
@@ -110,12 +89,8 @@ publishing {
                     .get()
 
             pom {
-                name.set(providers.gradleProperty("POM_NAME").orElse("OMS Client Kotlin SDK"))
-                description.set(
-                    providers
-                        .gradleProperty("POM_DESCRIPTION")
-                        .orElse("Android/Kotlin SDK module for wallet, auth, and API flows."),
-                )
+                name.set("OMS Client Kotlin SDK WaaS Generated")
+                description.set("Generated WaaS WebRPC runtime dependency for OMS Client Kotlin SDK.")
                 url.set(
                     providers
                         .gradleProperty("POM_URL")

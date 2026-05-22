@@ -2,16 +2,21 @@ package com.omsclient.kotlin_sdk.storage
 
 import android.content.Context
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
+import com.omsclient.kotlin_sdk.wallet.WalletSigningAlgorithm
 import org.json.JSONObject
 import java.io.File
 
-internal class AndroidKeystoreSessionStore(
+/**
+ * Stores completed wallet-session metadata in an app-private no-backup file.
+ *
+ * This store does not create, store, or sign with wallet credentials. Wallet
+ * request authorization is handled by the Android Keystore credential signer.
+ */
+internal class AndroidSessionMetadataStore(
     context: Context,
-    @Suppress("UNUSED_PARAMETER") alias: String = DEFAULT_KEY_ALIAS,
     private val fileName: String = DEFAULT_FILE_NAME,
-) : OMSClientSecureSessionStore {
+) : OMSClientSessionMetadataStore {
     private val sessionFile = File(context.noBackupFilesDir, fileName)
 
     override fun load(): OMSClientSessionSnapshot? {
@@ -64,7 +69,7 @@ internal class AndroidKeystoreSessionStore(
         val walletId: String? = null,
         val walletAddress: String? = null,
         val signerAddress: String? = null,
-        val signerKeyType: SigningAlgorithm? = null,
+        val signerKeyType: WalletSigningAlgorithm? = null,
         val expiresAt: String? = null,
         val loginType: OMSClientSessionLoginType? = null,
         val sessionEmail: String? = null,
@@ -95,7 +100,7 @@ internal class AndroidKeystoreSessionStore(
                             .optString("signerKeyType")
                             .ifBlank { null }
                             ?.let(::signingAlgorithmFromPersistedWireValue)
-                            ?.takeIf { it != SigningAlgorithm.UNKNOWN_DEFAULT },
+                            ?.takeIf { it != WalletSigningAlgorithm.UNKNOWN_DEFAULT },
                     expiresAt = jsonObject.optString("expiresAt").ifBlank { null },
                     loginType =
                         jsonObject
@@ -110,17 +115,16 @@ internal class AndroidKeystoreSessionStore(
                 )
             }
 
-            private fun signingAlgorithmFromPersistedWireValue(value: String): SigningAlgorithm =
+            private fun signingAlgorithmFromPersistedWireValue(value: String): WalletSigningAlgorithm =
                 when (value) {
-                    "ethereum-secp256k1" -> SigningAlgorithm.ECDSA_P256K_EIP191
-                    "webcrypto-secp256r1" -> SigningAlgorithm.ECDSA_P256_SHA256
-                    else -> SigningAlgorithm.fromWireValue(value)
+                    "ethereum-secp256k1" -> WalletSigningAlgorithm.ECDSA_P256K_EIP191
+                    "webcrypto-secp256r1" -> WalletSigningAlgorithm.ECDSA_P256_SHA256
+                    else -> WalletSigningAlgorithm.fromWireValue(value)
                 }
         }
     }
 
     companion object {
-        private const val DEFAULT_KEY_ALIAS = "oms-client-session-key"
         private const val DEFAULT_FILE_NAME = "oms-client-session.json"
     }
 }

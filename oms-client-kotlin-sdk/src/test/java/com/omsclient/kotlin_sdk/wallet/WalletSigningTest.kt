@@ -75,7 +75,7 @@ class WalletSigningTest {
                     message = "hello",
                 )
 
-            assertEquals("0xsigned", result.signature)
+            assertEquals("0xsigned", result)
             assertEquals(1, signer.signCalls)
             assertEquals(0, store.saveCalls)
         }
@@ -126,7 +126,7 @@ class WalletSigningTest {
                 )
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals("0xtyped", result.signature)
+            assertEquals("0xtyped", result)
             assertEquals("/rpc/Wallet/SignTypedData", request.target)
             assertEquals(
                 WaasWalletApi.SignTypedData.encodeRequest(

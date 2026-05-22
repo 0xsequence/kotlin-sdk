@@ -1,13 +1,12 @@
 package com.omsclient.kotlin_sdk
 
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
-import com.omsclient.kotlin_sdk.storage.OMSClientSecureSessionStore
+import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
+import com.omsclient.kotlin_sdk.wallet.WalletSigningAlgorithm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -31,10 +30,10 @@ class OMSClientTest {
                 publicApiKey = "test-access-key",
                 projectId = "test-project-id",
                 walletSession = OMSClientSession(),
-                sessionStore = StubSecureSessionStore(snapshot),
+                sessionStore = StubSessionMetadataStore(snapshot),
             )
 
-        assertEquals("0xwallet", sdk.wallet.address)
+        assertEquals("0xwallet", sdk.wallet.walletAddress)
         assertEquals("0xwallet", sdk.session.walletAddress)
         assertEquals(Instant.parse("2026-01-01T00:00:00Z"), sdk.session.expiresAt)
         assertEquals(OMSClientSessionLoginType.Email, sdk.session.loginType)
@@ -57,9 +56,9 @@ class OMSClientTest {
                             redirectUri = "omsclientkotlindemo://auth/callback",
                             issuer = "https://issuer.example",
                             projectId = "test-project-id",
-                            walletType = WalletType.Ethereum,
+                            walletType = "ethereum",
                             signerAddress = "0xsigner",
-                            signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
+                            signerKeyType = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
                         ),
                     ),
             )
@@ -73,7 +72,7 @@ class OMSClientTest {
     @Test
     fun signOutClearsWalletSessionAndStore() {
         val store =
-            MutableSecureSessionStore(
+            MutableSessionMetadataStore(
                 OMSClientSessionSnapshot(
                     walletId = "wallet-main",
                     walletAddress = "0xwallet",
@@ -88,9 +87,9 @@ class OMSClientTest {
                 sessionStore = store,
             )
 
-        sdk.signOut()
+        sdk.wallet.signOut()
 
-        assertNull(sdk.wallet.address)
+        assertNull(sdk.wallet.walletAddress)
         assertNull(sdk.session.walletAddress)
         assertNull(sdk.session.expiresAt)
         assertNull(sdk.session.loginType)
@@ -137,7 +136,7 @@ class OMSClientTest {
     }
 
     @Test
-    fun scopedSessionStorageDiffersAcrossConfigs() {
+    fun scopedAndroidStorageDiffersAcrossConfigs() {
         val defaultEnvironment = OMSClientEnvironment()
         val demoEnvironment = OMSClientEnvironment.demoDefaults()
         val projectId = "test-project-id"
@@ -149,30 +148,22 @@ class OMSClientTest {
                 indexerUrlTemplate = defaultEnvironment.indexerUrlTemplate,
             )
 
-        assertNotEquals(
-            OMSClient.scopedSessionKeyAlias(projectId, defaultEnvironment),
-            OMSClient.scopedSessionKeyAlias(projectId, differentWalletEnvironment),
+        assertScopedAndroidStorageIdsDiffer(
+            scopedAndroidStorageIds(projectId, defaultEnvironment),
+            scopedAndroidStorageIds(projectId, differentWalletEnvironment),
         )
-        assertNotEquals(
-            OMSClient.scopedSessionFileName(projectId, defaultEnvironment),
-            OMSClient.scopedSessionFileName(projectId, differentWalletEnvironment),
-        )
-        assertNotEquals(
-            OMSClient.scopedSessionKeyAlias(projectId, defaultEnvironment),
-            OMSClient.scopedSessionKeyAlias(otherProjectId, defaultEnvironment),
+        assertScopedAndroidStorageIdsDiffer(
+            scopedAndroidStorageIds(projectId, defaultEnvironment),
+            scopedAndroidStorageIds(otherProjectId, defaultEnvironment),
         )
         assertEquals(
-            OMSClient.scopedSessionKeyAlias(projectId, defaultEnvironment),
-            OMSClient.scopedSessionKeyAlias(projectId, demoEnvironment),
-        )
-        assertEquals(
-            OMSClient.scopedSessionFileName(projectId, defaultEnvironment),
-            OMSClient.scopedSessionFileName(projectId, demoEnvironment),
+            scopedAndroidStorageIds(projectId, defaultEnvironment),
+            scopedAndroidStorageIds(projectId, demoEnvironment),
         )
     }
 
     @Test
-    fun scopedSessionStorageTreatsEquivalentWalletOriginsAsSameScope() {
+    fun scopedAndroidStorageTreatsEquivalentWalletOriginsAsSameScope() {
         val withoutTrailingSlash =
             OMSClientEnvironment(
                 walletApiUrl = "https://wallet.example.com/rpc/Wallet",
@@ -192,34 +183,50 @@ class OMSClientTest {
         val projectId = "test-project-id"
 
         assertEquals(
-            OMSClient.scopedSessionKeyAlias(projectId, withoutTrailingSlash),
-            OMSClient.scopedSessionKeyAlias(projectId, withTrailingSlash),
+            scopedAndroidStorageIds(projectId, withoutTrailingSlash),
+            scopedAndroidStorageIds(projectId, withTrailingSlash),
         )
         assertEquals(
-            OMSClient.scopedSessionFileName(projectId, withoutTrailingSlash),
-            OMSClient.scopedSessionFileName(projectId, withTrailingSlash),
+            scopedAndroidStorageIds(projectId, withoutTrailingSlash),
+            scopedAndroidStorageIds(projectId, withDifferentPath),
         )
         assertEquals(
-            OMSClient.scopedSessionKeyAlias(projectId, withoutTrailingSlash),
-            OMSClient.scopedSessionKeyAlias(projectId, withDifferentPath),
-        )
-        assertEquals(
-            OMSClient.scopedSessionFileName(projectId, withoutTrailingSlash),
-            OMSClient.scopedSessionFileName(projectId, withDifferentPath),
-        )
-        assertEquals(
-            OMSClient.scopedSessionKeyAlias(projectId, withoutTrailingSlash),
-            OMSClient.scopedSessionKeyAlias(projectId, withQuery),
-        )
-        assertEquals(
-            OMSClient.scopedSessionFileName(projectId, withoutTrailingSlash),
-            OMSClient.scopedSessionFileName(projectId, withQuery),
+            scopedAndroidStorageIds(projectId, withoutTrailingSlash),
+            scopedAndroidStorageIds(projectId, withQuery),
         )
     }
 
-    private class StubSecureSessionStore(
+    private fun scopedAndroidStorageIds(
+        projectId: String,
+        environment: OMSClientEnvironment,
+    ): ScopedAndroidStorageIds =
+        ScopedAndroidStorageIds(
+            sessionFileName = OMSClient.scopedSessionFileName(projectId, environment),
+            credentialKeyAlias = OMSClient.scopedCredentialKeyAlias(projectId, environment),
+            credentialNonceStoreName = OMSClient.scopedCredentialNonceStoreName(projectId, environment),
+            oidcRedirectAuthFileName = OMSClient.scopedOidcRedirectAuthFileName(projectId, environment),
+        )
+
+    private fun assertScopedAndroidStorageIdsDiffer(
+        first: ScopedAndroidStorageIds,
+        second: ScopedAndroidStorageIds,
+    ) {
+        assertNotEquals(first.sessionFileName, second.sessionFileName)
+        assertNotEquals(first.credentialKeyAlias, second.credentialKeyAlias)
+        assertNotEquals(first.credentialNonceStoreName, second.credentialNonceStoreName)
+        assertNotEquals(first.oidcRedirectAuthFileName, second.oidcRedirectAuthFileName)
+    }
+
+    private data class ScopedAndroidStorageIds(
+        val sessionFileName: String,
+        val credentialKeyAlias: String,
+        val credentialNonceStoreName: String,
+        val oidcRedirectAuthFileName: String,
+    )
+
+    private class StubSessionMetadataStore(
         private val snapshot: OMSClientSessionSnapshot?,
-    ) : OMSClientSecureSessionStore {
+    ) : OMSClientSessionMetadataStore {
         override fun load(): OMSClientSessionSnapshot? = snapshot
 
         override fun save(snapshot: OMSClientSessionSnapshot) = Unit
@@ -237,9 +244,9 @@ class OMSClientTest {
         override fun clear() = Unit
     }
 
-    private class MutableSecureSessionStore(
+    private class MutableSessionMetadataStore(
         var snapshot: OMSClientSessionSnapshot?,
-    ) : OMSClientSecureSessionStore {
+    ) : OMSClientSessionMetadataStore {
         var clearCalls = 0
 
         override fun load(): OMSClientSessionSnapshot? = snapshot

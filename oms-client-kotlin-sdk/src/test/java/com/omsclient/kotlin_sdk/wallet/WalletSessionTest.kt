@@ -31,7 +31,7 @@ class WalletSessionTest {
 
         assertTrue(restored)
         assertEquals(snapshot, client.snapshotSession())
-        assertEquals("0xabc", client.address)
+        assertEquals("0xabc", client.walletAddress)
         assertEquals(
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             client.signerAddress,
@@ -85,7 +85,7 @@ class WalletSessionTest {
 
         assertNull(client.snapshotSession())
         assertNull(store.snapshot)
-        assertNull(client.address)
+        assertNull(client.walletAddress)
         assertNull(client.signerAddress)
         assertNull(store.privateKeyHex)
     }
@@ -111,7 +111,7 @@ class WalletSessionTest {
             )
         assertTrue(client.restorePersistedSession())
 
-        assertEquals("0xwallet", client.address)
+        assertEquals("0xwallet", client.walletAddress)
         assertFalse(client.hasPendingSignIn)
     }
 
@@ -138,7 +138,7 @@ class WalletSessionTest {
 
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
-        assertNull(client.address)
+        assertNull(client.walletAddress)
     }
 
     @Test
@@ -164,6 +164,6 @@ class WalletSessionTest {
             WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
             client.signerAddress,
         )
-        assertNull(client.address)
+        assertNull(client.walletAddress)
     }
 }

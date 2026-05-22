@@ -112,17 +112,16 @@ class TestbedActivity : AppCompatActivity() {
 
         findViewById<MaterialButton>(R.id.signInButton).setOnClickListener {
             launchAction("Start email sign-in") { sdk ->
-                val response = sdk.startEmailAuth(requireText(emailInput, "Email"))
-                appendLog(
-                    "Verifier committed: verifier=${response.verifier} challenge=${response.challenge}",
-                )
+                val email = requireText(emailInput, "Email")
+                sdk.wallet.startEmailAuth(email)
+                appendLog("Email verifier committed for $email")
                 renderSession()
             }
         }
 
         findViewById<MaterialButton>(R.id.confirmCodeButton).setOnClickListener {
             launchAction("Confirm email code and resolve wallet") { sdk ->
-                val result = sdk.completeEmailAuth(code = requireText(codeInput, "Verification code"))
+                val result = sdk.wallet.completeEmailAuth(code = requireText(codeInput, "Verification code"))
                 val wallet =
                     when (result) {
                         is CompleteAuthResult.WalletSelected -> result.wallet
@@ -140,9 +139,9 @@ class TestbedActivity : AppCompatActivity() {
                 val message = requireText(messageInput, "Message")
                 val result = sdk.wallet.signMessage(network = network, message = message)
                 lastSignedMessage = message
-                lastSignedSignature = result.signature
-                lastSignatureView.text = "Last signature: ${result.signature}"
-                appendLog("Signature for '$message': ${result.signature}")
+                lastSignedSignature = result
+                lastSignatureView.text = "Last signature: $result"
+                appendLog("Signature for '$message': $result")
                 renderSession()
             }
         }
