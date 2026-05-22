@@ -1,25 +1,24 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
-import com.omsclient.kotlin_sdk.generated.waas.CredentialInfo
-import com.omsclient.kotlin_sdk.generated.waas.Identity
-import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.ListWalletsResponse
-import com.omsclient.kotlin_sdk.generated.waas.Page
-import com.omsclient.kotlin_sdk.generated.waas.Wallet
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
+import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthResponse
+import com.omsclient.kotlin_sdk.internal.generated.waas.CredentialInfo
+import com.omsclient.kotlin_sdk.internal.generated.waas.Identity
+import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.internal.generated.waas.ListWalletsResponse
+import com.omsclient.kotlin_sdk.internal.generated.waas.Page
+import com.omsclient.kotlin_sdk.internal.generated.waas.Wallet
+import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertTrue
-import org.web3j.utils.Numeric
 import java.net.URI
 import java.net.URLDecoder
 import java.util.Base64
 
-internal const val FIXED_PRIVATE_KEY_HEX: String =
-    "0x1111111111111111111111111111111111111111111111111111111111111111"
+internal val TEST_CREDENTIAL_ID: String = "0x04" + "11".repeat(64)
+internal val TEST_SIGNATURE: String = "0x" + "22".repeat(64)
 
 internal fun walletFixture(
     walletId: String,
@@ -98,14 +97,12 @@ internal fun fakeJwt(exp: Long): String {
     return "$header.$payload.signature"
 }
 
-internal fun fixedPrivateKeyBytes(): ByteArray = Numeric.hexStringToByteArray(FIXED_PRIVATE_KEY_HEX)
-
 internal fun activeSessionSnapshot(): OMSClientSessionSnapshot =
     OMSClientSessionSnapshot(
         walletId = "wallet-active",
         walletAddress = "0xactive",
-        signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-        signerKeyType = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
+        signerAddress = TEST_CREDENTIAL_ID,
+        signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
     )
 
 internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
@@ -117,8 +114,23 @@ internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
         issuer = "https://issuer.example",
         projectId = "test-project-id",
         walletType = WalletType.Ethereum.wireValue,
-        signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-        signerKeyType = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
+        signerAddress = TEST_CREDENTIAL_ID,
+        signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+    )
+
+internal fun expectedWalletSignatureHeader(
+    nonce: String,
+    scope: String = "test-project-id",
+    credentialId: String = TEST_CREDENTIAL_ID,
+    signature: String = TEST_SIGNATURE,
+    signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+): String =
+    WalletRequestSigner.buildWalletSignatureHeader(
+        signingAlgorithm = signingAlgorithm,
+        scope = scope,
+        credentialId = credentialId,
+        nonce = nonce,
+        signature = signature,
     )
 
 internal fun uriOriginAndPath(url: String): String {
@@ -141,11 +153,8 @@ private fun String.urlDecode(): String = URLDecoder.decode(this, Charsets.UTF_8.
 
 internal class InMemorySessionStore(
     var snapshot: OMSClientSessionSnapshot? = null,
-    var privateKeyHex: String? = null,
 ) : OMSClientSessionMetadataStore {
     var saveCalls: Int = 0
-        private set
-    var savedPrivateKeyHex: String? = null
         private set
 
     override fun load(): OMSClientSessionSnapshot? = snapshot
@@ -157,7 +166,6 @@ internal class InMemorySessionStore(
 
     override fun clear() {
         snapshot = null
-        privateKeyHex = null
     }
 }
 
@@ -192,35 +200,49 @@ internal class InMemoryOidcRedirectAuthStore(
     }
 }
 
-internal class TrackingCredentialSigner : CredentialSigner {
-    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256K_EIP191
+internal class TrackingCredentialSigner(
+    private var available: Boolean = true,
+    val credentialIdValue: String = TEST_CREDENTIAL_ID,
+    val nonceValue: String = "1710000107",
+    val signatureValue: String = TEST_SIGNATURE,
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+) : CredentialSigner {
     var signCalls: Int = 0
         private set
 
-    override suspend fun credentialId(): String = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX)
+    override suspend fun credentialId(): String {
+        available = true
+        return credentialIdValue
+    }
 
-    override suspend fun nextNonce(): String = "1710000107"
+    override suspend fun nextNonce(): String = nonceValue
 
     override suspend fun sign(preimage: String): String {
         signCalls += 1
-        return WalletRequestSigner.signWalletRequestPreimage(FIXED_PRIVATE_KEY_HEX, preimage)
+        assertTrue(preimage.contains("nonce: $nonceValue"))
+        return signatureValue
     }
 
-    override fun hasCredential(): Boolean = true
+    override fun hasCredential(): Boolean = available
 
-    override fun clear() = Unit
+    override fun clear() {
+        available = false
+    }
 }
 
 internal class MockWebCryptoCredentialSigner(
     private var available: Boolean = true,
 ) : CredentialSigner {
     override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
-    val credentialIdValue: String = "0x04" + "11".repeat(64)
-    val signatureValue: String = "0x" + "22".repeat(64)
+    val credentialIdValue: String = TEST_CREDENTIAL_ID
+    val signatureValue: String = TEST_SIGNATURE
     var signCalls: Int = 0
         private set
 
-    override suspend fun credentialId(): String = credentialIdValue
+    override suspend fun credentialId(): String {
+        available = true
+        return credentialIdValue
+    }
 
     override suspend fun nextNonce(): String = "42"
 

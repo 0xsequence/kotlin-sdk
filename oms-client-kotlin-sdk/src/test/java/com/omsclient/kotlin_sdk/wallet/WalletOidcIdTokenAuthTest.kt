@@ -1,12 +1,12 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
-import com.omsclient.kotlin_sdk.generated.waas.AuthMode
-import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
-import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import kotlinx.coroutines.runBlocking
@@ -83,8 +83,7 @@ class WalletOidcIdTokenAuthTest {
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000112L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
                 )
 
             val result =
@@ -145,10 +144,9 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.GoogleAuth, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
-            assertEquals(WalletSigningAlgorithm.ECDSA_P256K_EIP191, store.snapshot?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, store.snapshot?.signerKeyType)
             assertNull(store.snapshot?.verifier)
             assertNull(store.snapshot?.challenge)
-            assertNull(store.privateKeyHex)
             assertEquals(1, store.saveCalls)
         }
 
@@ -193,8 +191,7 @@ class WalletOidcIdTokenAuthTest {
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000112L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
                 )
 
             val result =
@@ -268,8 +265,7 @@ class WalletOidcIdTokenAuthTest {
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
-                    nonceGenerator = { 1710000112L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
                 )
 
             val result =
@@ -333,7 +329,7 @@ class WalletOidcIdTokenAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             client.restoreSession(activeSession)
 
@@ -387,8 +383,7 @@ class WalletOidcIdTokenAuthTest {
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000112L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
                 )
 
             val failure =
@@ -411,7 +406,6 @@ class WalletOidcIdTokenAuthTest {
             assertNull(client.walletAddress)
             assertNull(client.signerAddress)
             assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
         }
 
@@ -427,7 +421,7 @@ class WalletOidcIdTokenAuthTest {
                     .build(),
             )
 
-            val generatedKey = fixedPrivateKeyBytes()
+            val signer = TrackingCredentialSigner(nonceValue = "1710000111")
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
@@ -439,8 +433,7 @@ class WalletOidcIdTokenAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000111L },
-                    privateKeyFactory = { generatedKey },
+                    credentialSigner = signer,
                 )
 
             val failure =
@@ -460,8 +453,7 @@ class WalletOidcIdTokenAuthTest {
             assertNull(client.signerAddress)
             assertNull(client.walletAddress)
             assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
-            assertTrue(generatedKey.all { it == 0.toByte() })
+            assertFalse(signer.hasCredential())
         }
 }

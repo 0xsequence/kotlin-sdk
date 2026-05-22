@@ -1,15 +1,15 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.generated.waas.AuthMode
-import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
-import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
-import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
-import com.omsclient.kotlin_sdk.generated.waas.TransactionMode
-import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumContractCallRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransactionRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -117,7 +117,7 @@ class WalletPayloadBuilderTest {
         assertEquals(
             "{\"type\":\"ethereum\"}",
             WaasWalletApi.CreateWallet.encodeRequest(
-                com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest(
+                com.omsclient.kotlin_sdk.internal.generated.waas.CreateWalletRequest(
                     type = WalletType.Ethereum,
                 ),
             ),

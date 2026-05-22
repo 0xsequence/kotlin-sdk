@@ -1,8 +1,8 @@
 package com.omsclient.kotlin_sdk
 
-import com.omsclient.kotlin_sdk.generated.waas.ErrorKind
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcError
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcTransportException
+import com.omsclient.kotlin_sdk.internal.generated.waas.ErrorKind
+import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcError
+import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcTransportException
 
 /**
  * Stable SDK-level error categories for app-facing error handling.

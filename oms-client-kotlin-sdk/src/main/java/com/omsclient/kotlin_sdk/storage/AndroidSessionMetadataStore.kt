@@ -74,7 +74,11 @@ internal class AndroidSessionMetadataStore(
         val loginType: OMSClientSessionLoginType? = null,
         val sessionEmail: String? = null,
     ) {
-        fun isRestorable(): Boolean = !walletId.isNullOrBlank() && !walletAddress.isNullOrBlank()
+        fun isRestorable(): Boolean =
+            !walletId.isNullOrBlank() &&
+                !walletAddress.isNullOrBlank() &&
+                !signerAddress.isNullOrBlank() &&
+                signerKeyType == WalletSigningAlgorithm.ECDSA_P256_SHA256
 
         fun toJson(): String =
             JSONObject()
@@ -99,7 +103,7 @@ internal class AndroidSessionMetadataStore(
                         jsonObject
                             .optString("signerKeyType")
                             .ifBlank { null }
-                            ?.let(::signingAlgorithmFromPersistedWireValue)
+                            ?.let(WalletSigningAlgorithm::fromWireValue)
                             ?.takeIf { it != WalletSigningAlgorithm.UNKNOWN_DEFAULT },
                     expiresAt = jsonObject.optString("expiresAt").ifBlank { null },
                     loginType =
@@ -114,13 +118,6 @@ internal class AndroidSessionMetadataStore(
                     sessionEmail = jsonObject.optString("sessionEmail").ifBlank { null },
                 )
             }
-
-            private fun signingAlgorithmFromPersistedWireValue(value: String): WalletSigningAlgorithm =
-                when (value) {
-                    "ethereum-secp256k1" -> WalletSigningAlgorithm.ECDSA_P256K_EIP191
-                    "webcrypto-secp256r1" -> WalletSigningAlgorithm.ECDSA_P256_SHA256
-                    else -> WalletSigningAlgorithm.fromWireValue(value)
-                }
         }
     }
 

@@ -3,10 +3,10 @@ package com.omsclient.kotlin_sdk.wallet
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.omsclient.kotlin_sdk.utils.OMSClientHex
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.web3j.utils.Numeric
 import java.math.BigInteger
 import java.security.KeyPair
 import java.security.KeyPairGenerator
@@ -58,7 +58,7 @@ internal class AndroidKeystoreP256CredentialSigner(
             val signature = Signature.getInstance(SHA256_WITH_ECDSA)
             signature.initSign(requirePrivateKey())
             signature.update(preimage.toByteArray(Charsets.UTF_8))
-            Numeric.toHexString(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
+            OMSClientHex.encode(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
         }
 
     override fun hasCredential(): Boolean = keyStore().containsAlias(alias)
@@ -120,7 +120,7 @@ internal class AndroidKeystoreP256CredentialSigner(
                 raw
             }
         require(unsigned.size <= size) { "Invalid P-256 public key coordinate" }
-        return Numeric.toHexStringNoPrefix(ByteArray(size - unsigned.size) + unsigned)
+        return OMSClientHex.encodeNoPrefix(ByteArray(size - unsigned.size) + unsigned)
     }
 
     private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }

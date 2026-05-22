@@ -7,33 +7,33 @@ import com.omsclient.kotlin_sdk.OmsSdkOperation
 import com.omsclient.kotlin_sdk.OmsSessionException
 import com.omsclient.kotlin_sdk.OmsTransactionException
 import com.omsclient.kotlin_sdk.OmsWalletSelectionException
-import com.omsclient.kotlin_sdk.generated.waas.AuthMode
-import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
-import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
-import com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest
-import com.omsclient.kotlin_sdk.generated.waas.GetIDTokenRequest
-import com.omsclient.kotlin_sdk.generated.waas.Identity
-import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.IsValidMessageSignatureRequest
-import com.omsclient.kotlin_sdk.generated.waas.IsValidTypedDataSignatureRequest
-import com.omsclient.kotlin_sdk.generated.waas.LambdaWebRpcTransport
-import com.omsclient.kotlin_sdk.generated.waas.ListAccessRequest
-import com.omsclient.kotlin_sdk.generated.waas.ListWalletsRequest
-import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
-import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest
-import com.omsclient.kotlin_sdk.generated.waas.PrepareResponse
-import com.omsclient.kotlin_sdk.generated.waas.RevokeAccessRequest
-import com.omsclient.kotlin_sdk.generated.waas.SignMessageRequest
-import com.omsclient.kotlin_sdk.generated.waas.SignTypedDataRequest
-import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
-import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletClient
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletPublicClient
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcHttpResponse
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
+import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthResponse
+import com.omsclient.kotlin_sdk.internal.generated.waas.CreateWalletRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.GetIDTokenRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.Identity
+import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.internal.generated.waas.IsValidMessageSignatureRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.IsValidTypedDataSignatureRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.LambdaWebRpcTransport
+import com.omsclient.kotlin_sdk.internal.generated.waas.ListAccessRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.ListWalletsRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumContractCallRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransactionRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareResponse
+import com.omsclient.kotlin_sdk.internal.generated.waas.RevokeAccessRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.SignMessageRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.SignTypedDataRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionStatusRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletClient
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletPublicClient
+import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcHttpResponse
 import com.omsclient.kotlin_sdk.models.AbiArg
 import com.omsclient.kotlin_sdk.models.CredentialInfo
 import com.omsclient.kotlin_sdk.models.FeeOption
@@ -57,7 +57,6 @@ import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.toOmsSdkException
-import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -65,18 +64,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import java.math.BigInteger
-import com.omsclient.kotlin_sdk.generated.waas.AbiArg as WaasAbiArg
-import com.omsclient.kotlin_sdk.generated.waas.CredentialInfo as WaasCredentialInfo
-import com.omsclient.kotlin_sdk.generated.waas.FeeOption as WaasFeeOption
-import com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection as WaasFeeOptionSelection
-import com.omsclient.kotlin_sdk.generated.waas.FeeToken as WaasFeeToken
-import com.omsclient.kotlin_sdk.generated.waas.ListAccessResponse as WaasListAccessResponse
-import com.omsclient.kotlin_sdk.generated.waas.Page as WaasPage
-import com.omsclient.kotlin_sdk.generated.waas.TransactionMode as WaasTransactionMode
-import com.omsclient.kotlin_sdk.generated.waas.TransactionStatus as WaasTransactionStatus
-import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusResponse as WaasTransactionStatusResponse
-import com.omsclient.kotlin_sdk.generated.waas.Wallet as WaasWallet
-import com.omsclient.kotlin_sdk.generated.waas.WalletType as WaasWalletType
+import com.omsclient.kotlin_sdk.internal.generated.waas.AbiArg as WaasAbiArg
+import com.omsclient.kotlin_sdk.internal.generated.waas.CredentialInfo as WaasCredentialInfo
+import com.omsclient.kotlin_sdk.internal.generated.waas.FeeOption as WaasFeeOption
+import com.omsclient.kotlin_sdk.internal.generated.waas.FeeOptionSelection as WaasFeeOptionSelection
+import com.omsclient.kotlin_sdk.internal.generated.waas.FeeToken as WaasFeeToken
+import com.omsclient.kotlin_sdk.internal.generated.waas.ListAccessResponse as WaasListAccessResponse
+import com.omsclient.kotlin_sdk.internal.generated.waas.Page as WaasPage
+import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionMode as WaasTransactionMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionStatus as WaasTransactionStatus
+import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionStatusResponse as WaasTransactionStatusResponse
+import com.omsclient.kotlin_sdk.internal.generated.waas.Wallet as WaasWallet
+import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType as WaasWalletType
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTransactionRequest
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 
@@ -88,9 +87,7 @@ class WalletClient internal constructor(
     private val session: OMSClientSession = OMSClientSession(),
     private val sessionStore: OMSClientSessionMetadataStore? = null,
     private val oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
-    private val nonceGenerator: () -> Long = OMSClientTimestamps::nextNonce,
     private val oidcNonceGenerator: () -> String = OidcRedirectAuth::generateNonce,
-    private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
     private val credentialSigner: CredentialSigner? = null,
     private val fastTransactionStatusPollIntervalMillis: Long = 400L,
     private val fastTransactionStatusPollCount: Int = 5,
@@ -98,11 +95,7 @@ class WalletClient internal constructor(
     private val transactionStatusPollTimeoutMillis: Long = 60_000L,
     private val transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
 ) {
-    private val signer: CredentialSigner =
-        credentialSigner ?: EthereumPrivateKeyCredentialSigner(
-            privateKeyFactory = privateKeyFactory,
-            nonceGenerator = { nonceGenerator().toString() },
-        )
+    private val signer: CredentialSigner = credentialSigner ?: MissingCredentialSigner
     private val gateway: WaasWalletGateway =
         WaasWalletGateway(
             publicApiKey = publicApiKey,
@@ -141,10 +134,13 @@ class WalletClient internal constructor(
 
     internal fun restorePersistedSession(): Boolean {
         val snapshot = sessionStore?.load() ?: return false
-        if (snapshot.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
-            return false
-        }
-        if (!signer.hasCredential()) {
+        val isRestorable =
+            !snapshot.walletId.isNullOrBlank() &&
+                !snapshot.walletAddress.isNullOrBlank() &&
+                !snapshot.signerAddress.isNullOrBlank() &&
+                snapshot.signerKeyType == signer.signingAlgorithm &&
+                signer.hasCredential()
+        if (!isRestorable) {
             sessionStore.clear()
             return false
         }
@@ -640,6 +636,9 @@ class WalletClient internal constructor(
         requireActiveCredential()
         val currentSignerAddress = signer.credentialId()
         check(currentSignerAddress == pending.signerAddress) {
+            "OIDC redirect auth signer mismatch"
+        }
+        check(pending.signerKeyType == signer.signingAlgorithm) {
             "OIDC redirect auth signer mismatch"
         }
         session.restore(
@@ -1544,7 +1543,7 @@ private class WaasWalletGateway(
             "Accept" to "application/json",
         )
 
-    private fun com.omsclient.kotlin_sdk.generated.waas.CommitVerifierResponse.toVerifierCommitment(): VerifierCommitment =
+    private fun com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierResponse.toVerifierCommitment(): VerifierCommitment =
         VerifierCommitment(
             verifier = verifier,
             loginHint = loginHint,

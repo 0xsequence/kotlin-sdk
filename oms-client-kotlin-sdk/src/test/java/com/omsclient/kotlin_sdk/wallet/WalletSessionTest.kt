@@ -15,16 +15,17 @@ class WalletSessionTest {
             OMSClientSessionSnapshot(
                 walletId = "wallet-abc",
                 walletAddress = "0xabc",
-                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
             )
-        val store = InMemorySessionStore(snapshot, FIXED_PRIVATE_KEY_HEX)
+        val store = InMemorySessionStore(snapshot)
         val client =
             WalletClient(
                 publicApiKey = "test-access-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
-                privateKeyFactory = ::fixedPrivateKeyBytes,
+                credentialSigner = TrackingCredentialSigner(),
             )
 
         val restored = client.restorePersistedSession()
@@ -33,7 +34,7 @@ class WalletSessionTest {
         assertEquals(snapshot, client.snapshotSession())
         assertEquals("0xabc", client.walletAddress)
         assertEquals(
-            WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            TEST_CREDENTIAL_ID,
             client.signerAddress,
         )
     }
@@ -45,6 +46,7 @@ class WalletSessionTest {
                 walletId = "wallet-abc",
                 walletAddress = "0xabc",
                 signerAddress = "0x04" + "11".repeat(64),
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
             )
         val store = InMemorySessionStore(snapshot)
         val client =
@@ -64,22 +66,49 @@ class WalletSessionTest {
     }
 
     @Test
-    fun signOutClearsPersistedStore() {
+    fun restorePersistedSessionClearsMetadataWhenSignerKeyTypeIsMissing() {
         val snapshot =
             OMSClientSessionSnapshot(
                 walletId = "wallet-abc",
                 walletAddress = "0xabc",
-                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                signerAddress = TEST_CREDENTIAL_ID,
             )
-        val store = InMemorySessionStore(snapshot, FIXED_PRIVATE_KEY_HEX)
+        val store = InMemorySessionStore(snapshot)
         val client =
             WalletClient(
                 publicApiKey = "test-access-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
+                credentialSigner = TrackingCredentialSigner(),
             )
-        client.restorePersistedSession()
+
+        val restored = client.restorePersistedSession()
+
+        assertFalse(restored)
+        assertNull(client.snapshotSession())
+        assertNull(store.snapshot)
+    }
+
+    @Test
+    fun signOutClearsPersistedStore() {
+        val snapshot =
+            OMSClientSessionSnapshot(
+                walletId = "wallet-abc",
+                walletAddress = "0xabc",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+            )
+        val store = InMemorySessionStore(snapshot)
+        val client =
+            WalletClient(
+                publicApiKey = "test-access-key",
+                projectId = "test-project-id",
+                environment = OMSClientEnvironment(),
+                sessionStore = store,
+                credentialSigner = TrackingCredentialSigner(),
+            )
+        assertTrue(client.restorePersistedSession())
 
         client.signOut()
 
@@ -87,7 +116,6 @@ class WalletSessionTest {
         assertNull(store.snapshot)
         assertNull(client.walletAddress)
         assertNull(client.signerAddress)
-        assertNull(store.privateKeyHex)
     }
 
     @Test
@@ -103,11 +131,11 @@ class WalletSessionTest {
                             OMSClientSessionSnapshot(
                                 walletId = "wallet-main",
                                 walletAddress = "0xwallet",
-                                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                signerAddress = TEST_CREDENTIAL_ID,
+                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                             ),
-                        privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                     ),
-                privateKeyFactory = ::fixedPrivateKeyBytes,
+                credentialSigner = TrackingCredentialSigner(),
             )
         assertTrue(client.restorePersistedSession())
 
@@ -116,29 +144,31 @@ class WalletSessionTest {
     }
 
     @Test
-    fun restorePersistedSessionIgnoresPendingSnapshots() {
+    fun restorePersistedSessionClearsPendingSnapshots() {
+        val store =
+            InMemorySessionStore(
+                snapshot =
+                    OMSClientSessionSnapshot(
+                        challenge = "challenge",
+                        verifier = "verifier-123",
+                        signerAddress = TEST_CREDENTIAL_ID,
+                    ),
+            )
         val client =
             WalletClient(
                 publicApiKey = "test-access-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSClientSessionSnapshot(
-                                challenge = "challenge",
-                                verifier = "verifier-123",
-                                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-                            ),
-                        privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-                    ),
-                privateKeyFactory = ::fixedPrivateKeyBytes,
+                sessionStore = store,
+                credentialSigner = TrackingCredentialSigner(),
             )
         assertFalse(client.restorePersistedSession())
 
         assertFalse(client.hasPendingSignIn)
         assertNull(client.signerAddress)
         assertNull(client.walletAddress)
+        assertNull(client.snapshotSession())
+        assertNull(store.snapshot)
     }
 
     @Test
@@ -148,20 +178,20 @@ class WalletSessionTest {
                 publicApiKey = "test-access-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
-                sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
-                privateKeyFactory = ::fixedPrivateKeyBytes,
+                sessionStore = InMemorySessionStore(),
+                credentialSigner = TrackingCredentialSigner(),
             )
         client.restoreSession(
             OMSClientSessionSnapshot(
                 challenge = "challenge",
                 verifier = "verifier-123",
-                signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                signerAddress = TEST_CREDENTIAL_ID,
             ),
         )
 
         assertTrue(client.hasPendingSignIn)
         assertEquals(
-            WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+            TEST_CREDENTIAL_ID,
             client.signerAddress,
         )
         assertNull(client.walletAddress)

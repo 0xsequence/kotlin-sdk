@@ -3,18 +3,18 @@ package com.omsclient.kotlin_sdk.wallet
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
-import com.omsclient.kotlin_sdk.generated.waas.AuthMode
-import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
-import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
-import com.omsclient.kotlin_sdk.generated.waas.Identity
-import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.ListWalletsRequest
-import com.omsclient.kotlin_sdk.generated.waas.Page
-import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
-import com.omsclient.kotlin_sdk.generated.waas.Wallet
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.CreateWalletRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.Identity
+import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.internal.generated.waas.ListWalletsRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.Page
+import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.Wallet
+import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest
 import com.omsclient.kotlin_sdk.models.TransactionMode
@@ -34,7 +34,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.web3j.utils.Numeric
 import java.math.BigInteger
 import java.util.concurrent.TimeUnit
 
@@ -75,8 +74,7 @@ class WalletEmailAuthTest {
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000100L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000100"),
                 )
 
             client.startEmailAuth("user@example.com")
@@ -91,14 +89,7 @@ class WalletEmailAuthTest {
                         handle = "user@example.com",
                     ),
                 )
-            val expectedSignedRequest =
-                WalletRequestSigner.signWalletRequest(
-                    endpoint = WaasWalletApi.CommitVerifier.path,
-                    nonce = "1710000100",
-                    payload = expectedPayload,
-                    scope = "test-project-id",
-                    privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-                )
+            val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000100")
 
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
             assertEquals("POST", request.method)
@@ -107,7 +98,7 @@ class WalletEmailAuthTest {
             assertEquals("http://localhost:3000", request.headers["Origin"])
             assertEquals("application/json", request.headers["Accept"])
             assertEquals(
-                expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
+                expectedWalletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
             val session = client.snapshotSession()
@@ -115,14 +106,12 @@ class WalletEmailAuthTest {
             assertEquals("challenge", session?.challenge)
             assertEquals("verifier-123", session?.verifier)
             assertEquals(
-                WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                TEST_CREDENTIAL_ID,
                 session?.signerAddress,
             )
-            assertEquals(WalletSigningAlgorithm.ECDSA_P256K_EIP191, session?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, session?.signerKeyType)
             assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
-            assertNull(store.savedPrivateKeyHex)
         }
 
     @Test
@@ -148,8 +137,7 @@ class WalletEmailAuthTest {
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
-                    nonceGenerator = { 1710000100L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000100"),
                 )
 
             client.startEmailAuth("user@example.com")
@@ -185,7 +173,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             client.restoreSession(activeSession)
 
@@ -261,8 +249,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
-                    nonceGenerator = { 1710000105L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000105"),
                 )
 
             client.startEmailAuth("user@example.com")
@@ -276,19 +263,11 @@ class WalletEmailAuthTest {
                         handle = "user@example.com",
                     ),
                 )
-            val expectedSignedRequest =
-                WalletRequestSigner.signWalletRequest(
-                    endpoint = WaasWalletApi.CommitVerifier.path,
-                    nonce = "1710000105",
-                    payload = expectedPayload,
-                    scope = "test-project-id",
-                    privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-                    requestPathPrefix = WaasWalletApi.basePath,
-                )
+            val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000105")
 
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
             assertEquals(
-                expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
+                expectedWalletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
         }
@@ -304,7 +283,7 @@ class WalletEmailAuthTest {
                     .build(),
             )
 
-            val generatedKey = fixedPrivateKeyBytes()
+            val signer = TrackingCredentialSigner(nonceValue = "1710000106")
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
@@ -316,8 +295,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000106L },
-                    privateKeyFactory = { generatedKey },
+                    credentialSigner = signer,
                 )
 
             val failure =
@@ -333,9 +311,8 @@ class WalletEmailAuthTest {
             assertNull(client.signerAddress)
             assertNull(client.walletAddress)
             assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
-            assertTrue(generatedKey.all { it == 0.toByte() })
+            assertFalse(signer.hasCredential())
         }
 
     @Test
@@ -376,15 +353,14 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
-                    sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
-                    nonceGenerator = { 1710000101L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000101"),
                 )
             client.restoreSession(
                 OMSClientSessionSnapshot(
                     challenge = "challenge",
                     verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                    signerAddress = TEST_CREDENTIAL_ID,
                 ),
             )
 
@@ -406,19 +382,12 @@ class WalletEmailAuthTest {
                         lifetime = 604_800u,
                     ),
                 )
-            val expectedSignedRequest =
-                WalletRequestSigner.signWalletRequest(
-                    endpoint = WaasWalletApi.CompleteAuth.path,
-                    nonce = "1710000101",
-                    payload = expectedPayload,
-                    scope = "test-project-id",
-                    privateKeyHex = FIXED_PRIVATE_KEY_HEX,
-                )
+            val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000101")
 
             assertEquals("/rpc/Wallet/CompleteAuth", request.target)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
             assertEquals(
-                expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
+                expectedWalletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
             assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
@@ -474,15 +443,14 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
-                    sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
-                    nonceGenerator = { 1710000102L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000102"),
                 )
             client.restoreSession(
                 OMSClientSessionSnapshot(
                     challenge = "challenge",
                     verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                    signerAddress = TEST_CREDENTIAL_ID,
                 ),
             )
 
@@ -549,8 +517,7 @@ class WalletEmailAuthTest {
                     environment = environment,
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -632,8 +599,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -717,8 +683,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -785,8 +750,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -871,8 +835,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -960,8 +923,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
             val result =
@@ -1065,8 +1027,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("old@example.com")
             val oldResult =
@@ -1145,8 +1106,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
             val result =
@@ -1233,8 +1193,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("old@example.com")
             val oldResult =
@@ -1310,8 +1269,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -1328,12 +1286,11 @@ class WalletEmailAuthTest {
             assertEquals("challenge", afterFailure?.challenge)
             assertEquals("verifier-123", afterFailure?.verifier)
             assertEquals(
-                WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                TEST_CREDENTIAL_ID,
                 client.signerAddress,
             )
             assertNull(client.walletAddress)
             assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
 
             val wallet = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
@@ -1348,7 +1305,6 @@ class WalletEmailAuthTest {
             assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.Email, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
-            assertNull(store.privateKeyHex)
             assertEquals(1, store.saveCalls)
         }
 
@@ -1394,15 +1350,14 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
-                    sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
-                    nonceGenerator = { 1710000111L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000111"),
                 )
             client.restoreSession(
                 OMSClientSessionSnapshot(
                     challenge = "challenge",
                     verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                    signerAddress = TEST_CREDENTIAL_ID,
                 ),
             )
 
@@ -1426,7 +1381,7 @@ class WalletEmailAuthTest {
             assertEquals("0xaaa", selected.walletAddress)
             assertFalse(client.hasPendingSignIn)
             assertEquals(
-                WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                TEST_CREDENTIAL_ID,
                 client.signerAddress,
             )
             assertEquals("0xaaa", client.walletAddress)
@@ -1474,15 +1429,14 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
-                    sessionStore = InMemorySessionStore(privateKeyHex = FIXED_PRIVATE_KEY_HEX),
-                    nonceGenerator = { 1710000112L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
                 )
             client.restoreSession(
                 OMSClientSessionSnapshot(
                     challenge = "challenge",
                     verifier = "verifier-123",
-                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                    signerAddress = TEST_CREDENTIAL_ID,
                 ),
             )
 
@@ -1556,8 +1510,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000114L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000114"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -1575,7 +1528,6 @@ class WalletEmailAuthTest {
             assertNull(client.signerAddress)
             assertNull(client.walletAddress)
             assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
         }
 
     @Test
@@ -1624,8 +1576,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000115L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000115"),
                 )
             client.startEmailAuth("user@example.com")
 
@@ -1643,7 +1594,6 @@ class WalletEmailAuthTest {
             assertNull(client.signerAddress)
             assertNull(client.walletAddress)
             assertNull(store.snapshot)
-            assertNull(store.privateKeyHex)
         }
 
     @Test
@@ -1692,8 +1642,7 @@ class WalletEmailAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
-                    nonceGenerator = { 1710000116L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000116"),
                 )
             client.startEmailAuth("user@example.com")
 

@@ -1,7 +1,7 @@
 package com.omsclient.kotlin_sdk.storage
 
 import android.content.Context
-import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
+import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
 import kotlinx.serialization.decodeFromString
