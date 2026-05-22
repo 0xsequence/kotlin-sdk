@@ -4,13 +4,11 @@ Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 
 ## Installation
 
-Planned Maven coordinates:
+Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.0.1")
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.1")
 ```
-
-Until the package is published, use the source directly from this repository.
 
 ## What It Provides
 

@@ -204,8 +204,19 @@ afterEvaluate {
 signing {
     val signingKey = providers.gradleProperty("signingInMemoryKey").orNull
     val signingPassword = providers.gradleProperty("signingInMemoryKeyPassword").orNull
+    val isCentralPortalPublish =
+        gradle.startParameter.taskNames.any {
+            it.contains("publishAggregationToCentralPortal")
+        }
 
     isRequired = false
+
+    if (isCentralPortalPublish && (signingKey.isNullOrBlank() || signingPassword.isNullOrBlank())) {
+        throw GradleException(
+            "Central Portal publishing requires Gradle properties " +
+                "signingInMemoryKey and signingInMemoryKeyPassword.",
+        )
+    }
 
     if (!signingKey.isNullOrBlank() && !signingPassword.isNullOrBlank()) {
         useInMemoryPgpKeys(signingKey, signingPassword)

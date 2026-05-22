@@ -13,7 +13,36 @@ pluginManagement {
 }
 plugins {
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+    id("com.gradleup.nmcp.settings") version "1.4.4"
 }
+
+val isCentralPortalPublish =
+    gradle.startParameter.taskNames.any {
+        it.contains("publishAggregationToCentralPortal")
+    }
+val centralPortalUsername =
+    providers.gradleProperty("centralPortalUsername").orElse("").get()
+val centralPortalPassword =
+    providers.gradleProperty("centralPortalPassword").orElse("").get()
+
+if (isCentralPortalPublish && (centralPortalUsername.isBlank() || centralPortalPassword.isBlank())) {
+    error(
+        "Central Portal publishing requires Gradle properties " +
+            "centralPortalUsername and centralPortalPassword.",
+    )
+}
+
+nmcpSettings {
+    centralPortal {
+        username = centralPortalUsername
+        password = centralPortalPassword
+        publishingType = "USER_MANAGED"
+        publicationName = "oms-client-kotlin-sdk:${providers.gradleProperty("POM_VERSION_NAME").get()}"
+        validationTimeout = java.time.Duration.ofMinutes(30)
+        publishingTimeout = java.time.Duration.ZERO
+    }
+}
+
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
