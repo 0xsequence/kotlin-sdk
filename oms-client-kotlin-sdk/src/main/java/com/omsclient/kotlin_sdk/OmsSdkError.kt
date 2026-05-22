@@ -182,7 +182,7 @@ internal suspend fun <T> runOmsOperation(
         )
     }
 
-internal fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkException =
+private fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkException =
     when (errorKind) {
         ErrorKind.COMMITMENT_CONSUMED -> {
             OmsSdkException(

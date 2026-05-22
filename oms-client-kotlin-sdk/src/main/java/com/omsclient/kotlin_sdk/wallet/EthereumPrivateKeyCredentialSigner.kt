@@ -1,12 +1,10 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
-
 internal class EthereumPrivateKeyCredentialSigner(
     private val privateKeyFactory: () -> ByteArray = WalletRequestSigner::generatePrivateKeyBytes,
     private val nonceGenerator: () -> String,
 ) : CredentialSigner {
-    override val signingAlgorithm: SigningAlgorithm = SigningAlgorithm.ECDSA_P256K_EIP191
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256K_EIP191
 
     private var privateKey: ByteArray? = null
     private var cleared: Boolean = false

@@ -3,7 +3,6 @@ package com.omsclient.kotlin_sdk.wallet
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,7 +30,7 @@ internal class AndroidKeystoreP256CredentialSigner(
     nonceStoreName: String = DEFAULT_NONCE_STORE_NAME,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CredentialSigner {
-    override val signingAlgorithm: SigningAlgorithm = SigningAlgorithm.ECDSA_P256_SHA256
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
 
     private val appContext = context.applicationContext
     private val noncePreferences = appContext.getSharedPreferences(nonceStoreName, Context.MODE_PRIVATE)
