@@ -6,13 +6,11 @@ import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthResponse
 import com.omsclient.kotlin_sdk.generated.waas.CreateWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.ListWalletsRequest
 import com.omsclient.kotlin_sdk.generated.waas.Page
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
@@ -120,7 +118,7 @@ class WalletEmailAuthTest {
                 WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
                 session?.signerAddress,
             )
-            assertEquals(SigningAlgorithm.ECDSA_P256K_EIP191, session?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256K_EIP191, session?.signerKeyType)
             assertNull(store.snapshot)
             assertNull(store.privateKeyHex)
             assertEquals(0, store.saveCalls)
@@ -238,7 +236,7 @@ class WalletEmailAuthTest {
                     "cred=\"${signer.credentialIdValue}\",nonce=42,sig=\"${signer.signatureValue}\"",
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
-            assertEquals(SigningAlgorithm.ECDSA_P256_SHA256, client.snapshotSession()?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, client.snapshotSession()?.signerKeyType)
             assertEquals(1, signer.signCalls)
         }
 
@@ -341,7 +339,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun confirmEmailSignInUsesStoredSessionAndParsesWallets() =
+    fun completeEmailAuthUsesStoredSessionAndParsesWallets() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -359,6 +357,13 @@ class WalletEmailAuthTest {
                             wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
                         ),
                     ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-abc", address = "0xabc", reference = "demo"))
+                    .build(),
             )
 
             val environment =
@@ -383,8 +388,9 @@ class WalletEmailAuthTest {
                 ),
             )
 
-            val response = client.confirmEmailSignIn("123456")
+            val response = client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected
             val request = requireNotNull(server.takeRequest())
+            val useWalletRequest = requireNotNull(server.takeRequest())
 
             val expectedPayload =
                 WaasWalletApi.CompleteAuth.encodeRequest(
@@ -415,18 +421,41 @@ class WalletEmailAuthTest {
                 expectedSignedRequest.walletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
-            assertEquals("user@example.com", response.email)
-            assertEquals(IdentityType.Email, response.identity.type)
-            assertEquals("issuer-123", response.identity.iss)
-            assertEquals("sub-123", response.identity.sub)
+            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("user@example.com", client.snapshotSession()?.sessionEmail)
             assertEquals(1, response.wallets.size)
-            assertEquals(WalletType.Ethereum, response.wallets.single().type)
+            assertEquals(com.omsclient.kotlin_sdk.models.WalletType.Ethereum, response.wallets.single().type)
             assertEquals("0xabc", response.wallets.single().address)
         }
 
     @Test
-    fun resolveWalletUsesReturnedWalletIndexWhenSelectingExistingWallet() =
+    fun completeEmailAuthUsesReturnedWalletIndexWhenSelectingExistingWallet() =
         runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                Identity(
+                                    type = IdentityType.Email,
+                                    iss = "issuer-123",
+                                    sub = "sub-123",
+                                ),
+                            email = "user@example.com",
+                            wallets =
+                                listOf(
+                                    Wallet(
+                                        id = "wallet-def",
+                                        type = WalletType.Ethereum,
+                                        address = "0xdef",
+                                        reference = "picked",
+                                    ),
+                                ),
+                        ),
+                    ).build(),
+            )
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -457,28 +486,8 @@ class WalletEmailAuthTest {
                 ),
             )
 
-            val resolved =
-                client.resolveWallet(
-                    CompleteAuthResponse(
-                        identity =
-                            Identity(
-                                type = IdentityType.Email,
-                                iss = "issuer-123",
-                                sub = "sub-123",
-                            ),
-                        email = "user@example.com",
-                        wallets =
-                            listOf(
-                                Wallet(
-                                    id = "wallet-def",
-                                    type = WalletType.Ethereum,
-                                    address = "0xdef",
-                                    reference = "picked",
-                                ),
-                            ),
-                        credential = credentialFixture(),
-                    ),
-                )
+            val resolved = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
+            server.takeRequest()
             val request = requireNotNull(server.takeRequest())
 
             val expectedPayload =

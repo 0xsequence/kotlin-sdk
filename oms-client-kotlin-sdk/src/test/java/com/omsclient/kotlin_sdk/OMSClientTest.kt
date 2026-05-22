@@ -1,13 +1,12 @@
 package com.omsclient.kotlin_sdk
 
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
+import com.omsclient.kotlin_sdk.wallet.WalletSigningAlgorithm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -57,9 +56,9 @@ class OMSClientTest {
                             redirectUri = "omsclientkotlindemo://auth/callback",
                             issuer = "https://issuer.example",
                             projectId = "test-project-id",
-                            walletType = WalletType.Ethereum,
+                            walletType = "ethereum",
                             signerAddress = "0xsigner",
-                            signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
+                            signerKeyType = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
                         ),
                     ),
             )

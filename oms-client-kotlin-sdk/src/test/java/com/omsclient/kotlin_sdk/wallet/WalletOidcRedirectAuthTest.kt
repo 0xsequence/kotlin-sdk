@@ -8,7 +8,6 @@ import com.omsclient.kotlin_sdk.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
 import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
@@ -124,8 +123,8 @@ class WalletOidcRedirectAuthTest {
             assertEquals("pkce-challenge", redirectStore.pending?.challenge)
             assertEquals("nonce-123", redirectStore.pending?.nonce)
             assertEquals("omsclientkotlindemo://auth/callback", redirectStore.pending?.redirectUri)
-            assertEquals(WalletType.Ethereum, redirectStore.pending?.walletType)
-            assertEquals(SigningAlgorithm.ECDSA_P256K_EIP191, redirectStore.pending?.signerKeyType)
+            assertEquals(WalletType.Ethereum.wireValue, redirectStore.pending?.walletType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256K_EIP191, redirectStore.pending?.signerKeyType)
             assertEquals("oidc-verifier-123", client.snapshotSession()?.verifier)
         }
 

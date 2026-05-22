@@ -6,7 +6,6 @@ import com.omsclient.kotlin_sdk.generated.waas.Identity
 import com.omsclient.kotlin_sdk.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.generated.waas.ListWalletsResponse
 import com.omsclient.kotlin_sdk.generated.waas.Page
-import com.omsclient.kotlin_sdk.generated.waas.SigningAlgorithm
 import com.omsclient.kotlin_sdk.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.generated.waas.WebRpcJson
@@ -106,7 +105,7 @@ internal fun activeSessionSnapshot(): OMSClientSessionSnapshot =
         walletId = "wallet-active",
         walletAddress = "0xactive",
         signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-        signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
+        signerKeyType = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
     )
 
 internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
@@ -117,9 +116,9 @@ internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
         redirectUri = "omsclientkotlindemo://auth/callback",
         issuer = "https://issuer.example",
         projectId = "test-project-id",
-        walletType = WalletType.Ethereum,
+        walletType = WalletType.Ethereum.wireValue,
         signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
-        signerKeyType = SigningAlgorithm.ECDSA_P256K_EIP191,
+        signerKeyType = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
     )
 
 internal fun uriOriginAndPath(url: String): String {
@@ -194,7 +193,7 @@ internal class InMemoryOidcRedirectAuthStore(
 }
 
 internal class TrackingCredentialSigner : CredentialSigner {
-    override val signingAlgorithm: SigningAlgorithm = SigningAlgorithm.ECDSA_P256K_EIP191
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256K_EIP191
     var signCalls: Int = 0
         private set
 
@@ -215,7 +214,7 @@ internal class TrackingCredentialSigner : CredentialSigner {
 internal class MockWebCryptoCredentialSigner(
     private var available: Boolean = true,
 ) : CredentialSigner {
-    override val signingAlgorithm: SigningAlgorithm = SigningAlgorithm.ECDSA_P256_SHA256
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
     val credentialIdValue: String = "0x04" + "11".repeat(64)
     val signatureValue: String = "0x" + "22".repeat(64)
     var signCalls: Int = 0
