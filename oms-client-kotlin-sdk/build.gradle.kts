@@ -19,6 +19,27 @@ ktlint {
 group = providers.gradleProperty("POM_GROUP_ID").orElse("io.github.0xsequence").get()
 version = providers.gradleProperty("POM_VERSION_NAME").orElse("0.1.0-SNAPSHOT").get()
 
+val waasGeneratedProject = project(":oms-client-kotlin-sdk-waas-generated")
+val embeddedWaasGeneratedJar =
+    layout.buildDirectory.file("embedded-jars/oms-client-kotlin-sdk-waas-generated.jar")
+val syncEmbeddedWaasGeneratedJar =
+    tasks.register<Sync>("syncEmbeddedWaasGeneratedJar") {
+        dependsOn(
+            waasGeneratedProject.tasks.matching { it.name == "bundleLibRuntimeToJarRelease" },
+        )
+        from(
+            waasGeneratedProject.layout.buildDirectory.file(
+                "intermediates/runtime_library_classes_jar/release/bundleLibRuntimeToJarRelease/classes.jar",
+            ),
+        ) {
+            rename { "oms-client-kotlin-sdk-waas-generated.jar" }
+        }
+        into(embeddedWaasGeneratedJar.map { it.asFile.parentFile })
+    }
+val waasGeneratedClassesJar =
+    files(embeddedWaasGeneratedJar)
+        .builtBy(syncEmbeddedWaasGeneratedJar)
+
 android {
     namespace = "com.omsclient.kotlin_sdk"
     compileSdk {
@@ -74,8 +95,13 @@ tasks.matching { it.name == "sourceReleaseJar" }.configureEach {
     exclude("**/generated/**")
 }
 
+tasks.matching { it.name == "javaDocReleaseJar" }.configureEach {
+    this as org.gradle.jvm.tasks.Jar
+    exclude("com/omsclient/kotlin_sdk/generated/**")
+}
+
 dependencies {
-    implementation(project(":oms-client-kotlin-sdk-waas-generated"))
+    implementation(waasGeneratedClassesJar)
     implementation(libs.androidx.core.ktx)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)

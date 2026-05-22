@@ -2,8 +2,6 @@ plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.ktlint)
     id("org.jetbrains.kotlin.plugin.serialization") version "2.2.10"
-    id("maven-publish")
-    id("signing")
 }
 
 ktlint {
@@ -46,12 +44,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    publishing {
-        singleVariant("release") {
-            withSourcesJar()
-            withJavadocJar()
-        }
-    }
 }
 
 val waasGeneratedSource =
@@ -63,101 +55,7 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     source(waasGeneratedSource)
 }
 
-tasks.matching { it.name == "sourceReleaseJar" }.configureEach {
-    this as org.gradle.jvm.tasks.Jar
-    from(waasGeneratedSource)
-}
-
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
-}
-
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            groupId =
-                providers
-                    .gradleProperty("POM_GROUP_ID")
-                    .orElse(project.group.toString())
-                    .get()
-            artifactId = "oms-client-kotlin-sdk-waas-generated"
-            version =
-                providers
-                    .gradleProperty("POM_VERSION_NAME")
-                    .orElse(project.version.toString())
-                    .get()
-
-            pom {
-                name.set("OMS Client Kotlin SDK WaaS Generated")
-                description.set("Generated WaaS WebRPC runtime dependency for OMS Client Kotlin SDK.")
-                url.set(
-                    providers
-                        .gradleProperty("POM_URL")
-                        .orElse("https://github.com/0xsequence/kotlin-sdk"),
-                )
-                licenses {
-                    license {
-                        name.set(
-                            providers
-                                .gradleProperty("POM_LICENSE_NAME")
-                                .orElse("Apache License 2.0"),
-                        )
-                        url.set(
-                            providers
-                                .gradleProperty("POM_LICENSE_URL")
-                                .orElse("https://www.apache.org/licenses/LICENSE-2.0.txt"),
-                        )
-                    }
-                }
-                developers {
-                    developer {
-                        id.set(providers.gradleProperty("POM_DEVELOPER_ID").orElse("0xsequence"))
-                        name.set(
-                            providers
-                                .gradleProperty("POM_DEVELOPER_NAME")
-                                .orElse("OMS Client"),
-                        )
-                    }
-                }
-                scm {
-                    url.set(
-                        providers
-                            .gradleProperty("POM_SCM_URL")
-                            .orElse("https://github.com/0xsequence/kotlin-sdk"),
-                    )
-                    connection.set(
-                        providers
-                            .gradleProperty("POM_SCM_CONNECTION")
-                            .orElse("scm:git:https://github.com/0xsequence/kotlin-sdk.git"),
-                    )
-                    developerConnection.set(
-                        providers
-                            .gradleProperty("POM_SCM_DEV_CONNECTION")
-                            .orElse("scm:git:ssh://git@github.com/0xsequence/kotlin-sdk.git"),
-                    )
-                }
-            }
-        }
-    }
-}
-
-afterEvaluate {
-    publishing {
-        publications.named<MavenPublication>("release") {
-            from(components["release"])
-        }
-    }
-}
-
-signing {
-    val signingKey = providers.gradleProperty("signingInMemoryKey").orNull
-    val signingPassword = providers.gradleProperty("signingInMemoryKeyPassword").orNull
-
-    isRequired = false
-
-    if (!signingKey.isNullOrBlank() && !signingPassword.isNullOrBlank()) {
-        useInMemoryPgpKeys(signingKey, signingPassword)
-        sign(publishing.publications)
-    }
 }
