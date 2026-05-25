@@ -10,7 +10,6 @@ material = "1.10.0"
 okhttp = "5.1.0"
 serializationJson = "1.9.0"
 coroutines = "1.10.2"
-web3j = "4.14.0"
 credentials = "1.6.0"
 googleid = "1.2.0"
 ktlintGradle = "14.2.0"
@@ -30,7 +29,6 @@ mockwebserver3 = { group = "com.squareup.okhttp3", name = "mockwebserver3", vers
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
-web3j-crypto = { group = "org.web3j", name = "crypto", version.ref = "web3j" }
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }

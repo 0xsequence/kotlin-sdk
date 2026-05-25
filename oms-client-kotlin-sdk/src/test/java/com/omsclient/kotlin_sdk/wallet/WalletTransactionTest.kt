@@ -3,9 +3,9 @@ package com.omsclient.kotlin_sdk.wallet
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
-import com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumContractCallRequest
-import com.omsclient.kotlin_sdk.generated.waas.TransactionStatusRequest
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumContractCallRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionStatusRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.models.AbiArg
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest
@@ -26,9 +26,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.math.BigInteger
-import com.omsclient.kotlin_sdk.generated.waas.AbiArg as WaasAbiArg
-import com.omsclient.kotlin_sdk.generated.waas.FeeOptionSelection as WaasFeeOptionSelection
-import com.omsclient.kotlin_sdk.generated.waas.TransactionMode as WaasTransactionMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.AbiArg as WaasAbiArg
+import com.omsclient.kotlin_sdk.internal.generated.waas.FeeOptionSelection as WaasFeeOptionSelection
+import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionMode as WaasTransactionMode
 
 class WalletTransactionTest {
     private lateinit var server: MockWebServer
@@ -62,12 +62,11 @@ class WalletTransactionTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000106L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000106"),
                 )
             assertTrue(client.restorePersistedSession())
 
@@ -208,12 +207,11 @@ class WalletTransactionTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000107L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000107"),
                     fastTransactionStatusPollIntervalMillis = 1L,
                     transactionStatusPollIntervalMillis = 1L,
                     transactionStatusPollTimeoutMillis = 1_000L,
@@ -257,7 +255,7 @@ class WalletTransactionTest {
             assertEquals("/rpc/Wallet/PrepareEthereumTransaction", prepareRequest.target)
             assertEquals(
                 WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
-                    com.omsclient.kotlin_sdk.generated.waas.PrepareEthereumTransactionRequest(
+                    com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransactionRequest(
                         walletId = "wallet-main",
                         network = "80002",
                         to = "0xabc",
@@ -281,7 +279,7 @@ class WalletTransactionTest {
             assertEquals("/rpc/Wallet/Execute", executeRequest.target)
             assertEquals(
                 WaasWalletApi.Execute.encodeRequest(
-                    com.omsclient.kotlin_sdk.generated.waas.ExecuteRequest(
+                    com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest(
                         txnId = "txn-1",
                         feeOption = WaasFeeOptionSelection(token = "USDC"),
                     ),
@@ -291,7 +289,7 @@ class WalletTransactionTest {
             assertEquals("/rpc/Wallet/TransactionStatus", pendingStatusRequest.target)
             assertEquals(
                 WaasWalletApi.TransactionStatus.encodeRequest(
-                    com.omsclient.kotlin_sdk.generated.waas
+                    com.omsclient.kotlin_sdk.internal.generated.waas
                         .TransactionStatusRequest(txnId = "txn-1"),
                 ),
                 requireNotNull(pendingStatusRequest.body).utf8(),
@@ -299,7 +297,7 @@ class WalletTransactionTest {
             assertEquals("/rpc/Wallet/TransactionStatus", executedStatusRequest.target)
             assertEquals(
                 WaasWalletApi.TransactionStatus.encodeRequest(
-                    com.omsclient.kotlin_sdk.generated.waas
+                    com.omsclient.kotlin_sdk.internal.generated.waas
                         .TransactionStatusRequest(txnId = "txn-1"),
                 ),
                 requireNotNull(executedStatusRequest.body).utf8(),
@@ -365,12 +363,11 @@ class WalletTransactionTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000108L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000108"),
                     transactionStatusDelay = { delayMillis -> delays += delayMillis },
                 )
             assertTrue(client.restorePersistedSession())
@@ -457,12 +454,11 @@ class WalletTransactionTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000114L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000114"),
                     transactionStatusDelay = { delayMillis -> delays += delayMillis },
                 )
             assertTrue(client.restorePersistedSession())
@@ -539,12 +535,11 @@ class WalletTransactionTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000109L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000109"),
                 )
             assertTrue(client.restorePersistedSession())
 
@@ -616,12 +611,11 @@ class WalletTransactionTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000110L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
                 )
             assertTrue(client.restorePersistedSession())
 
@@ -672,12 +666,11 @@ class WalletTransactionTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000113L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000113"),
                 )
             assertTrue(client.restorePersistedSession())
 

@@ -1,4 +1,4 @@
-package com.omsclient.kotlin_sdk.generated.waas
+package com.omsclient.kotlin_sdk.internal.generated.waas
 
 class LambdaWebRpcTransport(
     private val postJson: suspend (

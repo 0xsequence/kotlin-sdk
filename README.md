@@ -4,13 +4,15 @@ Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 
 ## Installation
 
-Planned Maven coordinates:
+Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.0.1")
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.1")
 ```
 
-Until the package is published, use the source directly from this repository.
+This is the only artifact consumers add. The generated WaaS client is packaged
+inside the AAR as an internal implementation detail; consumers should use the
+SDK APIs documented below instead of importing generated classes.
 
 ## What It Provides
 
@@ -24,16 +26,23 @@ Until the package is published, use the source directly from this repository.
 - transaction sending and contract calls
 - transaction status lookup
 - wallet access listing and revocation
-- signature verification through the generated WaaS public client
+- message and typed-data signature verification through WaaS
 - native and token balance lookups through the indexer service
 - unit formatting and parsing helpers for raw token amounts
 
 ## Requirements
 
 - Android `minSdk 26`
+- Android `compileSdk 34` or newer
+- Java 17 Android compile options
 - Kotlin/Android app using the Android library module
 - a valid `publicApiKey`
 - a valid `projectId`
+
+The sample app in this repository uses additional Google Sign-In / AndroidX
+Credential Manager dependencies and therefore compiles with SDK 35. That sample
+app requirement does not raise the published SDK artifact's consumer
+`compileSdk` floor.
 
 ## Quick Start
 

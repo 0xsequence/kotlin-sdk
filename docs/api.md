@@ -2,6 +2,22 @@
 
 This document describes the intended public API for external consumers of the OMS Client Kotlin SDK.
 
+## Installation and Requirements
+
+```kotlin
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.1")
+```
+
+Consumer apps need Android `minSdk 26`, Android `compileSdk 34` or newer, and
+Java 17 Android compile options. Updating `compileSdk` is separate from
+`targetSdk`; consumers do not need to opt into a newer Android runtime behavior
+just to consume the SDK.
+
+The published SDK is a single Maven artifact. Generated WaaS WebRPC classes are
+embedded in the AAR under `com.omsclient.kotlin_sdk.internal.generated.waas` and
+are not part of the documented public API. Consumers should not add or depend on
+an `oms-client-kotlin-sdk-waas-generated` artifact.
+
 ## Entry Point
 
 ```kotlin

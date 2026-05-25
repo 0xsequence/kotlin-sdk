@@ -12,7 +12,6 @@ internal enum class WalletSigningAlgorithm(
     val wireValue: String,
 ) {
     ECDSA_P256_SHA256("ecdsa-p256-sha256"),
-    ECDSA_P256K_EIP191("ecdsa-p256k-eip191"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
     ;
 
@@ -46,4 +45,20 @@ internal interface CredentialSigner {
     fun hasCredential(): Boolean
 
     fun clear()
+}
+
+internal object MissingCredentialSigner : CredentialSigner {
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.UNKNOWN_DEFAULT
+
+    override suspend fun credentialId(): String = throw missingCredentialSigner()
+
+    override suspend fun nextNonce(): String = throw missingCredentialSigner()
+
+    override suspend fun sign(preimage: String): String = throw missingCredentialSigner()
+
+    override fun hasCredential(): Boolean = false
+
+    override fun clear() = Unit
+
+    private fun missingCredentialSigner(): IllegalStateException = IllegalStateException("No OMS Client credential signer configured")
 }

@@ -1,8 +1,8 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.Network
-import com.omsclient.kotlin_sdk.generated.waas.SignTypedDataRequest
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.SignTypedDataRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
@@ -50,7 +50,8 @@ class WalletSigningTest {
                         OMSClientSessionSnapshot(
                             walletId = "wallet-main",
                             walletAddress = "0xwallet",
-                            signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                            signerAddress = TEST_CREDENTIAL_ID,
+                            signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                         ),
                 )
             val client =
@@ -106,12 +107,11 @@ class WalletSigningTest {
                                 OMSClientSessionSnapshot(
                                     walletId = "wallet-main",
                                     walletAddress = "0xwallet",
-                                    signerAddress = WalletRequestSigner.walletAddressFromPrivateKeyHex(FIXED_PRIVATE_KEY_HEX),
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 ),
-                            privateKeyHex = FIXED_PRIVATE_KEY_HEX,
                         ),
-                    nonceGenerator = { 1710000109L },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000109"),
                 )
             assertTrue(client.restorePersistedSession())
 

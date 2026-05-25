@@ -6,6 +6,7 @@ import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
+import com.omsclient.kotlin_sdk.wallet.TrackingCredentialSigner
 import com.omsclient.kotlin_sdk.wallet.WalletSigningAlgorithm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -21,6 +22,7 @@ class OMSClientTest {
                 walletId = "wallet-main",
                 walletAddress = "0xwallet",
                 signerAddress = "0xsigner",
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:00:00Z",
                 loginType = OMSClientSessionLoginType.Email,
                 sessionEmail = "user@example.com",
@@ -31,6 +33,7 @@ class OMSClientTest {
                 projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 sessionStore = StubSessionMetadataStore(snapshot),
+                credentialSigner = TrackingCredentialSigner(),
             )
 
         assertEquals("0xwallet", sdk.wallet.walletAddress)
@@ -58,7 +61,7 @@ class OMSClientTest {
                             projectId = "test-project-id",
                             walletType = "ethereum",
                             signerAddress = "0xsigner",
-                            signerKeyType = WalletSigningAlgorithm.ECDSA_P256K_EIP191,
+                            signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                         ),
                     ),
             )
@@ -77,6 +80,7 @@ class OMSClientTest {
                     walletId = "wallet-main",
                     walletAddress = "0xwallet",
                     signerAddress = "0xsigner",
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 ),
             )
         val sdk =
@@ -85,6 +89,7 @@ class OMSClientTest {
                 projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 sessionStore = store,
+                credentialSigner = TrackingCredentialSigner(),
             )
 
         sdk.wallet.signOut()

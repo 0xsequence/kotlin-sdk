@@ -2,6 +2,7 @@ package com.omsclient.kotlin_sdk.wallet
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.omsclient.kotlin_sdk.utils.OMSClientHex
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -13,7 +14,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.web3j.utils.Numeric
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.Signature
@@ -47,7 +47,7 @@ class AndroidKeystoreP256CredentialSignerInstrumentedTest {
 
             val credentialId = signer.credentialId()
             val signature = signer.sign(preimage)
-            val rawSignature = Numeric.hexStringToByteArray(signature)
+            val rawSignature = OMSClientHex.decode(signature)
 
             assertTrue(credentialId.matches(Regex("^0x04[0-9a-f]{128}$")))
             assertTrue(signature.matches(Regex("^0x[0-9a-f]{128}$")))

@@ -4,13 +4,13 @@ import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.OmsSdkOperation
-import com.omsclient.kotlin_sdk.generated.waas.AuthMode
-import com.omsclient.kotlin_sdk.generated.waas.CommitVerifierRequest
-import com.omsclient.kotlin_sdk.generated.waas.CompleteAuthRequest
-import com.omsclient.kotlin_sdk.generated.waas.IdentityType
-import com.omsclient.kotlin_sdk.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.generated.waas.WaasWalletApi
-import com.omsclient.kotlin_sdk.generated.waas.WalletType
+import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
+import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
+import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import kotlinx.coroutines.runBlocking
@@ -63,9 +63,8 @@ class WalletOidcRedirectAuthTest {
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
-                    nonceGenerator = { 1710000115L },
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
                 OidcProviderConfig(
@@ -124,7 +123,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals("nonce-123", redirectStore.pending?.nonce)
             assertEquals("omsclientkotlindemo://auth/callback", redirectStore.pending?.redirectUri)
             assertEquals(WalletType.Ethereum.wireValue, redirectStore.pending?.walletType)
-            assertEquals(WalletSigningAlgorithm.ECDSA_P256K_EIP191, redirectStore.pending?.signerKeyType)
+            assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, redirectStore.pending?.signerKeyType)
             assertEquals("oidc-verifier-123", client.snapshotSession()?.verifier)
         }
 
@@ -155,7 +154,7 @@ class WalletOidcRedirectAuthTest {
                     sessionStore = sessionStore,
                     oidcRedirectAuthStore = redirectStore,
                     oidcNonceGenerator = { "nonce-new" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             client.restoreSession(activeSession)
             val provider =
@@ -234,9 +233,8 @@ class WalletOidcRedirectAuthTest {
                     transport = OMSClientHttpClient(),
                     sessionStore = sessionStore,
                     oidcRedirectAuthStore = redirectStore,
-                    nonceGenerator = { 1710000116L },
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
                 OidcProviderConfig(
@@ -331,9 +329,8 @@ class WalletOidcRedirectAuthTest {
                     transport = OMSClientHttpClient(),
                     sessionStore = sessionStore,
                     oidcRedirectAuthStore = redirectStore,
-                    nonceGenerator = { 1710000116L },
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
                 OidcProviderConfig(
@@ -383,7 +380,7 @@ class WalletOidcRedirectAuthTest {
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(activeSession),
                     oidcRedirectAuthStore = redirectStore,
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             client.restoreSession(activeSession)
 
@@ -412,7 +409,7 @@ class WalletOidcRedirectAuthTest {
                         ),
                     transport = OMSClientHttpClient(),
                     oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
 
             val result =
@@ -458,7 +455,7 @@ class WalletOidcRedirectAuthTest {
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             val started =
                 client.startOidcRedirectAuth(
@@ -507,7 +504,7 @@ class WalletOidcRedirectAuthTest {
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             client.startOidcRedirectAuth(
                 provider =
@@ -555,7 +552,7 @@ class WalletOidcRedirectAuthTest {
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             client.startOidcRedirectAuth(
                 provider =
@@ -603,7 +600,7 @@ class WalletOidcRedirectAuthTest {
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             val started =
                 client.startOidcRedirectAuth(
@@ -665,7 +662,7 @@ class WalletOidcRedirectAuthTest {
                     sessionStore = InMemorySessionStore(),
                     oidcRedirectAuthStore = redirectStore,
                     oidcNonceGenerator = { "nonce-123" },
-                    privateKeyFactory = ::fixedPrivateKeyBytes,
+                    credentialSigner = TrackingCredentialSigner(),
                 )
             val started =
                 client.startOidcRedirectAuth(
