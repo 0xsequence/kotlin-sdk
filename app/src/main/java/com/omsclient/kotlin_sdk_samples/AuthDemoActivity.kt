@@ -67,7 +67,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private val sdk by lazy {
         OMSClient(
             context = this,
-            publicApiKey = DemoConfig.demoPublicApiKey,
+            publishableKey = DemoConfig.demoPublishableKey,
             projectId = DemoConfig.demoProjectId,
             environment = OMSClientEnvironment.demoDefaults(),
         )

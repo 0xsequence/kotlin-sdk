@@ -24,7 +24,7 @@ import java.time.Instant
  * [wallet]. Indexer methods live on [indexer].
  */
 class OMSClient internal constructor(
-    publicApiKey: String,
+    publishableKey: String,
     projectId: String,
     environment: OMSClientEnvironment = OMSClientEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
@@ -37,7 +37,7 @@ class OMSClient internal constructor(
 
     val wallet: WalletClient =
         WalletClient(
-            publicApiKey = publicApiKey,
+            publishableKey = publishableKey,
             projectId = projectId,
             environment = environment,
             transport = transport,
@@ -49,7 +49,7 @@ class OMSClient internal constructor(
 
     val indexer: IndexerClient =
         IndexerClient(
-            publicApiKey = publicApiKey,
+            publishableKey = publishableKey,
             environment = environment,
             transport = transport,
         )
@@ -92,12 +92,12 @@ class OMSClient internal constructor(
      */
     constructor(
         context: Context,
-        publicApiKey: String,
+        publishableKey: String,
         projectId: String,
         environment: OMSClientEnvironment = OMSClientEnvironment(),
         okHttpClient: OkHttpClient = OkHttpClient(),
     ) : this(
-        publicApiKey = publicApiKey,
+        publishableKey = publishableKey,
         projectId = projectId,
         environment = environment,
         okHttpClient = okHttpClient,

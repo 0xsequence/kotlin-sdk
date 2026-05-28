@@ -23,7 +23,7 @@ an `oms-client-kotlin-sdk-waas-generated` artifact.
 ```kotlin
 OMSClient(
     context: Context,
-    publicApiKey: String,
+    publishableKey: String,
     projectId: String,
     environment: OMSClientEnvironment = OMSClientEnvironment(),
     okHttpClient: OkHttpClient = OkHttpClient(),
@@ -87,7 +87,7 @@ id/address, signer address/algorithm, expiry, login type, and optional email. It
 is not wallet authorization material: by itself it cannot sign requests or
 access a wallet. Restore succeeds only while the matching Keystore credential
 still exists, and wallet operations must sign fresh requests with that
-credential. `publicApiKey` is sent as `X-Access-Key`; `projectId` is used as the
+credential. `publishableKey` is sent as `X-Access-Key`; `projectId` is used as the
 wallet request signing scope and OIDC redirect state scope.
 
 ```kotlin

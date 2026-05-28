@@ -172,7 +172,7 @@ result.
 
 - Do not commit secrets, access keys, signing keys, `local.properties`, Android
   Studio state, or local Gradle/cache files.
-- `publicApiKey` and `projectId` are required by SDK consumers and sample flows.
+- `publishableKey` and `projectId` are required by SDK consumers and sample flows.
   Keep examples placeholder-based unless the user explicitly provides test
   credentials.
 - Android Keystore credential and session code must continue to avoid persisting

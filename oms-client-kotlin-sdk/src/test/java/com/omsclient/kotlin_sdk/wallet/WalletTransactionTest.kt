@@ -49,7 +49,7 @@ class WalletTransactionTest {
         runBlocking {
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -197,7 +197,7 @@ class WalletTransactionTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -350,7 +350,7 @@ class WalletTransactionTest {
             val delays = mutableListOf<Long>()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -441,7 +441,7 @@ class WalletTransactionTest {
             val delays = mutableListOf<Long>()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -522,7 +522,7 @@ class WalletTransactionTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -598,7 +598,7 @@ class WalletTransactionTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -629,7 +629,7 @@ class WalletTransactionTest {
                 WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
                 requireNotNull(request.body).utf8(),
             )
-            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertNotNull(request.headers[OMSClientEnvironment.walletSignatureHeaderName])
         }
 
@@ -653,7 +653,7 @@ class WalletTransactionTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(

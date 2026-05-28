@@ -56,7 +56,7 @@ class WalletSigningTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -94,7 +94,7 @@ class WalletSigningTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -138,7 +138,7 @@ class WalletSigningTest {
                 ),
                 requireNotNull(request.body).utf8(),
             )
-            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertNotNull(request.headers[OMSClientEnvironment.walletSignatureHeaderName])
         }
 }

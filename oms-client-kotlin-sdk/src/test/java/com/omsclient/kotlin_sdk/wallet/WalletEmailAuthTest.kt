@@ -69,7 +69,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -94,7 +94,7 @@ class WalletEmailAuthTest {
             assertEquals("/rpc/Wallet/CommitVerifier", request.target)
             assertEquals("POST", request.method)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
-            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals("http://localhost:3000", request.headers["Origin"])
             assertEquals("application/json", request.headers["Accept"])
             assertEquals(
@@ -128,7 +128,7 @@ class WalletEmailAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -165,7 +165,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore(activeSession)
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -207,7 +207,7 @@ class WalletEmailAuthTest {
             val signer = MockWebCryptoCredentialSigner()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -245,7 +245,7 @@ class WalletEmailAuthTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -287,7 +287,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -349,7 +349,7 @@ class WalletEmailAuthTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -439,7 +439,7 @@ class WalletEmailAuthTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -512,7 +512,7 @@ class WalletEmailAuthTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -591,7 +591,7 @@ class WalletEmailAuthTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -675,7 +675,7 @@ class WalletEmailAuthTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -742,7 +742,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -827,7 +827,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -915,7 +915,7 @@ class WalletEmailAuthTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -1019,7 +1019,7 @@ class WalletEmailAuthTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -1098,7 +1098,7 @@ class WalletEmailAuthTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -1185,7 +1185,7 @@ class WalletEmailAuthTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -1261,7 +1261,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -1346,7 +1346,7 @@ class WalletEmailAuthTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -1425,7 +1425,7 @@ class WalletEmailAuthTest {
                 )
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -1502,7 +1502,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -1568,7 +1568,7 @@ class WalletEmailAuthTest {
             val store = InMemorySessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -1634,7 +1634,7 @@ class WalletEmailAuthTest {
             val store = FailingSaveSessionStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(

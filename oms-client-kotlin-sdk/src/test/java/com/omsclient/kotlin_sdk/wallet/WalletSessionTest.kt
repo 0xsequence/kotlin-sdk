@@ -21,7 +21,7 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot)
         val client =
             WalletClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
@@ -51,7 +51,7 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot)
         val client =
             WalletClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
@@ -76,7 +76,7 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot)
         val client =
             WalletClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
@@ -102,7 +102,7 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot)
         val client =
             WalletClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
@@ -122,7 +122,7 @@ class WalletSessionTest {
     fun addressReturnsSelectedWallet() {
         val client =
             WalletClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore =
@@ -156,7 +156,7 @@ class WalletSessionTest {
             )
         val client =
             WalletClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = store,
@@ -175,7 +175,7 @@ class WalletSessionTest {
     fun hasPendingSignInIsTrueForInMemoryPendingAuth() {
         val client =
             WalletClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = OMSClientEnvironment(),
                 sessionStore = InMemorySessionStore(),
