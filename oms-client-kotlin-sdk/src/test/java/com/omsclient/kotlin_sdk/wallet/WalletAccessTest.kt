@@ -87,7 +87,7 @@ class WalletAccessTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -146,7 +146,7 @@ class WalletAccessTest {
                 ),
                 requireNotNull(revokeRequest.body).utf8(),
             )
-            assertEquals("test-access-key", revokeRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", revokeRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertNotNull(revokeRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
         }
 
@@ -194,7 +194,7 @@ class WalletAccessTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -257,7 +257,7 @@ class WalletAccessTest {
 
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -303,7 +303,7 @@ class WalletAccessTest {
                 ),
                 requireNotNull(request.body).utf8(),
             )
-            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertNotNull(request.headers[OMSClientEnvironment.walletSignatureHeaderName])
         }
 
@@ -312,7 +312,7 @@ class WalletAccessTest {
         runBlocking {
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(

@@ -57,7 +57,7 @@ class ServiceClientsTest {
                 )
             val client =
                 OMSClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                 )
@@ -77,7 +77,7 @@ class ServiceClientsTest {
             val messageRequest = requireNotNull(server.takeRequest())
 
             assertEquals("/rpc/WalletPublic/IsValidMessageSignature", messageRequest.target)
-            assertEquals("test-access-key", messageRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", messageRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(null, messageRequest.headers["Authorization"])
             assertEquals(null, messageRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
             assertEquals(
@@ -98,7 +98,7 @@ class ServiceClientsTest {
             val typedDataRequest = requireNotNull(server.takeRequest())
 
             assertEquals("/rpc/WalletPublic/IsValidTypedDataSignature", typedDataRequest.target)
-            assertEquals("test-access-key", typedDataRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", typedDataRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(null, typedDataRequest.headers["Authorization"])
             assertEquals(null, typedDataRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
             assertEquals(
@@ -141,7 +141,7 @@ class ServiceClientsTest {
                 OMSClientEnvironment(
                     indexerUrlTemplate = template,
                 )
-            val client = IndexerClient("test-access-key", environment, OMSClientHttpClient())
+            val client = IndexerClient("test-publishable-key", environment, OMSClientHttpClient())
 
             val response =
                 client.getTokenBalances(
@@ -153,7 +153,7 @@ class ServiceClientsTest {
             val request = requireNotNull(server.takeRequest())
 
             assertEquals("/polygon/rpc/Indexer/GetTokenBalances", request.target)
-            assertEquals("test-access-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(
                 "{\"page\":{\"page\":0,\"pageSize\":40,\"more\":false},\"contractAddress\":\"0xcontract\",\"accountAddress\":\"0xwallet\",\"includeMetadata\":true}",
                 requireNotNull(request.body).utf8(),
@@ -182,7 +182,7 @@ class ServiceClientsTest {
                 OMSClientEnvironment(
                     indexerUrlTemplate = template,
                 )
-            val client = IndexerClient("test-access-key", environment, OMSClientHttpClient())
+            val client = IndexerClient("test-publishable-key", environment, OMSClientHttpClient())
 
             val response =
                 client.getTokenBalances(
@@ -224,7 +224,7 @@ class ServiceClientsTest {
                 OMSClientEnvironment(
                     indexerUrlTemplate = template,
                 )
-            val client = IndexerClient("test-access-key", environment, OMSClientHttpClient())
+            val client = IndexerClient("test-publishable-key", environment, OMSClientHttpClient())
 
             val response =
                 client.getNativeTokenBalance(
@@ -256,7 +256,7 @@ class ServiceClientsTest {
 
             val client =
                 OMSClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
                 )
@@ -297,7 +297,7 @@ class ServiceClientsTest {
 
             val client =
                 OMSClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
                 )

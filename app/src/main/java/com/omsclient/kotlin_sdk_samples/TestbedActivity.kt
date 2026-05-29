@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 class TestbedActivity : AppCompatActivity() {
     private val uiScope = MainScope()
 
-    private lateinit var publicApiKeyInput: TextInputEditText
+    private lateinit var publishableKeyInput: TextInputEditText
     private lateinit var projectIdInput: TextInputEditText
     private lateinit var walletApiUrlInput: TextInputEditText
     private lateinit var apiRpcUrlInput: TextInputEditText
@@ -56,7 +56,7 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
-        publicApiKeyInput = findViewById(R.id.publicApiKeyInput)
+        publishableKeyInput = findViewById(R.id.publishableKeyInput)
         projectIdInput = findViewById(R.id.projectIdInput)
         walletApiUrlInput = findViewById(R.id.walletApiUrlInput)
         apiRpcUrlInput = findViewById(R.id.apiRpcUrlInput)
@@ -77,7 +77,7 @@ class TestbedActivity : AppCompatActivity() {
 
     private fun populateDefaults() {
         val demoEnvironment = OMSClientEnvironment.demoDefaults()
-        publicApiKeyInput.setText(DemoConfig.demoPublicApiKey)
+        publishableKeyInput.setText(DemoConfig.demoPublishableKey)
         projectIdInput.setText(DemoConfig.demoProjectId)
         walletApiUrlInput.setText(demoEnvironment.walletApiUrl)
         apiRpcUrlInput.setText(demoEnvironment.apiRpcUrl)
@@ -187,20 +187,20 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private fun requireSdk(): OMSClient {
-        val publicApiKey = currentPublicApiKey()
+        val publishableKey = currentPublishableKey()
         val projectId = currentProjectId()
         val environment = currentEnvironment()
         val existing = runtime
-        if (existing?.publicApiKey != publicApiKey || existing.projectId != projectId || existing.environment != environment) {
+        if (existing?.publishableKey != publishableKey || existing.projectId != projectId || existing.environment != environment) {
             runtime =
                 DemoRuntime(
-                    publicApiKey = publicApiKey,
+                    publishableKey = publishableKey,
                     projectId = projectId,
                     environment = environment,
                     sdk =
                         OMSClient(
                             context = this,
-                            publicApiKey = publicApiKey,
+                            publishableKey = publishableKey,
                             projectId = projectId,
                             environment = environment,
                         ),
@@ -213,7 +213,7 @@ class TestbedActivity : AppCompatActivity() {
         return requireNotNull(runtime).sdk
     }
 
-    private fun currentPublicApiKey(): String = requireText(publicApiKeyInput, "Public API key")
+    private fun currentPublishableKey(): String = requireText(publishableKeyInput, "Publishable key")
 
     private fun currentProjectId(): String = requireText(projectIdInput, "Project ID")
 
@@ -272,7 +272,7 @@ class TestbedActivity : AppCompatActivity() {
     }
 
     private data class DemoRuntime(
-        val publicApiKey: String,
+        val publishableKey: String,
         val projectId: String,
         val environment: OMSClientEnvironment,
         val sdk: OMSClient,

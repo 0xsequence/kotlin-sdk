@@ -57,7 +57,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -147,7 +147,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -227,7 +227,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -323,7 +323,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
                     transport = OMSClientHttpClient(),
@@ -371,7 +371,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -401,7 +401,7 @@ class WalletOidcRedirectAuthTest {
         runBlocking {
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -445,7 +445,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -494,7 +494,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -542,7 +542,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -590,7 +590,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
@@ -652,7 +652,7 @@ class WalletOidcRedirectAuthTest {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
                 WalletClient(
-                    publicApiKey = "test-access-key",
+                    publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(

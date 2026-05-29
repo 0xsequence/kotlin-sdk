@@ -80,7 +80,7 @@ import com.omsclient.kotlin_sdk.models.SendTransactionRequest as ClientSendTrans
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse as ClientSendTransactionResponse
 
 class WalletClient internal constructor(
-    private val publicApiKey: String,
+    private val publishableKey: String,
     private val projectId: String,
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
@@ -98,7 +98,7 @@ class WalletClient internal constructor(
     private val signer: CredentialSigner = credentialSigner ?: MissingCredentialSigner
     private val gateway: WaasWalletGateway =
         WaasWalletGateway(
-            publicApiKey = publicApiKey,
+            publishableKey = publishableKey,
             projectId = projectId,
             environment = environment,
             transport = transport,
@@ -106,7 +106,7 @@ class WalletClient internal constructor(
         )
     private val indexerClient: IndexerClient =
         IndexerClient(
-            publicApiKey = publicApiKey,
+            publishableKey = publishableKey,
             environment = environment,
             transport = transport,
         )
@@ -1161,7 +1161,7 @@ private data class ExecutedWalletTransaction(
 )
 
 private class WaasWalletGateway(
-    private val publicApiKey: String,
+    private val publishableKey: String,
     private val projectId: String,
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient,
@@ -1528,7 +1528,7 @@ private class WaasWalletGateway(
         walletSignatureHeader: String,
     ): Map<String, String> =
         linkedMapOf(
-            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
+            OMSClientEnvironment.accessKeyHeaderName to publishableKey,
             "Origin" to "http://localhost:3000",
             "Accept" to "application/json",
             OMSClientEnvironment.walletSignatureHeaderName to
@@ -1539,7 +1539,7 @@ private class WaasWalletGateway(
 
     private fun defaultPublicHeaders(): Map<String, String> =
         mapOf(
-            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
+            OMSClientEnvironment.accessKeyHeaderName to publishableKey,
             "Accept" to "application/json",
         )
 

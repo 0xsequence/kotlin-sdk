@@ -19,7 +19,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
 class IndexerClient internal constructor(
-    private val publicApiKey: String,
+    private val publishableKey: String,
     private val environment: OMSClientEnvironment,
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
 ) {
@@ -117,7 +117,7 @@ class IndexerClient internal constructor(
 
     private fun defaultHeaders(): Map<String, String> =
         mapOf(
-            OMSClientEnvironment.accessKeyHeaderName to publicApiKey,
+            OMSClientEnvironment.accessKeyHeaderName to publishableKey,
             "Accept" to "application/json",
         )
 }

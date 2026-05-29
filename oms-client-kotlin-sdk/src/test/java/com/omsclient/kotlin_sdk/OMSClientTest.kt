@@ -29,7 +29,7 @@ class OMSClientTest {
             )
         val sdk =
             OMSClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 sessionStore = StubSessionMetadataStore(snapshot),
@@ -47,7 +47,7 @@ class OMSClientTest {
     fun sessionStateOnlyReflectsCompletedWalletSession() {
         val sdk =
             OMSClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 oidcRedirectAuthStore =
@@ -85,7 +85,7 @@ class OMSClientTest {
             )
         val sdk =
             OMSClient(
-                publicApiKey = "test-access-key",
+                publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 walletSession = OMSClientSession(),
                 sessionStore = store,
@@ -105,7 +105,7 @@ class OMSClientTest {
 
     @Test
     fun exposesSupportedNetworks() {
-        val sdk = OMSClient(publicApiKey = "test-access-key", projectId = "test-project-id")
+        val sdk = OMSClient(publishableKey = "test-publishable-key", projectId = "test-project-id")
 
         assertEquals(supportedNetworks, sdk.supportedNetworks)
         assertEquals(16, sdk.supportedNetworks.size)

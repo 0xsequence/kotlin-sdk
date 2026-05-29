@@ -55,10 +55,10 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="14dp"
-                    android:hint="Public API key">
+                    android:hint="Publishable key">
 
                     <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/publicApiKeyInput"
+                        android:id="@+id/publishableKeyInput"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="textNoSuggestions" />
