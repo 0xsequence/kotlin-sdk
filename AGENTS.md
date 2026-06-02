@@ -1,5 +1,60 @@
 # AGENTS.md
 
+Single source of truth for agents working in this repo. `CLAUDE.md` imports this file via
+`@AGENTS.md`, so Claude Code, Codex, and any other agent that reads `AGENTS.md` share the same
+instructions.
+
+---
+
+## Behavioral Guidelines
+
+Behavioral guidelines to reduce common LLM coding mistakes. (Adapted from Andrej Karpathy's
+[CLAUDE.md](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/CLAUDE.md).)
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+### 1. Think Before Coding
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+**Minimum code that solves the problem. Nothing speculative.**
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+**Touch only what you must. Clean up only your own mess.**
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- Remove imports/variables YOUR changes made unused; leave pre-existing dead code unless asked.
+
+The test: every changed line should trace directly to the request.
+
+### 4. Goal-Driven Execution
+**Define success criteria. Loop until verified.**
+- "Add validation" → "Write tests for invalid inputs, then make them pass."
+- "Fix the bug" → "Write a test that reproduces it, then make it pass."
+
+For multi-step tasks, state a brief plan with a verify step for each item.
+
+---
+
+## Third-Party Library Docs
+
+For **any third-party library**, use the **context7** MCP to fetch up-to-date documentation rather
+than relying on training data, which lags real library APIs. If the context7 MCP server is not
+available, set it up: https://context7.com/install
+
+---
+
 ## Project Overview
 
 This repository is an Android/Kotlin SDK for OMS Client wallet, auth, signing,
@@ -141,6 +196,9 @@ result.
 - There is no detekt static-analysis check configured.
 
 ## Testing Guidance
+
+See **[TESTING.md](./TESTING.md)** for full testing conventions, unit vs. integration boundaries,
+and the execution command reference.
 
 - Unit tests live in `oms-client-kotlin-sdk/src/test/java/...` and use JUnit 4.
 - Network-facing client tests use MockWebServer where local HTTP behavior is
