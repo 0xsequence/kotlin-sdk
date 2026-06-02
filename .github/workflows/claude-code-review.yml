@@ -13,7 +13,7 @@ jobs:
       id-token: write
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Run Claude Code Review
         uses: anthropics/claude-code-action@beta
