@@ -14,7 +14,7 @@ credentials = "1.6.0"
 googleid = "1.2.0"
 ktlintGradle = "14.2.0"
 ktlint = "1.8.0"
-browser = "1.8.0"
+browser = "1.10.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
