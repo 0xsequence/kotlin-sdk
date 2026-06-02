@@ -12,10 +12,14 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Run Claude Code Review
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_GITHUB_ACTIONS }}
+          mode: experimental-review
           direct_prompt: |
             Review this pull request. Focus on:
             - Correctness of SDK logic, request signing, and auth flows

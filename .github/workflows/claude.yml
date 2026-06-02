@@ -24,6 +24,9 @@ jobs:
       issues: write
       id-token: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Run Claude Code
         uses: anthropics/claude-code-action@beta
         with:
