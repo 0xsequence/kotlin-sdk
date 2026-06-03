@@ -443,11 +443,13 @@ The full public API surface is documented in [docs/api.md](docs/api.md).
 This repository includes an Android sample app in [`app/`](app/) that demonstrates:
 
 - Google sign-in with Android Credential Manager
+- Google OIDC redirect sign-in
 - email sign-in
+- custom session lifetime input for expiry testing
+- expired-session reauth UI
 - wallet selection after sign-in
 - message signing and verification
 - transaction sending
-- a lower-level testbed for manual endpoint/config testing
 
 ## Build From Source
 
