@@ -13,6 +13,7 @@ enum class OmsSdkErrorCode {
     RequestFailed,
     AuthCommitmentConsumed,
     SessionMissing,
+    SessionExpired,
     WalletSelectionStale,
     WalletSelectionUnavailable,
     WalletSelectionInFlight,
@@ -65,11 +66,12 @@ open class OmsSdkException(
 ) : RuntimeException(message, cause)
 
 class OmsSessionException(
+    code: OmsSdkErrorCode = OmsSdkErrorCode.SessionMissing,
     operation: OmsSdkOperation? = null,
     message: String = "No active wallet session",
     cause: Throwable? = null,
 ) : OmsSdkException(
-        code = OmsSdkErrorCode.SessionMissing,
+        code = code,
         operation = operation,
         message = message,
         cause = cause,

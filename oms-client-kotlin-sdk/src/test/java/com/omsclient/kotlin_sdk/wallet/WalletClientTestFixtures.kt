@@ -63,7 +63,7 @@ internal fun completeAuthResponseBody(
 internal fun credentialFixture(): CredentialInfo =
     CredentialInfo(
         credentialId = "credential-123",
-        expiresAt = "2026-01-01T00:00:00Z",
+        expiresAt = "2099-01-01T00:00:00Z",
         isCaller = true,
     )
 
@@ -200,7 +200,7 @@ internal class InMemoryOidcRedirectAuthStore(
     }
 }
 
-internal class TrackingCredentialSigner(
+internal open class TrackingCredentialSigner(
     private var available: Boolean = true,
     val credentialIdValue: String = TEST_CREDENTIAL_ID,
     val nonceValue: String = "1710000107",
@@ -225,8 +225,53 @@ internal class TrackingCredentialSigner(
 
     override fun hasCredential(): Boolean = available
 
-    override fun clear() {
+    open override fun clear() {
         available = false
+    }
+}
+
+internal class ThrowingClearCredentialSigner : TrackingCredentialSigner() {
+    var clearAttempts: Int = 0
+        private set
+
+    override fun clear() {
+        clearAttempts += 1
+        throw IllegalStateException("clear failed")
+    }
+}
+
+internal class RecordingSessionExpiryScheduler : SessionExpiryScheduler {
+    data class ScheduledTask(
+        val delayMillis: Long,
+        val action: () -> Unit,
+    )
+
+    val scheduledTasks = mutableListOf<ScheduledTask>()
+    var cancelCalls: Int = 0
+        private set
+
+    override fun schedule(
+        delayMillis: Long,
+        action: () -> Unit,
+    ): SessionExpiryTask {
+        val scheduledTask = ScheduledTask(delayMillis, action)
+        scheduledTasks += scheduledTask
+        return SessionExpiryTask {
+            cancelCalls += 1
+            scheduledTasks -= scheduledTask
+        }
+    }
+}
+
+internal class RecordingSessionExpiryDispatcher : SessionExpiryDispatcher {
+    val actions = mutableListOf<() -> Unit>()
+
+    override fun dispatch(action: () -> Unit) {
+        actions += action
+    }
+
+    fun runNext() {
+        actions.removeAt(0).invoke()
     }
 }
 

@@ -398,6 +398,109 @@ class WalletEmailAuthTest {
         }
 
     @Test
+    fun completeEmailAuthUsesRequestedSessionLifetime() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-abc", address = "0xabc", reference = "demo"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+            client.restoreSession(
+                OMSClientSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = TEST_CREDENTIAL_ID,
+                ),
+            )
+
+            client.completeEmailAuth(
+                code = "123456",
+                sessionLifetimeSeconds = 120L,
+            )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals(
+                WaasWalletApi.CompleteAuth.encodeRequest(
+                    CompleteAuthRequest(
+                        identityType = IdentityType.Email,
+                        authMode = AuthMode.OTP,
+                        verifier = "verifier-123",
+                        answer =
+                            WalletAuthChallenge.hashAnswer(
+                                challenge = "challenge",
+                                code = "123456",
+                            ),
+                        lifetime = 120u,
+                    ),
+                ),
+                requireNotNull(request.body).utf8(),
+            )
+        }
+
+    @Test
+    fun completeEmailAuthRejectsInvalidSessionLifetimeBeforeRequest() =
+        runBlocking {
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+            client.restoreSession(
+                OMSClientSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = TEST_CREDENTIAL_ID,
+                ),
+            )
+
+            val error =
+                runCatching {
+                    client.completeEmailAuth(
+                        code = "123456",
+                        sessionLifetimeSeconds = 0L,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is OmsSdkException)
+            error as OmsSdkException
+            assertEquals(OmsSdkErrorCode.ValidationError, error.code)
+            assertEquals("wallet.completeEmailAuth", error.operation?.id)
+            assertEquals(0, server.requestCount)
+        }
+
+    @Test
     fun completeEmailAuthUsesReturnedWalletIndexWhenSelectingExistingWallet() =
         runBlocking {
             server.enqueue(
@@ -790,7 +893,7 @@ class WalletEmailAuthTest {
             assertEquals("0xbbb", selected.walletAddress)
             assertEquals("wallet-bbb", store.snapshot?.walletId)
             assertEquals("0xbbb", store.snapshot?.walletAddress)
-            assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
+            assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.Email, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
         }
@@ -1302,7 +1405,7 @@ class WalletEmailAuthTest {
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
-            assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
+            assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.Email, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
             assertEquals(1, store.saveCalls)

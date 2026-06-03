@@ -49,7 +49,7 @@ class WalletAccessTest {
                           "credentials": [
                             {
                               "credentialId": "credential-1",
-                              "expiresAt": "2026-01-01T00:00:00Z",
+                              "expiresAt": "2099-01-01T00:00:00Z",
                               "isCaller": true
                             }
                           ],
@@ -163,7 +163,7 @@ class WalletAccessTest {
                           "credentials": [
                             {
                               "credentialId": "credential-1",
-                              "expiresAt": "2026-01-01T00:00:00Z",
+                              "expiresAt": "2099-01-01T00:00:00Z",
                               "isCaller": true
                             }
                           ],
