@@ -41,6 +41,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
+import com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
@@ -51,6 +52,7 @@ import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
 import com.omsclient.kotlin_sdk.wallet.OidcProviders
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.wallet.PendingWalletSelection
+import com.omsclient.kotlin_sdk.wallet.WalletClient
 import com.omsclient.kotlin_sdk.wallet.WalletSelectionBehavior
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -63,6 +65,9 @@ import kotlin.coroutines.resumeWithException
 
 class AuthDemoActivity : AppCompatActivity() {
     private val uiScope = MainScope()
+    private val authPreferences by lazy {
+        getSharedPreferences(AUTH_DEMO_PREFERENCES_NAME, Context.MODE_PRIVATE)
+    }
     private val credentialManager by lazy { CredentialManager.create(this) }
     private val sdk by lazy {
         OMSClient(
@@ -99,11 +104,14 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var startGoogleSignInButton: MaterialButton
     private lateinit var startGoogleRedirectSignInButton: MaterialButton
     private lateinit var manualWalletSelectionCheckbox: MaterialCheckBox
+    private lateinit var sessionLifetimeInput: TextInputEditText
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
     private var lastTransactionHash: String? = null
     private var selectedNetwork: Network = Network.AMOY
+    private var expiredSessionEvent: OMSClientSessionExpiredEvent? = null
+    private var unsubscribeSessionExpired: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,6 +120,7 @@ class AuthDemoActivity : AppCompatActivity() {
         bindViews()
         populateDefaults()
         bindActions()
+        subscribeSessionExpiry()
         renderSessionState()
         handleOidcRedirectCallback(intent)
     }
@@ -123,6 +132,8 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        unsubscribeSessionExpired?.invoke()
+        unsubscribeSessionExpired = null
         uiScope.cancel()
         super.onDestroy()
     }
@@ -154,11 +165,13 @@ class AuthDemoActivity : AppCompatActivity() {
         startGoogleSignInButton = findViewById(R.id.startGoogleSignInButton)
         startGoogleRedirectSignInButton = findViewById(R.id.startGoogleRedirectSignInButton)
         manualWalletSelectionCheckbox = findViewById(R.id.manualWalletSelectionCheckbox)
+        sessionLifetimeInput = findViewById(R.id.sessionLifetimeInput)
     }
 
     private fun populateDefaults() {
         messageInput.setText("test")
         transactionToInput.setText("0xE5E8B483FfC05967FcFed58cc98D053265af6D99")
+        restoreAuthPreferences()
         configureNetworkPicker()
         resetUiForNoSession()
     }
@@ -177,12 +190,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     val idToken = requestGoogleIdToken()
                     when (
                         val result =
-                            sdk.wallet.signInWithOidcIdToken(
-                                idToken = idToken,
-                                issuer = DemoConfig.googleIssuer,
-                                audience = DemoConfig.demoGoogleWebClientId,
-                                walletSelection = currentWalletSelectionBehavior(),
-                            )
+                            completeGoogleIdTokenAuth(idToken)
                     ) {
                         is CompleteAuthResult.WalletSelected -> {
                             renderSignedInWallet(result.wallet, "Google login complete")
@@ -215,6 +223,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     appendLog("Google redirect start error: ${describeThrowable(it)}")
                 },
             ) {
+                persistAuthPreferences()
                 val started =
                     sdk.wallet.startOidcRedirectAuth(
                         provider =
@@ -222,6 +231,7 @@ class AuthDemoActivity : AppCompatActivity() {
                                 clientId = DemoConfig.demoGoogleWebClientId,
                             ),
                         redirectUri = DemoConfig.oidcRedirectUri,
+                        loginHint = expiredSessionEmail(),
                     )
                 appendLog("Google redirect auth started: state=${started.state}")
                 showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
@@ -235,7 +245,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 onStart = { authStatusView.text = "Requesting email code..." },
                 onFailure = { authStatusView.text = "Email sign-in failed: ${it.message ?: "Unknown error"}" },
             ) {
-                val email = requireText(emailInput, "Email")
+                val email = requireEmailForSignIn()
                 sdk.wallet.startEmailAuth(email)
                 authStatusView.text =
                     buildString {
@@ -250,6 +260,7 @@ class AuthDemoActivity : AppCompatActivity() {
 
         cancelCodeStepButton.setOnClickListener {
             sdk.wallet.signOut()
+            clearExpiredSessionState()
             codeInput.text?.clear()
             showEmailStep()
         }
@@ -265,7 +276,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 if (manualWalletSelectionCheckbox.isChecked) {
                     when (
                         val result =
-                            sdk.wallet.completeEmailAuth(
+                            completeEmailAuthWithConfiguredLifetime(
                                 code = code,
                                 walletSelection = WalletSelectionBehavior.Manual,
                             )
@@ -282,7 +293,12 @@ class AuthDemoActivity : AppCompatActivity() {
                         }
                     }
                 } else {
-                    when (val result = sdk.wallet.completeEmailAuth(code = code)) {
+                    when (
+                        val result =
+                            completeEmailAuthWithConfiguredLifetime(
+                                code = code,
+                            )
+                    ) {
                         is CompleteAuthResult.WalletSelected -> {
                             renderSignedInWallet(result.wallet, "Email login complete")
                         }
@@ -300,6 +316,7 @@ class AuthDemoActivity : AppCompatActivity() {
 
         logoutButton.setOnClickListener {
             sdk.wallet.signOut()
+            clearExpiredSessionState()
             lastSignedMessage = null
             lastSignedSignature = null
             lastTransactionHash = null
@@ -408,6 +425,13 @@ class AuthDemoActivity : AppCompatActivity() {
             .launchUrl(this, Uri.parse(url))
     }
 
+    private fun subscribeSessionExpiry() {
+        unsubscribeSessionExpired =
+            sdk.wallet.onSessionExpired { event ->
+                renderExpiredSession(event)
+            }
+    }
+
     private fun handleOidcRedirectCallback(intent: Intent?) {
         val callbackUrl = intent?.data?.toString() ?: return
         launchAction(
@@ -418,10 +442,7 @@ class AuthDemoActivity : AppCompatActivity() {
         ) {
             when (
                 val result =
-                    sdk.wallet.handleOidcRedirectCallback(
-                        callbackUrl = callbackUrl,
-                        walletSelection = currentWalletSelectionBehavior(),
-                    )
+                    handleOidcRedirectCallbackWithConfiguredLifetime(callbackUrl)
             ) {
                 is OidcRedirectAuthResult.Completed -> {
                     consumeIntentData()
@@ -598,6 +619,34 @@ class AuthDemoActivity : AppCompatActivity() {
         return value
     }
 
+    private fun requireEmailForSignIn(): String {
+        val typedEmail =
+            emailInput.text
+                ?.toString()
+                ?.trim()
+                .orEmpty()
+        if (typedEmail.isNotEmpty()) {
+            return typedEmail
+        }
+        val expiredEmail = expiredSessionEmail()
+        if (expiredEmail != null) {
+            emailInput.setText(expiredEmail)
+            emailInput.setSelection(expiredEmail.length)
+            return expiredEmail
+        }
+        error("Email is required")
+    }
+
+    private fun expiredSessionEmail(): String? =
+        expiredSessionEvent
+            ?.session
+            ?.sessionEmail
+            ?.takeIf { it.isNotBlank() }
+
+    private fun clearExpiredSessionState() {
+        expiredSessionEvent = null
+    }
+
     private fun addressLabel(
         label: String,
         address: String?,
@@ -614,12 +663,117 @@ class AuthDemoActivity : AppCompatActivity() {
         Toast.makeText(this, "Wallet address copied", Toast.LENGTH_SHORT).show()
     }
 
+    private suspend fun completeGoogleIdTokenAuth(idToken: String): CompleteAuthResult {
+        val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
+        persistAuthPreferences()
+        val walletSelection = currentWalletSelectionBehavior()
+        return if (sessionLifetimeSeconds == null) {
+            sdk.wallet.signInWithOidcIdToken(
+                idToken = idToken,
+                issuer = DemoConfig.googleIssuer,
+                audience = DemoConfig.demoGoogleWebClientId,
+                walletSelection = walletSelection,
+            )
+        } else {
+            sdk.wallet.signInWithOidcIdToken(
+                idToken = idToken,
+                issuer = DemoConfig.googleIssuer,
+                audience = DemoConfig.demoGoogleWebClientId,
+                walletSelection = walletSelection,
+                sessionLifetimeSeconds = sessionLifetimeSeconds,
+            )
+        }
+    }
+
+    private suspend fun completeEmailAuthWithConfiguredLifetime(
+        code: String,
+        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
+    ): CompleteAuthResult {
+        val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
+        persistAuthPreferences()
+        return if (sessionLifetimeSeconds == null) {
+            sdk.wallet.completeEmailAuth(
+                code = code,
+                walletSelection = walletSelection,
+            )
+        } else {
+            sdk.wallet.completeEmailAuth(
+                code = code,
+                walletSelection = walletSelection,
+                sessionLifetimeSeconds = sessionLifetimeSeconds,
+            )
+        }
+    }
+
+    private suspend fun handleOidcRedirectCallbackWithConfiguredLifetime(callbackUrl: String): OidcRedirectAuthResult {
+        val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
+        persistAuthPreferences()
+        val walletSelection = currentWalletSelectionBehavior()
+        return if (sessionLifetimeSeconds == null) {
+            sdk.wallet.handleOidcRedirectCallback(
+                callbackUrl = callbackUrl,
+                walletSelection = walletSelection,
+            )
+        } else {
+            sdk.wallet.handleOidcRedirectCallback(
+                callbackUrl = callbackUrl,
+                walletSelection = walletSelection,
+                sessionLifetimeSeconds = sessionLifetimeSeconds,
+            )
+        }
+    }
+
     private fun currentWalletSelectionBehavior(): WalletSelectionBehavior =
         if (manualWalletSelectionCheckbox.isChecked) {
             WalletSelectionBehavior.Manual
         } else {
             WalletSelectionBehavior.Automatic
         }
+
+    private fun restoreAuthPreferences() {
+        manualWalletSelectionCheckbox.isChecked =
+            authPreferences.getBoolean(AUTH_DEMO_MANUAL_WALLET_SELECTION_KEY, false)
+        sessionLifetimeInput.setText(
+            authPreferences.getString(
+                AUTH_DEMO_SESSION_LIFETIME_SECONDS_KEY,
+                AUTH_DEMO_DEFAULT_SESSION_LIFETIME_SECONDS,
+            ),
+        )
+    }
+
+    private fun persistAuthPreferences() {
+        val rawValue = currentSessionLifetimeSecondsText()
+        parseSessionLifetimeSeconds(rawValue)
+        authPreferences
+            .edit()
+            .putBoolean(AUTH_DEMO_MANUAL_WALLET_SELECTION_KEY, manualWalletSelectionCheckbox.isChecked)
+            .apply {
+                if (rawValue.isBlank()) {
+                    remove(AUTH_DEMO_SESSION_LIFETIME_SECONDS_KEY)
+                } else {
+                    putString(AUTH_DEMO_SESSION_LIFETIME_SECONDS_KEY, rawValue)
+                }
+            }.apply()
+    }
+
+    private fun requestedSessionLifetimeSeconds(): Long? = parseSessionLifetimeSeconds(currentSessionLifetimeSecondsText())
+
+    private fun currentSessionLifetimeSecondsText(): String =
+        sessionLifetimeInput.text
+            ?.toString()
+            ?.trim()
+            .orEmpty()
+
+    private fun parseSessionLifetimeSeconds(rawValue: String): Long? {
+        if (rawValue.isBlank()) {
+            return null
+        }
+        val parsed = rawValue.toLongOrNull()
+        require(parsed != null && parsed > 0L) {
+            "Session lifetime seconds must be a positive whole number"
+        }
+        return parsed
+    }
 
     private suspend fun completePendingWalletSelection(
         pendingSelection: PendingWalletSelection,
@@ -938,6 +1092,7 @@ class AuthDemoActivity : AppCompatActivity() {
         wallet: Wallet,
         status: String,
     ) {
+        clearExpiredSessionState()
         renderSessionStateBox()
         authStatusView.text = status
         walletAddressView.text = addressLabel("Wallet address", wallet.address)
@@ -953,12 +1108,16 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun renderSessionState() {
-        renderSessionStateBox()
         if (sdk.session.walletAddress == null) {
-            resetUiForNoSession()
+            renderSessionStateBox()
+            expiredSessionEvent?.let {
+                renderExpiredSession(it)
+            } ?: resetUiForNoSession()
             return
         }
 
+        clearExpiredSessionState()
+        renderSessionStateBox()
         logoutButton.visibility = View.VISIBLE
         lastSignatureView.text = "Last signature: none"
         signatureStatusView.text = "Signature status: ready to sign."
@@ -972,6 +1131,43 @@ class AuthDemoActivity : AppCompatActivity() {
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
         copyWalletAddressButton.visibility = View.VISIBLE
+    }
+
+    private fun renderExpiredSession(event: OMSClientSessionExpiredEvent) {
+        val isNewEvent = expiredSessionEvent != event
+        expiredSessionEvent = event
+        renderSessionStateBox()
+        prefillExpiredSessionEmail()
+        walletAddressView.text = addressLabel("Wallet address", null)
+        authStatusView.text =
+            buildString {
+                append("Wallet session expired. Sign in again")
+                event.session.sessionEmail?.takeIf { it.isNotBlank() }?.let { email ->
+                    append(" as ")
+                    append(email)
+                }
+                append(".")
+            }
+        lastSignedMessage = null
+        lastSignedSignature = null
+        lastTransactionHash = null
+        lastSignatureView.text = "Last signature: none"
+        signatureStatusView.text = "Signature status: waiting for reauth."
+        lastTransactionHashView.text = "Last transaction hash: none"
+        transactionStatusView.text = "Transaction status: waiting for reauth."
+        logoutButton.visibility = View.VISIBLE
+        authCard.visibility = View.VISIBLE
+        emailStepContainer.visibility = View.VISIBLE
+        codeStepContainer.visibility = View.GONE
+        walletActionsContainer.visibility = View.GONE
+        openExplorerButton.visibility = View.GONE
+        copyWalletAddressButton.visibility = View.GONE
+        if (isNewEvent) {
+            appendLog(
+                "Wallet session expired at ${event.expiredAt}: " +
+                    "wallet=${event.session.walletAddress ?: "none"} email=${event.session.sessionEmail ?: "none"}",
+            )
+        }
     }
 
     private fun resetUiForNoSession() {
@@ -1033,14 +1229,39 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun renderSessionStateBox() {
         val session = sdk.session
-        sessionStateCard.visibility = if (session.walletAddress == null) View.GONE else View.VISIBLE
-        sessionStateView.text =
-            buildString {
-                appendLine("walletAddress: ${session.walletAddress ?: "null"}")
-                appendLine("expiresAt: ${session.expiresAt ?: "null"}")
-                appendLine("loginType: ${session.loginType ?: "null"}")
-                append("sessionEmail: ${session.sessionEmail ?: "null"}")
+        val expiredEvent = expiredSessionEvent
+        sessionStateCard.visibility =
+            if (session.walletAddress == null && expiredEvent == null) {
+                View.GONE
+            } else {
+                View.VISIBLE
             }
+        sessionStateView.text =
+            if (expiredEvent != null && session.walletAddress == null) {
+                buildString {
+                    appendLine("expiredAt: ${expiredEvent.expiredAt}")
+                    appendLine("walletAddress: ${expiredEvent.session.walletAddress ?: "null"}")
+                    appendLine("expiresAt: ${expiredEvent.session.expiresAt ?: "null"}")
+                    appendLine("loginType: ${expiredEvent.session.loginType ?: "null"}")
+                    append("sessionEmail: ${expiredEvent.session.sessionEmail ?: "null"}")
+                }
+            } else {
+                buildString {
+                    appendLine("walletAddress: ${session.walletAddress ?: "null"}")
+                    appendLine("expiresAt: ${session.expiresAt ?: "null"}")
+                    appendLine("loginType: ${session.loginType ?: "null"}")
+                    append("sessionEmail: ${session.sessionEmail ?: "null"}")
+                }
+            }
+    }
+
+    private fun prefillExpiredSessionEmail() {
+        val email = expiredSessionEmail() ?: return
+        if (emailInput.text?.isNotBlank() == true) {
+            return
+        }
+        emailInput.setText(email)
+        emailInput.setSelection(email.length)
     }
 
     private fun focusCodeInput() {
@@ -1062,6 +1283,10 @@ class AuthDemoActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "AuthDemoActivity"
+        private const val AUTH_DEMO_PREFERENCES_NAME = "oms_client_auth_demo_preferences"
+        private const val AUTH_DEMO_MANUAL_WALLET_SELECTION_KEY = "manual_wallet_selection"
+        private const val AUTH_DEMO_SESSION_LIFETIME_SECONDS_KEY = "session_lifetime_seconds"
+        private val AUTH_DEMO_DEFAULT_SESSION_LIFETIME_SECONDS = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS.toString()
 
         private fun generateSecureRandomNonce(byteLength: Int = 32): String {
             val randomBytes = ByteArray(byteLength)
