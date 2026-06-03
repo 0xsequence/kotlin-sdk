@@ -74,6 +74,14 @@ Pending email OTP state is kept in memory. OIDC redirect state is stored only to
 complete the browser redirect flow and is cleared when the flow completes, fails,
 or is replaced.
 
+Expired sessions are made inactive before protected wallet operations and throw
+`OmsSessionException` with `code = OmsSdkErrorCode.SessionExpired`. The SDK
+clears the active signer/session state, but keeps expired completed-session
+metadata in storage until the app starts a new auth flow or calls `signOut()`.
+Subscribe with `client.wallet.onSessionExpired { event -> ... }` to route users
+back to sign-in while preserving the expired session snapshot for reauth.
+Listeners are delivered on the Android main thread.
+
 If you need a custom environment:
 
 ```kotlin
@@ -113,6 +121,13 @@ wallet type, create one when none exists, and return
 `CompleteAuthResult.WalletSelected`. If more than one matching wallet exists,
 automatic mode selects the first matching wallet returned by WaaS. Use manual
 mode for apps that need to let users choose between multiple wallets.
+
+Completed auth requests ask WaaS for a one-week session lifetime by default
+(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds).
+Pass `sessionLifetimeSeconds` to `completeEmailAuth`, `signInWithOidcIdToken`,
+or `handleOidcRedirectCallback` to request a different positive whole-number
+lifetime in seconds. Invalid lifetimes are reported as
+`OmsSdkErrorCode.ValidationError`.
 
 ```kotlin
 if (client.wallet.walletAddress == null) {
@@ -160,6 +175,11 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
 Use a redirect URI that matches a deep link registered by your app, such as
 `yourapp://auth/callback`. If your Google OAuth setup uses a custom web client
 ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
+Pass `loginHint` only when you want to prefill or select a specific Google
+account, such as during session-expiry reauth. When omitted, the SDK falls back
+to the previous active session email when one exists before redirect auth
+starts. Pass an empty string to force no `login_hint` for a call. Non-Google
+providers do not receive `login_hint`.
 
 With the default automatic behavior, a successful redirect callback returns
 `OidcRedirectAuthResult.Completed`; `WalletSelection` is only a successful branch

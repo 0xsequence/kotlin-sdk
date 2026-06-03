@@ -23,7 +23,7 @@ class OMSClientTest {
                 walletAddress = "0xwallet",
                 signerAddress = "0xsigner",
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                expiresAt = "2026-01-01T00:00:00Z",
+                expiresAt = "2099-01-01T00:00:00Z",
                 loginType = OMSClientSessionLoginType.Email,
                 sessionEmail = "user@example.com",
             )
@@ -38,7 +38,7 @@ class OMSClientTest {
 
         assertEquals("0xwallet", sdk.wallet.walletAddress)
         assertEquals("0xwallet", sdk.session.walletAddress)
-        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), sdk.session.expiresAt)
+        assertEquals(Instant.parse("2099-01-01T00:00:00Z"), sdk.session.expiresAt)
         assertEquals(OMSClientSessionLoginType.Email, sdk.session.loginType)
         assertEquals("user@example.com", sdk.session.sessionEmail)
     }

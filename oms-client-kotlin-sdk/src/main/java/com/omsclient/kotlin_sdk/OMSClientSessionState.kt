@@ -41,3 +41,14 @@ data class OMSClientSessionState(
      */
     val sessionEmail: String? = null,
 )
+
+/**
+ * Event delivered when a wallet session expires.
+ *
+ * [session] is the expired session snapshot, not the current active SDK
+ * session. Apps can use it to prefill re-authentication UI.
+ */
+data class OMSClientSessionExpiredEvent(
+    val session: OMSClientSessionState,
+    val expiredAt: Instant,
+)

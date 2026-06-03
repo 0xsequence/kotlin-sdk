@@ -1,7 +1,11 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import android.os.Handler
+import android.os.Looper
 import com.omsclient.kotlin_sdk.Network
+import com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OMSClientSessionState
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkOperation
 import com.omsclient.kotlin_sdk.OmsSessionException
@@ -64,6 +68,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import java.math.BigInteger
+import java.time.Duration
+import java.time.Instant
+import java.util.Timer
+import java.util.TimerTask
 import com.omsclient.kotlin_sdk.internal.generated.waas.AbiArg as WaasAbiArg
 import com.omsclient.kotlin_sdk.internal.generated.waas.CredentialInfo as WaasCredentialInfo
 import com.omsclient.kotlin_sdk.internal.generated.waas.FeeOption as WaasFeeOption
@@ -94,7 +102,17 @@ class WalletClient internal constructor(
     private val transactionStatusPollIntervalMillis: Long = 2_000L,
     private val transactionStatusPollTimeoutMillis: Long = 60_000L,
     private val transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
+    private val sessionExpiryScheduler: SessionExpiryScheduler = TimerSessionExpiryScheduler,
+    private val sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
+    private val now: () -> Instant = { Instant.now() },
 ) {
+    companion object {
+        /**
+         * Default requested WaaS wallet session lifetime in seconds.
+         */
+        const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 604_800L
+    }
+
     private val signer: CredentialSigner = credentialSigner ?: MissingCredentialSigner
     private val gateway: WaasWalletGateway =
         WaasWalletGateway(
@@ -110,6 +128,10 @@ class WalletClient internal constructor(
             environment = environment,
             transport = transport,
         )
+    private val sessionExpiryLock = Any()
+    private val sessionExpiredListeners = mutableSetOf<(OMSClientSessionExpiredEvent) -> Unit>()
+    private var latestSessionExpiredEvent: OMSClientSessionExpiredEvent? = null
+    private var sessionExpiryTask: SessionExpiryTask? = null
 
     internal val hasPendingSignIn: Boolean
         get() {
@@ -123,17 +145,46 @@ class WalletClient internal constructor(
     val walletAddress: String?
         get() = session.snapshot()?.walletAddress
 
+    /**
+     * Registers a listener for expired wallet sessions.
+     *
+     * The latest expired-session event is replayed to new listeners until a new
+     * auth flow, new wallet session, or [signOut] clears it. The returned
+     * function unsubscribes the listener.
+     */
+    fun onSessionExpired(listener: (OMSClientSessionExpiredEvent) -> Unit): () -> Unit {
+        val replayEvent =
+            synchronized(sessionExpiryLock) {
+                sessionExpiredListeners += listener
+                latestSessionExpiredEvent
+            }
+        replayEvent?.let { event ->
+            dispatchSessionExpiredListener(listener, event)
+        }
+        return {
+            synchronized(sessionExpiryLock) {
+                sessionExpiredListeners -= listener
+            }
+        }
+    }
+
     internal val signerAddress: String?
         get() = session.snapshot()?.signerAddress
 
     internal fun restoreSession(snapshot: OMSClientSessionSnapshot) {
+        clearLatestSessionExpiredEvent()
         session.restore(snapshot)
+        scheduleSessionExpiry(snapshot)
     }
 
     internal fun snapshotSession(): OMSClientSessionSnapshot? = session.snapshot()
 
     internal fun restorePersistedSession(): Boolean {
         val snapshot = sessionStore?.load() ?: return false
+        if (snapshot.isExpired(now())) {
+            expireSession(snapshot)
+            return false
+        }
         val isRestorable =
             !snapshot.walletId.isNullOrBlank() &&
                 !snapshot.walletAddress.isNullOrBlank() &&
@@ -144,7 +195,9 @@ class WalletClient internal constructor(
             sessionStore.clear()
             return false
         }
+        clearLatestSessionExpiredEvent()
         session.restore(snapshot)
+        scheduleSessionExpiry(snapshot)
         return true
     }
 
@@ -152,12 +205,22 @@ class WalletClient internal constructor(
         clearSession(clearOidcRedirectAuth = true)
     }
 
-    private fun clearSession(clearOidcRedirectAuth: Boolean) {
+    private fun clearSession(
+        clearOidcRedirectAuth: Boolean,
+        clearSessionStore: Boolean = true,
+        clearExpiredEvent: Boolean = true,
+    ) {
         session.clear()
+        clearSessionExpiryTask()
         signer.clear()
-        sessionStore?.clear()
+        if (clearSessionStore) {
+            sessionStore?.clear()
+        }
         if (clearOidcRedirectAuth) {
             clearPendingOidcRedirectAuth()
+        }
+        if (clearExpiredEvent) {
+            clearLatestSessionExpiredEvent()
         }
     }
 
@@ -165,9 +228,13 @@ class WalletClient internal constructor(
         oidcRedirectAuthStore?.clear()
     }
 
-    private fun requireWalletId(): String = session.snapshot()?.walletId ?: throw OmsSessionException(message = "No wallet selected")
+    private fun requireWalletId(): String =
+        requireActiveWalletSession(operation = null).walletId
+            ?: throw OmsSessionException(message = "No wallet selected")
 
-    private fun requireWalletAddress(): String = walletAddress ?: throw OmsSessionException(message = "No wallet selected")
+    private fun requireWalletAddress(): String =
+        requireActiveWalletSession(operation = null).walletAddress
+            ?: throw OmsSessionException(message = "No wallet selected")
 
     suspend fun startEmailAuth(email: String): Unit =
         runOmsOperation(OmsSdkOperation.WalletStartEmailAuth) {
@@ -196,6 +263,7 @@ class WalletClient internal constructor(
         audience: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = environment.defaultWalletType,
+        sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
     ): CompleteAuthResult =
         runOmsOperation(OmsSdkOperation.WalletSignInWithOidcIdToken) {
             completeOidcIdTokenAuth(
@@ -204,6 +272,10 @@ class WalletClient internal constructor(
                 audience = audience,
                 walletType = walletType,
                 walletSelection = walletSelection,
+                sessionLifetimeSeconds =
+                    requireWaasSessionLifetimeSeconds(
+                        sessionLifetimeSeconds,
+                    ),
             )
         }
 
@@ -213,6 +285,7 @@ class WalletClient internal constructor(
         audience: String,
         walletType: WalletType,
         walletSelection: WalletSelectionBehavior,
+        sessionLifetimeSeconds: UInt,
     ): CompleteAuthResult {
         clearSession(clearOidcRedirectAuth = true)
         try {
@@ -233,7 +306,10 @@ class WalletClient internal constructor(
 
             val auth =
                 try {
-                    completeOidcIdTokenSignIn(idToken)
+                    completeOidcIdTokenSignIn(
+                        idToken = idToken,
+                        sessionLifetimeSeconds = sessionLifetimeSeconds,
+                    )
                 } catch (throwable: CancellationException) {
                     throw throwable
                 } catch (throwable: Throwable) {
@@ -255,12 +331,14 @@ class WalletClient internal constructor(
         walletType: WalletType = environment.defaultWalletType,
         relayRedirectUri: String? = provider.relayRedirectUri,
         authorizeParams: Map<String, String> = emptyMap(),
+        loginHint: String? = null,
     ): StartOidcRedirectAuthResult =
         runOmsOperation(OmsSdkOperation.WalletStartOidcRedirectAuth) {
             val redirectAuthStore =
                 requireNotNull(oidcRedirectAuthStore) {
                     "OIDC redirect auth requires an OIDC redirect auth store"
                 }
+            val previousSessionEmail = session.snapshot()?.sessionEmail
             clearSession(clearOidcRedirectAuth = true)
             try {
                 val signerAddress = signer.credentialId()
@@ -304,7 +382,7 @@ class WalletClient internal constructor(
                         redirectUri = oauthRedirectUri,
                         state = state,
                         challenge = response.challenge,
-                        loginHint = response.loginHint,
+                        loginHint = loginHintForProvider(provider, loginHint ?: previousSessionEmail),
                         authorizeParams = provider.authorizeParams + authorizeParams,
                     )
 
@@ -324,6 +402,7 @@ class WalletClient internal constructor(
     suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
+        sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
     ): OidcRedirectAuthResult {
         if (callbackUrl.isNullOrBlank()) {
             return OidcRedirectAuthResult.NotOidcRedirectCallback
@@ -357,11 +436,16 @@ class WalletClient internal constructor(
             }
             val code = requireNotNull(callback.code) { "OIDC callback URL is missing code" }
             restorePendingOidcRedirectAuth(pending)
+            val validatedSessionLifetimeSeconds =
+                requireWaasSessionLifetimeSeconds(
+                    sessionLifetimeSeconds,
+                )
 
             val auth =
                 gateway.completeOidcRedirectAuth(
                     verifier = pending.verifier,
                     code = code,
+                    sessionLifetimeSeconds = validatedSessionLifetimeSeconds,
                 )
             when (val result = completeWalletAuth(auth, pending.walletType.toWalletType(), walletSelection)) {
                 is CompleteAuthResult.WalletSelected -> {
@@ -388,20 +472,28 @@ class WalletClient internal constructor(
         }
     }
 
-    private suspend fun completeEmailSignIn(code: String): WalletAuthCompletion {
+    private suspend fun completeEmailSignIn(
+        code: String,
+        sessionLifetimeSeconds: UInt,
+    ): WalletAuthCompletion {
         val snapshot = session.requirePendingAuth()
         return gateway.completeEmailAuth(
             verifier = snapshot.verifier,
             challenge = snapshot.challenge,
             code = code,
+            sessionLifetimeSeconds = sessionLifetimeSeconds,
         )
     }
 
-    private suspend fun completeOidcIdTokenSignIn(idToken: String): WalletAuthCompletion {
+    private suspend fun completeOidcIdTokenSignIn(
+        idToken: String,
+        sessionLifetimeSeconds: UInt,
+    ): WalletAuthCompletion {
         val snapshot = session.requirePendingAuth()
         return gateway.completeOidcIdTokenAuth(
             verifier = snapshot.verifier,
             idToken = idToken,
+            sessionLifetimeSeconds = sessionLifetimeSeconds,
         )
     }
 
@@ -409,9 +501,17 @@ class WalletClient internal constructor(
         code: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = environment.defaultWalletType,
+        sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
     ): CompleteAuthResult =
         runOmsOperation(OmsSdkOperation.WalletCompleteEmailAuth) {
-            val auth = completeEmailSignIn(code)
+            val auth =
+                completeEmailSignIn(
+                    code = code,
+                    sessionLifetimeSeconds =
+                        requireWaasSessionLifetimeSeconds(
+                            sessionLifetimeSeconds,
+                        ),
+                )
             completeWalletAuth(
                 completeAuth = auth,
                 walletType = walletType,
@@ -496,6 +596,7 @@ class WalletClient internal constructor(
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
     ) {
+        expireCurrentSessionIfNeeded(operation = OmsSdkOperation.PendingWalletSelection)
         try {
             session.requirePendingWalletSelection(
                 pendingWalletSelectionId = pendingWalletSelectionId,
@@ -547,6 +648,7 @@ class WalletClient internal constructor(
 
     private fun requireWalletSelectionOrActiveSession() {
         val snapshot = session.requireSnapshot()
+        expireSnapshotIfNeeded(snapshot, operation = null)
         if (snapshot.walletId.isNullOrBlank() && snapshot.expiresAt.isNullOrBlank()) {
             throw OmsSessionException(message = "No authenticated wallet session")
         }
@@ -575,6 +677,7 @@ class WalletClient internal constructor(
                 sessionEmail = completeAuth.email,
             )
         val pendingSnapshot = session.requireSnapshot()
+        scheduleSessionExpiry(pendingSnapshot)
         val pendingSignerAddress = requireNotNull(pendingSnapshot.signerAddress) { "No active signer" }
         val pendingSignerKeyType = pendingSnapshot.signerKeyType
         return try {
@@ -653,7 +756,9 @@ class WalletClient internal constructor(
 
     private fun persistCurrentSession() {
         val snapshot = session.snapshot() ?: return
+        clearLatestSessionExpiredEvent()
         sessionStore?.save(snapshot)
+        scheduleSessionExpiry(snapshot)
     }
 
     /**
@@ -824,7 +929,7 @@ class WalletClient internal constructor(
      */
     suspend fun getTransactionStatus(txnId: String): TransactionStatusResponse =
         runOmsOperation(OmsSdkOperation.WalletGetTransactionStatus) {
-            session.requireSnapshot()
+            requireActiveWalletSession(OmsSdkOperation.WalletGetTransactionStatus)
             requireActiveCredential()
             gateway.transactionStatus(txnId)
         }
@@ -917,6 +1022,142 @@ class WalletClient internal constructor(
             signOut()
             throw OmsSessionException(message = "No active wallet session")
         }
+    }
+
+    private fun requireActiveWalletSession(operation: OmsSdkOperation?): OMSClientSessionSnapshot {
+        val snapshot =
+            session.snapshot()
+                ?: throw OmsSessionException(operation = operation)
+        expireSnapshotIfNeeded(snapshot, operation)
+        if (snapshot.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
+            throw OmsSessionException(operation = operation, message = "No wallet selected")
+        }
+        return snapshot
+    }
+
+    private fun expireCurrentSessionIfNeeded(operation: OmsSdkOperation?) {
+        val snapshot = session.snapshot() ?: return
+        expireSnapshotIfNeeded(snapshot, operation)
+    }
+
+    private fun expireSnapshotIfNeeded(
+        snapshot: OMSClientSessionSnapshot,
+        operation: OmsSdkOperation?,
+    ) {
+        if (!snapshot.isExpired(now())) {
+            return
+        }
+        expireSession(snapshot)
+        throw OmsSessionException(
+            code = OmsSdkErrorCode.SessionExpired,
+            operation = operation,
+            message = "Wallet session expired",
+        )
+    }
+
+    private fun scheduleSessionExpiry(snapshot: OMSClientSessionSnapshot) {
+        clearSessionExpiryTask()
+        val expiresAt = snapshot.expiresAtInstant() ?: return
+        val delayMillis = maxOf(0L, Duration.between(now(), expiresAt).toMillis())
+        val task =
+            sessionExpiryScheduler.schedule(delayMillis) {
+                sessionExpiryDispatcher.dispatch {
+                    expireSessionFromTimer(snapshot)
+                }
+            }
+        synchronized(sessionExpiryLock) {
+            sessionExpiryTask = task
+        }
+    }
+
+    private fun clearSessionExpiryTask() {
+        val task =
+            synchronized(sessionExpiryLock) {
+                sessionExpiryTask.also {
+                    sessionExpiryTask = null
+                }
+            }
+        task?.cancel()
+    }
+
+    private fun clearLatestSessionExpiredEvent() {
+        synchronized(sessionExpiryLock) {
+            latestSessionExpiredEvent = null
+        }
+    }
+
+    private fun expireSessionFromTimer(snapshot: OMSClientSessionSnapshot) {
+        if (session.snapshot() != snapshot) {
+            return
+        }
+        if (!snapshot.isExpired(now())) {
+            scheduleSessionExpiry(snapshot)
+            return
+        }
+        expireSession(snapshot)
+    }
+
+    private fun expireSession(snapshot: OMSClientSessionSnapshot) {
+        val event = snapshot.toSessionExpiredEvent() ?: return
+        session.clear()
+        clearSessionExpiryTask()
+        clearPendingOidcRedirectAuth()
+        try {
+            signer.clear()
+        } catch (_: Throwable) {
+            // Expiry notification should not depend on credential cleanup succeeding.
+        }
+        notifySessionExpired(event)
+    }
+
+    private fun notifySessionExpired(event: OMSClientSessionExpiredEvent) {
+        val listeners =
+            synchronized(sessionExpiryLock) {
+                latestSessionExpiredEvent = event
+                sessionExpiredListeners.toList()
+            }
+        listeners.forEach { listener -> dispatchSessionExpiredListener(listener, event) }
+    }
+
+    private fun dispatchSessionExpiredListener(
+        listener: (OMSClientSessionExpiredEvent) -> Unit,
+        event: OMSClientSessionExpiredEvent,
+    ) {
+        sessionExpiryDispatcher.dispatch {
+            val shouldNotify =
+                synchronized(sessionExpiryLock) {
+                    sessionExpiredListeners.contains(listener) && latestSessionExpiredEvent == event
+                }
+            if (shouldNotify) {
+                callSessionExpiredListener(listener, event)
+            }
+        }
+    }
+
+    private fun callSessionExpiredListener(
+        listener: (OMSClientSessionExpiredEvent) -> Unit,
+        event: OMSClientSessionExpiredEvent,
+    ) {
+        try {
+            listener(event)
+        } catch (_: Throwable) {
+            // App callbacks must not change SDK operation results.
+        }
+    }
+
+    private fun loginHintForProvider(
+        provider: OidcProviderConfig,
+        loginHint: String?,
+    ): String? = loginHint.takeIf { provider.issuer == GOOGLE_ISSUER }
+
+    private fun requireWaasSessionLifetimeSeconds(sessionLifetimeSeconds: Long): UInt {
+        require(sessionLifetimeSeconds > 0L) {
+            "sessionLifetimeSeconds must be a positive whole number"
+        }
+        require(sessionLifetimeSeconds <= MAX_WAAS_SESSION_LIFETIME_SECONDS) {
+            "sessionLifetimeSeconds must be less than or equal to $MAX_WAAS_SESSION_LIFETIME_SECONDS"
+        }
+        return sessionLifetimeSeconds.toUInt()
     }
 
     private suspend fun executePreparedTransaction(
@@ -1240,6 +1481,7 @@ private class WaasWalletGateway(
         verifier: String,
         challenge: String,
         code: String,
+        sessionLifetimeSeconds: UInt,
     ): WalletAuthCompletion =
         signedClient()
             .completeAuth(
@@ -1252,13 +1494,14 @@ private class WaasWalletGateway(
                             challenge = challenge,
                             code = code,
                         ),
-                    lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
+                    lifetime = sessionLifetimeSeconds,
                 ),
             ).toWalletAuthCompletion()
 
     suspend fun completeOidcIdTokenAuth(
         verifier: String,
         idToken: String,
+        sessionLifetimeSeconds: UInt,
     ): WalletAuthCompletion =
         signedClient()
             .completeAuth(
@@ -1267,13 +1510,14 @@ private class WaasWalletGateway(
                     authMode = AuthMode.IDToken,
                     verifier = verifier,
                     answer = idToken,
-                    lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
+                    lifetime = sessionLifetimeSeconds,
                 ),
             ).toWalletAuthCompletion()
 
     suspend fun completeOidcRedirectAuth(
         verifier: String,
         code: String,
+        sessionLifetimeSeconds: UInt,
     ): WalletAuthCompletion =
         signedClient()
             .completeAuth(
@@ -1282,7 +1526,7 @@ private class WaasWalletGateway(
                     authMode = AuthMode.AuthCodePKCE,
                     verifier = verifier,
                     answer = code,
-                    lifetime = DEFAULT_SESSION_LIFETIME_SECONDS,
+                    lifetime = sessionLifetimeSeconds,
                 ),
             ).toWalletAuthCompletion()
 
@@ -1688,5 +1932,79 @@ private fun String.toWalletType(): WalletType =
         else -> WalletType.UNKNOWN_DEFAULT
     }
 
-private val DEFAULT_SESSION_LIFETIME_SECONDS: UInt = 604_800u
+internal fun interface SessionExpiryScheduler {
+    fun schedule(
+        delayMillis: Long,
+        action: () -> Unit,
+    ): SessionExpiryTask
+}
+
+internal fun interface SessionExpiryTask {
+    fun cancel()
+}
+
+internal fun interface SessionExpiryDispatcher {
+    fun dispatch(action: () -> Unit)
+}
+
+private object TimerSessionExpiryScheduler : SessionExpiryScheduler {
+    override fun schedule(
+        delayMillis: Long,
+        action: () -> Unit,
+    ): SessionExpiryTask {
+        val timer = Timer("oms-client-session-expiry", true)
+        val task =
+            object : TimerTask() {
+                override fun run() {
+                    action()
+                }
+            }
+        timer.schedule(task, delayMillis)
+        return SessionExpiryTask {
+            task.cancel()
+            timer.cancel()
+        }
+    }
+}
+
+private object AndroidMainThreadSessionExpiryDispatcher : SessionExpiryDispatcher {
+    override fun dispatch(action: () -> Unit) {
+        val mainLooper = runCatching { Looper.getMainLooper() }.getOrNull()
+        if (mainLooper == null || runCatching { Looper.myLooper() }.getOrNull() == mainLooper) {
+            action()
+            return
+        }
+
+        val posted = runCatching { Handler(mainLooper).post(action) }.getOrDefault(false)
+        if (!posted) {
+            action()
+        }
+    }
+}
+
+private fun OMSClientSessionSnapshot.isExpired(referenceTime: Instant): Boolean {
+    val expiresAt = expiresAtInstant() ?: return false
+    return !expiresAt.isAfter(referenceTime)
+}
+
+private fun OMSClientSessionSnapshot.expiresAtInstant(): Instant? =
+    expiresAt?.let { value ->
+        runCatching { Instant.parse(value) }.getOrNull()
+    }
+
+private fun OMSClientSessionSnapshot.toSessionExpiredEvent(): OMSClientSessionExpiredEvent? {
+    val expiredAt = expiresAtInstant() ?: return null
+    return OMSClientSessionExpiredEvent(
+        session =
+            OMSClientSessionState(
+                walletAddress = walletAddress,
+                expiresAt = expiredAt,
+                loginType = loginType,
+                sessionEmail = sessionEmail,
+            ),
+        expiredAt = expiredAt,
+    )
+}
+
+private const val MAX_WAAS_SESSION_LIFETIME_SECONDS: Long = 4_294_967_295L
 private const val GOOGLE_ISSUER: String = "https://accounts.google.com"

@@ -1,6 +1,8 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
@@ -141,13 +143,117 @@ class WalletOidcIdTokenAuthTest {
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
-            assertEquals("2026-01-01T00:00:00Z", store.snapshot?.expiresAt)
+            assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEquals(OMSClientSessionLoginType.GoogleAuth, store.snapshot?.loginType)
             assertEquals("user@example.com", store.snapshot?.sessionEmail)
             assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, store.snapshot?.signerKeyType)
             assertNull(store.snapshot?.verifier)
             assertNull(store.snapshot?.challenge)
             assertEquals(1, store.saveCalls)
+        }
+
+    @Test
+    fun signInWithOidcIdTokenUsesRequestedSessionLifetime() =
+        runBlocking {
+            val idToken = fakeJwt(exp = 1910000100L)
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","challenge":""}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://accounts.google.com",
+                                    sub = "google-sub-123",
+                                ),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+
+            client.signInWithOidcIdToken(
+                idToken = idToken,
+                issuer = "https://accounts.google.com",
+                audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+                sessionLifetimeSeconds = 120L,
+            )
+
+            requireNotNull(server.takeRequest())
+            val completeAuthRequest = requireNotNull(server.takeRequest())
+            assertEquals(
+                WaasWalletApi.CompleteAuth.encodeRequest(
+                    CompleteAuthRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.IDToken,
+                        verifier = "oidc-verifier-123",
+                        answer = idToken,
+                        lifetime = 120u,
+                    ),
+                ),
+                requireNotNull(completeAuthRequest.body).utf8(),
+            )
+        }
+
+    @Test
+    fun signInWithOidcIdTokenRejectsInvalidSessionLifetimeBeforeRequest() =
+        runBlocking {
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+
+            val error =
+                runCatching {
+                    client.signInWithOidcIdToken(
+                        idToken = fakeJwt(exp = 1910000100L),
+                        issuer = "https://accounts.google.com",
+                        audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
+                        sessionLifetimeSeconds = 4_294_967_296L,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is OmsSdkException)
+            error as OmsSdkException
+            assertEquals(OmsSdkErrorCode.ValidationError, error.code)
+            assertEquals("wallet.signInWithOidcIdToken", error.operation?.id)
+            assertEquals(0, server.requestCount)
         }
 
     @Test

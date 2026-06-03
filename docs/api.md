@@ -51,6 +51,13 @@ data class OMSClientSessionState(
 ```
 
 ```kotlin
+data class OMSClientSessionExpiredEvent(
+    val session: OMSClientSessionState,
+    val expiredAt: Instant,
+)
+```
+
+```kotlin
 enum class OMSClientSessionLoginType {
     Email,
     GoogleAuth,
@@ -66,12 +73,25 @@ flow, not from session state. Always pass incoming app-link URLs to
 app can show sign-in UI and let the user start again. Persisted session restore
 revives completed wallet sessions, including the session expiry, login type, and
 email returned by the wallet API, but not pending email OTP state. Completed auth
-requests use a one-week wallet API session lifetime. Auth completion loads all
-wallet pages before selecting or creating a wallet. If auth completes but wallet
-selection or session persistence fails, the SDK clears the in-memory auth
-session instead of leaving transient state active. Starting a new email, OIDC
-ID-token, or OIDC redirect auth flow replaces any existing wallet session so
-expired or stale sessions do not block re-authentication.
+requests use a one-week wallet API session lifetime by default
+(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds); pass
+`sessionLifetimeSeconds` to auth completion methods to request a different
+positive whole-number lifetime in seconds. Invalid values return
+`OmsSdkErrorCode.ValidationError` before an auth completion request is sent. Auth
+completion loads all wallet pages before selecting or creating a wallet. If auth
+completes but wallet selection or session persistence fails, the SDK clears the
+in-memory auth session instead of leaving transient state active.
+Starting a new email, OIDC ID-token, or OIDC redirect auth flow replaces any
+existing wallet session so expired or stale sessions do not block
+re-authentication.
+
+Expired sessions are made inactive before protected wallet operations and throw
+`OmsSessionException` with `code = OmsSdkErrorCode.SessionExpired`. The SDK
+clears active signer/session state, but keeps expired completed-session metadata
+in storage until the app starts a new auth flow or calls `signOut()`. Use
+`onSessionExpired` to route users back to sign-in; the event includes the
+expired session snapshot so apps can reuse `sessionEmail` for email OTP reauth or
+as a Google `loginHint`, including after process recreation.
 
 The Android `OMSClient(context, ...)` constructor wires two separate
 Android-backed pieces:
@@ -95,6 +115,17 @@ fun client.wallet.signOut()
 ```
 
 ```kotlin
+fun client.wallet.onSessionExpired(
+    listener: (OMSClientSessionExpiredEvent) -> Unit,
+): () -> Unit
+```
+
+Registers a listener for expired wallet sessions and returns an unsubscribe
+function. The wallet client stores the latest expired-session event and replays
+it to each new listener until a new auth flow, new wallet session, or
+`signOut()` clears it. Listeners are delivered on the Android main thread.
+
+```kotlin
 suspend fun client.wallet.startEmailAuth(
     email: String,
 )
@@ -107,6 +138,7 @@ suspend fun client.wallet.signInWithOidcIdToken(
     audience: String,
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
+    sessionLifetimeSeconds: Long = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
 ): CompleteAuthResult
 ```
 
@@ -151,6 +183,7 @@ suspend fun client.wallet.startOidcRedirectAuth(
     walletType: WalletType = WalletType.Ethereum,
     relayRedirectUri: String? = provider.relayRedirectUri,
     authorizeParams: Map<String, String> = emptyMap(),
+    loginHint: String? = null,
 ): StartOidcRedirectAuthResult
 ```
 
@@ -170,6 +203,7 @@ sealed interface OidcRedirectAuthResult {
 suspend fun client.wallet.handleOidcRedirectCallback(
     callbackUrl: String?,
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
+    sessionLifetimeSeconds: Long = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
 ): OidcRedirectAuthResult
 ```
 
@@ -185,6 +219,14 @@ the SDK can classify the failure. With
 With `WalletSelectionBehavior.Manual`, successful callbacks return
 `WalletSelection`. Starting a new auth flow clears or replaces stale redirect
 state, and `signOut()` clears it.
+
+Pass `loginHint` to `startOidcRedirectAuth` only when you want to prefill or
+select a specific Google account, such as during session-expiry reauth. The SDK
+only sends `login_hint` for providers whose issuer is
+`https://accounts.google.com`. If omitted, the SDK falls back to the previous
+active session email when one exists before the redirect auth attempt starts.
+Pass an empty string to force no `login_hint` for a call. After `signOut()`, the
+previous session email is cleared.
 
 ```kotlin
 enum class WalletSelectionBehavior {
@@ -224,6 +266,7 @@ suspend fun client.wallet.completeEmailAuth(
     code: String,
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
+    sessionLifetimeSeconds: Long = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
 ): CompleteAuthResult
 ```
 
@@ -513,6 +556,7 @@ enum class OmsSdkErrorCode {
     RequestFailed,
     AuthCommitmentConsumed,
     SessionMissing,
+    SessionExpired,
     WalletSelectionStale,
     WalletSelectionUnavailable,
     WalletSelectionInFlight,

@@ -1,12 +1,18 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.Network
+import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 
 class WalletSessionTest {
     @Test
@@ -63,6 +69,216 @@ class WalletSessionTest {
         assertFalse(restored)
         assertNull(client.snapshotSession())
         assertNull(store.snapshot)
+    }
+
+    @Test
+    fun restorePersistedSessionRetainsExpiredMetadataAndReplaysExpiryEvent() {
+        val snapshot =
+            OMSClientSessionSnapshot(
+                walletId = "wallet-abc",
+                walletAddress = "0xabc",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2026-01-01T00:00:00Z",
+                loginType = OMSClientSessionLoginType.Email,
+                sessionEmail = "user@example.com",
+            )
+        val store = InMemorySessionStore(snapshot)
+        val signer = TrackingCredentialSigner()
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = OMSClientEnvironment(),
+                sessionStore = store,
+                credentialSigner = signer,
+                now = { Instant.parse("2026-01-01T00:00:01Z") },
+            )
+
+        val restored = client.restorePersistedSession()
+
+        assertFalse(restored)
+        assertNull(client.snapshotSession())
+        assertNull(client.walletAddress)
+        assertEquals(snapshot, store.snapshot)
+        assertFalse(signer.hasCredential())
+
+        var replayedEvent: com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent? = null
+        client.onSessionExpired { replayedEvent = it }
+
+        val event = requireNotNull(replayedEvent)
+        assertEquals("0xabc", event.session.walletAddress)
+        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), event.session.expiresAt)
+        assertEquals(OMSClientSessionLoginType.Email, event.session.loginType)
+        assertEquals("user@example.com", event.session.sessionEmail)
+        assertEquals(Instant.parse("2026-01-01T00:00:00Z"), event.expiredAt)
+    }
+
+    @Test
+    fun expiredActiveSessionThrowsSessionExpiredAndKeepsStoredMetadata() =
+        runBlocking {
+            val snapshot =
+                OMSClientSessionSnapshot(
+                    walletId = "wallet-abc",
+                    walletAddress = "0xabc",
+                    signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                    expiresAt = "2026-01-01T00:00:00Z",
+                    loginType = OMSClientSessionLoginType.Email,
+                    sessionEmail = "user@example.com",
+                )
+            val store = InMemorySessionStore(snapshot)
+            val signer = TrackingCredentialSigner()
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = OMSClientEnvironment(),
+                    sessionStore = store,
+                    credentialSigner = signer,
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                    now = { Instant.parse("2026-01-01T00:00:01Z") },
+                )
+            client.restoreSession(snapshot)
+
+            var expiredEvent: com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent? = null
+            client.onSessionExpired { expiredEvent = it }
+
+            val error =
+                runCatching {
+                    client.signMessage(
+                        network = Network.AMOY,
+                        message = "hello",
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is OmsSdkException)
+            error as OmsSdkException
+            assertEquals(OmsSdkErrorCode.SessionExpired, error.code)
+            assertEquals("wallet.signMessage", error.operation?.id)
+            assertEquals("Wallet session expired", error.message)
+            assertNull(client.snapshotSession())
+            assertEquals(snapshot, store.snapshot)
+            assertFalse(signer.hasCredential())
+            assertEquals("0xabc", requireNotNull(expiredEvent).session.walletAddress)
+        }
+
+    @Test
+    fun sessionExpiryTaskClearsActiveSessionAndNotifiesListeners() {
+        val scheduler = RecordingSessionExpiryScheduler()
+        var currentTime = Instant.parse("2026-01-01T00:00:00Z")
+        val snapshot =
+            OMSClientSessionSnapshot(
+                walletId = "wallet-abc",
+                walletAddress = "0xabc",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2026-01-01T00:02:00Z",
+                loginType = OMSClientSessionLoginType.GoogleAuth,
+                sessionEmail = "user@example.com",
+            )
+        val store = InMemorySessionStore(snapshot)
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = OMSClientEnvironment(),
+                sessionStore = store,
+                credentialSigner = TrackingCredentialSigner(),
+                sessionExpiryScheduler = scheduler,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+
+        var expiredEvent: com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent? = null
+        client.onSessionExpired { expiredEvent = it }
+
+        assertEquals(1, scheduler.scheduledTasks.size)
+        assertEquals(120_000L, scheduler.scheduledTasks.single().delayMillis)
+        currentTime = Instant.parse("2026-01-01T00:02:00Z")
+        scheduler.scheduledTasks.single().action()
+
+        assertNull(client.snapshotSession())
+        assertEquals(snapshot, store.snapshot)
+        assertEquals("0xabc", requireNotNull(expiredEvent).session.walletAddress)
+        assertEquals(Instant.parse("2026-01-01T00:02:00Z"), expiredEvent?.expiredAt)
+    }
+
+    @Test
+    fun sessionExpiryTaskDispatchesStateChangeAndListenerNotification() {
+        val scheduler = RecordingSessionExpiryScheduler()
+        val dispatcher = RecordingSessionExpiryDispatcher()
+        var currentTime = Instant.parse("2026-01-01T00:00:00Z")
+        val snapshot =
+            OMSClientSessionSnapshot(
+                walletId = "wallet-abc",
+                walletAddress = "0xabc",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2026-01-01T00:02:00Z",
+                loginType = OMSClientSessionLoginType.GoogleAuth,
+                sessionEmail = "user@example.com",
+            )
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = OMSClientEnvironment(),
+                sessionStore = InMemorySessionStore(snapshot),
+                credentialSigner = TrackingCredentialSigner(),
+                sessionExpiryScheduler = scheduler,
+                sessionExpiryDispatcher = dispatcher,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+
+        var expiredEvent: com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent? = null
+        client.onSessionExpired { expiredEvent = it }
+
+        currentTime = Instant.parse("2026-01-01T00:02:00Z")
+        scheduler.scheduledTasks.single().action()
+
+        assertEquals(snapshot, client.snapshotSession())
+        assertNull(expiredEvent)
+        assertEquals(1, dispatcher.actions.size)
+
+        dispatcher.runNext()
+        assertNull(client.snapshotSession())
+        assertNull(expiredEvent)
+        assertEquals(1, dispatcher.actions.size)
+
+        dispatcher.runNext()
+        assertEquals("0xabc", requireNotNull(expiredEvent).session.walletAddress)
+    }
+
+    @Test
+    fun sessionExpiryEventStillNotifiesWhenCredentialCleanupFails() {
+        val snapshot =
+            OMSClientSessionSnapshot(
+                walletId = "wallet-abc",
+                walletAddress = "0xabc",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2026-01-01T00:00:00Z",
+                loginType = OMSClientSessionLoginType.Email,
+                sessionEmail = "user@example.com",
+            )
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = OMSClientEnvironment(),
+                sessionStore = InMemorySessionStore(snapshot),
+                credentialSigner = ThrowingClearCredentialSigner(),
+                now = { Instant.parse("2026-01-01T00:00:01Z") },
+            )
+
+        assertFalse(client.restorePersistedSession())
+
+        var expiredEvent: com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent? = null
+        client.onSessionExpired { expiredEvent = it }
+
+        assertEquals("0xabc", requireNotNull(expiredEvent).session.walletAddress)
     }
 
     @Test
