@@ -3,11 +3,12 @@ package com.omsclient.kotlin_sdk.wallet
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
+import com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionStatusRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
 import com.omsclient.kotlin_sdk.models.AbiArg
-import com.omsclient.kotlin_sdk.models.FeeOptionSelection
+import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest
 import com.omsclient.kotlin_sdk.models.TransactionMode
 import com.omsclient.kotlin_sdk.models.TransactionStatus
@@ -118,7 +119,8 @@ class WalletTransactionTest {
                                 "type": "erc20",
                                 "decimals": 6,
                                 "logoURL": "https://example.com/usdc.png",
-                                "contractAddress": "0xusdc"
+                                "contractAddress": "0xusdc",
+                                "tokenID": "usdc"
                               },
                               "value": "1000",
                               "displayValue": "0.001"
@@ -240,7 +242,7 @@ class WalletTransactionTest {
                     assertEquals("0.002", feeOptions[1].available)
                     assertEquals("2000", feeOptions[1].availableRaw)
                     assertEquals(6, feeOptions[1].decimals)
-                    FeeOptionSelection(token = feeOptions[1].feeOption.token.symbol)
+                    feeOptions[1].selection
                 }
             val prepareRequest = requireNotNull(server.takeRequest())
             val nativeBalanceRequest = requireNotNull(server.takeRequest())
@@ -281,7 +283,7 @@ class WalletTransactionTest {
                 WaasWalletApi.Execute.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest(
                         txnId = "txn-1",
-                        feeOption = WaasFeeOptionSelection(token = "USDC"),
+                        feeOption = WaasFeeOptionSelection(token = "usdc"),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -302,6 +304,312 @@ class WalletTransactionTest {
                 ),
                 requireNotNull(executedStatusRequest.body).utf8(),
             )
+        }
+
+    @Test
+    fun sendTransactionDefaultSelectionUsesFeeTokenIdWhenPresent() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-token-id",
+                    feeOptions =
+                        """
+                        [
+                          ${feeOptionJson(
+                            symbol = "USDC",
+                            value = "1000",
+                            contractAddress = "0xusdc",
+                            tokenId = "usdc",
+                        )}
+                        ]
+                        """.trimIndent(),
+                    sponsored = false,
+                ),
+            )
+            enqueueJson("""{"status":"executed"}""")
+
+            val client = restoredWalletClient(nonceValue = "1710000115")
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request =
+                        SendTransactionRequest(
+                            to = "0xabc",
+                            value = BigInteger.ZERO,
+                        ),
+                    waitForStatus = false,
+                )
+            requireNotNull(server.takeRequest())
+            val executeRequest = requireNotNull(server.takeRequest())
+
+            assertEquals("txn-token-id", result.txnId)
+            assertEquals(TransactionStatus.Executed, result.status)
+            assertEquals(
+                WaasWalletApi.Execute.encodeRequest(
+                    ExecuteRequest(
+                        txnId = "txn-token-id",
+                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                    ),
+                ),
+                requireNotNull(executeRequest.body).utf8(),
+            )
+            assertEquals(2, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionSponsoredSkipsCustomFeeSelector() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-sponsored",
+                    feeOptions =
+                        """
+                        [
+                          ${feeOptionJson(
+                            symbol = "USDC",
+                            value = "1000",
+                            contractAddress = "0xusdc",
+                            tokenId = "usdc",
+                        )}
+                        ]
+                        """.trimIndent(),
+                    sponsored = true,
+                ),
+            )
+            enqueueJson("""{"status":"executed"}""")
+            val client = restoredWalletClient(nonceValue = "1710000116")
+            var selectorCalled = false
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request =
+                        SendTransactionRequest(
+                            to = "0xabc",
+                            value = BigInteger.ZERO,
+                        ),
+                    waitForStatus = false,
+                    selectFeeOption =
+                        FeeOptionSelector {
+                            selectorCalled = true
+                            it.firstOrNull()?.selection
+                        },
+                )
+            requireNotNull(server.takeRequest())
+            val executeRequest = requireNotNull(server.takeRequest())
+
+            assertEquals("txn-sponsored", result.txnId)
+            assertEquals(TransactionStatus.Executed, result.status)
+            assertEquals(false, selectorCalled)
+            assertEquals(
+                WaasWalletApi.Execute.encodeRequest(
+                    ExecuteRequest(txnId = "txn-sponsored"),
+                ),
+                requireNotNull(executeRequest.body).utf8(),
+            )
+            assertEquals(2, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionUnsponsoredWithoutFeeOptionsFailsBeforeExecute() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-no-fees",
+                    feeOptions = "[]",
+                    sponsored = false,
+                ),
+            )
+            enqueueJson("""{"status":"executed"}""")
+            val client = restoredWalletClient(nonceValue = "1710000117")
+
+            val error =
+                runCatching {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        request =
+                            SendTransactionRequest(
+                                to = "0xabc",
+                                value = BigInteger.ZERO,
+                            ),
+                        waitForStatus = false,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is OmsSdkException)
+            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
+            assertEquals(1, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionUnsponsoredCustomSelectorRequiresSelection() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-no-selection",
+                    feeOptions =
+                        """
+                        [
+                          ${feeOptionJson(
+                            symbol = "USDC",
+                            value = "1000",
+                            contractAddress = "0xusdc",
+                            tokenId = "usdc",
+                        )}
+                        ]
+                        """.trimIndent(),
+                    sponsored = false,
+                ),
+            )
+            enqueueJson(tokenBalancesResponse(contractAddress = "0xUSDC", balance = "2000"))
+            enqueueJson("""{"status":"executed"}""")
+            val environment =
+                OMSClientEnvironment(
+                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    indexerUrlTemplate = server.url("/indexer/").toString() + "{value}/rpc/Indexer/",
+                )
+            val client = restoredWalletClient(nonceValue = "1710000118", environment = environment)
+            var selectorCalled = false
+
+            val error =
+                runCatching {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        request =
+                            SendTransactionRequest(
+                                to = "0xabc",
+                                value = BigInteger.ZERO,
+                            ),
+                        waitForStatus = false,
+                        selectFeeOption =
+                            FeeOptionSelector {
+                                selectorCalled = true
+                                null
+                            },
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(selectorCalled)
+            assertTrue(error is OmsSdkException)
+            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
+            assertEquals(2, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionFirstAvailableSelectsFirstAffordableFeeTokenId() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-first-available",
+                    feeOptions =
+                        """
+                        [
+                          ${feeOptionJson(
+                            symbol = "DAI",
+                            value = "1000",
+                            contractAddress = "0xdai",
+                            tokenId = "dai",
+                        )},
+                          ${feeOptionJson(
+                            symbol = "USDC",
+                            value = "20",
+                            contractAddress = "0xusdc",
+                            tokenId = "usdc",
+                        )}
+                        ]
+                        """.trimIndent(),
+                    sponsored = false,
+                ),
+            )
+            enqueueJson(tokenBalancesResponse(contractAddress = "0xDAI", balance = "100"))
+            enqueueJson(tokenBalancesResponse(contractAddress = "0xUSDC", balance = "2000"))
+            enqueueJson("""{"status":"executed"}""")
+            val environment =
+                OMSClientEnvironment(
+                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    indexerUrlTemplate = server.url("/indexer/").toString() + "{value}/rpc/Indexer/",
+                )
+            val client = restoredWalletClient(nonceValue = "1710000119", environment = environment)
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request =
+                        SendTransactionRequest(
+                            to = "0xabc",
+                            value = BigInteger.ZERO,
+                        ),
+                    waitForStatus = false,
+                    selectFeeOption = FeeOptionSelector.firstAvailable,
+                )
+            requireNotNull(server.takeRequest())
+            val daiBalanceRequest = requireNotNull(server.takeRequest())
+            val usdcBalanceRequest = requireNotNull(server.takeRequest())
+            val executeRequest = requireNotNull(server.takeRequest())
+
+            assertEquals("txn-first-available", result.txnId)
+            assertEquals(TransactionStatus.Executed, result.status)
+            assertEquals("/indexer/amoy/rpc/Indexer/GetTokenBalances", daiBalanceRequest.target)
+            assertEquals("/indexer/amoy/rpc/Indexer/GetTokenBalances", usdcBalanceRequest.target)
+            assertEquals(
+                WaasWalletApi.Execute.encodeRequest(
+                    ExecuteRequest(
+                        txnId = "txn-first-available",
+                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                    ),
+                ),
+                requireNotNull(executeRequest.body).utf8(),
+            )
+            assertEquals(4, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionFirstAvailableRequiresAffordableFeeOption() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-no-affordable-fee",
+                    feeOptions =
+                        """
+                        [
+                          ${feeOptionJson(
+                            symbol = "USDC",
+                            value = "1000",
+                            contractAddress = "0xusdc",
+                            tokenId = "usdc",
+                        )}
+                        ]
+                        """.trimIndent(),
+                    sponsored = false,
+                ),
+            )
+            enqueueJson(tokenBalancesResponse(contractAddress = "0xUSDC", balance = "100"))
+            enqueueJson("""{"status":"executed"}""")
+            val environment =
+                OMSClientEnvironment(
+                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    indexerUrlTemplate = server.url("/indexer/").toString() + "{value}/rpc/Indexer/",
+                )
+            val client = restoredWalletClient(nonceValue = "1710000120", environment = environment)
+
+            val error =
+                runCatching {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        request =
+                            SendTransactionRequest(
+                                to = "0xabc",
+                                value = BigInteger.ZERO,
+                            ),
+                        waitForStatus = false,
+                        selectFeeOption = FeeOptionSelector.firstAvailable,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is OmsSdkException)
+            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
+            assertEquals(2, server.requestCount)
         }
 
     @Test
@@ -682,4 +990,100 @@ class WalletTransactionTest {
             assertEquals(TransactionStatus.UNKNOWN_DEFAULT, unknown.status)
             assertEquals(null, unknown.txnHash)
         }
+
+    private fun enqueueJson(body: String) {
+        server.enqueue(
+            MockResponse
+                .Builder()
+                .code(200)
+                .body(body)
+                .build(),
+        )
+    }
+
+    private fun restoredWalletClient(
+        nonceValue: String,
+        environment: OMSClientEnvironment =
+            OMSClientEnvironment(
+                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+            ),
+    ): WalletClient {
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = environment,
+                transport = OMSClientHttpClient(),
+                sessionStore =
+                    InMemorySessionStore(
+                        snapshot =
+                            OMSClientSessionSnapshot(
+                                walletId = "wallet-main",
+                                walletAddress = "0xwallet",
+                                signerAddress = TEST_CREDENTIAL_ID,
+                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                            ),
+                    ),
+                credentialSigner = TrackingCredentialSigner(nonceValue = nonceValue),
+            )
+        assertTrue(client.restorePersistedSession())
+        return client
+    }
+
+    private fun prepareResponse(
+        txnId: String,
+        feeOptions: String,
+        sponsored: Boolean,
+    ): String =
+        """
+        {
+          "txnId": "$txnId",
+          "status": "quoted",
+          "feeOptions": $feeOptions,
+          "sponsored": $sponsored,
+          "expiresAt": "2026-04-27T00:00:00Z"
+        }
+        """.trimIndent()
+
+    private fun feeOptionJson(
+        symbol: String,
+        value: String,
+        contractAddress: String,
+        tokenId: String,
+    ): String =
+        """
+        {
+          "token": {
+            "network": "amoy",
+            "name": "$symbol",
+            "symbol": "$symbol",
+            "type": "erc20",
+            "decimals": 6,
+            "logoURL": "https://example.com/${symbol.lowercase()}.png",
+            "contractAddress": "$contractAddress",
+            "tokenID": "$tokenId"
+          },
+          "value": "$value",
+          "displayValue": "$value"
+        }
+        """.trimIndent()
+
+    private fun tokenBalancesResponse(
+        contractAddress: String,
+        balance: String,
+    ): String =
+        """
+        {
+          "page": {"page": 0, "pageSize": 40, "more": false},
+          "balances": [
+            {
+              "contractType": "ERC20",
+              "contractAddress": "$contractAddress",
+              "accountAddress": "0xwallet",
+              "balance": "$balance",
+              "chainId": 80002
+            }
+          ]
+        }
+        """.trimIndent()
 }

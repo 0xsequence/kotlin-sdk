@@ -53,7 +53,9 @@ data class FeeOption(
 
 data class FeeOptionSelection(
     val token: String,
-)
+) {
+    constructor(feeOption: FeeOption) : this(token = feeOption.selectionToken())
+}
 
 data class Page(
     val limit: UInt? = null,
@@ -83,6 +85,17 @@ data class TransactionStatusResponse(
 
 fun interface FeeOptionSelector {
     suspend fun select(feeOptions: List<FeeOptionWithBalance>): FeeOptionSelection?
+
+    companion object {
+        /**
+         * Selects the first fee option whose available raw balance covers the
+         * quoted fee value. Returns null when no option has sufficient balance.
+         */
+        val firstAvailable =
+            FeeOptionSelector { feeOptions ->
+                feeOptions.firstOrNull { it.hasEnoughBalance() }?.selection
+            }
+    }
 }
 
 data class FeeOptionWithBalance(
@@ -91,7 +104,22 @@ data class FeeOptionWithBalance(
     val available: String?,
     val availableRaw: String?,
     val decimals: Int?,
-)
+) {
+    val selection: FeeOptionSelection
+        get() = FeeOptionSelection(feeOption)
+}
+
+private fun FeeOptionWithBalance.hasEnoughBalance(): Boolean {
+    val balance = availableRaw?.toBigIntegerOrNull() ?: return false
+    val fee = feeOption.value.toBigIntegerOrNull() ?: return false
+    return balance >= fee
+}
+
+private fun FeeOption.selectionToken(): String =
+    token.tokenId
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?: token.symbol
 
 data class SendTransactionRequest(
     val to: String,
