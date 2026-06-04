@@ -1169,21 +1169,33 @@ class WalletClient internal constructor(
         statusPolling: TransactionStatusPollingOptions?,
     ): ClientSendTransactionResponse {
         val feeOption =
-            prepared.feeOptions
-                .takeIf { it.isNotEmpty() }
-                ?.let { feeOptions ->
-                    if (selectFeeOption == null) {
-                        feeOptions.defaultSelection(sponsored = prepared.sponsored)
-                    } else {
-                        selectFeeOption.select(
-                            enrichFeeOptionsWithBalances(
-                                network = network,
-                                walletAddress = walletAddress,
-                                feeOptions = feeOptions,
-                            ),
-                        )
-                    }
+            when {
+                prepared.sponsored -> {
+                    null
                 }
+
+                prepared.feeOptions.isEmpty() -> {
+                    throw IllegalArgumentException(
+                        "No fee options available for unsponsored transaction",
+                    )
+                }
+
+                selectFeeOption == null -> {
+                    prepared.feeOptions.defaultSelection()
+                }
+
+                else -> {
+                    selectFeeOption.select(
+                        enrichFeeOptionsWithBalances(
+                            network = network,
+                            walletAddress = walletAddress,
+                            feeOptions = prepared.feeOptions,
+                        ),
+                    ) ?: throw IllegalArgumentException(
+                        "No fee option selected for unsponsored transaction",
+                    )
+                }
+            }
         val executed = gateway.execute(prepared.txnId, feeOption)
         if (!waitForStatus) {
             return ClientSendTransactionResponse(
@@ -1313,8 +1325,7 @@ class WalletClient internal constructor(
             runCatching { formatUnits(BigInteger(this), scale) }.getOrDefault(this)
         } ?: this
 
-    private fun List<FeeOption>.defaultSelection(sponsored: Boolean): FeeOptionSelection? =
-        if (sponsored) null else firstOrNull()?.let { FeeOptionSelection(token = it.token.symbol) }
+    private fun List<FeeOption>.defaultSelection(): FeeOptionSelection = FeeOptionSelection(first())
 
     private suspend fun waitForTransactionStatus(
         txnId: String,

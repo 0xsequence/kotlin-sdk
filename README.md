@@ -397,7 +397,23 @@ val txResult = client.wallet.callContract(
 )
 ```
 
-If the prepared transaction returns fee options, pass a selector callback:
+To pick the first fee option the selected wallet can afford, pass the built-in
+selector:
+
+```kotlin
+val txResult = client.wallet.sendTransaction(
+    network = network,
+    request = SendTransactionRequest(
+        to = "0xContractAddress",
+        value = parseUnits("0", 18),
+        data = "0x1234",
+        mode = TransactionMode.Native,
+    ),
+    selectFeeOption = FeeOptionSelector.firstAvailable,
+)
+```
+
+For a custom fee picker, return the selected option's `selection`:
 
 ```kotlin
 val txResult = client.wallet.sendTransaction(
@@ -410,14 +426,17 @@ val txResult = client.wallet.sendTransaction(
     ),
 ) { feeOptions ->
     val selected = showFeePickerAndWaitForChoice(feeOptions)
-    FeeOptionSelection(token = selected.feeOption.token.symbol)
+    selected.selection
 }
 ```
 
 The selector receives `FeeOptionWithBalance` values. `balance` is the selected
 wallet's raw indexer balance for that fee token when available. `available` is
 formatted with the token decimals, while `availableRaw` keeps the raw integer
-value. `decimals` is exposed as a regular `Int`.
+value. `decimals` is exposed as a regular `Int`. `selection` preserves the
+API-provided `tokenID` when present and falls back to the token symbol. Sponsored
+transactions skip fee selection; unsponsored transactions fail before execute
+when no fee option can be selected.
 
 To refresh a transaction later or manage active wallet credentials:
 
