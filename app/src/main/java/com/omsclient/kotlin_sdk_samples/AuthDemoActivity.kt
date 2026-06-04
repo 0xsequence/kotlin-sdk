@@ -1052,18 +1052,20 @@ class AuthDemoActivity : AppCompatActivity() {
                 MaterialAlertDialogBuilder(this)
                     .setTitle("Select fee")
                     .setItems(labels) { _, index ->
-                        val token = feeOptions[index].feeOption.token.symbol
+                        val selection = feeOptions[index].selection
+                        val token = selection.token
                         appendLog("Selected fee token: $token")
-                        resumeOnce(FeeOptionSelection(token = token))
+                        resumeOnce(selection)
                     }.setOnCancelListener {
                         appendLog("Fee selection cancelled")
                         cancelOnce()
                     }
             firstAvailable?.let { option ->
                 builder.setPositiveButton("Select first available") { _, _ ->
-                    val token = option.feeOption.token.symbol
+                    val selection = option.selection
+                    val token = selection.token
                     appendLog("Selected first available fee token: $token")
-                    resumeOnce(FeeOptionSelection(token = token))
+                    resumeOnce(selection)
                 }
             }
             val dialog = builder.show()

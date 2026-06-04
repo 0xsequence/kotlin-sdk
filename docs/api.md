@@ -431,6 +431,10 @@ When a prepared transaction includes fee options, `selectFeeOption` receives the
 available options enriched with the selected wallet's matching token balance
 when available. When no selector is provided, `sendTransaction` uses the first
 required fee option, or no fee option when the transaction is sponsored.
+Use `FeeOptionSelector.firstAvailable` to select the first option whose enriched
+raw balance covers the quoted fee. Sponsored transactions skip fee selection;
+unsponsored transactions fail before execute when no fee option exists or the
+selector returns `null`.
 `value` is a raw base-unit integer; use `parseUnits` to convert human-entered
 decimal values before sending.
 After execution, `sendTransaction` and `callContract` poll the WaaS status
@@ -645,10 +649,16 @@ data class FeeOption(
 
 data class FeeOptionSelection(
     val token: String,
-)
+) {
+    constructor(feeOption: FeeOption)
+}
 
 fun interface FeeOptionSelector {
     suspend fun select(feeOptions: List<FeeOptionWithBalance>): FeeOptionSelection?
+
+    companion object {
+        val firstAvailable: FeeOptionSelector
+    }
 }
 ```
 
@@ -659,7 +669,9 @@ data class FeeOptionWithBalance(
     val available: String?,
     val availableRaw: String?,
     val decimals: Int?,
-)
+) {
+    val selection: FeeOptionSelection
+}
 ```
 
 ```kotlin
@@ -920,8 +932,23 @@ val txResult = client.wallet.sendTransaction(
         data = "0x1234",
         mode = TransactionMode.Native,
     ),
+    selectFeeOption = FeeOptionSelector.firstAvailable,
+)
+```
+
+Or use a custom picker:
+
+```kotlin
+val txResult = client.wallet.sendTransaction(
+    network = network,
+    request = SendTransactionRequest(
+        to = "0xContractAddress",
+        value = parseUnits("0", 18),
+        data = "0x1234",
+        mode = TransactionMode.Native,
+    ),
 ) { feeOptions ->
     val selected = showFeePickerAndWaitForChoice(feeOptions)
-    FeeOptionSelection(token = selected.feeOption.token.symbol)
+    selected.selection
 }
 ```
