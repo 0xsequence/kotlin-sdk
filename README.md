@@ -364,6 +364,10 @@ val tokenBalances = client.indexer.getTokenBalances(
     walletAddress = walletAddress,
     includeMetadata = true,
 )
+
+tokenBalances.balances.forEach { balance ->
+    println("${balance.contractInfo?.symbol.orEmpty()} ${balance.contractInfo?.decimals ?: 0}")
+}
 ```
 
 For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:

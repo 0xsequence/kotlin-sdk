@@ -5,14 +5,20 @@ import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.models.TokenBalancesPage
 import com.omsclient.kotlin_sdk.models.TokenBalancesPageRequest
 import com.omsclient.kotlin_sdk.models.TokenBalancesResult
+import com.omsclient.kotlin_sdk.models.TokenContractInfo
+import com.omsclient.kotlin_sdk.models.TokenMetadata
+import com.omsclient.kotlin_sdk.models.TokenMetadataAsset
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.network.arrayOrEmpty
 import com.omsclient.kotlin_sdk.network.boolean
+import com.omsclient.kotlin_sdk.network.int
 import com.omsclient.kotlin_sdk.network.long
 import com.omsclient.kotlin_sdk.network.objectOrNull
 import com.omsclient.kotlin_sdk.network.parseJsonObject
 import com.omsclient.kotlin_sdk.network.string
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -65,16 +71,7 @@ class IndexerClient internal constructor(
         val balances =
             root.arrayOrEmpty("balances").mapNotNull { element ->
                 val objectValue = element as? JsonObject ?: return@mapNotNull null
-                TokenBalance(
-                    contractType = objectValue.string("contractType"),
-                    contractAddress = objectValue.string("contractAddress"),
-                    accountAddress = objectValue.string("accountAddress"),
-                    tokenId = objectValue.string("tokenID"),
-                    balance = objectValue.string("balance"),
-                    blockHash = objectValue.string("blockHash"),
-                    blockNumber = objectValue.long("blockNumber"),
-                    chainId = objectValue.long("chainId"),
-                )
+                objectValue.toTokenBalance()
             }
 
         return TokenBalancesResult(
@@ -120,4 +117,89 @@ class IndexerClient internal constructor(
             OMSClientEnvironment.accessKeyHeaderName to publishableKey,
             "Accept" to "application/json",
         )
+
+    private fun JsonObject.toTokenBalance(): TokenBalance =
+        TokenBalance(
+            contractType = string("contractType"),
+            contractAddress = string("contractAddress"),
+            accountAddress = string("accountAddress"),
+            tokenId = string("tokenId") ?: string("tokenID"),
+            balance = string("balance"),
+            balanceUSD = string("balanceUSD"),
+            priceUSD = string("priceUSD"),
+            priceUpdatedAt = string("priceUpdatedAt"),
+            blockHash = string("blockHash"),
+            blockNumber = long("blockNumber"),
+            chainId = long("chainId"),
+            uniqueCollectibles = string("uniqueCollectibles"),
+            isSummary = boolean("isSummary"),
+            contractInfo = objectOrNull("contractInfo")?.toTokenContractInfo(),
+            tokenMetadata = objectOrNull("tokenMetadata")?.toTokenMetadata(),
+        )
+
+    private fun JsonObject.toTokenContractInfo(): TokenContractInfo =
+        TokenContractInfo(
+            chainId = long("chainId"),
+            address = string("address"),
+            source = string("source"),
+            name = string("name"),
+            type = string("type"),
+            symbol = string("symbol"),
+            decimals = int("decimals"),
+            logoURI = string("logoURI"),
+            deployed = boolean("deployed"),
+            bytecodeHash = string("bytecodeHash"),
+            extensions = objectOrNull("extensions")?.toMap(),
+            updatedAt = string("updatedAt"),
+            queuedAt = string("queuedAt"),
+            status = string("status"),
+        )
+
+    private fun JsonObject.toTokenMetadata(): TokenMetadata =
+        TokenMetadata(
+            chainId = long("chainId"),
+            contractAddress = string("contractAddress"),
+            tokenId = string("tokenId") ?: string("tokenID"),
+            source = string("source"),
+            name = string("name"),
+            description = string("description"),
+            image = string("image"),
+            video = string("video"),
+            audio = string("audio"),
+            properties = objectOrNull("properties")?.toMap(),
+            attributes =
+                (this["attributes"] as? JsonArray)
+                    ?.mapNotNull { it as? JsonObject }
+                    ?.map { it.toMap() },
+            imageData = string("image_data"),
+            externalUrl = string("external_url"),
+            backgroundColor = string("background_color"),
+            animationUrl = string("animation_url"),
+            decimals = int("decimals"),
+            updatedAt = string("updatedAt"),
+            assets =
+                (this["assets"] as? JsonArray)
+                    ?.mapNotNull { it as? JsonObject }
+                    ?.map { it.toTokenMetadataAsset() },
+            status = string("status"),
+            queuedAt = string("queuedAt"),
+            lastFetched = string("lastFetched"),
+        )
+
+    private fun JsonObject.toTokenMetadataAsset(): TokenMetadataAsset =
+        TokenMetadataAsset(
+            id = long("id"),
+            collectionId = long("collectionId"),
+            tokenId = string("tokenId") ?: string("tokenID"),
+            url = string("url"),
+            metadataField = string("metadataField"),
+            name = string("name"),
+            filesize = long("filesize"),
+            mimeType = string("mimeType"),
+            width = int("width"),
+            height = int("height"),
+            updatedAt = string("updatedAt"),
+        )
+
+    private fun JsonObject.toMap(): Map<String, JsonElement> = entries.associate { it.key to it.value }
 }
