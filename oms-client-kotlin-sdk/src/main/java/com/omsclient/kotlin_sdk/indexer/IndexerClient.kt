@@ -171,10 +171,10 @@ class IndexerClient internal constructor(
                 (this["attributes"] as? JsonArray)
                     ?.mapNotNull { it as? JsonObject }
                     ?.map { it.toMap() },
-            imageData = string("image_data"),
-            externalUrl = string("external_url"),
-            backgroundColor = string("background_color"),
-            animationUrl = string("animation_url"),
+            imageData = string("imageData"),
+            externalUrl = string("externalUrl"),
+            backgroundColor = string("backgroundColor"),
+            animationUrl = string("animationUrl"),
             decimals = int("decimals"),
             updatedAt = string("updatedAt"),
             assets =
