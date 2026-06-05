@@ -291,7 +291,9 @@ class ServiceClientsTest {
                             "name": "POL",
                             "symbol": "POL",
                             "balance": "123",
-                            "balanceUSD": "1"
+                            "balanceUSD": "1",
+                            "priceUSD": "0.25",
+                            "priceUpdatedAt": "2026-01-06T00:00:00Z"
                           }
                         }
                         """.trimIndent(),
@@ -319,6 +321,9 @@ class ServiceClientsTest {
             )
             assertEquals("NATIVE", response?.contractType)
             assertEquals("123", response?.balance)
+            assertEquals("1", response?.balanceUSD)
+            assertEquals("0.25", response?.priceUSD)
+            assertEquals("2026-01-06T00:00:00Z", response?.priceUpdatedAt)
             assertEquals(137L, response?.chainId)
         }
 
