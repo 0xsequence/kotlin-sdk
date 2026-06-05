@@ -92,6 +92,12 @@ unit tests, Android lint for both modules, and sample app assembly.
   - Run Android lint for the sample app.
 - `./gradlew :app:assembleDebug`
   - Build the sample debug APK and verify the SDK integrates into the app.
+- To run the sample app on an emulator, prefer a reusable repo script or a
+  short command that installs the debug APK and launches the manifest-declared
+  launcher activity. Do not hardcode activity class names; resolve the launcher
+  from the installed package or use an existing project run configuration.
+  Keep an already-running emulator open when possible instead of cold-booting
+  it for every run.
 - `./gradlew ktlintCheck`
   - Run local Kotlin style lint for both modules. New violations should fail
     this check.

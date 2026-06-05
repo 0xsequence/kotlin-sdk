@@ -764,6 +764,74 @@ data class TokenBalance(
     val blockHash: String?,
     val blockNumber: Long?,
     val chainId: Long?,
+    val balanceUSD: String? = null,
+    val priceUSD: String? = null,
+    val priceUpdatedAt: String? = null,
+    val uniqueCollectibles: String? = null,
+    val isSummary: Boolean? = null,
+    val contractInfo: TokenContractInfo? = null,
+    val tokenMetadata: TokenMetadata? = null,
+)
+```
+
+```kotlin
+data class TokenContractInfo(
+    val chainId: Long? = null,
+    val address: String? = null,
+    val source: String? = null,
+    val name: String? = null,
+    val type: String? = null,
+    val symbol: String? = null,
+    val decimals: Int? = null,
+    val logoURI: String? = null,
+    val deployed: Boolean? = null,
+    val bytecodeHash: String? = null,
+    val extensions: Map<String, JsonElement>? = null,
+    val updatedAt: String? = null,
+    val queuedAt: String? = null,
+    val status: String? = null,
+)
+```
+
+```kotlin
+data class TokenMetadata(
+    val chainId: Long? = null,
+    val contractAddress: String? = null,
+    val tokenId: String? = null,
+    val source: String? = null,
+    val name: String? = null,
+    val description: String? = null,
+    val image: String? = null,
+    val video: String? = null,
+    val audio: String? = null,
+    val properties: Map<String, JsonElement>? = null,
+    val attributes: List<Map<String, JsonElement>>? = null,
+    val imageData: String? = null,
+    val externalUrl: String? = null,
+    val backgroundColor: String? = null,
+    val animationUrl: String? = null,
+    val decimals: Int? = null,
+    val updatedAt: String? = null,
+    val assets: List<TokenMetadataAsset>? = null,
+    val status: String? = null,
+    val queuedAt: String? = null,
+    val lastFetched: String? = null,
+)
+```
+
+```kotlin
+data class TokenMetadataAsset(
+    val id: Long? = null,
+    val collectionId: Long? = null,
+    val tokenId: String? = null,
+    val url: String? = null,
+    val metadataField: String? = null,
+    val name: String? = null,
+    val filesize: Long? = null,
+    val mimeType: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val updatedAt: String? = null,
 )
 ```
 

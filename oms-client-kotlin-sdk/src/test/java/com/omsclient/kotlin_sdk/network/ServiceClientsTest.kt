@@ -126,9 +126,67 @@ class ServiceClientsTest {
                               "accountAddress": "0xwallet",
                               "tokenID": "0",
                               "balance": "1000",
+                              "balanceUSD": "12.34",
+                              "priceUSD": "0.01234",
+                              "priceUpdatedAt": "2026-01-01T00:00:00Z",
                               "blockHash": "0xhash",
                               "blockNumber": 12345,
-                              "chainId": 137
+                              "chainId": 137,
+                              "uniqueCollectibles": "1",
+                              "isSummary": false,
+                              "contractInfo": {
+                                "chainId": 137,
+                                "address": "0xcontract",
+                                "source": "metadata",
+                                "name": "Example Token",
+                                "type": "ERC20",
+                                "symbol": "EXM",
+                                "decimals": 18,
+                                "logoURI": "https://example.com/logo.png",
+                                "deployed": true,
+                                "bytecodeHash": "0xbytecode",
+                                "extensions": {"verified": true},
+                                "updatedAt": "2026-01-02T00:00:00Z",
+                                "queuedAt": null,
+                                "status": "available"
+                              },
+                              "tokenMetadata": {
+                                "chainId": 137,
+                                "contractAddress": "0xcontract",
+                                "tokenId": "0",
+                                "source": "metadata",
+                                "name": "Example Token Metadata",
+                                "description": "Example description",
+                                "image": "ipfs://image",
+                                "video": "ipfs://video",
+                                "audio": "ipfs://audio",
+                                "properties": {"rarity": "rare"},
+                                "attributes": [{"trait_type": "Level", "value": 7}],
+                                "image_data": "<svg></svg>",
+                                "external_url": "https://example.com/token/0",
+                                "background_color": "ffffff",
+                                "animation_url": "ipfs://animation",
+                                "decimals": 18,
+                                "updatedAt": "2026-01-03T00:00:00Z",
+                                "assets": [
+                                  {
+                                    "id": 1,
+                                    "collectionId": 2,
+                                    "tokenID": "asset-token",
+                                    "url": "https://example.com/asset.png",
+                                    "metadataField": "image",
+                                    "name": "Asset",
+                                    "filesize": 123456,
+                                    "mimeType": "image/png",
+                                    "width": 640,
+                                    "height": 480,
+                                    "updatedAt": "2026-01-04T00:00:00Z"
+                                  }
+                                ],
+                                "status": "available",
+                                "queuedAt": null,
+                                "lastFetched": "2026-01-05T00:00:00Z"
+                              }
                             }
                           ]
                         }
@@ -162,8 +220,29 @@ class ServiceClientsTest {
             assertEquals(25, response.page?.pageSize)
             assertEquals(false, response.page?.more)
             assertEquals(1, response.balances.size)
-            assertEquals("1000", response.balances.single().balance)
-            assertEquals(137L, response.balances.single().chainId)
+            val balance = response.balances.single()
+            assertEquals("0", balance.tokenId)
+            assertEquals("1000", balance.balance)
+            assertEquals("12.34", balance.balanceUSD)
+            assertEquals("0.01234", balance.priceUSD)
+            assertEquals("2026-01-01T00:00:00Z", balance.priceUpdatedAt)
+            assertEquals(137L, balance.chainId)
+            assertEquals("1", balance.uniqueCollectibles)
+            assertEquals(false, balance.isSummary)
+            val contractInfo = requireNotNull(balance.contractInfo)
+            assertEquals("EXM", contractInfo.symbol)
+            assertEquals(18, contractInfo.decimals)
+            assertEquals("https://example.com/logo.png", contractInfo.logoURI)
+            assertEquals("true", contractInfo.extensions?.get("verified").toString())
+            val tokenMetadata = requireNotNull(balance.tokenMetadata)
+            assertEquals("0", tokenMetadata.tokenId)
+            assertEquals("Example Token Metadata", tokenMetadata.name)
+            assertEquals("<svg></svg>", tokenMetadata.imageData)
+            assertEquals("https://example.com/token/0", tokenMetadata.externalUrl)
+            assertEquals("\"rare\"", tokenMetadata.properties?.get("rarity").toString())
+            val metadataAsset = requireNotNull(tokenMetadata.assets).single()
+            assertEquals("asset-token", metadataAsset.tokenId)
+            assertEquals("https://example.com/asset.png", metadataAsset.url)
         }
 
     @Test
@@ -212,7 +291,9 @@ class ServiceClientsTest {
                             "name": "POL",
                             "symbol": "POL",
                             "balance": "123",
-                            "balanceUSD": "1"
+                            "balanceUSD": "1",
+                            "priceUSD": "0.25",
+                            "priceUpdatedAt": "2026-01-06T00:00:00Z"
                           }
                         }
                         """.trimIndent(),
@@ -240,6 +321,9 @@ class ServiceClientsTest {
             )
             assertEquals("NATIVE", response?.contractType)
             assertEquals("123", response?.balance)
+            assertEquals("1", response?.balanceUSD)
+            assertEquals("0.25", response?.priceUSD)
+            assertEquals("2026-01-06T00:00:00Z", response?.priceUpdatedAt)
             assertEquals(137L, response?.chainId)
         }
 
