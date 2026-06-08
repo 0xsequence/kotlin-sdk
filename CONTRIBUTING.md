@@ -47,7 +47,6 @@ See [TESTING.md](./TESTING.md) for the full test reference.
 
 - PR title must follow [Conventional Commits](https://www.conventionalcommits.org), e.g.
   `feat(sdk): add wallet revocation helper` or `fix(auth): handle expired nonce correctly`.
-  Inside Polygon, use the `polygon-engineering:pr-title` skill.
 - Fill in the PR template: summary, what changed, and which checks you ran.
 - Do not commit `local.properties`, Android Studio state, or any secrets.
 
