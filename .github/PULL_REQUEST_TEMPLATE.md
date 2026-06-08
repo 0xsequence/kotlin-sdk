@@ -3,7 +3,7 @@
 <!-- What does this PR do and why? 1–3 sentences. -->
 
 > PR title must follow Conventional Commits, e.g. `feat(sdk): short description`.
-> See the `polygon-engineering:pr-title` skill or https://www.conventionalcommits.org
+> See https://www.conventionalcommits.org
 
 ## Changes
 
