@@ -5,7 +5,7 @@ This document describes the intended public API for external consumers of the OM
 ## Installation and Requirements
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.1")
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.2")
 ```
 
 Consumer apps need Android `minSdk 26`, Android `compileSdk 34` or newer, and
