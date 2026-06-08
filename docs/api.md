@@ -528,7 +528,9 @@ suspend fun indexer.getNativeTokenBalance(
 ```
 
 `contractAddress` can be omitted to query balances across token contracts.
-`page` defaults to page `0` with page size `40`. `getNativeTokenBalance` returns
+`page` defaults to page `0` with page size `40`. Pass
+`includeMetadata = true` when callers need `TokenContractInfo` or
+`TokenMetadata` fields on returned balances. `getNativeTokenBalance` returns
 null when the indexer response has no native balance object. The wallet client
 also uses it internally to enrich fee option balances.
 
@@ -583,12 +585,28 @@ open class OmsSdkException(
 enum class OmsSdkOperation(
     val id: String,
 ) {
-    WalletStartEmailAuth,
-    WalletCompleteEmailAuth,
-    WalletStartOidcRedirectAuth,
-    WalletHandleOidcRedirectCallback,
-    WalletSendTransaction,
-    // ...
+    PendingWalletSelection("pendingWalletSelection"),
+    PendingWalletSelectionCreateAndSelectWallet("pendingWalletSelection.createAndSelectWallet"),
+    PendingWalletSelectionSelectWallet("pendingWalletSelection.selectWallet"),
+    WalletCallContract("wallet.callContract"),
+    WalletCompleteEmailAuth("wallet.completeEmailAuth"),
+    WalletCreateWallet("wallet.createWallet"),
+    WalletGetIdToken("wallet.getIdToken"),
+    WalletHandleOidcRedirectCallback("wallet.handleOidcRedirectCallback"),
+    WalletGetTransactionStatus("wallet.getTransactionStatus"),
+    WalletIsValidMessageSignature("wallet.isValidMessageSignature"),
+    WalletIsValidTypedDataSignature("wallet.isValidTypedDataSignature"),
+    WalletListAccess("wallet.listAccess"),
+    WalletListAccessPage("wallet.listAccessPage"),
+    WalletListWallets("wallet.listWallets"),
+    WalletRevokeAccess("wallet.revokeAccess"),
+    WalletSendTransaction("wallet.sendTransaction"),
+    WalletSignInWithOidcIdToken("wallet.signInWithOidcIdToken"),
+    WalletSignMessage("wallet.signMessage"),
+    WalletSignTypedData("wallet.signTypedData"),
+    WalletStartEmailAuth("wallet.startEmailAuth"),
+    WalletStartOidcRedirectAuth("wallet.startOidcRedirectAuth"),
+    WalletUseWallet("wallet.useWallet"),
 }
 ```
 

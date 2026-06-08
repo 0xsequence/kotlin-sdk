@@ -27,7 +27,8 @@ SDK APIs documented below instead of importing generated classes.
 - transaction status lookup
 - wallet access listing and revocation
 - message and typed-data signature verification through WaaS
-- native and token balance lookups through the indexer service
+- native and token balance lookups through the indexer service, including
+  optional token contract info and token metadata
 - unit formatting and parsing helpers for raw token amounts
 
 ## Requirements
@@ -265,11 +266,12 @@ session state. Always pass incoming app links to `handleOidcRedirectCallback`;
 if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
 fresh SDK instance restores completed wallet sessions, including the session
 expiry, login type, and email returned by the wallet API, but not email OTP
-pending state. Completed auth requests ask the wallet API for a one-week
-session lifetime. Auth completion loads all wallet pages before selecting or
-creating a wallet. If auth completes but wallet selection, wallet creation, or
-session persistence fails, the SDK clears the in-memory auth session instead of
-retaining unrecoverable transient state.
+pending state. Completed auth requests ask the wallet API for a one-week session
+lifetime by default; pass `sessionLifetimeSeconds` to request a different
+positive whole-number lifetime in seconds. Auth completion loads all wallet
+pages before selecting or creating a wallet. If auth completes but wallet
+selection, wallet creation, or session persistence fails, the SDK clears the
+in-memory auth session instead of retaining unrecoverable transient state.
 
 Use the selected wallet:
 
@@ -369,6 +371,9 @@ tokenBalances.balances.forEach { balance ->
     println("${balance.contractInfo?.symbol.orEmpty()} ${balance.contractInfo?.decimals ?: 0}")
 }
 ```
+
+Pass `includeMetadata = true` when you need token contract details or NFT/token
+metadata from `balance.contractInfo` and `balance.tokenMetadata`.
 
 For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:
 
