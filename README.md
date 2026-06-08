@@ -497,3 +497,8 @@ and is not wired into GitHub CI.
 ./gradlew :app:lintDebug
 ./gradlew :app:assembleDebug
 ```
+
+## Publishing
+
+See [publishing.md](publishing.md) for release PR and Maven Central publishing
+steps.
