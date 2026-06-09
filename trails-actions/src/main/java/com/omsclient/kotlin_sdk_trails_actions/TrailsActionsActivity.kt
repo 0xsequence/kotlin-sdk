@@ -51,12 +51,14 @@ import com.omsclient.kotlin_sdk_trails_actions.generated.FundMethod
 import com.omsclient.kotlin_sdk_trails_actions.generated.GetYieldAggregateBalancesRequest
 import com.omsclient.kotlin_sdk_trails_actions.generated.GetYieldMarketsRequest
 import com.omsclient.kotlin_sdk_trails_actions.generated.IntentMode
+import com.omsclient.kotlin_sdk_trails_actions.generated.IntentStatus
 import com.omsclient.kotlin_sdk_trails_actions.generated.OkHttpWebRpcTransport
 import com.omsclient.kotlin_sdk_trails_actions.generated.QuoteIntentRequest
 import com.omsclient.kotlin_sdk_trails_actions.generated.QuoteIntentRequestOptions
 import com.omsclient.kotlin_sdk_trails_actions.generated.RouteProvider
 import com.omsclient.kotlin_sdk_trails_actions.generated.TradeType
 import com.omsclient.kotlin_sdk_trails_actions.generated.TrailsApiTrailsClient
+import com.omsclient.kotlin_sdk_trails_actions.generated.WaitIntentReceiptRequest
 import com.omsclient.kotlin_sdk_trails_actions.generated.WebRpcError
 import com.omsclient.kotlin_sdk_trails_actions.generated.WebRpcTransportException
 import com.omsclient.kotlin_sdk_trails_actions.generated.YieldActionArguments
@@ -534,12 +536,21 @@ class TrailsActionsActivity : AppCompatActivity() {
             onFailure = { swapStatusView.text = "Swap status: ${describe(it)}" },
         ) {
             val prepared = preparedSwap ?: throw IllegalStateException("Prepare the swap first.")
+            val initialBalances = balances
             val latest = sendPreparedSwap(prepared)
             val hash = latest.txnHash ?: latest.txnId
             lastTransactionHash = hash
             renderLastTransaction()
             swapStatusView.text = "Swap status: sent ${shortHash(hash)}. Refreshing balances..."
-            refreshAfterSend()
+            waitForUsdcBalanceIncrease(
+                initialBalances = initialBalances,
+                minIncreaseRaw = prepared.outputRaw,
+                selectedFeeOption = prepared.executionState.selectedFeeOption,
+                setStatus = { swapStatusView.text = it },
+                pendingStatus = "Swap status: sent ${shortHash(hash)}. Waiting for expected USDC balance",
+                successStatus = "Swap status: sent ${shortHash(hash)}. USDC balance updated.",
+                staleStatus = "Swap status: sent ${shortHash(hash)}. USDC balance has not reached the expected swap output yet.",
+            )
         }
     }
 
@@ -602,12 +613,25 @@ class TrailsActionsActivity : AppCompatActivity() {
             onFailure = { earnStatusView.text = "Swap and Deposit status: ${describe(it)}" },
         ) {
             val plan = preparedEarn ?: throw IllegalStateException("Prepare the swap and deposit first.")
+            val initialBalances = balances
             val swapResponse = sendPreparedSwap(plan.swap)
             val swapHash = swapResponse.txnHash ?: swapResponse.txnId
             lastTransactionHash = swapHash
             renderLastTransaction()
-            earnStatusView.text = "Swap and Deposit status: swap sent ${shortHash(swapHash)}. Preparing deposit..."
-            delay(POST_SEND_REFRESH_DELAY_MS)
+            val didReceiveSwapOutput =
+                waitForUsdcBalanceIncrease(
+                    initialBalances = initialBalances,
+                    minIncreaseRaw = plan.swap.outputRaw,
+                    selectedFeeOption = plan.swap.executionState.selectedFeeOption,
+                    setStatus = { earnStatusView.text = it },
+                    pendingStatus = "Swap and Deposit status: sent ${shortHash(swapHash)}. Waiting for USDC output",
+                    successStatus = "Swap and Deposit status: USDC output detected. Preparing deposit step...",
+                    staleStatus = "Swap and Deposit status: USDC output has not appeared yet.",
+                )
+            if (!didReceiveSwapOutput) {
+                appendLog("Skipping deposit because the swap output was not detected.")
+                return@launchAction
+            }
             val deposit =
                 prepareDepositUsdc(
                     walletAddress = requireWalletAddress(),
@@ -655,16 +679,34 @@ class TrailsActionsActivity : AppCompatActivity() {
 
     private suspend fun sendPreparedSwap(prepared: PreparedSwapTransaction): SendTransactionResponse {
         selectedFeeOption = null
+        val intentId =
+            prepared.executionState.committedIntentId
+                ?: trailsClient
+                    .commitIntent(CommitIntentRequest(prepared.intent))
+                    .intentId
+                    .also { committedIntentId ->
+                        prepared.executionState.committedIntentId = committedIntentId
+                    }
         val response =
-            sdk.wallet.sendTransaction(
-                network = Network.POLYGON,
-                request = prepared.request,
-                selectFeeOption = ::selectFeeOption,
-            )
+            prepared.executionState.submittedResponse
+                ?: sdk
+                    .wallet
+                    .sendTransaction(
+                        network = Network.POLYGON,
+                        request = prepared.request,
+                        selectFeeOption = ::selectFeeOption,
+                    ).also { submittedResponse ->
+                        prepared.executionState.submittedResponse = submittedResponse
+                        prepared.executionState.selectedFeeOption = selectedFeeOption
+                    }
         val latest = waitForTransactionHash(response)
-        val intentId = trailsClient.commitIntent(CommitIntentRequest(prepared.intent)).intentId
+        prepared.executionState.submittedResponse = latest
         val hash = latest.txnHash ?: throw IllegalStateException("Wallet transaction hash was not available.")
-        trailsClient.executeIntent(ExecuteIntentRequest(intentId = intentId, depositTransactionHash = hash))
+        if (!prepared.executionState.didExecuteIntent) {
+            trailsClient.executeIntent(ExecuteIntentRequest(intentId = intentId, depositTransactionHash = hash))
+            prepared.executionState.didExecuteIntent = true
+        }
+        waitForIntentSuccess(intentId)
         return latest
     }
 
@@ -863,6 +905,41 @@ class TrailsActionsActivity : AppCompatActivity() {
 
     private suspend fun refreshAfterSend() {
         delay(POST_SEND_REFRESH_DELAY_MS)
+        refreshSignedInDataSnapshot()
+    }
+
+    private suspend fun waitForUsdcBalanceIncrease(
+        initialBalances: BalanceState,
+        minIncreaseRaw: String,
+        selectedFeeOption: FeeOptionWithBalance?,
+        setStatus: (String) -> Unit,
+        pendingStatus: String,
+        successStatus: String,
+        staleStatus: String,
+    ): Boolean {
+        repeat(POST_SEND_REFRESH_ATTEMPTS) { index ->
+            val attempt = index + 1
+            val suffix =
+                if (attempt == 1) {
+                    "..."
+                } else {
+                    " ($attempt/$POST_SEND_REFRESH_ATTEMPTS)..."
+                }
+            setStatus("$pendingStatus$suffix")
+            refreshSignedInDataSnapshot()
+            if (hasUsdcBalanceIncrease(initialBalances, balances, minIncreaseRaw, selectedFeeOption)) {
+                setStatus(successStatus)
+                return true
+            }
+            if (attempt < POST_SEND_REFRESH_ATTEMPTS) {
+                delay(POST_SEND_REFRESH_DELAY_MS)
+            }
+        }
+        setStatus("$staleStatus Use Refresh to check again.")
+        return false
+    }
+
+    private suspend fun refreshSignedInDataSnapshot(): EarnPositionsResult {
         val walletAddress = requireWalletAddress()
         balances = getPolygonBalances(walletAddress)
         val positionsResult = getPolygonEarnPositions(walletAddress)
@@ -873,6 +950,55 @@ class TrailsActionsActivity : AppCompatActivity() {
         positionsResult.errors.forEach { error ->
             appendLog("! Earn balance error: $error")
         }
+        return positionsResult
+    }
+
+    private suspend fun waitForIntentSuccess(intentId: String) {
+        repeat(POST_SEND_REFRESH_ATTEMPTS) { index ->
+            val attempt = index + 1
+            val receiptResult =
+                runCatching {
+                    trailsClient.waitIntentReceipt(WaitIntentReceiptRequest(intentId = intentId)).intentReceipt
+                }
+            receiptResult
+                .onSuccess { receipt ->
+                    when (receipt.status) {
+                        IntentStatus.SUCCEEDED -> {
+                            return
+                        }
+
+                        IntentStatus.FAILED,
+                        IntentStatus.ABORTED,
+                        IntentStatus.REFUNDED,
+                        IntentStatus.INVALID,
+                        -> {
+                            throw IllegalStateException(
+                                "Trails intent $intentId finished with ${receipt.status.wireValue}.",
+                            )
+                        }
+
+                        IntentStatus.UNKNOWN_DEFAULT -> {
+                            throw IllegalStateException("Trails intent $intentId returned an unsupported status.")
+                        }
+
+                        IntentStatus.QUOTED,
+                        IntentStatus.COMMITTED,
+                        IntentStatus.EXECUTING,
+                        -> {
+                            appendLog("Waiting for Trails intent $intentId ($attempt/$POST_SEND_REFRESH_ATTEMPTS).")
+                        }
+                    }
+                }.onFailure { throwable ->
+                    if (attempt == POST_SEND_REFRESH_ATTEMPTS) {
+                        throw throwable
+                    }
+                    appendLog("Waiting for Trails intent receipt ($attempt/$POST_SEND_REFRESH_ATTEMPTS): ${describe(throwable)}")
+                }
+            if (attempt < POST_SEND_REFRESH_ATTEMPTS) {
+                delay(POST_SEND_REFRESH_DELAY_MS)
+            }
+        }
+        throw IllegalStateException("Trails intent did not finish yet. Use Refresh to check again.")
     }
 
     private suspend fun waitForTransactionHash(response: SendTransactionResponse): SendTransactionResponse {
@@ -1723,6 +1849,41 @@ class TrailsActionsActivity : AppCompatActivity() {
         return balance >= fee
     }
 
+    private fun hasUsdcBalanceIncrease(
+        initialBalances: BalanceState,
+        refreshedBalances: BalanceState,
+        minIncreaseRaw: String,
+        selectedFeeOption: FeeOptionWithBalance?,
+    ): Boolean {
+        val initialRaw = rawUnsignedAmount(initialBalances.usdcRaw)
+        val refreshedRaw = rawUnsignedAmount(refreshedBalances.usdcRaw)
+        val minIncrease = rawUnsignedAmount(minIncreaseRaw)
+        val expectedIncrease = (minIncrease - usdcFeeRaw(selectedFeeOption)).coerceAtLeast(BigInteger.ZERO)
+        return if (expectedIncrease == BigInteger.ZERO) {
+            refreshedRaw > initialRaw
+        } else {
+            refreshedRaw >= initialRaw + expectedIncrease
+        }
+    }
+
+    private fun usdcFeeRaw(option: FeeOptionWithBalance?): BigInteger {
+        val token = option?.feeOption?.token ?: return BigInteger.ZERO
+        val isUsdc =
+            token.contractAddress.equals(POLYGON_USDC, ignoreCase = true) ||
+                token.symbol.equals("USDC", ignoreCase = true)
+        return if (isUsdc) {
+            rawUnsignedAmount(option.feeOption.value)
+        } else {
+            BigInteger.ZERO
+        }
+    }
+
+    private fun rawUnsignedAmount(value: String): BigInteger =
+        value
+            .toBigIntegerOrNull()
+            ?.takeIf { it >= BigInteger.ZERO }
+            ?: BigInteger.ZERO
+
     private fun JsonElement.asObject(): JsonObject? =
         when (this) {
             is JsonObject -> this
@@ -1949,6 +2110,14 @@ class TrailsActionsActivity : AppCompatActivity() {
         val intent: com.omsclient.kotlin_sdk_trails_actions.generated.Intent,
         val outputRaw: String,
         val outputDisplay: String,
+        val executionState: PreparedSwapExecutionState = PreparedSwapExecutionState(),
+    )
+
+    private data class PreparedSwapExecutionState(
+        var committedIntentId: String? = null,
+        var submittedResponse: SendTransactionResponse? = null,
+        var selectedFeeOption: FeeOptionWithBalance? = null,
+        var didExecuteIntent: Boolean = false,
     )
 
     private data class PreparedYieldTransactions(
@@ -1966,6 +2135,8 @@ class TrailsActionsActivity : AppCompatActivity() {
     private companion object {
         const val TAG = "TrailsActions"
         const val TRAILS_API_URL = "https://trails-api.sequence.app"
+
+        // Demo-only Trails access key used by the public Trails sample apps; do not reuse for production apps.
         const val TRAILS_ACCESS_KEY = "AQAAAAAAAMCYJYqQIBlKgsdYZIC44JP84lo"
         const val TRAILS_ACCESS_KEY_HEADER = "X-Access-Key"
         const val POLYGON_CHAIN_ID = 137
