@@ -53,5 +53,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "kotlin-sdk"
 include(":app")
+include(":trails-actions")
 include(":oms-client-kotlin-sdk")
 include(":oms-client-kotlin-sdk-waas-generated")
