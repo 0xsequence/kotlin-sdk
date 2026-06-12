@@ -44,6 +44,29 @@ Key subdirectories:
   tests that only assert private call ordering.
 - Add a regression test for bug fixes before or alongside the fix when practical.
 
+### Public Error Contract Tests
+
+- Use `docs/error-contracts.md` as the audit matrix for public SDK error surfaces, recovery
+  semantics, `upstreamError` expectations, and owning tests.
+- Keep serialized public error shape assertions centralized in
+  `PublicErrorContractsTest`; focused tests should cover local behavior or edge cases without
+  duplicating the full public-field matrix.
+- Exercise real public runtime APIs such as `client.wallet.*`, `client.indexer.*`, auth result
+  actions, and public exception classes.
+- Mock only external boundaries: network responses, time, randomness, Android platform services, or
+  signer behavior.
+- Assert stable public fields only: exception class, `code`, `operation`, `message`, `status`,
+  `retryable`, `txnId`, and `upstreamError`.
+- Do not assert raw `cause`, stacks, generated WebRPC internals, request headers, timestamps, or
+  full backend payloads as public error contract fields.
+- Include `upstreamError` only when the tested path truthfully crosses a remote service or transport
+  boundary. SDK-local validation, session, and wallet-selection failures should assert no upstream
+  details.
+- Treat `code` and `operation` as stronger contract fields than `message`. Message changes are
+  allowed when intentional, but they should be reviewed as user-visible API/UX changes.
+- `retryable` describes the failed SDK operation, not the whole user intent. A retryable status
+  lookup failure does not mean the original transaction write should be blindly resent.
+
 ## Execution Summary
 
 | Goal | Command |

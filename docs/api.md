@@ -566,6 +566,7 @@ enum class OmsSdkErrorCode {
     WalletSelectionStale,
     WalletSelectionUnavailable,
     WalletSelectionInFlight,
+    TransactionExecutionUnconfirmed,
     TransactionStatusLookupFailed,
     ValidationError,
 }
@@ -577,20 +578,39 @@ open class OmsSdkException(
     val operation: OmsSdkOperation?,
     val status: Int?,
     val txnId: String?,
-    val retryable: Boolean,
+    val retryable: Boolean?,
+    val upstreamError: OmsUpstreamError?,
 ) : RuntimeException
+```
+
+```kotlin
+enum class OmsUpstreamService {
+    Waas,
+    Indexer,
+}
+
+data class OmsUpstreamError(
+    val service: OmsUpstreamService,
+    val name: String?,
+    val code: String?,
+    val message: String?,
+    val status: Int?,
+)
 ```
 
 ```kotlin
 enum class OmsSdkOperation(
     val id: String,
 ) {
-    PendingWalletSelection("pendingWalletSelection"),
-    PendingWalletSelectionCreateAndSelectWallet("pendingWalletSelection.createAndSelectWallet"),
-    PendingWalletSelectionSelectWallet("pendingWalletSelection.selectWallet"),
+    PendingWalletSelection("wallet.pendingWalletSelection"),
+    PendingWalletSelectionCreateAndSelectWallet("wallet.pendingWalletSelection.createAndSelectWallet"),
+    PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
+    IndexerGetNativeTokenBalance("indexer.getNativeTokenBalance"),
+    IndexerGetTokenBalances("indexer.getTokenBalances"),
     WalletCallContract("wallet.callContract"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),
+    WalletExecute("wallet.execute"),
     WalletGetIdToken("wallet.getIdToken"),
     WalletHandleOidcRedirectCallback("wallet.handleOidcRedirectCallback"),
     WalletGetTransactionStatus("wallet.getTransactionStatus"),
@@ -598,6 +618,7 @@ enum class OmsSdkOperation(
     WalletIsValidTypedDataSignature("wallet.isValidTypedDataSignature"),
     WalletListAccess("wallet.listAccess"),
     WalletListAccessPage("wallet.listAccessPage"),
+    WalletListAccessPages("wallet.listAccessPages"),
     WalletListWallets("wallet.listWallets"),
     WalletRevokeAccess("wallet.revokeAccess"),
     WalletSendTransaction("wallet.sendTransaction"),
@@ -606,6 +627,7 @@ enum class OmsSdkOperation(
     WalletSignTypedData("wallet.signTypedData"),
     WalletStartEmailAuth("wallet.startEmailAuth"),
     WalletStartOidcRedirectAuth("wallet.startOidcRedirectAuth"),
+    WalletTransactionStatus("wallet.transactionStatus"),
     WalletUseWallet("wallet.useWallet"),
 }
 ```
@@ -613,6 +635,22 @@ enum class OmsSdkOperation(
 `RequestFailed` covers classified WebRPC/backend failures, including backend
 error codes newer than the generated WaaS client. `InvalidResponse` is reserved
 for malformed or unparseable responses.
+
+`upstreamError` is normalized diagnostic detail from a remote OMS service response
+or transport failure. Use SDK-level `code` for app branching; use
+`upstreamError` for logging and service-specific troubleshooting. SDK-local
+validation, session, and wallet-selection failures do not include upstream
+details.
+
+`TransactionExecutionUnconfirmed` means transaction preparation succeeded and
+the SDK has a `txnId`, but the execute request failed before the SDK could
+confirm whether the transaction was submitted. Do not blindly resend the same
+write solely because the upstream failure looked temporary.
+
+`TransactionStatusLookupFailed` means the transaction was submitted, but
+post-submit status polling failed. Retry by calling `getTransactionStatus` with
+the returned `txnId`; `retryable` describes that status lookup operation, not
+the original write.
 
 ## Public Models
 
