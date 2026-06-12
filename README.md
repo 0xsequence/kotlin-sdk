@@ -343,6 +343,30 @@ Transaction values are raw base-unit integers. Use `parseUnits` to convert
 human-entered decimal values before sending. Import the helpers from
 `com.omsclient.kotlin_sdk.utils`.
 
+## Errors
+
+Public SDK APIs throw `OmsSdkException` subclasses with stable fields such as
+`code`, `operation`, `status`, nullable `retryable`, and `txnId`. When a failure comes
+from a remote OMS service response or transport failure, the error also includes
+`upstreamError` with normalized WaaS or indexer details for logging and
+service-specific troubleshooting. Application logic should usually branch on the
+SDK-level `code`.
+
+For transaction writes, `TransactionExecutionUnconfirmed` means the SDK has a
+`txnId` from preparation, but the execute request failed before the SDK could
+confirm whether the transaction was submitted; do not blindly resend the same
+write. `TransactionStatusLookupFailed` means the transaction was submitted but
+status polling failed, so retry status lookup with the returned `txnId`.
+`retryable` describes the failed SDK operation, not the whole user intent.
+
+```kotlin
+try {
+    client.wallet.startEmailAuth("user@example.com")
+} catch (error: OmsSdkException) {
+    println("${error.code} ${error.operation?.id} ${error.upstreamError}")
+}
+```
+
 For raw token amount formatting and parsing:
 
 ```kotlin

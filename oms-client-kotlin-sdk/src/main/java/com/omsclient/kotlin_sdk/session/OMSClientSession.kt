@@ -190,7 +190,7 @@ internal class OMSClientSession(
 
     fun requireSnapshot(): OMSClientSessionSnapshot =
         state.snapshot()
-            ?: error("No active OMS Client session")
+            ?: error("No active wallet session")
 
     fun requirePendingAuth(): OMSClientPendingAuthSnapshot =
         when (val current = state) {

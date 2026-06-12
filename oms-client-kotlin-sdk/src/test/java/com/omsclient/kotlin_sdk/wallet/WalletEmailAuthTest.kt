@@ -3,6 +3,8 @@ package com.omsclient.kotlin_sdk.wallet
 import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
+import com.omsclient.kotlin_sdk.OmsSdkOperation
+import com.omsclient.kotlin_sdk.OmsUpstreamService
 import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
@@ -148,6 +150,47 @@ class WalletEmailAuthTest {
             assertEquals("verifier-123", session?.verifier)
             assertNull(redirectStore.pending)
             assertEquals(1, redirectStore.clearCalls)
+        }
+
+    @Test
+    fun startEmailAuthRequestFailedNormalizesGeneratedStatus400ToNoStatus() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body("""{"error":"WebrpcRequestFailed","code":-1,"msg":"request failed","status":400}""")
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000100"),
+                )
+
+            val failure =
+                runCatching {
+                    client.startEmailAuth("user@example.com")
+                }.exceptionOrNull() as? OmsSdkException
+
+            requireNotNull(failure)
+            assertEquals(OmsSdkErrorCode.RequestFailed, failure.code)
+            assertEquals(OmsSdkOperation.WalletStartEmailAuth, failure.operation)
+            assertEquals(null, failure.status)
+            assertEquals(true, failure.retryable)
+            assertEquals(OmsUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals("WebrpcRequestFailed", failure.upstreamError?.name)
+            assertEquals("-1", failure.upstreamError?.code)
+            assertEquals("request failed", failure.upstreamError?.message)
+            assertEquals(null, failure.upstreamError?.status)
         }
 
     @Test
@@ -1385,6 +1428,17 @@ class WalletEmailAuthTest {
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
             assertNotNull(firstFailure)
+            assertTrue(firstFailure is OmsSdkException)
+            firstFailure as OmsSdkException
+            assertEquals(OmsSdkErrorCode.RequestFailed, firstFailure.code)
+            assertEquals(OmsSdkOperation.WalletCompleteEmailAuth, firstFailure.operation)
+            assertEquals(401, firstFailure.status)
+            assertEquals(false, firstFailure.retryable)
+            assertEquals(OmsUpstreamService.Waas, firstFailure.upstreamError?.service)
+            assertEquals("Unauthorized", firstFailure.upstreamError?.name)
+            assertEquals("4001", firstFailure.upstreamError?.code)
+            assertEquals("invalid code", firstFailure.upstreamError?.message)
+            assertEquals(401, firstFailure.upstreamError?.status)
             assertTrue(client.hasPendingSignIn)
             assertEquals("challenge", afterFailure?.challenge)
             assertEquals("verifier-123", afterFailure?.verifier)

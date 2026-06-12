@@ -44,6 +44,39 @@ Key subdirectories:
   tests that only assert private call ordering.
 - Add a regression test for bug fixes before or alongside the fix when practical.
 
+### Public Error Contract Tests
+
+- Use `docs/error-contracts.md` as the audit matrix for public SDK error surfaces, recovery
+  semantics, `upstreamError` expectations, and owning tests.
+- Keep serialized public error shape assertions centralized in
+  `PublicErrorContractsTest`; focused tests should cover local behavior or edge cases without
+  duplicating the full public-field matrix.
+- Exercise real public runtime APIs such as `client.wallet.*`, `client.indexer.*`, auth result
+  actions, and public exception classes.
+- Do not assert manually constructed `OmsSdkException` subclasses unless the error class or helper
+  is the unit under test.
+- Mock only external boundaries: network responses, time, randomness, Android platform services, or
+  signer behavior.
+- Assert stable public fields only: exception class, `code`, `operation`, `message`, `status`,
+  `retryable`, `txnId`, and `upstreamError`.
+- Do not assert raw `cause`, stacks, generated WebRPC internals, request headers, timestamps, or
+  full backend payloads as public error contract fields.
+- Keep backend and upstream mapping tests representative rather than exhaustive per method; cover
+  each transport family through real public calls.
+- Include `upstreamError` only when the tested path truthfully crosses a remote service or transport
+  boundary. SDK-local validation, session, and wallet-selection failures should assert no upstream
+  details.
+- Android storage and Keystore signer classes are internal platform boundaries, not separate public
+  SDK error surfaces. Cover their failures in focused JVM or instrumented tests unless a failure is
+  intentionally normalized through a documented public `OmsSdkException`.
+- Serialized contract changes are not automatically regressions. Decide whether the new error shape
+  is the intended public contract: if correct, update the assertion and related docs; if accidental,
+  fix the implementation. Never update expectations blindly.
+- Treat `code` and `operation` as stronger contract fields than `message`. Message changes are
+  allowed when intentional, but they should be reviewed as user-visible API/UX changes.
+- `retryable` describes the failed SDK operation, not the whole user intent. A retryable status
+  lookup failure does not mean the original transaction write should be blindly resent.
+
 ## Execution Summary
 
 | Goal | Command |

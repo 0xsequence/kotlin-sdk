@@ -218,6 +218,31 @@ and the execution command reference.
   platform services. Prefer deterministic local fixtures for signing vectors.
 - Add regression tests for bug fixes before or alongside the fix when practical.
 
+### Public Error Contract Tests
+
+- Follow the detailed rules in `TESTING.md` before adding or updating public
+  error contract tests.
+- Use `docs/error-contracts.md` as the audit matrix for public SDK error
+  surfaces, recovery semantics, `upstreamError` expectations, and owning tests.
+- Keep serialized public error shape assertions centralized in
+  `PublicErrorContractsTest`; focused tests should cover behavior or edge cases
+  without duplicating the full matrix.
+- Exercise real public runtime APIs and mock only external boundaries.
+- Do not assert manually constructed `OmsSdkException` subclasses unless the
+  error class or helper is the unit under test.
+- Assert stable public fields only; do not assert raw `cause`, stacks, generated
+  internals, headers, timestamps, or full backend payloads as public contract.
+- Keep backend and upstream mapping tests representative rather than exhaustive
+  per method; cover each transport family through real public calls.
+- Include `upstreamError` only when the path crosses a remote service response
+  or transport boundary. SDK-local failures should not expose upstream details.
+- Android storage and Keystore signer internals belong in focused platform
+  tests unless they are intentionally normalized through documented public SDK
+  errors.
+- Serialized contract changes are not automatically regressions. First decide
+  whether the new error shape is intended, then update the assertion and related
+  docs or fix the implementation.
+
 ## Generated Files and External Artifacts
 
 - `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/generated/waas/WaasWalletClient.kt`
