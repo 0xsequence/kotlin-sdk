@@ -18,6 +18,24 @@ whether `upstreamError` should be present, and which tests own the contract.
 - `TransactionStatusLookupFailed` means the transaction was submitted, but post-submit status
   polling failed. Retry by checking transaction status with the returned `txnId`.
 
+## Maintenance Approach
+
+- Update this matrix, the centralized `PublicErrorContractsTest`, and public docs together when a
+  public SDK method gains, removes, or intentionally changes an error contract.
+- Keep backend and upstream mapping tests representative rather than exhaustive per method. Cover
+  each transport or response family through real public calls instead of duplicating the same
+  matrix across focused tests.
+- Do not assert manually constructed `OmsSdkException` subclasses unless the error class or helper
+  is the unit under test. Public runtime APIs should own runtime error contract coverage.
+- Android storage and Keystore signer classes are internal platform boundaries in this SDK, not
+  separate public error surfaces. Cover their failures in focused platform tests unless a failure is
+  intentionally normalized through a documented public `OmsSdkException`.
+- Serialized contract changes are not automatically regressions. Decide whether the new error shape
+  is the intended public contract: if correct, update the assertion and related docs; if accidental,
+  fix the implementation. Never update expectations blindly.
+- Use `code` and `operation` as the primary compatibility contract. Treat message changes as
+  intentional user-visible API/UX changes, even when they do not change recovery behavior.
+
 ## SDK Matrix
 
 | Public surface | Failure family | User-facing error | Recovery meaning | `upstreamError` | Covering test |

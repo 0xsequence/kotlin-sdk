@@ -228,10 +228,20 @@ and the execution command reference.
   `PublicErrorContractsTest`; focused tests should cover behavior or edge cases
   without duplicating the full matrix.
 - Exercise real public runtime APIs and mock only external boundaries.
+- Do not assert manually constructed `OmsSdkException` subclasses unless the
+  error class or helper is the unit under test.
 - Assert stable public fields only; do not assert raw `cause`, stacks, generated
   internals, headers, timestamps, or full backend payloads as public contract.
+- Keep backend and upstream mapping tests representative rather than exhaustive
+  per method; cover each transport family through real public calls.
 - Include `upstreamError` only when the path crosses a remote service response
   or transport boundary. SDK-local failures should not expose upstream details.
+- Android storage and Keystore signer internals belong in focused platform
+  tests unless they are intentionally normalized through documented public SDK
+  errors.
+- Serialized contract changes are not automatically regressions. First decide
+  whether the new error shape is intended, then update the assertion and related
+  docs or fix the implementation.
 
 ## Generated Files and External Artifacts
 
