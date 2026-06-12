@@ -966,18 +966,18 @@ class WalletClient internal constructor(
      */
     fun listAccessPages(pageSize: UInt? = null): Flow<ListAccessResponse> =
         flow {
-            runOmsOperation(OmsSdkOperation.WalletListAccessPages) {
-                var cursor: String? = null
-                do {
-                    val response =
+            var cursor: String? = null
+            do {
+                val response =
+                    runOmsOperation(OmsSdkOperation.WalletListAccessPages) {
                         requestListAccessPage(
                             pageSize = pageSize,
                             cursor = cursor,
                         )
-                    emit(response)
-                    cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
-                } while (cursor != null)
-            }
+                    }
+                emit(response)
+                cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
+            } while (cursor != null)
         }
 
     /**
