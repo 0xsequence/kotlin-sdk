@@ -476,7 +476,16 @@ class WalletClient internal constructor(
         code: String,
         sessionLifetimeSeconds: UInt,
     ): WalletAuthCompletion {
-        val snapshot = session.requirePendingAuth()
+        val snapshot =
+            try {
+                session.requirePendingAuth()
+            } catch (throwable: IllegalStateException) {
+                throw OmsSessionException(
+                    operation = OmsSdkOperation.WalletCompleteEmailAuth,
+                    message = "No pending email auth attempt",
+                    cause = throwable,
+                )
+            }
         return gateway.completeEmailAuth(
             verifier = snapshot.verifier,
             challenge = snapshot.challenge,
@@ -957,16 +966,18 @@ class WalletClient internal constructor(
      */
     fun listAccessPages(pageSize: UInt? = null): Flow<ListAccessResponse> =
         flow {
-            var cursor: String? = null
-            do {
-                val response =
-                    listAccessPage(
-                        pageSize = pageSize,
-                        cursor = cursor,
-                    )
-                emit(response)
-                cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
-            } while (cursor != null)
+            runOmsOperation(OmsSdkOperation.WalletListAccessPages) {
+                var cursor: String? = null
+                do {
+                    val response =
+                        requestListAccessPage(
+                            pageSize = pageSize,
+                            cursor = cursor,
+                        )
+                    emit(response)
+                    cursor = response.page?.cursor?.takeIf { it.isNotBlank() }
+                } while (cursor != null)
+            }
         }
 
     /**
@@ -977,13 +988,20 @@ class WalletClient internal constructor(
         cursor: String? = null,
     ): ListAccessResponse =
         runOmsOperation(OmsSdkOperation.WalletListAccessPage) {
-            session.requireSnapshot()
-            requireActiveCredential()
-            gateway.listAccessPage(
-                walletId = requireWalletId(),
-                page = accessPage(pageSize, cursor),
-            )
+            requestListAccessPage(pageSize, cursor)
         }
+
+    private suspend fun requestListAccessPage(
+        pageSize: UInt?,
+        cursor: String?,
+    ): ListAccessResponse {
+        session.requireSnapshot()
+        requireActiveCredential()
+        return gateway.listAccessPage(
+            walletId = requireWalletId(),
+            page = accessPage(pageSize, cursor),
+        )
+    }
 
     /**
      * Returns an ID token for the currently selected wallet.
@@ -1196,7 +1214,24 @@ class WalletClient internal constructor(
                     )
                 }
             }
-        val executed = gateway.execute(prepared.txnId, feeOption)
+        val executed =
+            try {
+                gateway.execute(prepared.txnId, feeOption)
+            } catch (throwable: CancellationException) {
+                throw throwable
+            } catch (throwable: Throwable) {
+                val sdkError = throwable.toOmsSdkException(OmsSdkOperation.WalletExecute)
+                throw OmsTransactionException(
+                    code = OmsSdkErrorCode.TransactionExecutionUnconfirmed,
+                    operation = OmsSdkOperation.WalletExecute,
+                    status = sdkError.status,
+                    txnId = prepared.txnId,
+                    retryable = false,
+                    upstreamError = sdkError.upstreamError,
+                    message = "Transaction execution failed before status could be confirmed",
+                    cause = sdkError,
+                )
+            }
         if (!waitForStatus) {
             return ClientSendTransactionResponse(
                 txnId = prepared.txnId,
@@ -1343,11 +1378,15 @@ class WalletClient internal constructor(
                 } catch (throwable: CancellationException) {
                     throw throwable
                 } catch (throwable: Throwable) {
+                    val sdkError = throwable.toOmsSdkException(OmsSdkOperation.WalletTransactionStatus)
                     throw OmsTransactionException(
-                        operation = OmsSdkOperation.WalletGetTransactionStatus,
+                        operation = OmsSdkOperation.WalletTransactionStatus,
+                        status = sdkError.status,
                         txnId = txnId,
-                        message = throwable.message ?: "Transaction status lookup failed",
-                        cause = throwable,
+                        retryable = true,
+                        upstreamError = sdkError.upstreamError,
+                        message = "Transaction was submitted, but status polling failed",
+                        cause = sdkError,
                     )
                 }
             completedStatusPolls += 1

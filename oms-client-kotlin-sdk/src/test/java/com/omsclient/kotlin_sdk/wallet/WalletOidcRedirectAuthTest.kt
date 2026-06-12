@@ -19,7 +19,6 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -904,7 +903,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals(OmsSdkOperation.WalletHandleOidcRedirectCallback, failure.operation)
             assertEquals(400, failure.status)
             assertEquals("Bad callback", failure.message)
-            assertFalse(failure.retryable)
+            assertEquals(false, failure.retryable)
             assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
             assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
             assertNull(client.snapshotSession())

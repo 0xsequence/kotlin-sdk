@@ -1,6 +1,12 @@
 package com.omsclient.kotlin_sdk.indexer
 
 import com.omsclient.kotlin_sdk.Network
+import com.omsclient.kotlin_sdk.OmsRequestException
+import com.omsclient.kotlin_sdk.OmsResponseException
+import com.omsclient.kotlin_sdk.OmsSdkErrorCode
+import com.omsclient.kotlin_sdk.OmsSdkOperation
+import com.omsclient.kotlin_sdk.OmsUpstreamError
+import com.omsclient.kotlin_sdk.OmsUpstreamService
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.models.TokenBalancesPage
 import com.omsclient.kotlin_sdk.models.TokenBalancesPageRequest
@@ -10,6 +16,8 @@ import com.omsclient.kotlin_sdk.models.TokenMetadata
 import com.omsclient.kotlin_sdk.models.TokenMetadataAsset
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
+import com.omsclient.kotlin_sdk.network.OMSClientHttpResponse
+import com.omsclient.kotlin_sdk.network.OMSClientJson
 import com.omsclient.kotlin_sdk.network.arrayOrEmpty
 import com.omsclient.kotlin_sdk.network.boolean
 import com.omsclient.kotlin_sdk.network.int
@@ -17,10 +25,13 @@ import com.omsclient.kotlin_sdk.network.long
 import com.omsclient.kotlin_sdk.network.objectOrNull
 import com.omsclient.kotlin_sdk.network.parseJsonObject
 import com.omsclient.kotlin_sdk.network.string
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
@@ -39,9 +50,11 @@ class IndexerClient internal constructor(
         includeMetadata: Boolean,
         page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
     ): TokenBalancesResult {
+        val operation = OmsSdkOperation.IndexerGetTokenBalances
         val response =
-            transport.postJson(
-                baseUrl = environment.indexerUrlFor(network),
+            postIndexerJson(
+                operation = operation,
+                network = network,
                 path = "/GetTokenBalances",
                 body =
                     buildJsonObject {
@@ -54,10 +67,9 @@ class IndexerClient internal constructor(
                         put("accountAddress", walletAddress)
                         put("includeMetadata", includeMetadata)
                     }.toString(),
-                headers = defaultHeaders(),
             )
 
-        val root = parseJsonObject(response.body)
+        val root = parseIndexerJsonObject(response, operation)
         val pageObject = root.objectOrNull("page")
         val page =
             pageObject?.let {
@@ -88,18 +100,19 @@ class IndexerClient internal constructor(
         network: Network,
         walletAddress: String,
     ): TokenBalance? {
+        val operation = OmsSdkOperation.IndexerGetNativeTokenBalance
         val response =
-            transport.postJson(
-                baseUrl = environment.indexerUrlFor(network),
+            postIndexerJson(
+                operation = operation,
+                network = network,
                 path = "/GetNativeTokenBalance",
                 body =
                     buildJsonObject {
                         put("accountAddress", walletAddress)
                     }.toString(),
-                headers = defaultHeaders(),
             )
 
-        val balanceObject = parseJsonObject(response.body).objectOrNull("balance") ?: return null
+        val balanceObject = parseIndexerJsonObject(response, operation).objectOrNull("balance") ?: return null
         return TokenBalance(
             contractType = "NATIVE",
             contractAddress = null,
@@ -114,6 +127,73 @@ class IndexerClient internal constructor(
             chainId = balanceObject.long("chainId") ?: network.id.toLong(),
         )
     }
+
+    private suspend fun postIndexerJson(
+        operation: OmsSdkOperation,
+        network: Network,
+        path: String,
+        body: String,
+    ): OMSClientHttpResponse {
+        val response =
+            try {
+                transport.postJsonWithStatus(
+                    baseUrl = environment.indexerUrlFor(network),
+                    path = path,
+                    body = body,
+                    headers = defaultHeaders(),
+                )
+            } catch (throwable: CancellationException) {
+                throw throwable
+            } catch (throwable: Throwable) {
+                throw OmsRequestException(
+                    operation = operation,
+                    upstreamError = throwable.toIndexerUpstreamError(),
+                    message = throwable.message ?: "${operation.id} request failed",
+                    cause = throwable,
+                )
+            }
+
+        if (response.statusCode !in 200..299) {
+            val parsed = parseJsonOrText(response.body)
+            val message = indexerResponseMessage(parsed, operation, response.statusCode)
+            throw OmsRequestException(
+                code = OmsSdkErrorCode.HttpError,
+                operation = operation,
+                status = response.statusCode,
+                retryable = response.statusCode >= 500,
+                upstreamError =
+                    parsed.toIndexerUpstreamError(
+                        status = response.statusCode,
+                        fallbackMessage = message,
+                    ),
+                message = message,
+            )
+        }
+
+        return response
+    }
+
+    private fun parseIndexerJsonObject(
+        response: OMSClientHttpResponse,
+        operation: OmsSdkOperation,
+    ): JsonObject =
+        try {
+            parseJsonObject(response.body)
+        } catch (throwable: Throwable) {
+            val message = "Invalid JSON response from ${operation.id}"
+            throw OmsResponseException(
+                operation = operation,
+                status = response.statusCode,
+                upstreamError =
+                    OmsUpstreamError(
+                        service = OmsUpstreamService.Indexer,
+                        message = message,
+                        status = response.statusCode,
+                    ),
+                message = message,
+                cause = throwable,
+            )
+        }
 
     private fun defaultHeaders(): Map<String, String> =
         mapOf(
@@ -205,4 +285,50 @@ class IndexerClient internal constructor(
         )
 
     private fun JsonObject.toMap(): Map<String, JsonElement> = entries.associate { it.key to it.value }
+
+    private fun parseJsonOrText(body: String): Any = runCatching { OMSClientJson.json.parseToJsonElement(body) }.getOrElse { body }
+
+    private fun indexerResponseMessage(
+        payload: Any,
+        operation: OmsSdkOperation,
+        status: Int,
+    ): String =
+        when (payload) {
+            is JsonObject -> payload.string("message") ?: payload.string("msg")
+            else -> null
+        } ?: "${operation.id} failed with HTTP $status"
+
+    private fun Any.toIndexerUpstreamError(
+        status: Int,
+        fallbackMessage: String,
+    ): OmsUpstreamError =
+        when (this) {
+            is JsonObject -> {
+                OmsUpstreamError(
+                    service = OmsUpstreamService.Indexer,
+                    name = string("name") ?: string("error"),
+                    code = stringOrNumber("code"),
+                    message = string("message") ?: string("msg") ?: fallbackMessage,
+                    status = status,
+                )
+            }
+
+            else -> {
+                OmsUpstreamError(
+                    service = OmsUpstreamService.Indexer,
+                    message = fallbackMessage,
+                    status = status,
+                )
+            }
+        }
+
+    private fun Throwable.toIndexerUpstreamError(): OmsUpstreamError =
+        OmsUpstreamError(
+            service = OmsUpstreamService.Indexer,
+            name = javaClass.simpleName,
+            message = message,
+            status = null,
+        )
+
+    private fun JsonObject.stringOrNumber(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull
 }

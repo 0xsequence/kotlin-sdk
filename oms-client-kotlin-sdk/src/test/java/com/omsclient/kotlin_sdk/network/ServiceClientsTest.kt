@@ -5,6 +5,7 @@ import com.omsclient.kotlin_sdk.OMSClient
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.OmsSdkOperation
+import com.omsclient.kotlin_sdk.OmsUpstreamService
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import kotlinx.coroutines.runBlocking
@@ -366,6 +367,11 @@ class ServiceClientsTest {
             assertEquals("endpoint error", failure.message)
             assertEquals(400, failure.status)
             assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
+            assertEquals(OmsUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals("WebrpcEndpoint", failure.upstreamError?.name)
+            assertEquals("-999", failure.upstreamError?.code)
+            assertEquals("endpoint error", failure.upstreamError?.message)
+            assertEquals(400, failure.upstreamError?.status)
         }
 
     @Test
@@ -406,6 +412,11 @@ class ServiceClientsTest {
             assertEquals(OmsSdkOperation.WalletIsValidMessageSignature, failure.operation)
             assertEquals("Backend rollout error", failure.message)
             assertEquals(409, failure.status)
-            assertFalse(failure.retryable)
+            assertEquals(false, failure.retryable)
+            assertEquals(OmsUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals("NewBackendError", failure.upstreamError?.name)
+            assertEquals("7999", failure.upstreamError?.code)
+            assertEquals("Backend rollout error", failure.upstreamError?.message)
+            assertEquals(409, failure.upstreamError?.status)
         }
 }
