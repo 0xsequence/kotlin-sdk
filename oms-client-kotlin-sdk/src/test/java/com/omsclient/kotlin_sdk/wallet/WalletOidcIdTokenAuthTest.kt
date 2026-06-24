@@ -8,7 +8,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import kotlinx.coroutines.runBlocking
@@ -101,7 +101,7 @@ class WalletOidcIdTokenAuthTest {
 
             assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
             assertEquals(
-                WaasWalletApi.CommitVerifier.encodeRequest(
+                WaasApi.CommitVerifier.encodeRequest(
                     CommitVerifierRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.IDToken,
@@ -118,7 +118,7 @@ class WalletOidcIdTokenAuthTest {
             )
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.IDToken,
@@ -131,7 +131,7 @@ class WalletOidcIdTokenAuthTest {
             )
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(
+                WaasApi.UseWallet.encodeRequest(
                     UseWalletRequest(
                         walletId = "wallet-def",
                     ),
@@ -210,7 +210,7 @@ class WalletOidcIdTokenAuthTest {
             requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.IDToken,

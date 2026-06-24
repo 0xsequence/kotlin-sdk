@@ -66,7 +66,7 @@ signer address/algorithm, expiry, login type, and optional session email. This
 metadata is not wallet authorization material: by itself it cannot sign requests
 or access a wallet. Restore succeeds only while the matching Keystore credential
 still exists, and wallet operations must sign fresh requests with that
-credential. `publishableKey` is sent as `X-Access-Key` and is parsed to derive
+credential. `publishableKey` is sent as `Api-Key` and is parsed to derive
 the WaaS signing project scope and default API routing.
 
 Pending email OTP state is kept in memory. OIDC redirect state is stored only to

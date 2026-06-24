@@ -242,7 +242,6 @@ class IndexerClient internal constructor(
             "Api-Key" to publishableKey,
             "Accept" to "application/json",
             "Webrpc" to indexerGatewayWebrpcHeaderValue,
-            "Origin" to "http://localhost:5173",
         )
 
     private fun JsonObject.toTokenBalancesPage(): TokenBalancesPage =

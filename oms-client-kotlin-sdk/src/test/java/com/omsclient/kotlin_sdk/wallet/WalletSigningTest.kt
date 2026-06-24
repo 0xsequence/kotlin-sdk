@@ -2,7 +2,7 @@ package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.internal.generated.waas.SignTypedDataRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
@@ -129,7 +129,7 @@ class WalletSigningTest {
             assertEquals("0xtyped", result)
             assertEquals("/v1/Waas/SignTypedData", request.target)
             assertEquals(
-                WaasWalletApi.SignTypedData.encodeRequest(
+                WaasApi.SignTypedData.encodeRequest(
                     SignTypedDataRequest(
                         walletId = "wallet-main",
                         network = "80002",

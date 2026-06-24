@@ -9,7 +9,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
@@ -85,7 +85,7 @@ class WalletOidcRedirectAuthTest {
 
             assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals(
-                WaasWalletApi.CommitVerifier.encodeRequest(
+                WaasApi.CommitVerifier.encodeRequest(
                     CommitVerifierRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.AuthCodePKCE,
@@ -344,7 +344,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.AuthCodePKCE,
@@ -357,7 +357,7 @@ class WalletOidcRedirectAuthTest {
             )
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(UseWalletRequest(walletId = "wallet-def")),
+                WaasApi.UseWallet.encodeRequest(UseWalletRequest(walletId = "wallet-def")),
                 requireNotNull(useWalletRequest.body).utf8(),
             )
             assertEquals("0xdef", wallet.address)
@@ -439,7 +439,7 @@ class WalletOidcRedirectAuthTest {
             requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.AuthCodePKCE,

@@ -14,7 +14,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.internal.generated.waas.ListWalletsRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.Page
 import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.internal.generated.waas.Wallet
 import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
@@ -83,7 +83,7 @@ class WalletEmailAuthTest {
             val request = requireNotNull(server.takeRequest())
 
             val expectedPayload =
-                WaasWalletApi.CommitVerifier.encodeRequest(
+                WaasApi.CommitVerifier.encodeRequest(
                     CommitVerifierRequest(
                         identityType = IdentityType.Email,
                         authMode = AuthMode.OTP,
@@ -97,7 +97,7 @@ class WalletEmailAuthTest {
             assertEquals("POST", request.method)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
             assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
-            assertEquals("http://localhost:3000", request.headers["Origin"])
+            assertEquals(null, request.headers["Origin"])
             assertEquals("application/json", request.headers["Accept"])
             assertEquals(
                 expectedWalletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
@@ -263,8 +263,8 @@ class WalletEmailAuthTest {
 
             assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals(
-                "alg=\"ecdsa-p256-sha256\",scope=\"test-project-id\"," +
-                    "cred=\"${signer.credentialIdValue}\",nonce=42,sig=\"${signer.signatureValue}\"",
+                "alg=\"ecdsa-p256-sha256\", scope=\"test-project-id\"," +
+                    " cred=\"${signer.credentialIdValue}\", nonce=42, sig=\"${signer.signatureValue}\"",
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
             assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, client.snapshotSession()?.signerKeyType)
@@ -298,7 +298,7 @@ class WalletEmailAuthTest {
             client.startEmailAuth("user@example.com")
             val request = requireNotNull(server.takeRequest())
             val expectedPayload =
-                WaasWalletApi.CommitVerifier.encodeRequest(
+                WaasApi.CommitVerifier.encodeRequest(
                     CommitVerifierRequest(
                         identityType = IdentityType.Email,
                         authMode = AuthMode.OTP,
@@ -412,7 +412,7 @@ class WalletEmailAuthTest {
             val useWalletRequest = requireNotNull(server.takeRequest())
 
             val expectedPayload =
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.Email,
                         authMode = AuthMode.OTP,
@@ -488,7 +488,7 @@ class WalletEmailAuthTest {
             val request = requireNotNull(server.takeRequest())
 
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.Email,
                         authMode = AuthMode.OTP,
@@ -605,7 +605,7 @@ class WalletEmailAuthTest {
             val request = requireNotNull(server.takeRequest())
 
             val expectedPayload =
-                WaasWalletApi.UseWallet.encodeRequest(
+                WaasApi.UseWallet.encodeRequest(
                     UseWalletRequest(
                         walletId = "wallet-def",
                     ),
@@ -676,7 +676,7 @@ class WalletEmailAuthTest {
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(
+                WaasApi.UseWallet.encodeRequest(
                     UseWalletRequest(
                         walletId = "wallet-def",
                     ),
@@ -759,7 +759,7 @@ class WalletEmailAuthTest {
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
             assertEquals(
-                WaasWalletApi.ListWallets.encodeRequest(
+                WaasApi.ListWallets.encodeRequest(
                     ListWalletsRequest(
                         page = Page(cursor = "cursor-2"),
                     ),
@@ -768,7 +768,7 @@ class WalletEmailAuthTest {
             )
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(
+                WaasApi.UseWallet.encodeRequest(
                     UseWalletRequest(
                         walletId = "wallet-later",
                     ),
@@ -1009,7 +1009,7 @@ class WalletEmailAuthTest {
 
             assertEquals("/v1/Waas/CreateWallet", createWalletRequest.target)
             assertEquals(
-                WaasWalletApi.CreateWallet.encodeRequest(
+                WaasApi.CreateWallet.encodeRequest(
                     CreateWalletRequest(
                         type = WalletType.Ethereum,
                         reference = "fresh",
@@ -1525,7 +1525,7 @@ class WalletEmailAuthTest {
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(
+                WaasApi.UseWallet.encodeRequest(
                     UseWalletRequest(
                         walletId = "wallet-aaa",
                     ),
@@ -1610,7 +1610,7 @@ class WalletEmailAuthTest {
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(
+                WaasApi.UseWallet.encodeRequest(
                     UseWalletRequest(
                         walletId = "wallet-bbb",
                     ),

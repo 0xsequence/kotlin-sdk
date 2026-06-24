@@ -7,7 +7,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionMode
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -16,7 +16,7 @@ class WalletRequestSignerVectorTest {
 
     @Test
     fun signMessagePayloadAndPreimageMatchParityVector() {
-        val endpoint = WaasWalletApi.SignMessage.path
+        val endpoint = WaasApi.SignMessage.path
         val nonce = "1710000000"
         val expectedPayload =
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"message\":\"hello\"}"
@@ -25,7 +25,7 @@ class WalletRequestSignerVectorTest {
                 expectedPayload
         val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
         val payload =
-            WaasWalletApi.SignMessage.encodeRequest(
+            WaasApi.SignMessage.encodeRequest(
                 SignMessageRequest(
                     walletId = "0x1234567890123456789012345678901234567890",
                     network = "80002",
@@ -49,7 +49,7 @@ class WalletRequestSignerVectorTest {
 
     @Test
     fun prepareEthereumTransactionPayloadAndPreimageMatchParityVector() {
-        val endpoint = WaasWalletApi.PrepareEthereumTransaction.path
+        val endpoint = WaasApi.PrepareEthereumTransaction.path
         val nonce = "1710000001"
         val expectedPayload =
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\"," +
@@ -59,7 +59,7 @@ class WalletRequestSignerVectorTest {
                 expectedPayload
         val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
         val payload =
-            WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
+            WaasApi.PrepareEthereumTransaction.encodeRequest(
                 PrepareEthereumTransactionRequest(
                     walletId = "0x1234567890123456789012345678901234567890",
                     network = "80002",
@@ -85,7 +85,7 @@ class WalletRequestSignerVectorTest {
 
     @Test
     fun completeAuthPayloadAndPreimageMatchParityVector() {
-        val endpoint = WaasWalletApi.CompleteAuth.path
+        val endpoint = WaasApi.CompleteAuth.path
         val nonce = "1710000002"
         val expectedPayload =
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"verifier\":\"verifier-123\"," +
@@ -95,7 +95,7 @@ class WalletRequestSignerVectorTest {
                 expectedPayload
         val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
         val payload =
-            WaasWalletApi.CompleteAuth.encodeRequest(
+            WaasApi.CompleteAuth.encodeRequest(
                 CompleteAuthRequest(
                     identityType = IdentityType.Email,
                     authMode = AuthMode.OTP,

@@ -36,7 +36,7 @@ class OMSClientEnvironment(
         "OMSClientEnvironment(walletApiUrl=$walletApiUrl, apiRpcUrl=$apiRpcUrl, indexerGatewayUrl=$indexerGatewayUrl)"
 
     companion object {
-        internal const val accessKeyHeaderName: String = "X-Access-Key"
+        internal const val accessKeyHeaderName: String = "Api-Key"
         internal const val walletSignatureHeaderName: String = "OMS-Wallet-Signature"
         internal const val walletSignatureHeaderPrefix: String = "$walletSignatureHeaderName: "
         const val walletApiUrlDefault: String = "https://d26giflyqapd29.cloudfront.net"

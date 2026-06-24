@@ -41,7 +41,7 @@ data class FeeToken(
     val symbol: String,
     val type: String,
     val decimals: UInt? = null,
-    val logoUrl: String,
+    val logoUrl: String? = null,
     val contractAddress: String? = null,
     val tokenId: String? = null,
 )

@@ -6,7 +6,7 @@ import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionStatusRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.models.AbiArg
 import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest
@@ -256,7 +256,7 @@ class WalletTransactionTest {
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("/v1/Waas/PrepareEthereumTransaction", prepareRequest.target)
             assertEquals(
-                WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
+                WaasApi.PrepareEthereumTransaction.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransactionRequest(
                         walletId = "wallet-main",
                         network = "80002",
@@ -276,7 +276,7 @@ class WalletTransactionTest {
             )
             assertEquals("/v1/Waas/Execute", executeRequest.target)
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                WaasApi.Execute.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest(
                         txnId = "txn-1",
                         feeOption = WaasFeeOptionSelection(token = "usdc"),
@@ -286,7 +286,7 @@ class WalletTransactionTest {
             )
             assertEquals("/v1/Waas/TransactionStatus", pendingStatusRequest.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(
+                WaasApi.TransactionStatusMethod.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas
                         .TransactionStatusRequest(txnId = "txn-1"),
                 ),
@@ -294,7 +294,7 @@ class WalletTransactionTest {
             )
             assertEquals("/v1/Waas/TransactionStatus", executedStatusRequest.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(
+                WaasApi.TransactionStatusMethod.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas
                         .TransactionStatusRequest(txnId = "txn-1"),
                 ),
@@ -342,7 +342,7 @@ class WalletTransactionTest {
             assertEquals("txn-token-id", result.txnId)
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-token-id",
                         feeOption = WaasFeeOptionSelection(token = "usdc"),
@@ -399,7 +399,7 @@ class WalletTransactionTest {
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals(false, selectorCalled)
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                WaasApi.Execute.encodeRequest(
                     ExecuteRequest(txnId = "txn-sponsored"),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -550,7 +550,7 @@ class WalletTransactionTest {
                 requireNotNull(balanceRequest.body).utf8(),
             )
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-first-available",
                         feeOption = WaasFeeOptionSelection(token = "usdc"),
@@ -870,7 +870,7 @@ class WalletTransactionTest {
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("/v1/Waas/PrepareEthereumContractCall", prepareRequest.target)
             assertEquals(
-                WaasWalletApi.PrepareEthereumContractCall.encodeRequest(
+                WaasApi.PrepareEthereumContractCall.encodeRequest(
                     PrepareEthereumContractCallRequest(
                         walletId = "wallet-main",
                         network = "80002",
@@ -885,7 +885,7 @@ class WalletTransactionTest {
             assertEquals("/v1/Waas/Execute", executeRequest.target)
             assertEquals("/v1/Waas/TransactionStatus", statusRequest.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "contract-txn")),
+                WaasApi.TransactionStatusMethod.encodeRequest(TransactionStatusRequest(txnId = "contract-txn")),
                 requireNotNull(statusRequest.body).utf8(),
             )
         }
@@ -931,7 +931,7 @@ class WalletTransactionTest {
             assertEquals("0xstatus", result.txnHash)
             assertEquals("/v1/Waas/TransactionStatus", request.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
+                WaasApi.TransactionStatusMethod.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
                 requireNotNull(request.body).utf8(),
             )
             assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])

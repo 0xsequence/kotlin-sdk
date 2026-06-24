@@ -183,12 +183,12 @@ class ServiceClientsTest {
             assertEquals("/v1/IndexerGateway/GetTokenBalancesDetails", request.target)
             assertEquals("test-publishable-key", request.headers["Api-Key"])
             assertEquals("application/json", request.headers["Accept"])
-            assertEquals("http://localhost:5173", request.headers["Origin"])
+            assertEquals(null, request.headers["Origin"])
             assertEquals(
                 "webrpc@v0.31.2;gen-typescript@v0.23.1;sequence-indexer@v0.4.0",
                 request.headers["Webrpc"],
             )
-            assertEquals(null, request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals(null, request.headers["X-Access-Key"])
             assertEquals(
                 "{\"chainIds\":[137],\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"contractWhitelist\":[\"0xcontract\"],\"omitNativeBalances\":false},\"omitMetadata\":false,\"page\":{\"page\":1,\"pageSize\":25}}",
                 requireNotNull(request.body).utf8(),
