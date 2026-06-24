@@ -13,10 +13,8 @@ Java 17 Android compile options. Updating `compileSdk` is separate from
 `targetSdk`; consumers do not need to opt into a newer Android runtime behavior
 just to consume the SDK.
 
-The published SDK is a single Maven artifact. Generated WaaS WebRPC classes are
-embedded in the AAR under `com.omsclient.kotlin_sdk.internal.generated.waas` and
-are not part of the documented public API. Consumers should not add or depend on
-an `oms-client-kotlin-sdk-waas-generated` artifact.
+The published SDK is a single Maven artifact. Consumers should use the SDK APIs
+documented here and do not need any separate service-client artifact.
 
 ## Entry Point
 
@@ -33,7 +31,7 @@ val client.wallet: WalletClient
 val client.indexer: IndexerClient
 ```
 
-The SDK derives Wallet API and IndexerGateway routing from the publishable key.
+The SDK derives required service configuration from the publishable key.
 
 ## Auth and Session
 
@@ -187,7 +185,7 @@ suspend fun client.wallet.handleOidcRedirectCallback(
 ): OidcRedirectAuthResult
 ```
 
-OIDC redirect auth stores transient verifier/state data separately from the
+OIDC redirect auth stores transient redirect auth state separately from the
 completed wallet session so Android can resume after the browser redirect. Open
 `StartOidcRedirectAuthResult.authorizationUrl` with app-owned UI such as Custom
 Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
@@ -256,7 +254,7 @@ Auth completion loads all wallet pages before selecting or creating a wallet.
 In `WalletSelectionBehavior.Automatic`, auth completion:
 
 - creates and selects a wallet when no wallet matches `walletType`
-- selects the first matching wallet returned by WaaS when one or more wallets
+- selects the first matching wallet returned by OMS when one or more wallets
   match `walletType`
 
 Automatic email and OIDC ID-token auth return
@@ -417,17 +415,17 @@ unsponsored transactions fail before execute when no fee option exists or the
 selector returns `null`.
 `value` is a raw base-unit integer; use `parseUnits` to convert human-entered
 decimal values before sending.
-After execution, `sendTransaction` and `callContract` poll the WaaS status
-endpoint briefly for an executed status or transaction hash. Pass
+After execution, `sendTransaction` and `callContract` poll transaction status
+briefly for an executed status or transaction hash. Pass
 `waitForStatus = false` to return immediately after execute, or pass
 `statusPolling` to tune the fast poll count, intervals, and timeout. If the
 transaction remains pending when polling times out, the response contains the
 `txnId`, `status = TransactionStatus.Pending`, and `txnHash = null`.
 Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
-WaaS cursors and returns all credentials, `listAccessPages` emits each page as a
-`Flow`, and `listAccessPage` exposes one page at a time for manual cursor
-pagination. Pass `pageSize` when fetching credentials that may span multiple
-pages so each request uses an explicit limit.
+pagination cursors and returns all credentials, `listAccessPages` emits each
+page as a `Flow`, and `listAccessPage` exposes one page at a time for manual
+cursor pagination. Pass `pageSize` when fetching credentials that may span
+multiple pages so each request uses an explicit limit.
 
 ## Networks
 
@@ -522,7 +520,7 @@ suspend fun indexer.getTransactionHistory(
 ): TransactionHistoryResult
 ```
 
-`getBalances` queries IndexerGateway and returns token balances plus
+`getBalances` queries the OMS indexer and returns token balances plus
 `nativeBalances`. Pass explicit `networks` for chain IDs, or omit them and use
 `networkType`. Pass `includeMetadata = true` when callers need
 `TokenContractInfo` or `TokenMetadata` fields on returned token balances.
@@ -1064,7 +1062,7 @@ val txResult = client.wallet.sendTransaction(
 )
 ```
 
-For WaaS ABI-style contract calls:
+For method-signature contract calls:
 
 ```kotlin
 val txResult = client.wallet.callContract(
