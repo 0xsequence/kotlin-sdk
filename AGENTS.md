@@ -79,6 +79,9 @@ unit tests, Android lint for both modules, and sample app assembly.
 - `app/` - Android sample app for auth, signing, transaction, and testbed flows.
 - `docs/` - public API notes and request-signing parity vectors.
 - `.github/workflows/android-ci.yml` - CI workflow for PRs and `master`.
+- `.github/workflows/claude-review.yml` - Claude review workflow. It runs once
+  for non-Dependabot PRs when opened or marked ready for review, and can be
+  requested later with `@claude review` in a PR or review comment.
 
 ## Development Commands
 
