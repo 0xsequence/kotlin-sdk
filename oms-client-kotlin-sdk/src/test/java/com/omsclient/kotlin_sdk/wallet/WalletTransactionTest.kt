@@ -696,6 +696,61 @@ class WalletTransactionTest {
         }
 
     @Test
+    fun sendTransactionTreatsFailedStatusAsTerminal() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-failed",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            enqueueJson("""{"status":"pending"}""")
+            enqueueJson("""{"status":"failed"}""")
+            enqueueJson("""{"status":"executed","txnHash":"0xshould-not-be-read"}""")
+
+            val delays = mutableListOf<Long>()
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                                ),
+                        ),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000121"),
+                    transactionStatusDelay = { delayMillis -> delays += delayMillis },
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request =
+                        SendTransactionRequest(
+                            to = "0xabc",
+                            value = BigInteger.ZERO,
+                        ),
+                )
+
+            assertEquals(TransactionStatus.Failed, result.status)
+            assertEquals(null, result.txnHash)
+            assertEquals(emptyList<Long>(), delays)
+            assertEquals(3, server.requestCount)
+        }
+
+    @Test
     fun sendTransactionAppliesFastPollsWhenSlowPollingIsDisabled() =
         runBlocking {
             server.enqueue(
