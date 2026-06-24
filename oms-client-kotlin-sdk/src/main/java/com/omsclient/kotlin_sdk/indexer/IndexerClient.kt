@@ -387,10 +387,11 @@ class IndexerClient internal constructor(
     private fun JsonObject.toMap(): Map<String, JsonElement> = entries.associate { it.key to it.value }
 
     private fun JsonObject.toTokenMetadataRecord(): Map<String, TokenMetadata> =
-        entries.mapNotNull { (tokenId, metadata) ->
-            val metadataObject = metadata as? JsonObject ?: return@mapNotNull null
-            tokenId to metadataObject.toTokenMetadata()
-        }.toMap()
+        entries
+            .mapNotNull { (tokenId, metadata) ->
+                val metadataObject = metadata as? JsonObject ?: return@mapNotNull null
+                tokenId to metadataObject.toTokenMetadata()
+            }.toMap()
 
     private fun JsonObject.stringArrayOrNull(name: String): List<String>? =
         (this[name] as? JsonArray)

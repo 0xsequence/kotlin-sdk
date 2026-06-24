@@ -45,5 +45,4 @@ private val publishableKeyRoutes =
         PublishableKeyRoute("pk_live_", "https://api.polygon.technology"),
     )
 
-private fun invalidPublishableKey(): OmsValidationException =
-    OmsValidationException(message = "Invalid publishableKey.")
+private fun invalidPublishableKey(): OmsValidationException = OmsValidationException(message = "Invalid publishableKey.")

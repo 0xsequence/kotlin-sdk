@@ -108,7 +108,7 @@ class ServiceClientsTest {
                 requireNotNull(typedDataRequest.body).utf8(),
             )
             assertEquals(false, typedDataIsValid)
-    }
+        }
 
     @Test
     fun getBalancesRequestsIndexerGatewayAndFlattensGroupedResults() =
