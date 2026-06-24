@@ -24,7 +24,6 @@ an `oms-client-kotlin-sdk-waas-generated` artifact.
 OMSClient(
     context: Context,
     publishableKey: String,
-    environment: OMSClientEnvironment = OMSClientEnvironment.fromPublishableKey(publishableKey),
     okHttpClient: OkHttpClient = OkHttpClient(),
 )
 ```
@@ -33,6 +32,8 @@ OMSClient(
 val client.wallet: WalletClient
 val client.indexer: IndexerClient
 ```
+
+The SDK derives Wallet API and IndexerGateway routing from the publishable key.
 
 ## Auth and Session
 
@@ -64,10 +65,9 @@ enum class OMSClientSessionLoginType {
 }
 ```
 
-`client.session` only reports completed wallet-session state. Pending auth
-state, OIDC redirect verifier/state, and signer details are SDK internals. Apps
-should show OTP or redirect waiting UI from the method result that started the
-flow, not from session state. Always pass incoming app-link URLs to
+`client.session` only reports completed wallet-session state. Apps should show
+OTP or redirect waiting UI from the method result that started the flow, not
+from session state. Always pass incoming app-link URLs to
 `handleOidcRedirectCallback`; stale callbacks return `NoPendingAuth`, and the
 app can show sign-in UI and let the user start again. Persisted session restore
 revives completed wallet sessions, including the session expiry, login type, and
@@ -85,30 +85,10 @@ existing wallet session so expired or stale sessions do not block
 re-authentication.
 
 Expired sessions are made inactive before protected wallet operations and throw
-`OmsSessionException` with `code = OmsSdkErrorCode.SessionExpired`. The SDK
-clears active signer/session state, but keeps expired completed-session metadata
-in storage until the app starts a new auth flow or calls `signOut()`. Use
+`OmsSessionException` with `code = OmsSdkErrorCode.SessionExpired`. Use
 `onSessionExpired` to route users back to sign-in; the event includes the
 expired session snapshot so apps can reuse `sessionEmail` for email OTP reauth or
 as a Google `loginHint`, including after process recreation.
-
-The Android `OMSClient(context, ...)` constructor wires two separate
-Android-backed pieces:
-
-- an Android Keystore P-256 credential signer authorizes wallet API requests
-  with `ecdsa-p256-sha256`; the private key is non-extractable and is not
-  session metadata
-- a session metadata store persists completed-session metadata in an app-private
-  no-backup file; temporary OIDC redirect state uses a separate no-backup file
-
-Completed-session metadata is limited to restorable wallet state: wallet
-id/address, signer address/algorithm, expiry, login type, and optional email. It
-is not wallet authorization material: by itself it cannot sign requests or
-access a wallet. Restore succeeds only while the matching Keystore credential
-still exists, and wallet operations must sign fresh requests with that
-credential. `publishableKey` is sent as `X-Access-Key` and is parsed to derive
-the wallet request signing project scope, OIDC redirect state scope, and default
-API routing.
 
 ```kotlin
 fun client.wallet.signOut()
@@ -545,29 +525,11 @@ suspend fun indexer.getTransactionHistory(
 `getBalances` queries IndexerGateway and returns token balances plus
 `nativeBalances`. Pass explicit `networks` for chain IDs, or omit them and use
 `networkType`. Pass `includeMetadata = true` when callers need
-`TokenContractInfo` or `TokenMetadata` fields on returned token balances. The
-wallet client also uses `getBalances` internally to enrich fee option balances.
-
-## Environment
-
-```kotlin
-class OMSClientEnvironment(
-    val walletApiUrl: String = OMSClientEnvironment.walletApiUrlDefault,
-    val apiRpcUrl: String = OMSClientEnvironment.apiRpcUrlDefault,
-    val indexerGatewayUrl: String = OMSClientEnvironment.indexerGatewayUrlDefault,
-)
-```
-
-`walletApiUrl` should be treated as the Wallet API base URL/origin. Wallet RPC method paths come from the generated waas schema.
-
-```kotlin
-fun OMSClientEnvironment.Companion.demoDefaults(): OMSClientEnvironment
-```
+`TokenContractInfo` or `TokenMetadata` fields on returned token balances.
 
 ## Errors
 
-Public SDK APIs throw `OmsSdkException` when the SDK can classify a failure
-without exposing generated WebRPC internals.
+Public SDK APIs throw `OmsSdkException` when the SDK can classify a failure.
 
 ```kotlin
 enum class OmsSdkErrorCode {
@@ -646,9 +608,8 @@ enum class OmsSdkOperation(
 }
 ```
 
-`RequestFailed` covers classified WebRPC/backend failures, including backend
-error codes newer than the generated WaaS client. `InvalidResponse` is reserved
-for malformed or unparseable responses.
+`RequestFailed` covers classified backend failures. `InvalidResponse` is
+reserved for malformed or unparseable responses.
 
 `upstreamError` is normalized diagnostic detail from a remote OMS service response
 or transport failure. Use SDK-level `code` for app branching; use
@@ -684,6 +645,7 @@ enum class TransactionStatus {
     Quoted,
     Pending,
     Executed,
+    Failed,
     UNKNOWN_DEFAULT,
 }
 ```
@@ -704,7 +666,7 @@ data class FeeToken(
     val symbol: String,
     val type: String,
     val decimals: UInt? = null,
-    val logoUrl: String,
+    val logoUrl: String? = null,
     val contractAddress: String? = null,
     val tokenId: String? = null,
 )
@@ -817,10 +779,32 @@ data class TokenBalancesPageRequest(
 ```
 
 ```kotlin
+enum class IndexerNetworkType {
+    MAINNETS,
+    TESTNETS,
+    ALL,
+}
+
+enum class ContractVerificationStatus {
+    VERIFIED,
+    UNVERIFIED,
+    ALL,
+}
+```
+
+```kotlin
 data class TokenBalancesPage(
     val page: Int,
     val pageSize: Int,
     val more: Boolean,
+)
+```
+
+```kotlin
+data class MetadataOptions(
+    val verifiedOnly: Boolean? = null,
+    val unverifiedOnly: Boolean? = null,
+    val includeContracts: List<String> = emptyList(),
 )
 ```
 
@@ -834,6 +818,8 @@ data class TokenBalance(
     val blockHash: String?,
     val blockNumber: Long?,
     val chainId: Long?,
+    val name: String? = null,
+    val symbol: String? = null,
     val balanceUSD: String? = null,
     val priceUSD: String? = null,
     val priceUpdatedAt: String? = null,
@@ -910,6 +896,40 @@ data class TokenBalancesResult(
     val status: Int,
     val page: TokenBalancesPage?,
     val balances: List<TokenBalance>,
+    val nativeBalances: List<TokenBalance> = emptyList(),
+)
+```
+
+```kotlin
+data class TransactionTransfer(
+    val transferType: String? = null,
+    val contractAddress: String? = null,
+    val contractType: String? = null,
+    val from: String? = null,
+    val to: String? = null,
+    val tokenIds: List<String>? = null,
+    val amounts: List<String>? = null,
+    val logIndex: Long? = null,
+    val amountsUSD: List<String>? = null,
+    val pricesUSD: List<String>? = null,
+    val contractInfo: TokenContractInfo? = null,
+    val tokenMetadata: Map<String, TokenMetadata>? = null,
+)
+
+data class Transaction(
+    val txnHash: String?,
+    val blockNumber: Long?,
+    val blockHash: String?,
+    val chainId: Long?,
+    val metaTxnId: String? = null,
+    val transfers: List<TransactionTransfer>? = null,
+    val timestamp: String? = null,
+)
+
+data class TransactionHistoryResult(
+    val status: Int,
+    val page: TokenBalancesPage?,
+    val transactions: List<Transaction>,
 )
 ```
 

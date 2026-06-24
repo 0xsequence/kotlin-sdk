@@ -27,8 +27,8 @@ SDK APIs documented below instead of importing generated classes.
 - transaction status lookup
 - wallet access listing and revocation
 - message and typed-data signature verification through WaaS
-- native and token balance lookups through the indexer service, including
-  optional token contract info and token metadata
+- native and token balance lookups plus transaction history through the indexer
+  service, including optional token contract info and token metadata
 - unit formatting and parsing helpers for raw token amounts
 
 ## Requirements
@@ -55,19 +55,9 @@ val client = OMSClient(
 )
 ```
 
-That constructor wires two separate Android-backed pieces. Wallet API requests
-are authorized by a non-extractable Android Keystore P-256 credential
-(`ecdsa-p256-sha256`) owned by the credential signer, so the private credential
-key is never written to SDK session storage.
-
-Session restore uses a separate metadata store. The SDK persists only
-completed-session metadata in app-private no-backup storage: wallet id/address,
-signer address/algorithm, expiry, login type, and optional session email. This
-metadata is not wallet authorization material: by itself it cannot sign requests
-or access a wallet. Restore succeeds only while the matching Keystore credential
-still exists, and wallet operations must sign fresh requests with that
-credential. `publishableKey` is sent as `Api-Key` and is parsed to derive
-the WaaS signing project scope and default API routing.
+The SDK derives Wallet API and IndexerGateway routing from the publishable key.
+Session restore persists completed wallet-session metadata only; it does not
+store private signing material.
 
 Pending email OTP state is kept in memory. OIDC redirect state is stored only to
 complete the browser redirect flow and is cleared when the flow completes, fails,
@@ -80,30 +70,6 @@ metadata in storage until the app starts a new auth flow or calls `signOut()`.
 Subscribe with `client.wallet.onSessionExpired { event -> ... }` to route users
 back to sign-in while preserving the expired session snapshot for reauth.
 Listeners are delivered on the Android main thread.
-
-If you need a custom environment:
-
-```kotlin
-val client = OMSClient(
-    context = context,
-    publishableKey = "YOUR_PUBLISHABLE_KEY",
-    environment = OMSClientEnvironment(
-        walletApiUrl = "https://...",
-        apiRpcUrl = "https://...",
-        indexerGatewayUrl = "https://.../v1/IndexerGateway/",
-    ),
-)
-```
-
-For demo or staging-style defaults:
-
-```kotlin
-val client = OMSClient(
-    context = context,
-    publishableKey = "YOUR_PUBLISHABLE_KEY",
-    environment = OMSClientEnvironment.demoDefaults(),
-)
-```
 
 ## Example Flow
 
@@ -255,10 +221,10 @@ val loginType = client.session.loginType
 val sessionEmail = client.session.sessionEmail
 ```
 
-`client.session` only reports completed wallet-session state. Pending auth
-state, OIDC redirect verifier/state, and signer details are SDK internals. Show
-OTP or redirect waiting UI from the method result that started the flow, not from
-session state. Always pass incoming app links to `handleOidcRedirectCallback`;
+`client.session` only reports completed wallet-session state. It does not
+include pending auth progress. Show OTP or redirect waiting UI from the method
+result that started the flow, not from session state. Always pass incoming app
+links to `handleOidcRedirectCallback`;
 if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
 fresh SDK instance restores completed wallet sessions, including the session
 expiry, login type, and email returned by the wallet API, but not email OTP
