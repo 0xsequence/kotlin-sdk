@@ -286,6 +286,7 @@ enum class TransactionStatus(val wireValue: String) {
     Quoted("quoted"),
     Pending("pending"),
     Executed("executed"),
+    Failed("failed"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT");
 
     companion object {
@@ -954,11 +955,11 @@ fun decodeWebRpcError(
 // region Service Metadata
 
 object WaasWalletApi {
-    const val basePath: String = "/rpc/Wallet"
+    const val basePath: String = "/v1/Waas"
 
     object CommitVerifier {
         const val path: String = "/CommitVerifier"
-        const val urlPath: String = "/rpc/Wallet/CommitVerifier"
+        const val urlPath: String = "/v1/Waas/CommitVerifier"
         fun encodeRequest(request: CommitVerifierRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -970,7 +971,7 @@ object WaasWalletApi {
 
     object CompleteAuth {
         const val path: String = "/CompleteAuth"
-        const val urlPath: String = "/rpc/Wallet/CompleteAuth"
+        const val urlPath: String = "/v1/Waas/CompleteAuth"
         fun encodeRequest(request: CompleteAuthRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -982,7 +983,7 @@ object WaasWalletApi {
 
     object CreateWallet {
         const val path: String = "/CreateWallet"
-        const val urlPath: String = "/rpc/Wallet/CreateWallet"
+        const val urlPath: String = "/v1/Waas/CreateWallet"
         fun encodeRequest(request: CreateWalletRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -994,7 +995,7 @@ object WaasWalletApi {
 
     object UseWallet {
         const val path: String = "/UseWallet"
-        const val urlPath: String = "/rpc/Wallet/UseWallet"
+        const val urlPath: String = "/v1/Waas/UseWallet"
         fun encodeRequest(request: UseWalletRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1006,7 +1007,7 @@ object WaasWalletApi {
 
     object SignMessage {
         const val path: String = "/SignMessage"
-        const val urlPath: String = "/rpc/Wallet/SignMessage"
+        const val urlPath: String = "/v1/Waas/SignMessage"
         fun encodeRequest(request: SignMessageRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1018,7 +1019,7 @@ object WaasWalletApi {
 
     object SignTypedData {
         const val path: String = "/SignTypedData"
-        const val urlPath: String = "/rpc/Wallet/SignTypedData"
+        const val urlPath: String = "/v1/Waas/SignTypedData"
         fun encodeRequest(request: SignTypedDataRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1030,7 +1031,7 @@ object WaasWalletApi {
 
     object PrepareEthereumTransaction {
         const val path: String = "/PrepareEthereumTransaction"
-        const val urlPath: String = "/rpc/Wallet/PrepareEthereumTransaction"
+        const val urlPath: String = "/v1/Waas/PrepareEthereumTransaction"
         fun encodeRequest(request: PrepareEthereumTransactionRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1042,7 +1043,7 @@ object WaasWalletApi {
 
     object PrepareEthereumContractCall {
         const val path: String = "/PrepareEthereumContractCall"
-        const val urlPath: String = "/rpc/Wallet/PrepareEthereumContractCall"
+        const val urlPath: String = "/v1/Waas/PrepareEthereumContractCall"
         fun encodeRequest(request: PrepareEthereumContractCallRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1054,7 +1055,7 @@ object WaasWalletApi {
 
     object Execute {
         const val path: String = "/Execute"
-        const val urlPath: String = "/rpc/Wallet/Execute"
+        const val urlPath: String = "/v1/Waas/Execute"
         fun encodeRequest(request: ExecuteRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1066,7 +1067,7 @@ object WaasWalletApi {
 
     object TransactionStatus {
         const val path: String = "/TransactionStatus"
-        const val urlPath: String = "/rpc/Wallet/TransactionStatus"
+        const val urlPath: String = "/v1/Waas/TransactionStatus"
         fun encodeRequest(request: TransactionStatusRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1078,7 +1079,7 @@ object WaasWalletApi {
 
     object ListAccess {
         const val path: String = "/ListAccess"
-        const val urlPath: String = "/rpc/Wallet/ListAccess"
+        const val urlPath: String = "/v1/Waas/ListAccess"
         fun encodeRequest(request: ListAccessRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1090,7 +1091,7 @@ object WaasWalletApi {
 
     object RevokeAccess {
         const val path: String = "/RevokeAccess"
-        const val urlPath: String = "/rpc/Wallet/RevokeAccess"
+        const val urlPath: String = "/v1/Waas/RevokeAccess"
         fun encodeRequest(request: RevokeAccessRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1102,7 +1103,7 @@ object WaasWalletApi {
 
     object ListWallets {
         const val path: String = "/ListWallets"
-        const val urlPath: String = "/rpc/Wallet/ListWallets"
+        const val urlPath: String = "/v1/Waas/ListWallets"
         fun encodeRequest(request: ListWalletsRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1114,7 +1115,7 @@ object WaasWalletApi {
 
     object GetIDToken {
         const val path: String = "/GetIDToken"
-        const val urlPath: String = "/rpc/Wallet/GetIDToken"
+        const val urlPath: String = "/v1/Waas/GetIDToken"
         fun encodeRequest(request: GetIDTokenRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1346,11 +1347,11 @@ class WaasWalletClient(
 
 
 object WaasWalletPublicApi {
-    const val basePath: String = "/rpc/WalletPublic"
+    const val basePath: String = "/v1/WaasPublic"
 
     object IsValidMessageSignature {
         const val path: String = "/IsValidMessageSignature"
-        const val urlPath: String = "/rpc/WalletPublic/IsValidMessageSignature"
+        const val urlPath: String = "/v1/WaasPublic/IsValidMessageSignature"
         fun encodeRequest(request: IsValidMessageSignatureRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1362,7 +1363,7 @@ object WaasWalletPublicApi {
 
     object IsValidTypedDataSignature {
         const val path: String = "/IsValidTypedDataSignature"
-        const val urlPath: String = "/rpc/WalletPublic/IsValidTypedDataSignature"
+        const val urlPath: String = "/v1/WaasPublic/IsValidTypedDataSignature"
         fun encodeRequest(request: IsValidTypedDataSignatureRequest, json: Json = WebRpcJson): String {
             return json.encodeToString(request)
         }
@@ -1412,4 +1413,3 @@ class WaasWalletPublicClient(
 }
 
 // endregion
-

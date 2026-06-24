@@ -7,6 +7,7 @@ import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.OmsSdkOperation
 import com.omsclient.kotlin_sdk.OmsUpstreamService
 import com.omsclient.kotlin_sdk.indexer.IndexerClient
+import com.omsclient.kotlin_sdk.models.TokenBalancesPageRequest
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
@@ -54,7 +55,7 @@ class ServiceClientsTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val client =
                 OMSClient(
@@ -77,7 +78,7 @@ class ServiceClientsTest {
                 )
             val messageRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/WalletPublic/IsValidMessageSignature", messageRequest.target)
+            assertEquals("/v1/WaasPublic/IsValidMessageSignature", messageRequest.target)
             assertEquals("test-publishable-key", messageRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(null, messageRequest.headers["Authorization"])
             assertEquals(null, messageRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
@@ -98,7 +99,7 @@ class ServiceClientsTest {
                 )
             val typedDataRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/WalletPublic/IsValidTypedDataSignature", typedDataRequest.target)
+            assertEquals("/v1/WaasPublic/IsValidTypedDataSignature", typedDataRequest.target)
             assertEquals("test-publishable-key", typedDataRequest.headers[OMSClientEnvironment.accessKeyHeaderName])
             assertEquals(null, typedDataRequest.headers["Authorization"])
             assertEquals(null, typedDataRequest.headers[OMSClientEnvironment.walletSignatureHeaderName])
@@ -107,10 +108,10 @@ class ServiceClientsTest {
                 requireNotNull(typedDataRequest.body).utf8(),
             )
             assertEquals(false, typedDataIsValid)
-        }
+    }
 
     @Test
-    fun getTokenBalancesParsesIndexerResponse() =
+    fun getBalancesRequestsIndexerGatewayAndFlattensGroupedResults() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -120,74 +121,42 @@ class ServiceClientsTest {
                         """
                         {
                           "page": {"page": 1, "pageSize": 25, "more": false},
+                          "nativeBalances": [
+                            {
+                              "chainId": 137,
+                              "results": [
+                                {
+                                  "accountAddress": "0xwallet",
+                                  "chainId": 137,
+                                  "name": "Polygon",
+                                  "symbol": "POL",
+                                  "balance": "1000000000000000000",
+                                  "balanceUSD": "0.20",
+                                  "priceUSD": "0.20"
+                                }
+                              ]
+                            }
+                          ],
                           "balances": [
                             {
-                              "contractType": "ERC20",
-                              "contractAddress": "0xcontract",
-                              "accountAddress": "0xwallet",
-                              "tokenID": "0",
-                              "balance": "1000",
-                              "balanceUSD": "12.34",
-                              "priceUSD": "0.01234",
-                              "priceUpdatedAt": "2026-01-01T00:00:00Z",
-                              "blockHash": "0xhash",
-                              "blockNumber": 12345,
                               "chainId": 137,
-                              "uniqueCollectibles": "1",
-                              "isSummary": false,
-                              "contractInfo": {
-                                "chainId": 137,
-                                "address": "0xcontract",
-                                "source": "metadata",
-                                "name": "Example Token",
-                                "type": "ERC20",
-                                "symbol": "EXM",
-                                "decimals": 18,
-                                "logoURI": "https://example.com/logo.png",
-                                "deployed": true,
-                                "bytecodeHash": "0xbytecode",
-                                "extensions": {"verified": true},
-                                "updatedAt": "2026-01-02T00:00:00Z",
-                                "queuedAt": null,
-                                "status": "available"
-                              },
-                              "tokenMetadata": {
-                                "chainId": 137,
-                                "contractAddress": "0xcontract",
-                                "tokenId": "0",
-                                "source": "metadata",
-                                "name": "Example Token Metadata",
-                                "description": "Example description",
-                                "image": "ipfs://image",
-                                "video": "ipfs://video",
-                                "audio": "ipfs://audio",
-                                "properties": {"rarity": "rare"},
-                                "attributes": [{"trait_type": "Level", "value": 7}],
-                                "image_data": "<svg></svg>",
-                                "external_url": "https://example.com/token/0",
-                                "background_color": "ffffff",
-                                "animation_url": "ipfs://animation",
-                                "decimals": 18,
-                                "updatedAt": "2026-01-03T00:00:00Z",
-                                "assets": [
-                                  {
-                                    "id": 1,
-                                    "collectionId": 2,
-                                    "tokenID": "asset-token",
-                                    "url": "https://example.com/asset.png",
-                                    "metadataField": "image",
-                                    "name": "Asset",
-                                    "filesize": 123456,
-                                    "mimeType": "image/png",
-                                    "width": 640,
-                                    "height": 480,
-                                    "updatedAt": "2026-01-04T00:00:00Z"
+                              "results": [
+                                {
+                                  "contractType": "ERC20",
+                                  "contractAddress": "0xcontract",
+                                  "accountAddress": "0xwallet",
+                                  "tokenID": "0",
+                                  "balance": "141799",
+                                  "balanceUSD": "0.141799",
+                                  "priceUSD": "1",
+                                  "chainId": 137,
+                                  "contractInfo": {
+                                    "name": "USDC",
+                                    "symbol": "USDC",
+                                    "decimals": 6
                                   }
-                                ],
-                                "status": "available",
-                                "queuedAt": null,
-                                "lastFetched": "2026-01-05T00:00:00Z"
-                              }
+                                }
+                              ]
                             }
                           ]
                         }
@@ -195,89 +164,86 @@ class ServiceClientsTest {
                     ).build(),
             )
 
-            val template = server.url("/polygon/rpc/Indexer/").toString().replace("/polygon/", "/{value}/")
             val environment =
                 OMSClientEnvironment(
-                    indexerUrlTemplate = template,
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client = IndexerClient("test-publishable-key", environment, OMSClientHttpClient())
 
             val response =
-                client.getTokenBalances(
-                    network = Network.POLYGON,
-                    contractAddress = "0xcontract",
+                client.getBalances(
+                    networks = listOf(Network.POLYGON),
+                    contractAddresses = listOf("0xcontract"),
                     walletAddress = "0xwallet",
                     includeMetadata = true,
+                    page = TokenBalancesPageRequest(page = 1, pageSize = 25),
                 )
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals("/polygon/rpc/Indexer/GetTokenBalances", request.target)
-            assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals("/v1/IndexerGateway/GetTokenBalancesDetails", request.target)
+            assertEquals("test-publishable-key", request.headers["Api-Key"])
+            assertEquals("application/json", request.headers["Accept"])
+            assertEquals("http://localhost:5173", request.headers["Origin"])
             assertEquals(
-                "{\"page\":{\"page\":0,\"pageSize\":40,\"more\":false},\"contractAddress\":\"0xcontract\",\"accountAddress\":\"0xwallet\",\"includeMetadata\":true}",
+                "webrpc@v0.31.2;gen-typescript@v0.23.1;sequence-indexer@v0.4.0",
+                request.headers["Webrpc"],
+            )
+            assertEquals(null, request.headers[OMSClientEnvironment.accessKeyHeaderName])
+            assertEquals(
+                "{\"chainIds\":[137],\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"contractWhitelist\":[\"0xcontract\"],\"omitNativeBalances\":false},\"omitMetadata\":false,\"page\":{\"page\":1,\"pageSize\":25}}",
                 requireNotNull(request.body).utf8(),
             )
             assertEquals(1, response.page?.page)
             assertEquals(25, response.page?.pageSize)
             assertEquals(false, response.page?.more)
+            assertEquals(1, response.nativeBalances.size)
+            val nativeBalance = response.nativeBalances.single()
+            assertEquals("NATIVE", nativeBalance.contractType)
+            assertEquals("Polygon", nativeBalance.name)
+            assertEquals("POL", nativeBalance.symbol)
+            assertEquals("1000000000000000000", nativeBalance.balance)
+            assertEquals("0.20", nativeBalance.balanceUSD)
             assertEquals(1, response.balances.size)
             val balance = response.balances.single()
             assertEquals("0", balance.tokenId)
-            assertEquals("1000", balance.balance)
-            assertEquals("12.34", balance.balanceUSD)
-            assertEquals("0.01234", balance.priceUSD)
-            assertEquals("2026-01-01T00:00:00Z", balance.priceUpdatedAt)
-            assertEquals(137L, balance.chainId)
-            assertEquals("1", balance.uniqueCollectibles)
-            assertEquals(false, balance.isSummary)
-            val contractInfo = requireNotNull(balance.contractInfo)
-            assertEquals("EXM", contractInfo.symbol)
-            assertEquals(18, contractInfo.decimals)
-            assertEquals("https://example.com/logo.png", contractInfo.logoURI)
-            assertEquals("true", contractInfo.extensions?.get("verified").toString())
-            val tokenMetadata = requireNotNull(balance.tokenMetadata)
-            assertEquals("0", tokenMetadata.tokenId)
-            assertEquals("Example Token Metadata", tokenMetadata.name)
-            assertEquals("<svg></svg>", tokenMetadata.imageData)
-            assertEquals("https://example.com/token/0", tokenMetadata.externalUrl)
-            assertEquals("\"rare\"", tokenMetadata.properties?.get("rarity").toString())
-            val metadataAsset = requireNotNull(tokenMetadata.assets).single()
-            assertEquals("asset-token", metadataAsset.tokenId)
-            assertEquals("https://example.com/asset.png", metadataAsset.url)
+            assertEquals("141799", balance.balance)
+            assertEquals("USDC", balance.contractInfo?.symbol)
+            assertEquals(6, balance.contractInfo?.decimals)
         }
 
     @Test
-    fun getTokenBalancesTreatsNullPageAndBalancesAsEmpty() =
+    fun getBalancesDefaultsToMainnetsWhenNetworksAreOmitted() =
         runBlocking {
             server.enqueue(
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body("""{"page":null,"balances":null}""")
+                    .body("""{"page":{"page":0,"pageSize":40,"more":false},"nativeBalances":[],"balances":[]}""")
                     .build(),
             )
 
-            val template = server.url("/polygon/rpc/Indexer/").toString().replace("/polygon/", "/{value}/")
             val environment =
                 OMSClientEnvironment(
-                    indexerUrlTemplate = template,
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client = IndexerClient("test-publishable-key", environment, OMSClientHttpClient())
 
             val response =
-                client.getTokenBalances(
-                    network = Network.POLYGON,
-                    contractAddress = "0xcontract",
+                client.getBalances(
                     walletAddress = "0xwallet",
-                    includeMetadata = true,
                 )
+            val request = requireNotNull(server.takeRequest())
 
-            assertEquals(null, response.page)
+            assertEquals(
+                "{\"networkType\":\"MAINNETS\",\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"omitNativeBalances\":false},\"omitMetadata\":false,\"page\":{\"page\":0,\"pageSize\":40}}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertTrue(response.nativeBalances.isEmpty())
             assertTrue(response.balances.isEmpty())
         }
 
     @Test
-    fun getNativeTokenBalanceParsesIndexerResponse() =
+    fun getTransactionHistoryRequestsIndexerGatewayAndMapsWireFields() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -286,46 +252,65 @@ class ServiceClientsTest {
                     .body(
                         """
                         {
-                          "balance": {
-                            "accountAddress": "0xwallet",
-                            "chainId": 137,
-                            "name": "POL",
-                            "symbol": "POL",
-                            "balance": "123",
-                            "balanceUSD": "1",
-                            "priceUSD": "0.25",
-                            "priceUpdatedAt": "2026-01-06T00:00:00Z"
-                          }
+                          "page": {"page": 0, "pageSize": 1, "more": true},
+                          "transactions": [
+                            {
+                              "chainId": 1,
+                              "results": [
+                                {
+                                  "txnHash": "0xabc",
+                                  "blockNumber": 123,
+                                  "blockHash": "0xdef",
+                                  "chainId": 1,
+                                  "metaTxnID": "meta-1",
+                                  "transfers": [
+                                    {
+                                      "transferType": "RECEIVE",
+                                      "contractAddress": "0x0000000000000000000000000000000000000000",
+                                      "contractType": "NATIVE",
+                                      "from": "0xfrom",
+                                      "to": "0xwallet",
+                                      "tokenIDs": ["0"],
+                                      "amounts": ["1"],
+                                      "logIndex": 0
+                                    }
+                                  ],
+                                  "timestamp": "2026-06-17T00:00:00Z"
+                                }
+                              ]
+                            }
+                          ]
                         }
                         """.trimIndent(),
                     ).build(),
             )
 
-            val template = server.url("/polygon/rpc/Indexer/").toString().replace("/polygon/", "/{value}/")
             val environment =
                 OMSClientEnvironment(
-                    indexerUrlTemplate = template,
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client = IndexerClient("test-publishable-key", environment, OMSClientHttpClient())
 
             val response =
-                client.getNativeTokenBalance(
-                    network = Network.POLYGON,
+                client.getTransactionHistory(
+                    networks = listOf(Network.MAINNET),
                     walletAddress = "0xwallet",
+                    includeMetadata = true,
+                    page = TokenBalancesPageRequest(page = 0, pageSize = 1),
                 )
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals("/polygon/rpc/Indexer/GetNativeTokenBalance", request.target)
+            assertEquals("/v1/IndexerGateway/GetTransactionHistory", request.target)
             assertEquals(
-                "{\"accountAddress\":\"0xwallet\"}",
+                "{\"chainIds\":[1],\"filter\":{\"accountAddresses\":[\"0xwallet\"]},\"includeMetadata\":true,\"page\":{\"page\":0,\"pageSize\":1}}",
                 requireNotNull(request.body).utf8(),
             )
-            assertEquals("NATIVE", response?.contractType)
-            assertEquals("123", response?.balance)
-            assertEquals("1", response?.balanceUSD)
-            assertEquals("0.25", response?.priceUSD)
-            assertEquals("2026-01-06T00:00:00Z", response?.priceUpdatedAt)
-            assertEquals(137L, response?.chainId)
+            assertEquals(0, response.page?.page)
+            assertEquals(true, response.page?.more)
+            val transaction = response.transactions.single()
+            assertEquals("0xabc", transaction.txnHash)
+            assertEquals("meta-1", transaction.metaTxnId)
+            assertEquals(listOf("0"), transaction.transfers?.single()?.tokenIds)
         }
 
     @Test
@@ -343,7 +328,7 @@ class ServiceClientsTest {
                 OMSClient(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
-                    environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
+                    environment = OMSClientEnvironment(walletApiUrl = server.url("/v1/Waas/").toString()),
                 )
             client.wallet.restoreSession(
                 OMSClientSessionSnapshot(
@@ -389,7 +374,7 @@ class ServiceClientsTest {
                 OMSClient(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
-                    environment = OMSClientEnvironment(walletApiUrl = server.url("/rpc/Wallet/").toString()),
+                    environment = OMSClientEnvironment(walletApiUrl = server.url("/v1/Waas/").toString()),
                 )
             client.wallet.restoreSession(
                 OMSClientSessionSnapshot(

@@ -38,7 +38,6 @@ SDK APIs documented below instead of importing generated classes.
 - Java 17 Android compile options
 - Kotlin/Android app using the Android library module
 - a valid `publishableKey`
-- a valid `projectId`
 
 The sample app in this repository uses additional Google Sign-In / AndroidX
 Credential Manager dependencies and therefore compiles with SDK 35. That sample
@@ -53,7 +52,6 @@ Create the SDK with the Android-friendly constructor:
 val client = OMSClient(
     context = context,
     publishableKey = "YOUR_PUBLISHABLE_KEY",
-    projectId = "YOUR_PROJECT_ID",
 )
 ```
 
@@ -68,8 +66,8 @@ signer address/algorithm, expiry, login type, and optional session email. This
 metadata is not wallet authorization material: by itself it cannot sign requests
 or access a wallet. Restore succeeds only while the matching Keystore credential
 still exists, and wallet operations must sign fresh requests with that
-credential. `publishableKey` is sent as `X-Access-Key`, while `projectId` is used
-as the WaaS signing scope.
+credential. `publishableKey` is sent as `X-Access-Key` and is parsed to derive
+the WaaS signing project scope and default API routing.
 
 Pending email OTP state is kept in memory. OIDC redirect state is stored only to
 complete the browser redirect flow and is cleared when the flow completes, fails,
@@ -89,11 +87,10 @@ If you need a custom environment:
 val client = OMSClient(
     context = context,
     publishableKey = "YOUR_PUBLISHABLE_KEY",
-    projectId = "YOUR_PROJECT_ID",
     environment = OMSClientEnvironment(
         walletApiUrl = "https://...",
         apiRpcUrl = "https://...",
-        indexerUrlTemplate = "https://{value}-indexer.example.com/rpc/Indexer/",
+        indexerGatewayUrl = "https://.../v1/IndexerGateway/",
     ),
 )
 ```
@@ -104,7 +101,6 @@ For demo or staging-style defaults:
 val client = OMSClient(
     context = context,
     publishableKey = "YOUR_PUBLISHABLE_KEY",
-    projectId = "YOUR_PROJECT_ID",
     environment = OMSClientEnvironment.demoDefaults(),
 )
 ```
@@ -379,17 +375,16 @@ For indexer balance lookups:
 ```kotlin
 val walletAddress = requireNotNull(client.wallet.walletAddress)
 
-val nativeBalance = client.indexer.getNativeTokenBalance(
-    network = network,
+val tokenBalances = client.indexer.getBalances(
     walletAddress = walletAddress,
-)
-
-val tokenBalances = client.indexer.getTokenBalances(
-    network = network,
-    contractAddress = "0xTokenContract",
-    walletAddress = walletAddress,
+    networks = listOf(network),
+    contractAddresses = listOf("0xTokenContract"),
     includeMetadata = true,
 )
+
+tokenBalances.nativeBalances.forEach { balance ->
+    println("${balance.symbol.orEmpty()} ${balance.balance.orEmpty()}")
+}
 
 tokenBalances.balances.forEach { balance ->
     println("${balance.contractInfo?.symbol.orEmpty()} ${balance.contractInfo?.decimals ?: 0}")
@@ -398,6 +393,15 @@ tokenBalances.balances.forEach { balance ->
 
 Pass `includeMetadata = true` when you need token contract details or NFT/token
 metadata from `balance.contractInfo` and `balance.tokenMetadata`.
+
+For transaction history:
+
+```kotlin
+val history = client.indexer.getTransactionHistory(
+    walletAddress = walletAddress,
+    networks = listOf(network),
+)
+```
 
 For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:
 

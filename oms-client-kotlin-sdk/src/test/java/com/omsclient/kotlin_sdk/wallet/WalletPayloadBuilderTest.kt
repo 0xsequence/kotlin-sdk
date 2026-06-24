@@ -159,7 +159,7 @@ class WalletPayloadBuilderTest {
 
     @Test
     fun walletApiEndpointsMatchGeneratedSchema() {
-        assertEquals("/rpc/Wallet", WaasWalletApi.basePath)
+        assertEquals("/v1/Waas", WaasWalletApi.basePath)
         assertEquals("/CommitVerifier", WaasWalletApi.CommitVerifier.path)
         assertEquals("/CompleteAuth", WaasWalletApi.CompleteAuth.path)
         assertEquals("/UseWallet", WaasWalletApi.UseWallet.path)

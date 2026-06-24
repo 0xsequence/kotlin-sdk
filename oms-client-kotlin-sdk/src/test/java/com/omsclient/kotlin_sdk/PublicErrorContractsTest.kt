@@ -887,7 +887,7 @@ class PublicErrorContractsTest {
                 error(
                     name = "OmsRequestException",
                     code = "HttpError",
-                    operation = "indexer.getTokenBalances",
+                    operation = "indexer.getBalances",
                     message = "Indexer is unavailable",
                     status = 503,
                     retryable = true,
@@ -901,8 +901,8 @@ class PublicErrorContractsTest {
                         ),
                 ),
                 publicError {
-                    client.getTokenBalances(
-                        network = Network.POLYGON,
+                    client.getBalances(
+                        networks = listOf(Network.POLYGON),
                         walletAddress = "0x9999999999999999999999999999999999999999",
                         includeMetadata = false,
                     )
@@ -924,8 +924,8 @@ class PublicErrorContractsTest {
             val client = createIndexerClient()
             val failure =
                 publicError {
-                    client.getTokenBalances(
-                        network = Network.POLYGON,
+                    client.getBalances(
+                        networks = listOf(Network.POLYGON),
                         walletAddress = "0x9999999999999999999999999999999999999999",
                         includeMetadata = false,
                     )
@@ -935,14 +935,14 @@ class PublicErrorContractsTest {
                 error(
                     name = "OmsRequestException",
                     code = "HttpError",
-                    operation = "indexer.getTokenBalances",
-                    message = "indexer.getTokenBalances failed with HTTP 502",
+                    operation = "indexer.getBalances",
+                    message = "indexer.getBalances failed with HTTP 502",
                     status = 502,
                     retryable = true,
                     upstreamError =
                         upstream(
                             service = "Indexer",
-                            message = "indexer.getTokenBalances failed with HTTP 502",
+                            message = "indexer.getBalances failed with HTTP 502",
                             status = 502,
                         ),
                 ),
@@ -950,116 +950,6 @@ class PublicErrorContractsTest {
             )
             assertTrue(requireNotNull(failure.message).contains("Bad Gateway").not())
             assertTrue(requireNotNull(failure.upstreamError?.message).contains("Bad Gateway").not())
-        }
-
-    @Test
-    fun snapshotsNativeBalanceIndexerErrorsWithUpstreamDetails() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(503)
-                    .body("""{"error":"Unavailable","code":"INDEXER_UNAVAILABLE","message":"Indexer is unavailable"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("not-json")
-                    .build(),
-            )
-
-            val client = createIndexerClient()
-            val transportClient =
-                createIndexerClient(
-                    transport = OMSClientHttpClient(failingOkHttpClient("fetch failed")),
-                )
-
-            assertEquals(
-                listOf(
-                    labeled(
-                        "indexer.getNativeTokenBalance.http",
-                        error(
-                            name = "OmsRequestException",
-                            code = "HttpError",
-                            operation = "indexer.getNativeTokenBalance",
-                            message = "Indexer is unavailable",
-                            status = 503,
-                            retryable = true,
-                            upstreamError =
-                                upstream(
-                                    service = "Indexer",
-                                    name = "Unavailable",
-                                    code = "INDEXER_UNAVAILABLE",
-                                    message = "Indexer is unavailable",
-                                    status = 503,
-                                ),
-                        ),
-                    ),
-                    labeled(
-                        "indexer.getNativeTokenBalance.transport",
-                        error(
-                            name = "OmsRequestException",
-                            code = "RequestFailed",
-                            operation = "indexer.getNativeTokenBalance",
-                            message = "fetch failed",
-                            retryable = true,
-                            upstreamError =
-                                upstream(
-                                    service = "Indexer",
-                                    name = "IOException",
-                                    message = "fetch failed",
-                                ),
-                        ),
-                    ),
-                    labeled(
-                        "indexer.getNativeTokenBalance.malformed",
-                        error(
-                            name = "OmsResponseException",
-                            code = "InvalidResponse",
-                            operation = "indexer.getNativeTokenBalance",
-                            message = "Invalid JSON response from indexer.getNativeTokenBalance",
-                            status = 200,
-                            upstreamError =
-                                upstream(
-                                    service = "Indexer",
-                                    message = "Invalid JSON response from indexer.getNativeTokenBalance",
-                                    status = 200,
-                                ),
-                        ),
-                    ),
-                ),
-                listOf(
-                    labeled(
-                        "indexer.getNativeTokenBalance.http",
-                        publicError {
-                            client.getNativeTokenBalance(
-                                network = Network.POLYGON,
-                                walletAddress = "0x9999999999999999999999999999999999999999",
-                            )
-                        },
-                    ),
-                    labeled(
-                        "indexer.getNativeTokenBalance.transport",
-                        publicError {
-                            transportClient.getNativeTokenBalance(
-                                network = Network.POLYGON,
-                                walletAddress = "0x9999999999999999999999999999999999999999",
-                            )
-                        },
-                    ),
-                    labeled(
-                        "indexer.getNativeTokenBalance.malformed",
-                        publicError {
-                            client.getNativeTokenBalance(
-                                network = Network.POLYGON,
-                                walletAddress = "0x9999999999999999999999999999999999999999",
-                            )
-                        },
-                    ),
-                ),
-            )
         }
 
     @Test
@@ -1074,7 +964,7 @@ class PublicErrorContractsTest {
                 error(
                     name = "OmsRequestException",
                     code = "RequestFailed",
-                    operation = "indexer.getTokenBalances",
+                    operation = "indexer.getBalances",
                     message = "fetch failed",
                     retryable = true,
                     upstreamError =
@@ -1085,8 +975,8 @@ class PublicErrorContractsTest {
                         ),
                 ),
                 publicError {
-                    client.getTokenBalances(
-                        network = Network.POLYGON,
+                    client.getBalances(
+                        networks = listOf(Network.POLYGON),
                         walletAddress = "0x9999999999999999999999999999999999999999",
                         includeMetadata = false,
                     )
@@ -1111,19 +1001,19 @@ class PublicErrorContractsTest {
                 error(
                     name = "OmsResponseException",
                     code = "InvalidResponse",
-                    operation = "indexer.getTokenBalances",
-                    message = "Invalid JSON response from indexer.getTokenBalances",
+                    operation = "indexer.getBalances",
+                    message = "Invalid JSON response from indexer.getBalances",
                     status = 200,
                     upstreamError =
                         upstream(
                             service = "Indexer",
-                            message = "Invalid JSON response from indexer.getTokenBalances",
+                            message = "Invalid JSON response from indexer.getBalances",
                             status = 200,
                         ),
                 ),
                 publicError {
-                    client.getTokenBalances(
-                        network = Network.POLYGON,
+                    client.getBalances(
+                        networks = listOf(Network.POLYGON),
                         walletAddress = "0x9999999999999999999999999999999999999999",
                         includeMetadata = false,
                     )
@@ -1225,8 +1115,8 @@ class PublicErrorContractsTest {
 
     private fun testEnvironment(): OMSClientEnvironment =
         OMSClientEnvironment(
-            walletApiUrl = server.url("/rpc/Wallet/").toString(),
-            indexerUrlTemplate = server.url("/indexer/polygon/rpc/Indexer/").toString().replace("/polygon/", "/{value}/"),
+            walletApiUrl = server.url("/v1/Waas/").toString(),
+            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
         )
 
     private fun testOidcProvider(): OidcProviderConfig =

@@ -21,5 +21,5 @@ internal object WalletRequestSigner {
         "${OMSClientEnvironment.walletSignatureHeaderPrefix}alg=\"${signingAlgorithm.wireValue}\"," +
             "scope=\"$scope\",cred=\"$credentialId\",nonce=$nonce,sig=\"$signature\""
 
-    private const val DEFAULT_WALLET_REQUEST_PATH_PREFIX = "/rpc/Wallet"
+    private const val DEFAULT_WALLET_REQUEST_PATH_PREFIX = "/v1/Waas"
 }

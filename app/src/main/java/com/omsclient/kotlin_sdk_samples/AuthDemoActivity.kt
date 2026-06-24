@@ -73,7 +73,6 @@ class AuthDemoActivity : AppCompatActivity() {
         OMSClient(
             context = this,
             publishableKey = DemoConfig.demoPublishableKey,
-            projectId = DemoConfig.demoProjectId,
             environment = OMSClientEnvironment.demoDefaults(),
         )
     }

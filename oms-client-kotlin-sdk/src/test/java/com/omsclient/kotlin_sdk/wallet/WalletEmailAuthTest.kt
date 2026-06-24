@@ -66,7 +66,7 @@ class WalletEmailAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val store = InMemorySessionStore()
             val client =
@@ -93,7 +93,7 @@ class WalletEmailAuthTest {
                 )
             val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000100")
 
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals("POST", request.method)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
             assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
@@ -134,7 +134,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -146,7 +146,7 @@ class WalletEmailAuthTest {
             val request = requireNotNull(server.takeRequest())
             val session = client.snapshotSession()
 
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals("verifier-123", session?.verifier)
             assertNull(redirectStore.pending)
             assertEquals(1, redirectStore.clearCalls)
@@ -169,7 +169,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -212,7 +212,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -224,7 +224,7 @@ class WalletEmailAuthTest {
             val request = requireNotNull(server.takeRequest())
 
             val session = client.snapshotSession()
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals("challenge", session?.challenge)
             assertEquals("verifier-123", session?.verifier)
             assertNull(session?.walletId)
@@ -245,7 +245,7 @@ class WalletEmailAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val signer = MockWebCryptoCredentialSigner()
             val client =
@@ -261,7 +261,7 @@ class WalletEmailAuthTest {
             client.startEmailAuth("user@example.com")
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals(
                 "alg=\"ecdsa-p256-sha256\",scope=\"test-project-id\"," +
                     "cred=\"${signer.credentialIdValue}\",nonce=42,sig=\"${signer.signatureValue}\"",
@@ -308,7 +308,7 @@ class WalletEmailAuthTest {
                 )
             val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000105")
 
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals(
                 expectedWalletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
@@ -334,7 +334,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -348,7 +348,7 @@ class WalletEmailAuthTest {
 
             val request = requireNotNull(server.takeRequest())
             assertNotNull(failure)
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
@@ -388,7 +388,7 @@ class WalletEmailAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val client =
                 WalletClient(
@@ -427,13 +427,13 @@ class WalletEmailAuthTest {
                 )
             val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000101")
 
-            assertEquals("/rpc/Wallet/CompleteAuth", request.target)
+            assertEquals("/v1/Waas/CompleteAuth", request.target)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
             assertEquals(
                 expectedWalletSignatureHeader.removePrefix(OMSClientEnvironment.walletSignatureHeaderPrefix),
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals("user@example.com", client.snapshotSession()?.sessionEmail)
             assertEquals(1, response.wallets.size)
             assertEquals(com.omsclient.kotlin_sdk.models.WalletType.Ethereum, response.wallets.single().type)
@@ -467,7 +467,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -514,7 +514,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -581,7 +581,7 @@ class WalletEmailAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val client =
                 WalletClient(
@@ -611,7 +611,7 @@ class WalletEmailAuthTest {
                     ),
                 )
 
-            assertEquals("/rpc/Wallet/UseWallet", request.target)
+            assertEquals("/v1/Waas/UseWallet", request.target)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
             assertEquals("wallet-def", resolved.id)
             assertEquals("0xdef", resolved.address)
@@ -654,7 +654,7 @@ class WalletEmailAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val client =
                 WalletClient(
@@ -672,9 +672,9 @@ class WalletEmailAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
                 WaasWalletApi.UseWallet.encodeRequest(
                     UseWalletRequest(
@@ -741,7 +741,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -755,9 +755,9 @@ class WalletEmailAuthTest {
             val listWalletsRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
-            assertEquals("/rpc/Wallet/ListWallets", listWalletsRequest.target)
+            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
             assertEquals(
                 WaasWalletApi.ListWallets.encodeRequest(
                     ListWalletsRequest(
@@ -766,7 +766,7 @@ class WalletEmailAuthTest {
                 ),
                 requireNotNull(listWalletsRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
                 WaasWalletApi.UseWallet.encodeRequest(
                     UseWalletRequest(
@@ -825,7 +825,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -847,8 +847,8 @@ class WalletEmailAuthTest {
             requireNotNull(server.takeRequest())
             val listWalletsRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
-            assertEquals("/rpc/Wallet/ListWallets", listWalletsRequest.target)
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals("wallet-bbb", resolved.wallet.id)
             assertEquals("0xbbb", client.walletAddress)
         }
@@ -892,7 +892,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -914,7 +914,7 @@ class WalletEmailAuthTest {
             assertEquals(com.omsclient.kotlin_sdk.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
-            assertEquals("/rpc/Wallet/ListWallets", listWalletsRequest.target)
+            assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
             assertNull(client.walletAddress)
             assertTrue(client.hasPendingSignIn)
             assertEquals(3, server.requestCount)
@@ -931,7 +931,7 @@ class WalletEmailAuthTest {
             val selected = selection.pendingSelection.selectWallet("wallet-bbb")
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals("wallet-bbb", selected.wallet.id)
             assertEquals("0xbbb", selected.walletAddress)
             assertEquals("wallet-bbb", store.snapshot?.walletId)
@@ -977,7 +977,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -1007,7 +1007,7 @@ class WalletEmailAuthTest {
             requireNotNull(server.takeRequest())
             val createWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CreateWallet", createWalletRequest.target)
+            assertEquals("/v1/Waas/CreateWallet", createWalletRequest.target)
             assertEquals(
                 WaasWalletApi.CreateWallet.encodeRequest(
                     CreateWalletRequest(
@@ -1065,7 +1065,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1098,7 +1098,7 @@ class WalletEmailAuthTest {
             val selected = firstCreate.await()
             val secondFailure = secondCreate.await().exceptionOrNull()
 
-            assertEquals("/rpc/Wallet/CreateWallet", createWalletRequest.target)
+            assertEquals("/v1/Waas/CreateWallet", createWalletRequest.target)
             assertNull(duplicateCreateWalletRequest)
             assertEquals("wallet-new", selected.wallet.id)
             assertTrue(secondFailure is OmsSdkException)
@@ -1169,7 +1169,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1248,7 +1248,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1335,7 +1335,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1411,7 +1411,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -1499,7 +1499,7 @@ class WalletEmailAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val client =
                 WalletClient(
@@ -1522,8 +1522,8 @@ class WalletEmailAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
                 WaasWalletApi.UseWallet.encodeRequest(
                     UseWalletRequest(
@@ -1578,7 +1578,7 @@ class WalletEmailAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val client =
                 WalletClient(
@@ -1607,8 +1607,8 @@ class WalletEmailAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
                 WaasWalletApi.UseWallet.encodeRequest(
                     UseWalletRequest(
@@ -1663,7 +1663,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -1729,7 +1729,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -1795,7 +1795,7 @@ class WalletEmailAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,

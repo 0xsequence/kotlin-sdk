@@ -7,6 +7,9 @@ import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkOperation
 import com.omsclient.kotlin_sdk.OmsUpstreamError
 import com.omsclient.kotlin_sdk.OmsUpstreamService
+import com.omsclient.kotlin_sdk.models.ContractVerificationStatus
+import com.omsclient.kotlin_sdk.models.IndexerNetworkType
+import com.omsclient.kotlin_sdk.models.MetadataOptions
 import com.omsclient.kotlin_sdk.models.TokenBalance
 import com.omsclient.kotlin_sdk.models.TokenBalancesPage
 import com.omsclient.kotlin_sdk.models.TokenBalancesPageRequest
@@ -14,6 +17,9 @@ import com.omsclient.kotlin_sdk.models.TokenBalancesResult
 import com.omsclient.kotlin_sdk.models.TokenContractInfo
 import com.omsclient.kotlin_sdk.models.TokenMetadata
 import com.omsclient.kotlin_sdk.models.TokenMetadataAsset
+import com.omsclient.kotlin_sdk.models.Transaction
+import com.omsclient.kotlin_sdk.models.TransactionHistoryResult
+import com.omsclient.kotlin_sdk.models.TransactionTransfer
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.network.OMSClientHttpResponse
@@ -29,10 +35,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 class IndexerClient internal constructor(
@@ -41,106 +50,139 @@ class IndexerClient internal constructor(
     private val transport: OMSClientHttpClient = OMSClientHttpClient(),
 ) {
     /**
-     * Gets token balances for [walletAddress] on [network].
+     * Gets token and native balances for [walletAddress] through IndexerGateway.
      */
-    suspend fun getTokenBalances(
-        network: Network,
-        contractAddress: String? = null,
+    suspend fun getBalances(
         walletAddress: String,
-        includeMetadata: Boolean,
+        networks: List<Network> = emptyList(),
+        networkType: IndexerNetworkType = IndexerNetworkType.MAINNETS,
+        contractAddresses: List<String> = emptyList(),
+        includeMetadata: Boolean = true,
+        omitPrices: Boolean? = null,
+        tokenIds: List<String> = emptyList(),
+        contractStatus: ContractVerificationStatus? = null,
         page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
     ): TokenBalancesResult {
-        val operation = OmsSdkOperation.IndexerGetTokenBalances
+        val operation = OmsSdkOperation.IndexerGetBalances
         val response =
-            postIndexerJson(
+            postIndexerGatewayJson(
                 operation = operation,
-                network = network,
-                path = "/GetTokenBalances",
+                path = "/GetTokenBalancesDetails",
                 body =
                     buildJsonObject {
+                        if (networks.isNotEmpty()) {
+                            putJsonArray("chainIds") {
+                                networks.forEach { network -> add(network.id) }
+                            }
+                        } else {
+                            put("networkType", networkType.wireValue)
+                        }
+                        putJsonObject("filter") {
+                            putJsonArray("accountAddresses") {
+                                add(walletAddress)
+                            }
+                            putStringArrayIfNotEmpty("contractWhitelist", contractAddresses)
+                            contractStatus?.let { put("contractStatus", it.wireValue) }
+                            put("omitNativeBalances", false)
+                            omitPrices?.let { put("omitPrices", it) }
+                            putStringArrayIfNotEmpty("tokenIDs", tokenIds)
+                        }
+                        put("omitMetadata", includeMetadata == false)
                         putJsonObject("page") {
                             put("page", page.page)
                             put("pageSize", page.pageSize)
-                            put("more", false)
                         }
-                        contractAddress?.let { put("contractAddress", it) }
-                        put("accountAddress", walletAddress)
-                        put("includeMetadata", includeMetadata)
                     }.toString(),
             )
 
         val root = parseIndexerJsonObject(response, operation)
-        val pageObject = root.objectOrNull("page")
-        val page =
-            pageObject?.let {
-                TokenBalancesPage(
-                    page = it.long("page")?.toInt() ?: 0,
-                    pageSize = it.long("pageSize")?.toInt() ?: 0,
-                    more = it.boolean("more") == true,
-                )
-            }
-
-        val balances =
-            root.arrayOrEmpty("balances").mapNotNull { element ->
-                val objectValue = element as? JsonObject ?: return@mapNotNull null
-                objectValue.toTokenBalance()
-            }
-
         return TokenBalancesResult(
             status = response.statusCode,
-            page = page,
-            balances = balances,
+            page = root.objectOrNull("page")?.toTokenBalancesPage(),
+            balances = flattenGatewayResults(root.arrayOrEmpty("balances")).map { it.toTokenBalance() },
+            nativeBalances = flattenGatewayResults(root.arrayOrEmpty("nativeBalances")).map { it.toNativeTokenBalance() },
         )
     }
 
     /**
-     * Gets the native token balance for [walletAddress] on [network].
+     * Gets transaction history for [walletAddress] through IndexerGateway.
      */
-    suspend fun getNativeTokenBalance(
-        network: Network,
+    suspend fun getTransactionHistory(
         walletAddress: String,
-    ): TokenBalance? {
-        val operation = OmsSdkOperation.IndexerGetNativeTokenBalance
+        networks: List<Network> = emptyList(),
+        networkType: IndexerNetworkType = IndexerNetworkType.MAINNETS,
+        contractAddresses: List<String> = emptyList(),
+        transactionHashes: List<String> = emptyList(),
+        metaTransactionIds: List<String> = emptyList(),
+        fromBlock: Long? = null,
+        toBlock: Long? = null,
+        tokenId: String? = null,
+        includeMetadata: Boolean = true,
+        omitPrices: Boolean? = null,
+        metadataOptions: MetadataOptions? = null,
+        page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
+    ): TransactionHistoryResult {
+        val operation = OmsSdkOperation.IndexerGetTransactionHistory
         val response =
-            postIndexerJson(
+            postIndexerGatewayJson(
                 operation = operation,
-                network = network,
-                path = "/GetNativeTokenBalance",
+                path = "/GetTransactionHistory",
                 body =
                     buildJsonObject {
-                        put("accountAddress", walletAddress)
+                        if (networks.isNotEmpty()) {
+                            putJsonArray("chainIds") {
+                                networks.forEach { network -> add(network.id) }
+                            }
+                        } else {
+                            put("networkType", networkType.wireValue)
+                        }
+                        putJsonObject("filter") {
+                            putJsonArray("accountAddresses") {
+                                add(walletAddress)
+                            }
+                            putStringArrayIfNotEmpty("contractAddresses", contractAddresses)
+                            putStringArrayIfNotEmpty("transactionHashes", transactionHashes)
+                            putStringArrayIfNotEmpty("metaTransactionIDs", metaTransactionIds)
+                            fromBlock?.let { put("fromBlock", it) }
+                            toBlock?.let { put("toBlock", it) }
+                            tokenId?.let { put("tokenID", it) }
+                            omitPrices?.let { put("omitPrices", it) }
+                        }
+                        put("includeMetadata", includeMetadata)
+                        metadataOptions?.let { options ->
+                            putJsonObject("metadataOptions") {
+                                options.verifiedOnly?.let { put("verifiedOnly", it) }
+                                options.unverifiedOnly?.let { put("unverifiedOnly", it) }
+                                putStringArrayIfNotEmpty("includeContracts", options.includeContracts)
+                            }
+                        }
+                        putJsonObject("page") {
+                            put("page", page.page)
+                            put("pageSize", page.pageSize)
+                        }
                     }.toString(),
             )
 
-        val balanceObject = parseIndexerJsonObject(response, operation).objectOrNull("balance") ?: return null
-        return TokenBalance(
-            contractType = "NATIVE",
-            contractAddress = null,
-            accountAddress = balanceObject.string("accountAddress"),
-            tokenId = null,
-            balance = balanceObject.string("balance") ?: balanceObject.string("balanceWei"),
-            balanceUSD = balanceObject.string("balanceUSD"),
-            priceUSD = balanceObject.string("priceUSD"),
-            priceUpdatedAt = balanceObject.string("priceUpdatedAt"),
-            blockHash = null,
-            blockNumber = null,
-            chainId = balanceObject.long("chainId") ?: network.id.toLong(),
+        val root = parseIndexerJsonObject(response, operation)
+        return TransactionHistoryResult(
+            status = response.statusCode,
+            page = root.objectOrNull("page")?.toTokenBalancesPage(),
+            transactions = flattenGatewayResults(root.arrayOrEmpty("transactions")).map { it.toTransaction() },
         )
     }
 
-    private suspend fun postIndexerJson(
+    private suspend fun postIndexerGatewayJson(
         operation: OmsSdkOperation,
-        network: Network,
         path: String,
         body: String,
     ): OMSClientHttpResponse {
         val response =
             try {
                 transport.postJsonWithStatus(
-                    baseUrl = environment.indexerUrlFor(network),
+                    baseUrl = environment.indexerGatewayUrl,
                     path = path,
                     body = body,
-                    headers = defaultHeaders(),
+                    headers = defaultGatewayHeaders(),
                 )
             } catch (throwable: CancellationException) {
                 throw throwable
@@ -195,10 +237,36 @@ class IndexerClient internal constructor(
             )
         }
 
-    private fun defaultHeaders(): Map<String, String> =
+    private fun defaultGatewayHeaders(): Map<String, String> =
         mapOf(
-            OMSClientEnvironment.accessKeyHeaderName to publishableKey,
+            "Api-Key" to publishableKey,
             "Accept" to "application/json",
+            "Webrpc" to indexerGatewayWebrpcHeaderValue,
+            "Origin" to "http://localhost:5173",
+        )
+
+    private fun JsonObject.toTokenBalancesPage(): TokenBalancesPage =
+        TokenBalancesPage(
+            page = long("page")?.toInt() ?: 0,
+            pageSize = long("pageSize")?.toInt() ?: 0,
+            more = boolean("more") == true,
+        )
+
+    private fun JsonObject.toNativeTokenBalance(): TokenBalance =
+        TokenBalance(
+            contractType = "NATIVE",
+            contractAddress = null,
+            accountAddress = string("accountAddress"),
+            tokenId = null,
+            name = string("name"),
+            symbol = string("symbol"),
+            balance = string("balance") ?: string("balanceWei"),
+            balanceUSD = string("balanceUSD"),
+            priceUSD = string("priceUSD"),
+            priceUpdatedAt = string("priceUpdatedAt"),
+            blockHash = null,
+            blockNumber = null,
+            chainId = long("chainId"),
         )
 
     private fun JsonObject.toTokenBalance(): TokenBalance =
@@ -207,6 +275,8 @@ class IndexerClient internal constructor(
             contractAddress = string("contractAddress"),
             accountAddress = string("accountAddress"),
             tokenId = string("tokenId") ?: string("tokenID"),
+            name = string("name"),
+            symbol = string("symbol"),
             balance = string("balance"),
             balanceUSD = string("balanceUSD"),
             priceUSD = string("priceUSD"),
@@ -218,6 +288,36 @@ class IndexerClient internal constructor(
             isSummary = boolean("isSummary"),
             contractInfo = objectOrNull("contractInfo")?.toTokenContractInfo(),
             tokenMetadata = objectOrNull("tokenMetadata")?.toTokenMetadata(),
+        )
+
+    private fun JsonObject.toTransaction(): Transaction =
+        Transaction(
+            txnHash = string("txnHash"),
+            blockNumber = long("blockNumber"),
+            blockHash = string("blockHash"),
+            chainId = long("chainId"),
+            metaTxnId = string("metaTxnId") ?: string("metaTxnID"),
+            transfers =
+                (this["transfers"] as? JsonArray)
+                    ?.mapNotNull { it as? JsonObject }
+                    ?.map { it.toTransactionTransfer() },
+            timestamp = string("timestamp"),
+        )
+
+    private fun JsonObject.toTransactionTransfer(): TransactionTransfer =
+        TransactionTransfer(
+            transferType = string("transferType"),
+            contractAddress = string("contractAddress"),
+            contractType = string("contractType"),
+            from = string("from"),
+            to = string("to"),
+            tokenIds = stringArrayOrNull("tokenIds") ?: stringArrayOrNull("tokenIDs"),
+            amounts = stringArrayOrNull("amounts"),
+            logIndex = long("logIndex"),
+            amountsUSD = stringArrayOrNull("amountsUSD"),
+            pricesUSD = stringArrayOrNull("pricesUSD"),
+            contractInfo = objectOrNull("contractInfo")?.toTokenContractInfo(),
+            tokenMetadata = objectOrNull("tokenMetadata")?.toTokenMetadataRecord(),
         )
 
     private fun JsonObject.toTokenContractInfo(): TokenContractInfo =
@@ -286,6 +386,36 @@ class IndexerClient internal constructor(
 
     private fun JsonObject.toMap(): Map<String, JsonElement> = entries.associate { it.key to it.value }
 
+    private fun JsonObject.toTokenMetadataRecord(): Map<String, TokenMetadata> =
+        entries.mapNotNull { (tokenId, metadata) ->
+            val metadataObject = metadata as? JsonObject ?: return@mapNotNull null
+            tokenId to metadataObject.toTokenMetadata()
+        }.toMap()
+
+    private fun JsonObject.stringArrayOrNull(name: String): List<String>? =
+        (this[name] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+
+    private fun flattenGatewayResults(groups: List<JsonElement>): List<JsonObject> =
+        groups.flatMap { group ->
+            (group as? JsonObject)
+                ?.arrayOrEmpty("results")
+                ?.mapNotNull { it as? JsonObject }
+                ?: emptyList()
+        }
+
+    private fun JsonObjectBuilder.putStringArrayIfNotEmpty(
+        name: String,
+        values: List<String>,
+    ) {
+        if (values.isEmpty()) {
+            return
+        }
+        putJsonArray(name) {
+            values.forEach { value -> add(value) }
+        }
+    }
+
     private fun parseJsonOrText(body: String): Any = runCatching { OMSClientJson.json.parseToJsonElement(body) }.getOrElse { body }
 
     private fun indexerResponseMessage(
@@ -331,4 +461,9 @@ class IndexerClient internal constructor(
         )
 
     private fun JsonObject.stringOrNumber(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull
+
+    private companion object {
+        const val indexerGatewayWebrpcHeaderValue: String =
+            "webrpc@v0.31.2;gen-typescript@v0.23.1;sequence-indexer@v0.4.0"
+    }
 }

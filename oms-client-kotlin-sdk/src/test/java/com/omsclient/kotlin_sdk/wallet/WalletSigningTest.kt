@@ -60,7 +60,7 @@ class WalletSigningTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -98,7 +98,7 @@ class WalletSigningTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -127,7 +127,7 @@ class WalletSigningTest {
             val request = requireNotNull(server.takeRequest())
 
             assertEquals("0xtyped", result)
-            assertEquals("/rpc/Wallet/SignTypedData", request.target)
+            assertEquals("/v1/Waas/SignTypedData", request.target)
             assertEquals(
                 WaasWalletApi.SignTypedData.encodeRequest(
                     SignTypedDataRequest(

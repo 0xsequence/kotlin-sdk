@@ -1267,23 +1267,44 @@ class WalletClient internal constructor(
         walletAddress: String,
         feeOptions: List<FeeOption>,
     ): List<FeeOptionWithBalance> {
+        val contractAddresses =
+            feeOptions
+                .mapNotNull { it.token.contractAddress?.normalizeAddress() }
+                .distinct()
+        val balances =
+            runCatching {
+                indexerClient.getBalances(
+                    networks = listOf(network),
+                    contractAddresses = contractAddresses,
+                    walletAddress = walletAddress,
+                    includeMetadata = false,
+                )
+            }.getOrNull()
         val nativeBalance =
             if (feeOptions.any { it.token.isNativeToken() }) {
-                loadNativeTokenBalance(network = network, walletAddress = walletAddress)
+                balances?.nativeBalances?.firstOrNull { balance ->
+                    balance.chainId == network.id.toLong()
+                }
             } else {
                 null
             }
         val balancesByContract =
-            feeOptions
-                .mapNotNull { it.token.contractAddress?.normalizeAddress() }
-                .distinct()
-                .associateWith { contractAddress ->
-                    loadTokenBalanceOrZero(
-                        network = network,
+            contractAddresses.associateWith { contractAddress ->
+                balances?.balances?.firstOrNull { balance ->
+                    balance.contractAddress.normalizeAddress() == contractAddress
+                } ?: balances?.let {
+                    TokenBalance(
+                        contractType = "ERC20",
                         contractAddress = contractAddress,
-                        walletAddress = walletAddress,
+                        accountAddress = walletAddress,
+                        tokenId = null,
+                        balance = "0",
+                        blockHash = null,
+                        blockNumber = null,
+                        chainId = network.id.toLong(),
                     )
                 }
+            }
 
         return feeOptions.map { feeOption ->
             val balance =
@@ -1304,44 +1325,6 @@ class WalletClient internal constructor(
             )
         }
     }
-
-    private suspend fun loadNativeTokenBalance(
-        network: Network,
-        walletAddress: String,
-    ): TokenBalance? =
-        runCatching {
-            indexerClient.getNativeTokenBalance(
-                network = network,
-                walletAddress = walletAddress,
-            )
-        }.getOrNull()
-
-    private suspend fun loadTokenBalanceOrZero(
-        network: Network,
-        contractAddress: String,
-        walletAddress: String,
-    ): TokenBalance? =
-        runCatching {
-            indexerClient
-                .getTokenBalances(
-                    network = network,
-                    contractAddress = contractAddress,
-                    walletAddress = walletAddress,
-                    includeMetadata = false,
-                ).balances
-                .firstOrNull { balance ->
-                    balance.contractAddress.normalizeAddress() == contractAddress
-                } ?: TokenBalance(
-                contractType = "ERC20",
-                contractAddress = contractAddress,
-                accountAddress = walletAddress,
-                tokenId = null,
-                balance = "0",
-                blockHash = null,
-                blockNumber = null,
-                chainId = network.id.toLong(),
-            )
-        }.getOrNull()
 
     private fun String?.normalizeAddress(): String? =
         this
@@ -1390,7 +1373,10 @@ class WalletClient internal constructor(
                     )
                 }
             completedStatusPolls += 1
-            if (lastStatus.status == TransactionStatus.Executed || !lastStatus.txnHash.isNullOrBlank()) {
+            if (lastStatus.status == TransactionStatus.Executed ||
+                lastStatus.status == TransactionStatus.Failed ||
+                !lastStatus.txnHash.isNullOrBlank()
+            ) {
                 return lastStatus
             }
             if (lastStatus.status == TransactionStatus.UNKNOWN_DEFAULT) {
@@ -1899,6 +1885,7 @@ private class WaasWalletGateway(
             WaasTransactionStatus.Quoted -> TransactionStatus.Quoted
             WaasTransactionStatus.Pending -> TransactionStatus.Pending
             WaasTransactionStatus.Executed -> TransactionStatus.Executed
+            WaasTransactionStatus.Failed -> TransactionStatus.Failed
             WaasTransactionStatus.UNKNOWN_DEFAULT -> TransactionStatus.UNKNOWN_DEFAULT
         }
 

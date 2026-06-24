@@ -11,10 +11,53 @@ import com.omsclient.kotlin_sdk.wallet.WalletSigningAlgorithm
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
 
 class OMSClientTest {
+    @Test
+    fun parsePublishableKeyDerivesProjectAndServiceUrls() {
+        val cases =
+            listOf(
+                "pk_dev_sdbx_project_key" to "https://sandbox-api.dev.polygon-dev.technology",
+                "pk_dev_live_project_key" to "https://api.dev.polygon-dev.technology",
+                "pk_stg_sdbx_project_key" to "https://sandbox-api.stg.polygon-dev.technology",
+                "pk_stg_live_project_key" to "https://api.stg.polygon-dev.technology",
+                "pk_sdbx_project_key" to "https://sandbox-api.polygon.technology",
+                "pk_live_project_key" to "https://api.polygon.technology",
+            )
+
+        cases.forEach { (publishableKey, apiUrl) ->
+            assertEquals(
+                ParsedPublishableKey(
+                    projectId = "prj_project",
+                    walletApiUrl = apiUrl,
+                    indexerGatewayUrl = "$apiUrl/v1/IndexerGateway/",
+                ),
+                parsePublishableKey(publishableKey),
+            )
+        }
+    }
+
+    @Test
+    fun constructorDerivesProjectIdFromPublishableKey() {
+        val sdk = OMSClient(publishableKey = "pk_live_project_key")
+
+        assertEquals(supportedNetworks, sdk.supportedNetworks)
+    }
+
+    @Test
+    fun constructorRejectsUnsupportedPublishableKeyPrefix() {
+        val error =
+            runCatching {
+                OMSClient(publishableKey = "pk_test_sdbx_project_key")
+            }.exceptionOrNull()
+
+        assertTrue(error is OmsValidationException)
+        assertEquals("Invalid publishableKey.", error?.message)
+    }
+
     @Test
     fun constructorRestoresPersistedSessionAutomatically() {
         val snapshot =
@@ -148,9 +191,9 @@ class OMSClientTest {
         val otherProjectId = "other-project-id"
         val differentWalletEnvironment =
             OMSClientEnvironment(
-                walletApiUrl = "https://wallet-2.example.com/rpc/Wallet",
+                walletApiUrl = "https://wallet-2.example.com/v1/Waas",
                 apiRpcUrl = defaultEnvironment.apiRpcUrl,
-                indexerUrlTemplate = defaultEnvironment.indexerUrlTemplate,
+                indexerGatewayUrl = defaultEnvironment.indexerGatewayUrl,
             )
 
         assertScopedAndroidStorageIdsDiffer(
@@ -171,11 +214,11 @@ class OMSClientTest {
     fun scopedAndroidStorageTreatsEquivalentWalletOriginsAsSameScope() {
         val withoutTrailingSlash =
             OMSClientEnvironment(
-                walletApiUrl = "https://wallet.example.com/rpc/Wallet",
+                walletApiUrl = "https://wallet.example.com/v1/Waas",
             )
         val withTrailingSlash =
             OMSClientEnvironment(
-                walletApiUrl = "https://wallet.example.com/rpc/Wallet/",
+                walletApiUrl = "https://wallet.example.com/v1/Waas/",
             )
         val withDifferentPath =
             OMSClientEnvironment(
@@ -183,7 +226,7 @@ class OMSClientTest {
             )
         val withQuery =
             OMSClientEnvironment(
-                walletApiUrl = "https://wallet.example.com/rpc/Wallet?foo=bar",
+                walletApiUrl = "https://wallet.example.com/v1/Waas?foo=bar",
             )
         val projectId = "test-project-id"
 

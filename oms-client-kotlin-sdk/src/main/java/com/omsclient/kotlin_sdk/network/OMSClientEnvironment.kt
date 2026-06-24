@@ -1,17 +1,15 @@
 package com.omsclient.kotlin_sdk.network
 
-import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.models.WalletType
+import com.omsclient.kotlin_sdk.parsePublishableKey
 import java.net.URI
 
 class OMSClientEnvironment(
     val walletApiUrl: String = walletApiUrlDefault,
     val apiRpcUrl: String = apiRpcUrlDefault,
-    val indexerUrlTemplate: String = indexerUrlTemplateDefault,
+    val indexerGatewayUrl: String = indexerGatewayUrlDefault,
 ) {
     internal val defaultWalletType: WalletType = WalletType.Ethereum
-
-    fun indexerUrlFor(network: Network): String = indexerUrlTemplate.replace("{value}", network.name)
 
     internal fun walletApiBaseUrl(): String {
         val uri = URI(walletApiUrl)
@@ -24,18 +22,18 @@ class OMSClientEnvironment(
 
         return walletApiBaseUrl() == other.walletApiBaseUrl() &&
             apiRpcUrl == other.apiRpcUrl &&
-            indexerUrlTemplate == other.indexerUrlTemplate
+            indexerGatewayUrl == other.indexerGatewayUrl
     }
 
     override fun hashCode(): Int {
         var result = walletApiBaseUrl().hashCode()
         result = 31 * result + apiRpcUrl.hashCode()
-        result = 31 * result + indexerUrlTemplate.hashCode()
+        result = 31 * result + indexerGatewayUrl.hashCode()
         return result
     }
 
     override fun toString(): String =
-        "OMSClientEnvironment(walletApiUrl=$walletApiUrl, apiRpcUrl=$apiRpcUrl, indexerUrlTemplate=$indexerUrlTemplate)"
+        "OMSClientEnvironment(walletApiUrl=$walletApiUrl, apiRpcUrl=$apiRpcUrl, indexerGatewayUrl=$indexerGatewayUrl)"
 
     companion object {
         internal const val accessKeyHeaderName: String = "X-Access-Key"
@@ -43,15 +41,23 @@ class OMSClientEnvironment(
         internal const val walletSignatureHeaderPrefix: String = "$walletSignatureHeaderName: "
         const val walletApiUrlDefault: String = "https://d26giflyqapd29.cloudfront.net"
         const val apiRpcUrlDefault: String = "https://api.sequence.app/rpc/API"
-        const val indexerUrlTemplateDefault: String = "https://{value}-indexer.sequence.app/rpc/Indexer/"
+        const val indexerGatewayUrlDefault: String = "https://api.polygon.technology/v1/IndexerGateway/"
 
         private const val devApiRpcUrlDefault: String = "https://dev-api.sequence.app/rpc/API"
-        private const val devIndexerUrlTemplateDefault: String = "https://dev-{value}-indexer.sequence.app/rpc/Indexer/"
+        private const val devIndexerGatewayUrlDefault: String = "https://sandbox-api.dev.polygon-dev.technology/v1/IndexerGateway/"
+
+        fun fromPublishableKey(publishableKey: String): OMSClientEnvironment {
+            val parsed = parsePublishableKey(publishableKey)
+            return OMSClientEnvironment(
+                walletApiUrl = parsed.walletApiUrl,
+                indexerGatewayUrl = parsed.indexerGatewayUrl,
+            )
+        }
 
         fun demoDefaults(): OMSClientEnvironment =
             OMSClientEnvironment(
                 apiRpcUrl = devApiRpcUrlDefault,
-                indexerUrlTemplate = devIndexerUrlTemplateDefault,
+                indexerGatewayUrl = devIndexerGatewayUrlDefault,
             )
     }
 }

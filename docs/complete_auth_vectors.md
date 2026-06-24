@@ -81,7 +81,7 @@ CompleteAuth answer behavior:
 - expected preimage:
 
 ```text
-POST /rpc/Wallet/CompleteAuth
+POST /v1/Waas/CompleteAuth
 nonce: 1710000002
 scope: proj_1
 

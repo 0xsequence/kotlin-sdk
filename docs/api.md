@@ -24,8 +24,7 @@ an `oms-client-kotlin-sdk-waas-generated` artifact.
 OMSClient(
     context: Context,
     publishableKey: String,
-    projectId: String,
-    environment: OMSClientEnvironment = OMSClientEnvironment(),
+    environment: OMSClientEnvironment = OMSClientEnvironment.fromPublishableKey(publishableKey),
     okHttpClient: OkHttpClient = OkHttpClient(),
 )
 ```
@@ -107,8 +106,9 @@ id/address, signer address/algorithm, expiry, login type, and optional email. It
 is not wallet authorization material: by itself it cannot sign requests or
 access a wallet. Restore succeeds only while the matching Keystore credential
 still exists, and wallet operations must sign fresh requests with that
-credential. `publishableKey` is sent as `X-Access-Key`; `projectId` is used as the
-wallet request signing scope and OIDC redirect state scope.
+credential. `publishableKey` is sent as `X-Access-Key` and is parsed to derive
+the wallet request signing project scope, OIDC redirect state scope, and default
+API routing.
 
 ```kotlin
 fun client.wallet.signOut()
@@ -511,28 +511,42 @@ fun parseUnits(
 ## Indexer Service
 
 ```kotlin
-suspend fun indexer.getTokenBalances(
-    network: Network,
-    contractAddress: String? = null,
+suspend fun indexer.getBalances(
     walletAddress: String,
-    includeMetadata: Boolean,
+    networks: List<Network> = emptyList(),
+    networkType: IndexerNetworkType = IndexerNetworkType.MAINNETS,
+    contractAddresses: List<String> = emptyList(),
+    includeMetadata: Boolean = true,
+    omitPrices: Boolean? = null,
+    tokenIds: List<String> = emptyList(),
+    contractStatus: ContractVerificationStatus? = null,
     page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
 ): TokenBalancesResult
 ```
 
 ```kotlin
-suspend fun indexer.getNativeTokenBalance(
-    network: Network,
+suspend fun indexer.getTransactionHistory(
     walletAddress: String,
-): TokenBalance?
+    networks: List<Network> = emptyList(),
+    networkType: IndexerNetworkType = IndexerNetworkType.MAINNETS,
+    contractAddresses: List<String> = emptyList(),
+    transactionHashes: List<String> = emptyList(),
+    metaTransactionIds: List<String> = emptyList(),
+    fromBlock: Long? = null,
+    toBlock: Long? = null,
+    tokenId: String? = null,
+    includeMetadata: Boolean = true,
+    omitPrices: Boolean? = null,
+    metadataOptions: MetadataOptions? = null,
+    page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
+): TransactionHistoryResult
 ```
 
-`contractAddress` can be omitted to query balances across token contracts.
-`page` defaults to page `0` with page size `40`. Pass
-`includeMetadata = true` when callers need `TokenContractInfo` or
-`TokenMetadata` fields on returned balances. `getNativeTokenBalance` returns
-null when the indexer response has no native balance object. The wallet client
-also uses it internally to enrich fee option balances.
+`getBalances` queries IndexerGateway and returns token balances plus
+`nativeBalances`. Pass explicit `networks` for chain IDs, or omit them and use
+`networkType`. Pass `includeMetadata = true` when callers need
+`TokenContractInfo` or `TokenMetadata` fields on returned token balances. The
+wallet client also uses `getBalances` internally to enrich fee option balances.
 
 ## Environment
 
@@ -540,7 +554,7 @@ also uses it internally to enrich fee option balances.
 class OMSClientEnvironment(
     val walletApiUrl: String = OMSClientEnvironment.walletApiUrlDefault,
     val apiRpcUrl: String = OMSClientEnvironment.apiRpcUrlDefault,
-    val indexerUrlTemplate: String = OMSClientEnvironment.indexerUrlTemplateDefault,
+    val indexerGatewayUrl: String = OMSClientEnvironment.indexerGatewayUrlDefault,
 )
 ```
 
@@ -605,8 +619,8 @@ enum class OmsSdkOperation(
     PendingWalletSelection("wallet.pendingWalletSelection"),
     PendingWalletSelectionCreateAndSelectWallet("wallet.pendingWalletSelection.createAndSelectWallet"),
     PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
-    IndexerGetNativeTokenBalance("indexer.getNativeTokenBalance"),
-    IndexerGetTokenBalances("indexer.getTokenBalances"),
+    IndexerGetBalances("indexer.getBalances"),
+    IndexerGetTransactionHistory("indexer.getTransactionHistory"),
     WalletCallContract("wallet.callContract"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),
