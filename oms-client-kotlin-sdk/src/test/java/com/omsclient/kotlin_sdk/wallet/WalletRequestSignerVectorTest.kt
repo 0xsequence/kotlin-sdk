@@ -8,11 +8,12 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransacti
 import com.omsclient.kotlin_sdk.internal.generated.waas.SignMessageRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionMode
 import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
+import com.omsclient.kotlin_sdk.parsePublishableKey
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class WalletRequestSignerVectorTest {
-    private val scope = "proj_1"
+    private val scope = parsePublishableKey("pk_live_project_key").projectId
 
     @Test
     fun signMessagePayloadAndPreimageMatchParityVector() {
@@ -21,7 +22,7 @@ class WalletRequestSignerVectorTest {
         val expectedPayload =
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\",\"message\":\"hello\"}"
         val expectedPreimage =
-            "POST /v1/Waas/SignMessage\nnonce: 1710000000\nscope: proj_1\n\n" +
+            "POST /v1/Waas/SignMessage\nnonce: 1710000000\nscope: prj_project\n\n" +
                 expectedPayload
         val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
         val payload =
@@ -55,7 +56,7 @@ class WalletRequestSignerVectorTest {
             "{\"network\":\"80002\",\"walletId\":\"0x1234567890123456789012345678901234567890\"," +
                 "\"to\":\"0xE5E8B483FfC05967FcFed58cc98D053265af6D99\",\"value\":\"1000\",\"mode\":\"relayer\"}"
         val expectedPreimage =
-            "POST /v1/Waas/PrepareEthereumTransaction\nnonce: 1710000001\nscope: proj_1\n\n" +
+            "POST /v1/Waas/PrepareEthereumTransaction\nnonce: 1710000001\nscope: prj_project\n\n" +
                 expectedPayload
         val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
         val payload =
@@ -91,7 +92,7 @@ class WalletRequestSignerVectorTest {
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"verifier\":\"verifier-123\"," +
                 "\"answer\":\"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M\"}"
         val expectedPreimage =
-            "POST /v1/Waas/CompleteAuth\nnonce: 1710000002\nscope: proj_1\n\n" +
+            "POST /v1/Waas/CompleteAuth\nnonce: 1710000002\nscope: prj_project\n\n" +
                 expectedPayload
         val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
         val payload =
