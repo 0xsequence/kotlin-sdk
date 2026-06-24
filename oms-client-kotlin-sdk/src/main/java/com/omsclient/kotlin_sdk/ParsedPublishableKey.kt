@@ -3,7 +3,7 @@ package com.omsclient.kotlin_sdk
 /**
  * Service routing derived from an OMS publishable key.
  */
-data class ParsedPublishableKey(
+internal data class ParsedPublishableKey(
     val projectId: String,
     val walletApiUrl: String,
     val indexerGatewayUrl: String,
@@ -14,7 +14,7 @@ data class ParsedPublishableKey(
  *
  * @throws OmsValidationException when [publishableKey] does not match a supported OMS key shape.
  */
-fun parsePublishableKey(publishableKey: String): ParsedPublishableKey {
+internal fun parsePublishableKey(publishableKey: String): ParsedPublishableKey {
     val route =
         publishableKeyRoutes.firstOrNull { route ->
             publishableKey.startsWith(route.prefix)

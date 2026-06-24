@@ -35,7 +35,6 @@ import com.omsclient.kotlin_sdk.models.SendTransactionRequest
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse
 import com.omsclient.kotlin_sdk.models.TransactionStatus
 import com.omsclient.kotlin_sdk.models.Wallet
-import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
@@ -94,7 +93,6 @@ class TrailsActionsActivity : AppCompatActivity() {
         OMSClient(
             context = this,
             publishableKey = DemoConfig.demoPublishableKey,
-            environment = OMSClientEnvironment.demoDefaults(),
         )
     }
     private val trailsClient =

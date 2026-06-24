@@ -186,13 +186,15 @@ class OMSClientTest {
     @Test
     fun scopedAndroidStorageDiffersAcrossConfigs() {
         val defaultEnvironment = OMSClientEnvironment()
-        val demoEnvironment = OMSClientEnvironment.demoDefaults()
+        val differentIndexerEnvironment =
+            OMSClientEnvironment(
+                indexerGatewayUrl = "https://indexer-2.example.com/v1/IndexerGateway/",
+            )
         val projectId = "test-project-id"
         val otherProjectId = "other-project-id"
         val differentWalletEnvironment =
             OMSClientEnvironment(
                 walletApiUrl = "https://wallet-2.example.com/v1/Waas",
-                apiRpcUrl = defaultEnvironment.apiRpcUrl,
                 indexerGatewayUrl = defaultEnvironment.indexerGatewayUrl,
             )
 
@@ -206,7 +208,7 @@ class OMSClientTest {
         )
         assertEquals(
             scopedAndroidStorageIds(projectId, defaultEnvironment),
-            scopedAndroidStorageIds(projectId, demoEnvironment),
+            scopedAndroidStorageIds(projectId, differentIndexerEnvironment),
         )
     }
 

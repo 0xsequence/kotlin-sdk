@@ -4,9 +4,8 @@ import com.omsclient.kotlin_sdk.models.WalletType
 import com.omsclient.kotlin_sdk.parsePublishableKey
 import java.net.URI
 
-class OMSClientEnvironment(
+internal class OMSClientEnvironment(
     val walletApiUrl: String = walletApiUrlDefault,
-    val apiRpcUrl: String = apiRpcUrlDefault,
     val indexerGatewayUrl: String = indexerGatewayUrlDefault,
 ) {
     internal val defaultWalletType: WalletType = WalletType.Ethereum
@@ -21,30 +20,23 @@ class OMSClientEnvironment(
         if (other !is OMSClientEnvironment) return false
 
         return walletApiBaseUrl() == other.walletApiBaseUrl() &&
-            apiRpcUrl == other.apiRpcUrl &&
             indexerGatewayUrl == other.indexerGatewayUrl
     }
 
     override fun hashCode(): Int {
         var result = walletApiBaseUrl().hashCode()
-        result = 31 * result + apiRpcUrl.hashCode()
         result = 31 * result + indexerGatewayUrl.hashCode()
         return result
     }
 
-    override fun toString(): String =
-        "OMSClientEnvironment(walletApiUrl=$walletApiUrl, apiRpcUrl=$apiRpcUrl, indexerGatewayUrl=$indexerGatewayUrl)"
+    override fun toString(): String = "OMSClientEnvironment(walletApiUrl=$walletApiUrl, indexerGatewayUrl=$indexerGatewayUrl)"
 
     companion object {
         internal const val accessKeyHeaderName: String = "Api-Key"
         internal const val walletSignatureHeaderName: String = "OMS-Wallet-Signature"
         internal const val walletSignatureHeaderPrefix: String = "$walletSignatureHeaderName: "
         const val walletApiUrlDefault: String = "https://d26giflyqapd29.cloudfront.net"
-        const val apiRpcUrlDefault: String = "https://api.sequence.app/rpc/API"
         const val indexerGatewayUrlDefault: String = "https://api.polygon.technology/v1/IndexerGateway/"
-
-        private const val devApiRpcUrlDefault: String = "https://dev-api.sequence.app/rpc/API"
-        private const val devIndexerGatewayUrlDefault: String = "https://sandbox-api.dev.polygon-dev.technology/v1/IndexerGateway/"
 
         fun fromPublishableKey(publishableKey: String): OMSClientEnvironment {
             val parsed = parsePublishableKey(publishableKey)
@@ -53,11 +45,5 @@ class OMSClientEnvironment(
                 indexerGatewayUrl = parsed.indexerGatewayUrl,
             )
         }
-
-        fun demoDefaults(): OMSClientEnvironment =
-            OMSClientEnvironment(
-                apiRpcUrl = devApiRpcUrlDefault,
-                indexerGatewayUrl = devIndexerGatewayUrlDefault,
-            )
     }
 }

@@ -101,33 +101,49 @@ class OMSClient internal constructor(
     constructor(
         context: Context,
         publishableKey: String,
-        environment: OMSClientEnvironment = OMSClientEnvironment.fromPublishableKey(publishableKey),
         okHttpClient: OkHttpClient = OkHttpClient(),
     ) : this(
         publishableKey = publishableKey,
-        projectId = parsePublishableKey(publishableKey).projectId,
-        environment = environment,
+        projectId = projectIdFromPublishableKey(publishableKey),
+        environment = environmentFromPublishableKey(publishableKey),
         okHttpClient = okHttpClient,
         walletSession = OMSClientSession(),
         sessionStore =
             AndroidSessionMetadataStore(
                 context = context.applicationContext,
-                fileName = scopedSessionFileName(parsePublishableKey(publishableKey).projectId, environment),
+                fileName = scopedSessionFileName(publishableKey),
             ),
         oidcRedirectAuthStore =
             AndroidOidcRedirectAuthStore(
                 context = context.applicationContext,
-                fileName = scopedOidcRedirectAuthFileName(parsePublishableKey(publishableKey).projectId, environment),
+                fileName = scopedOidcRedirectAuthFileName(publishableKey),
             ),
         credentialSigner =
             AndroidKeystoreP256CredentialSigner(
                 context = context.applicationContext,
-                alias = scopedCredentialKeyAlias(parsePublishableKey(publishableKey).projectId, environment),
-                nonceStoreName = scopedCredentialNonceStoreName(parsePublishableKey(publishableKey).projectId, environment),
+                alias = scopedCredentialKeyAlias(publishableKey),
+                nonceStoreName = scopedCredentialNonceStoreName(publishableKey),
             ),
     )
 
     companion object {
+        private fun projectIdFromPublishableKey(publishableKey: String): String = parsePublishableKey(publishableKey).projectId
+
+        private fun environmentFromPublishableKey(publishableKey: String): OMSClientEnvironment =
+            OMSClientEnvironment.fromPublishableKey(publishableKey)
+
+        private fun scopedSessionFileName(publishableKey: String): String =
+            scopedSessionFileName(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
+
+        private fun scopedCredentialKeyAlias(publishableKey: String): String =
+            scopedCredentialKeyAlias(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
+
+        private fun scopedCredentialNonceStoreName(publishableKey: String): String =
+            scopedCredentialNonceStoreName(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
+
+        private fun scopedOidcRedirectAuthFileName(publishableKey: String): String =
+            scopedOidcRedirectAuthFileName(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
+
         internal fun scopedSessionFileName(
             projectId: String,
             environment: OMSClientEnvironment,
