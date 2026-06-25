@@ -103,6 +103,6 @@ Prerequisites:
    ```sh
    POM_PATH=io/github/0xsequence/oms-client-kotlin-sdk/<version>/oms-client-kotlin-sdk-<version>.pom
    curl -I "https://repo1.maven.org/maven2/$POM_PATH"
-   git tag -a v<version> -m "Release <version>"
-   git push origin master v<version>
+   git tag -a <version> -m "Release <version>"
+   git push origin master <version>
    ```
