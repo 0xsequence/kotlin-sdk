@@ -8,7 +8,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import kotlinx.coroutines.runBlocking
@@ -75,7 +75,7 @@ class WalletOidcIdTokenAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val store = InMemorySessionStore()
             val client =
@@ -99,9 +99,9 @@ class WalletOidcIdTokenAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
+            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
             assertEquals(
-                WaasWalletApi.CommitVerifier.encodeRequest(
+                WaasApi.CommitVerifier.encodeRequest(
                     CommitVerifierRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.IDToken,
@@ -116,9 +116,9 @@ class WalletOidcIdTokenAuthTest {
                 ),
                 requireNotNull(commitRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.IDToken,
@@ -129,9 +129,9 @@ class WalletOidcIdTokenAuthTest {
                 ),
                 requireNotNull(completeAuthRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(
+                WaasApi.UseWallet.encodeRequest(
                     UseWalletRequest(
                         walletId = "wallet-def",
                     ),
@@ -193,7 +193,7 @@ class WalletOidcIdTokenAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -210,7 +210,7 @@ class WalletOidcIdTokenAuthTest {
             requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.IDToken,
@@ -232,7 +232,7 @@ class WalletOidcIdTokenAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -287,7 +287,7 @@ class WalletOidcIdTokenAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val store = InMemorySessionStore()
             val client =
@@ -366,7 +366,7 @@ class WalletOidcIdTokenAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -431,7 +431,7 @@ class WalletOidcIdTokenAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -450,9 +450,9 @@ class WalletOidcIdTokenAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals("0xdef", wallet.address)
             assertEquals("wallet-def", client.snapshotSession()?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
@@ -479,7 +479,7 @@ class WalletOidcIdTokenAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val store = InMemorySessionStore()
             val client =
@@ -505,8 +505,8 @@ class WalletOidcIdTokenAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
 
             assertNotNull(failure)
-            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.walletAddress)
@@ -535,7 +535,7 @@ class WalletOidcIdTokenAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = store,
@@ -553,7 +553,7 @@ class WalletOidcIdTokenAuthTest {
 
             val request = requireNotNull(server.takeRequest())
             assertNotNull(failure)
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)

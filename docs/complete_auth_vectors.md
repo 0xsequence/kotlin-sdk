@@ -15,12 +15,18 @@ Kotlin parity coverage:
   - tested in `WalletPayloadBuilderTest.oidcCommitVerifierPayloadMatchesParityVector()`
 - `SignMessage`
   - full payload / preimage / wallet signature header assembly vector
+  - request scope is derived from fixture publishable key `pk_live_project_key`
+    as `prj_project`, matching SDK runtime behavior
   - tested in `WalletRequestSignerVectorTest.signMessagePayloadAndPreimageMatchParityVector()`
 - `PrepareEthereumTransaction`
   - full payload / preimage / wallet signature header assembly vector
+  - request scope is derived from fixture publishable key `pk_live_project_key`
+    as `prj_project`, matching SDK runtime behavior
   - tested in `WalletRequestSignerVectorTest.prepareEthereumTransactionPayloadAndPreimageMatchParityVector()`
 - `CompleteAuth`
   - full payload / preimage / wallet signature header assembly vector
+  - request scope is derived from fixture publishable key `pk_live_project_key`
+    as `prj_project`, matching SDK runtime behavior
   - tested in `WalletRequestSignerVectorTest.completeAuthPayloadAndPreimageMatchParityVector()`
   - answer-hash parity vector for `challenge + code -> sha256 -> base64url(no padding) -> answer`
   - tested in `WalletPayloadBuilderTest.completeAuthPayloadFromCodeMatchesParityVector()`
@@ -81,15 +87,15 @@ CompleteAuth answer behavior:
 - expected preimage:
 
 ```text
-POST /rpc/Wallet/CompleteAuth
+POST /v1/Waas/CompleteAuth
 nonce: 1710000002
-scope: proj_1
+scope: prj_project
 
 {"identityType":"email","authMode":"otp","verifier":"verifier-123","answer":"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M"}
 ```
 
 - expected wallet signature header:
   assembled by `WalletRequestSignerVectorTest.completeAuthPayloadAndPreimageMatchParityVector()`
-  from the deterministic test credential id, nonce, scope, and injected P-256
-  test signature. Production wallet request signatures come from the Android
-  Keystore P-256 credential signer.
+  from the deterministic test credential id, nonce, SDK-derived `prj_project`
+  scope, and injected P-256 test signature. Production wallet request
+  signatures come from the Android Keystore P-256 credential signer.

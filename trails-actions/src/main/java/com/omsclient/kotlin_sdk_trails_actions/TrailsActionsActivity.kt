@@ -35,7 +35,6 @@ import com.omsclient.kotlin_sdk.models.SendTransactionRequest
 import com.omsclient.kotlin_sdk.models.SendTransactionResponse
 import com.omsclient.kotlin_sdk.models.TransactionStatus
 import com.omsclient.kotlin_sdk.models.Wallet
-import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
@@ -94,8 +93,6 @@ class TrailsActionsActivity : AppCompatActivity() {
         OMSClient(
             context = this,
             publishableKey = DemoConfig.demoPublishableKey,
-            projectId = DemoConfig.demoProjectId,
-            environment = OMSClientEnvironment.demoDefaults(),
         )
     }
     private val trailsClient =
@@ -711,20 +708,23 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private suspend fun getPolygonBalances(walletAddress: String): BalanceState {
-        val polBalance =
-            sdk.indexer.getNativeTokenBalance(
-                network = Network.POLYGON,
+        val balances =
+            sdk.indexer.getBalances(
                 walletAddress = walletAddress,
-            )
-        val usdcBalances =
-            sdk.indexer.getTokenBalances(
-                network = Network.POLYGON,
-                contractAddress = POLYGON_USDC,
-                walletAddress = walletAddress,
+                networks = listOf(Network.POLYGON),
+                contractAddresses = listOf(POLYGON_USDC),
                 includeMetadata = false,
             )
-        val polRaw = polBalance?.balance ?: "0"
-        val usdcRaw = usdcBalances.balances.firstOrNull()?.balance ?: "0"
+        val polRaw =
+            balances.nativeBalances
+                .firstOrNull { it.chainId == Network.POLYGON.id.toLong() }
+                ?.balance
+                ?: "0"
+        val usdcRaw =
+            balances.balances
+                .firstOrNull { it.contractAddress.equals(POLYGON_USDC, ignoreCase = true) }
+                ?.balance
+                ?: "0"
         return BalanceState(
             pol = formatTokenAmount(polRaw, 18, "POL"),
             usdc = formatTokenAmount(usdcRaw, 6, "USDC"),
@@ -776,9 +776,9 @@ class TrailsActionsActivity : AppCompatActivity() {
             trailsClient.quoteIntent(
                 QuoteIntentRequest(
                     ownerAddress = walletAddress,
-                    originChainId = POLYGON_CHAIN_ID.toULong(),
+                    originChainId = POLYGON_CHAIN_ID_ULONG,
                     originTokenAddress = POLYGON_NATIVE_TOKEN,
-                    destinationChainId = POLYGON_CHAIN_ID.toULong(),
+                    destinationChainId = POLYGON_CHAIN_ID_ULONG,
                     destinationTokenAddress = POLYGON_USDC,
                     destinationToAddress = walletAddress,
                     originTokenAmount = amountRaw,
@@ -789,7 +789,7 @@ class TrailsActionsActivity : AppCompatActivity() {
                 ),
             )
         val deposit = response.intent.depositTransaction
-        require(deposit.chainId == POLYGON_CHAIN_ID.toULong()) {
+        require(deposit.chainId == POLYGON_CHAIN_ID_ULONG) {
             "Trails returned chain ${deposit.chainId}, but this demo only sends Polygon transactions."
         }
         val outputRaw = response.intent.quote.toAmountMin ?: response.intent.quote.toAmount
@@ -2153,13 +2153,13 @@ class TrailsActionsActivity : AppCompatActivity() {
         const val TRAILS_ACTIONS_MANUAL_WALLET_SELECTION_KEY = "manual_wallet_selection"
         const val TRAILS_ACTIONS_SESSION_LIFETIME_SECONDS_KEY = "session_lifetime_seconds"
         val TRAILS_ACTIONS_DEFAULT_SESSION_LIFETIME_SECONDS = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS.toString()
+        val POLYGON_CHAIN_ID_ULONG: ULong = 137UL
         val TrailsJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
     }
 }
 
 private object DemoConfig {
-    const val demoPublishableKey: String = "AQAAAAAAAAK2JvvZhWqZ51riasWBftkrVXE"
-    const val demoProjectId: String = "proj_014kg56dc0a75"
+    const val demoPublishableKey: String = "pk_dev_sdbx_project_key"
     const val demoGoogleWebClientId: String = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com"
     const val oidcRedirectUri: String = "omsclientkotlindemo://auth/callback"
 }

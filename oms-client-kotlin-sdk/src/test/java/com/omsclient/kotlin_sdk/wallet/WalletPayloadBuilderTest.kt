@@ -8,7 +8,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumContractC
 import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransactionRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionMode
 import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -29,7 +29,7 @@ class WalletPayloadBuilderTest {
         )
         assertEquals(
             "{\"identityType\":\"oidc\",\"authMode\":\"id-token\",\"metadata\":{\"iss\":\"https://accounts.google.com\",\"aud\":\"demo-web-client-id\",\"exp\":\"1910000100\"},\"handle\":\"nyaQb_2b6gSthzvKxcPn2oWZfRoUxQSFZS89_EwbYwY\"}",
-            WaasWalletApi.CommitVerifier.encodeRequest(
+            WaasApi.CommitVerifier.encodeRequest(
                 CommitVerifierRequest(
                     identityType = IdentityType.OIDC,
                     authMode = AuthMode.IDToken,
@@ -49,7 +49,7 @@ class WalletPayloadBuilderTest {
     fun commitVerifierPayloadMatchesParityVector() {
         assertEquals(
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"metadata\":{},\"handle\":\"user@example.com\"}",
-            WaasWalletApi.CommitVerifier.encodeRequest(
+            WaasApi.CommitVerifier.encodeRequest(
                 CommitVerifierRequest(
                     identityType = IdentityType.Email,
                     authMode = AuthMode.OTP,
@@ -64,7 +64,7 @@ class WalletPayloadBuilderTest {
     fun completeAuthPayloadMatchesParityVector() {
         assertEquals(
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"verifier\":\"verifier-123\",\"answer\":\"0xdeadbeef\"}",
-            WaasWalletApi.CompleteAuth.encodeRequest(
+            WaasApi.CompleteAuth.encodeRequest(
                 CompleteAuthRequest(
                     identityType = IdentityType.Email,
                     authMode = AuthMode.OTP,
@@ -89,7 +89,7 @@ class WalletPayloadBuilderTest {
         )
         assertEquals(
             "{\"identityType\":\"email\",\"authMode\":\"otp\",\"verifier\":\"verifier-123\",\"answer\":\"2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M\"}",
-            WaasWalletApi.CompleteAuth.encodeRequest(
+            WaasApi.CompleteAuth.encodeRequest(
                 CompleteAuthRequest(
                     identityType = IdentityType.Email,
                     authMode = AuthMode.OTP,
@@ -104,7 +104,7 @@ class WalletPayloadBuilderTest {
     fun useWalletPayloadMatchesParityVector() {
         assertEquals(
             "{\"walletId\":\"wallet-0\"}",
-            WaasWalletApi.UseWallet.encodeRequest(
+            WaasApi.UseWallet.encodeRequest(
                 UseWalletRequest(
                     walletId = "wallet-0",
                 ),
@@ -116,7 +116,7 @@ class WalletPayloadBuilderTest {
     fun createWalletPayloadMatchesParityVector() {
         assertEquals(
             "{\"type\":\"ethereum\"}",
-            WaasWalletApi.CreateWallet.encodeRequest(
+            WaasApi.CreateWallet.encodeRequest(
                 com.omsclient.kotlin_sdk.internal.generated.waas.CreateWalletRequest(
                     type = WalletType.Ethereum,
                 ),
@@ -128,7 +128,7 @@ class WalletPayloadBuilderTest {
     fun prepareEthereumTransactionPayloadMatchesWaasRequestShape() {
         assertEquals(
             "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"to\":\"0xabc\",\"value\":\"0\",\"data\":\"0x1234\",\"mode\":\"native\"}",
-            WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
+            WaasApi.PrepareEthereumTransaction.encodeRequest(
                 PrepareEthereumTransactionRequest(
                     network = "80002",
                     walletId = "wallet-0",
@@ -145,7 +145,7 @@ class WalletPayloadBuilderTest {
     fun prepareEthereumContractCallPayloadMatchesWaasRequestShape() {
         assertEquals(
             "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"contract\":\"0xcontract\",\"method\":\"mint()\",\"mode\":\"relayer\"}",
-            WaasWalletApi.PrepareEthereumContractCall.encodeRequest(
+            WaasApi.PrepareEthereumContractCall.encodeRequest(
                 PrepareEthereumContractCallRequest(
                     network = "80002",
                     walletId = "wallet-0",
@@ -159,18 +159,18 @@ class WalletPayloadBuilderTest {
 
     @Test
     fun walletApiEndpointsMatchGeneratedSchema() {
-        assertEquals("/rpc/Wallet", WaasWalletApi.basePath)
-        assertEquals("/CommitVerifier", WaasWalletApi.CommitVerifier.path)
-        assertEquals("/CompleteAuth", WaasWalletApi.CompleteAuth.path)
-        assertEquals("/UseWallet", WaasWalletApi.UseWallet.path)
-        assertEquals("/CreateWallet", WaasWalletApi.CreateWallet.path)
-        assertEquals("/SignMessage", WaasWalletApi.SignMessage.path)
-        assertEquals("/SignTypedData", WaasWalletApi.SignTypedData.path)
-        assertEquals("/PrepareEthereumTransaction", WaasWalletApi.PrepareEthereumTransaction.path)
-        assertEquals("/PrepareEthereumContractCall", WaasWalletApi.PrepareEthereumContractCall.path)
-        assertEquals("/Execute", WaasWalletApi.Execute.path)
-        assertEquals("/TransactionStatus", WaasWalletApi.TransactionStatus.path)
-        assertEquals("/ListAccess", WaasWalletApi.ListAccess.path)
-        assertEquals("/RevokeAccess", WaasWalletApi.RevokeAccess.path)
+        assertEquals("/v1/Waas", WaasApi.basePath)
+        assertEquals("/CommitVerifier", WaasApi.CommitVerifier.path)
+        assertEquals("/CompleteAuth", WaasApi.CompleteAuth.path)
+        assertEquals("/UseWallet", WaasApi.UseWallet.path)
+        assertEquals("/CreateWallet", WaasApi.CreateWallet.path)
+        assertEquals("/SignMessage", WaasApi.SignMessage.path)
+        assertEquals("/SignTypedData", WaasApi.SignTypedData.path)
+        assertEquals("/PrepareEthereumTransaction", WaasApi.PrepareEthereumTransaction.path)
+        assertEquals("/PrepareEthereumContractCall", WaasApi.PrepareEthereumContractCall.path)
+        assertEquals("/Execute", WaasApi.Execute.path)
+        assertEquals("/TransactionStatus", WaasApi.TransactionStatusMethod.path)
+        assertEquals("/ListAccess", WaasApi.ListAccess.path)
+        assertEquals("/RevokeAccess", WaasApi.RevokeAccess.path)
     }
 }

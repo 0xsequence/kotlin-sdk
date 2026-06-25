@@ -46,7 +46,6 @@ import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
 import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.models.Wallet
-import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
 import com.omsclient.kotlin_sdk.wallet.OidcProviders
@@ -73,8 +72,6 @@ class AuthDemoActivity : AppCompatActivity() {
         OMSClient(
             context = this,
             publishableKey = DemoConfig.demoPublishableKey,
-            projectId = DemoConfig.demoProjectId,
-            environment = OMSClientEnvironment.demoDefaults(),
         )
     }
 

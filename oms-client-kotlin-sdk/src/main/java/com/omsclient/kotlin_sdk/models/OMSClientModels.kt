@@ -24,6 +24,7 @@ enum class TransactionStatus(
     Quoted("quoted"),
     Pending("pending"),
     Executed("executed"),
+    Failed("failed"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 
@@ -40,7 +41,7 @@ data class FeeToken(
     val symbol: String,
     val type: String,
     val decimals: UInt? = null,
-    val logoUrl: String,
+    val logoUrl: String? = null,
     val contractAddress: String? = null,
     val tokenId: String? = null,
 )
@@ -151,10 +152,32 @@ data class TokenBalancesPageRequest(
     val pageSize: Int = 40,
 )
 
+enum class IndexerNetworkType(
+    val wireValue: String,
+) {
+    MAINNETS("MAINNETS"),
+    TESTNETS("TESTNETS"),
+    ALL("ALL"),
+}
+
+enum class ContractVerificationStatus(
+    val wireValue: String,
+) {
+    VERIFIED("VERIFIED"),
+    UNVERIFIED("UNVERIFIED"),
+    ALL("ALL"),
+}
+
 data class TokenBalancesPage(
     val page: Int,
     val pageSize: Int,
     val more: Boolean,
+)
+
+data class MetadataOptions(
+    val verifiedOnly: Boolean? = null,
+    val unverifiedOnly: Boolean? = null,
+    val includeContracts: List<String> = emptyList(),
 )
 
 data class TokenContractInfo(
@@ -221,6 +244,8 @@ data class TokenBalance(
     val blockHash: String?,
     val blockNumber: Long?,
     val chainId: Long?,
+    val name: String? = null,
+    val symbol: String? = null,
     val balanceUSD: String? = null,
     val priceUSD: String? = null,
     val priceUpdatedAt: String? = null,
@@ -234,4 +259,36 @@ data class TokenBalancesResult(
     val status: Int,
     val page: TokenBalancesPage?,
     val balances: List<TokenBalance>,
+    val nativeBalances: List<TokenBalance> = emptyList(),
+)
+
+data class TransactionTransfer(
+    val transferType: String? = null,
+    val contractAddress: String? = null,
+    val contractType: String? = null,
+    val from: String? = null,
+    val to: String? = null,
+    val tokenIds: List<String>? = null,
+    val amounts: List<String>? = null,
+    val logIndex: Long? = null,
+    val amountsUSD: List<String>? = null,
+    val pricesUSD: List<String>? = null,
+    val contractInfo: TokenContractInfo? = null,
+    val tokenMetadata: Map<String, TokenMetadata>? = null,
+)
+
+data class Transaction(
+    val txnHash: String?,
+    val blockNumber: Long?,
+    val blockHash: String?,
+    val chainId: Long?,
+    val metaTxnId: String? = null,
+    val transfers: List<TransactionTransfer>? = null,
+    val timestamp: String? = null,
+)
+
+data class TransactionHistoryResult(
+    val status: Int,
+    val page: TokenBalancesPage?,
+    val transactions: List<Transaction>,
 )

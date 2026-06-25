@@ -9,7 +9,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.CommitVerifierRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.CompleteAuthRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.IdentityType
 import com.omsclient.kotlin_sdk.internal.generated.waas.UseWalletRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
@@ -52,7 +52,7 @@ class WalletOidcRedirectAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
@@ -83,9 +83,9 @@ class WalletOidcRedirectAuthTest {
                 )
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals(
-                WaasWalletApi.CommitVerifier.encodeRequest(
+                WaasApi.CommitVerifier.encodeRequest(
                     CommitVerifierRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.AuthCodePKCE,
@@ -144,7 +144,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -191,7 +191,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = sessionStore,
@@ -225,7 +225,7 @@ class WalletOidcRedirectAuthTest {
             val activeSession = activeSessionSnapshot()
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val sessionStore = InMemorySessionStore(activeSession)
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
@@ -255,7 +255,7 @@ class WalletOidcRedirectAuthTest {
                 )
             val request = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", request.target)
+            assertEquals("/v1/Waas/CommitVerifier", request.target)
             assertEquals("oidc-verifier-new", redirectStore.pending?.verifier)
             assertEquals("pkce-challenge-new", redirectStore.pending?.challenge)
             assertEquals("nonce-new", redirectStore.pending?.nonce)
@@ -305,7 +305,7 @@ class WalletOidcRedirectAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val sessionStore = InMemorySessionStore()
             val redirectStore = InMemoryOidcRedirectAuthStore()
@@ -341,10 +341,10 @@ class WalletOidcRedirectAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.AuthCodePKCE,
@@ -355,9 +355,9 @@ class WalletOidcRedirectAuthTest {
                 ),
                 requireNotNull(completeAuthRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/UseWallet", useWalletRequest.target)
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals(
-                WaasWalletApi.UseWallet.encodeRequest(UseWalletRequest(walletId = "wallet-def")),
+                WaasApi.UseWallet.encodeRequest(UseWalletRequest(walletId = "wallet-def")),
                 requireNotNull(useWalletRequest.body).utf8(),
             )
             assertEquals("0xdef", wallet.address)
@@ -411,7 +411,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -439,7 +439,7 @@ class WalletOidcRedirectAuthTest {
             requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             assertEquals(
-                WaasWalletApi.CompleteAuth.encodeRequest(
+                WaasApi.CompleteAuth.encodeRequest(
                     CompleteAuthRequest(
                         identityType = IdentityType.OIDC,
                         authMode = AuthMode.AuthCodePKCE,
@@ -468,7 +468,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -533,7 +533,7 @@ class WalletOidcRedirectAuthTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                 )
             val sessionStore = InMemorySessionStore()
             val redirectStore = InMemoryOidcRedirectAuthStore()
@@ -591,7 +591,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(activeSession),
@@ -621,7 +621,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
@@ -665,7 +665,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -714,7 +714,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -762,7 +762,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -810,7 +810,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -872,7 +872,7 @@ class WalletOidcRedirectAuthTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -904,8 +904,8 @@ class WalletOidcRedirectAuthTest {
             assertEquals(400, failure.status)
             assertEquals("Bad callback", failure.message)
             assertEquals(false, failure.retryable)
-            assertEquals("/rpc/Wallet/CommitVerifier", commitRequest.target)
-            assertEquals("/rpc/Wallet/CompleteAuth", completeAuthRequest.target)
+            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertNull(client.snapshotSession())
             assertNull(redirectStore.pending)
             assertEquals(2, redirectStore.clearCalls)

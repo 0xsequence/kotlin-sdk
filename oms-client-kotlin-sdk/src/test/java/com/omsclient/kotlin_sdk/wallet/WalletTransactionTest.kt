@@ -6,7 +6,7 @@ import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumContractCallRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.TransactionStatusRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.models.AbiArg
 import com.omsclient.kotlin_sdk.models.FeeOptionSelector
 import com.omsclient.kotlin_sdk.models.SendTransactionRequest
@@ -54,7 +54,7 @@ class WalletTransactionTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -139,31 +139,32 @@ class WalletTransactionTest {
                     .body(
                         """
                         {
-                          "balance": {
-                            "accountAddress": "0xwallet",
-                            "chainId": 80002,
-                            "symbol": "POL",
-                            "balance": "100"
-                          }
-                        }
-                        """.trimIndent(),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        """
-                        {
                           "page": {"page": 0, "pageSize": 40, "more": false},
+                          "nativeBalances": [
+                            {
+                              "chainId": 80002,
+                              "results": [
+                                {
+                                  "accountAddress": "0xwallet",
+                                  "chainId": 80002,
+                                  "symbol": "POL",
+                                  "balance": "100"
+                                }
+                              ]
+                            }
+                          ],
                           "balances": [
                             {
-                              "contractType": "ERC20",
-                              "contractAddress": "0xUSDC",
-                              "accountAddress": "0xwallet",
-                              "balance": "2000",
-                              "chainId": 80002
+                              "chainId": 80002,
+                              "results": [
+                                {
+                                  "contractType": "ERC20",
+                                  "contractAddress": "0xUSDC",
+                                  "accountAddress": "0xwallet",
+                                  "balance": "2000",
+                                  "chainId": 80002
+                                }
+                              ]
                             }
                           ]
                         }
@@ -194,8 +195,8 @@ class WalletTransactionTest {
 
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
-                    indexerUrlTemplate = server.url("/indexer/").toString() + "{value}/rpc/Indexer/",
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/indexer-gateway/").toString(),
                 )
             val client =
                 WalletClient(
@@ -245,7 +246,6 @@ class WalletTransactionTest {
                     feeOptions[1].selection
                 }
             val prepareRequest = requireNotNull(server.takeRequest())
-            val nativeBalanceRequest = requireNotNull(server.takeRequest())
             val balanceRequest = requireNotNull(server.takeRequest())
             val executeRequest = requireNotNull(server.takeRequest())
             val pendingStatusRequest = requireNotNull(server.takeRequest())
@@ -254,9 +254,9 @@ class WalletTransactionTest {
             assertEquals("txn-1", result.txnId)
             assertEquals("0xdeadbeef", result.txnHash)
             assertEquals(TransactionStatus.Executed, result.status)
-            assertEquals("/rpc/Wallet/PrepareEthereumTransaction", prepareRequest.target)
+            assertEquals("/v1/Waas/PrepareEthereumTransaction", prepareRequest.target)
             assertEquals(
-                WaasWalletApi.PrepareEthereumTransaction.encodeRequest(
+                WaasApi.PrepareEthereumTransaction.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas.PrepareEthereumTransactionRequest(
                         walletId = "wallet-main",
                         network = "80002",
@@ -268,19 +268,15 @@ class WalletTransactionTest {
                 ),
                 requireNotNull(prepareRequest.body).utf8(),
             )
-            assertEquals("/indexer/amoy/rpc/Indexer/GetNativeTokenBalance", nativeBalanceRequest.target)
+            assertEquals("/indexer-gateway/GetTokenBalancesDetails", balanceRequest.target)
+            assertEquals("test-publishable-key", balanceRequest.headers["Api-Key"])
             assertEquals(
-                "{\"accountAddress\":\"0xwallet\"}",
-                requireNotNull(nativeBalanceRequest.body).utf8(),
-            )
-            assertEquals("/indexer/amoy/rpc/Indexer/GetTokenBalances", balanceRequest.target)
-            assertEquals(
-                "{\"page\":{\"page\":0,\"pageSize\":40,\"more\":false},\"contractAddress\":\"0xusdc\",\"accountAddress\":\"0xwallet\",\"includeMetadata\":false}",
+                "{\"chainIds\":[80002],\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"contractWhitelist\":[\"0xusdc\"],\"omitNativeBalances\":false},\"omitMetadata\":true,\"page\":{\"page\":0,\"pageSize\":40}}",
                 requireNotNull(balanceRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/Execute", executeRequest.target)
+            assertEquals("/v1/Waas/Execute", executeRequest.target)
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                WaasApi.Execute.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas.ExecuteRequest(
                         txnId = "txn-1",
                         feeOption = WaasFeeOptionSelection(token = "usdc"),
@@ -288,17 +284,17 @@ class WalletTransactionTest {
                 ),
                 requireNotNull(executeRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/TransactionStatus", pendingStatusRequest.target)
+            assertEquals("/v1/Waas/TransactionStatus", pendingStatusRequest.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(
+                WaasApi.TransactionStatusMethod.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas
                         .TransactionStatusRequest(txnId = "txn-1"),
                 ),
                 requireNotNull(pendingStatusRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/TransactionStatus", executedStatusRequest.target)
+            assertEquals("/v1/Waas/TransactionStatus", executedStatusRequest.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(
+                WaasApi.TransactionStatusMethod.encodeRequest(
                     com.omsclient.kotlin_sdk.internal.generated.waas
                         .TransactionStatusRequest(txnId = "txn-1"),
                 ),
@@ -346,7 +342,7 @@ class WalletTransactionTest {
             assertEquals("txn-token-id", result.txnId)
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-token-id",
                         feeOption = WaasFeeOptionSelection(token = "usdc"),
@@ -403,7 +399,7 @@ class WalletTransactionTest {
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals(false, selectorCalled)
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                WaasApi.Execute.encodeRequest(
                     ExecuteRequest(txnId = "txn-sponsored"),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -462,12 +458,12 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(tokenBalancesResponse(contractAddress = "0xUSDC", balance = "2000"))
+            enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "2000"))
             enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
-                    indexerUrlTemplate = server.url("/indexer/").toString() + "{value}/rpc/Indexer/",
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/indexer-gateway/").toString(),
                 )
             val client = restoredWalletClient(nonceValue = "1710000118", environment = environment)
             var selectorCalled = false
@@ -522,13 +518,12 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(tokenBalancesResponse(contractAddress = "0xDAI", balance = "100"))
-            enqueueJson(tokenBalancesResponse(contractAddress = "0xUSDC", balance = "2000"))
+            enqueueJson(gatewayTokenBalancesResponse("0xDAI" to "100", "0xUSDC" to "2000"))
             enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
-                    indexerUrlTemplate = server.url("/indexer/").toString() + "{value}/rpc/Indexer/",
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/indexer-gateway/").toString(),
                 )
             val client = restoredWalletClient(nonceValue = "1710000119", environment = environment)
 
@@ -544,16 +539,18 @@ class WalletTransactionTest {
                     selectFeeOption = FeeOptionSelector.firstAvailable,
                 )
             requireNotNull(server.takeRequest())
-            val daiBalanceRequest = requireNotNull(server.takeRequest())
-            val usdcBalanceRequest = requireNotNull(server.takeRequest())
+            val balanceRequest = requireNotNull(server.takeRequest())
             val executeRequest = requireNotNull(server.takeRequest())
 
             assertEquals("txn-first-available", result.txnId)
             assertEquals(TransactionStatus.Executed, result.status)
-            assertEquals("/indexer/amoy/rpc/Indexer/GetTokenBalances", daiBalanceRequest.target)
-            assertEquals("/indexer/amoy/rpc/Indexer/GetTokenBalances", usdcBalanceRequest.target)
+            assertEquals("/indexer-gateway/GetTokenBalancesDetails", balanceRequest.target)
             assertEquals(
-                WaasWalletApi.Execute.encodeRequest(
+                "{\"chainIds\":[80002],\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"contractWhitelist\":[\"0xdai\",\"0xusdc\"],\"omitNativeBalances\":false},\"omitMetadata\":true,\"page\":{\"page\":0,\"pageSize\":40}}",
+                requireNotNull(balanceRequest.body).utf8(),
+            )
+            assertEquals(
+                WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-first-available",
                         feeOption = WaasFeeOptionSelection(token = "usdc"),
@@ -561,7 +558,7 @@ class WalletTransactionTest {
                 ),
                 requireNotNull(executeRequest.body).utf8(),
             )
-            assertEquals(4, server.requestCount)
+            assertEquals(3, server.requestCount)
         }
 
     @Test
@@ -584,12 +581,12 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(tokenBalancesResponse(contractAddress = "0xUSDC", balance = "100"))
+            enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "100"))
             enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSClientEnvironment(
-                    walletApiUrl = server.url("/rpc/Wallet/").toString(),
-                    indexerUrlTemplate = server.url("/indexer/").toString() + "{value}/rpc/Indexer/",
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/indexer-gateway/").toString(),
                 )
             val client = restoredWalletClient(nonceValue = "1710000120", environment = environment)
 
@@ -662,7 +659,7 @@ class WalletTransactionTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -696,6 +693,61 @@ class WalletTransactionTest {
             assertEquals(400L, delays[3])
             assertEquals(2_000L, delays[4])
             assertEquals(2_000L, delays[5])
+        }
+
+    @Test
+    fun sendTransactionTreatsFailedStatusAsTerminal() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-failed",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            enqueueJson("""{"status":"pending"}""")
+            enqueueJson("""{"status":"failed"}""")
+            enqueueJson("""{"status":"executed","txnHash":"0xshould-not-be-read"}""")
+
+            val delays = mutableListOf<Long>()
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSClientSessionSnapshot(
+                                    walletId = "wallet-main",
+                                    walletAddress = "0xwallet",
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                                ),
+                        ),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000121"),
+                    transactionStatusDelay = { delayMillis -> delays += delayMillis },
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request =
+                        SendTransactionRequest(
+                            to = "0xabc",
+                            value = BigInteger.ZERO,
+                        ),
+                )
+
+            assertEquals(TransactionStatus.Failed, result.status)
+            assertEquals(null, result.txnHash)
+            assertEquals(emptyList<Long>(), delays)
+            assertEquals(3, server.requestCount)
         }
 
     @Test
@@ -753,7 +805,7 @@ class WalletTransactionTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -834,7 +886,7 @@ class WalletTransactionTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -871,9 +923,9 @@ class WalletTransactionTest {
             assertEquals("contract-txn", result.txnId)
             assertEquals("0xcontract", result.txnHash)
             assertEquals(TransactionStatus.Executed, result.status)
-            assertEquals("/rpc/Wallet/PrepareEthereumContractCall", prepareRequest.target)
+            assertEquals("/v1/Waas/PrepareEthereumContractCall", prepareRequest.target)
             assertEquals(
-                WaasWalletApi.PrepareEthereumContractCall.encodeRequest(
+                WaasApi.PrepareEthereumContractCall.encodeRequest(
                     PrepareEthereumContractCallRequest(
                         walletId = "wallet-main",
                         network = "80002",
@@ -885,10 +937,10 @@ class WalletTransactionTest {
                 ),
                 requireNotNull(prepareRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/Execute", executeRequest.target)
-            assertEquals("/rpc/Wallet/TransactionStatus", statusRequest.target)
+            assertEquals("/v1/Waas/Execute", executeRequest.target)
+            assertEquals("/v1/Waas/TransactionStatus", statusRequest.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "contract-txn")),
+                WaasApi.TransactionStatusMethod.encodeRequest(TransactionStatusRequest(txnId = "contract-txn")),
                 requireNotNull(statusRequest.body).utf8(),
             )
         }
@@ -910,7 +962,7 @@ class WalletTransactionTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -932,9 +984,9 @@ class WalletTransactionTest {
 
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("0xstatus", result.txnHash)
-            assertEquals("/rpc/Wallet/TransactionStatus", request.target)
+            assertEquals("/v1/Waas/TransactionStatus", request.target)
             assertEquals(
-                WaasWalletApi.TransactionStatus.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
+                WaasApi.TransactionStatusMethod.encodeRequest(TransactionStatusRequest(txnId = "txn-1")),
                 requireNotNull(request.body).utf8(),
             )
             assertEquals("test-publishable-key", request.headers[OMSClientEnvironment.accessKeyHeaderName])
@@ -965,7 +1017,7 @@ class WalletTransactionTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -1005,7 +1057,7 @@ class WalletTransactionTest {
         nonceValue: String,
         environment: OMSClientEnvironment =
             OMSClientEnvironment(
-                walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                walletApiUrl = server.url("/v1/Waas/").toString(),
             ),
     ): WalletClient {
         val client =
@@ -1068,22 +1120,30 @@ class WalletTransactionTest {
         }
         """.trimIndent()
 
-    private fun tokenBalancesResponse(
-        contractAddress: String,
-        balance: String,
-    ): String =
-        """
-        {
-          "page": {"page": 0, "pageSize": 40, "more": false},
-          "balances": [
-            {
-              "contractType": "ERC20",
-              "contractAddress": "$contractAddress",
-              "accountAddress": "0xwallet",
-              "balance": "$balance",
-              "chainId": 80002
+    private fun gatewayTokenBalancesResponse(vararg balances: Pair<String, String>): String {
+        val balanceJson =
+            balances.joinToString(",") { (contractAddress, balance) ->
+                """
+                {
+                  "contractType": "ERC20",
+                  "contractAddress": "$contractAddress",
+                  "accountAddress": "0xwallet",
+                  "balance": "$balance",
+                  "chainId": 80002
+                }
+                """.trimIndent()
             }
-          ]
-        }
-        """.trimIndent()
+        return """
+            {
+              "page": {"page": 0, "pageSize": 40, "more": false},
+              "nativeBalances": [],
+              "balances": [
+                {
+                  "chainId": 80002,
+                  "results": [$balanceJson]
+                }
+              ]
+            }
+            """.trimIndent()
+    }
 }

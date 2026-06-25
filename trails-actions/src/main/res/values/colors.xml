@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="slate_950">#05070A</color>
     <color name="slate_900">#F8FAFC</color>
-    <color name="slate_800">#E2E8F0</color>
     <color name="slate_700">#CBD5E1</color>
     <color name="slate_500">#94A3B8</color>
     <color name="surface_900">#0B0D12</color>
@@ -10,8 +8,6 @@
     <color name="surface_700">#171B24</color>
     <color name="border_300">#303644</color>
     <color name="brand_500">#FFFFFF</color>
-    <color name="brand_700">#D8DEE9</color>
-    <color name="success_500">#22C55E</color>
     <color name="info_500">#7DD3FC</color>
     <color name="black">#FF000000</color>
 </resources>

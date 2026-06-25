@@ -43,7 +43,7 @@ class AndroidKeystoreP256CredentialSignerInstrumentedTest {
     @Test
     fun createsNonExtractableP256CredentialAndSignsRawWebCryptoSignature() =
         runBlocking {
-            val preimage = "POST /rpc/Wallet/CommitVerifier\nnonce: 1\n\n{}"
+            val preimage = "POST /v1/Waas/CommitVerifier\nnonce: 1\n\n{}"
 
             val credentialId = signer.credentialId()
             val signature = signer.sign(preimage)

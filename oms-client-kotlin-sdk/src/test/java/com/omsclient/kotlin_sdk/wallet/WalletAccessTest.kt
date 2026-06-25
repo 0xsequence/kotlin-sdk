@@ -6,7 +6,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.GetIDTokenRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.ListAccessRequest
 import com.omsclient.kotlin_sdk.internal.generated.waas.Page
 import com.omsclient.kotlin_sdk.internal.generated.waas.RevokeAccessRequest
-import com.omsclient.kotlin_sdk.internal.generated.waas.WaasWalletApi
+import com.omsclient.kotlin_sdk.internal.generated.waas.WaasApi
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
@@ -91,7 +91,7 @@ class WalletAccessTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -116,9 +116,9 @@ class WalletAccessTest {
 
             assertEquals(listOf("credential-1", "credential-2"), credentials.map { it.credentialId })
             assertEquals(true, credentials.first().isCaller)
-            assertEquals("/rpc/Wallet/ListAccess", firstListRequest.target)
+            assertEquals("/v1/Waas/ListAccess", firstListRequest.target)
             assertEquals(
-                WaasWalletApi.ListAccess.encodeRequest(
+                WaasApi.ListAccess.encodeRequest(
                     ListAccessRequest(
                         walletId = "wallet-main",
                         page = Page(limit = 2u),
@@ -126,9 +126,9 @@ class WalletAccessTest {
                 ),
                 requireNotNull(firstListRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/ListAccess", secondListRequest.target)
+            assertEquals("/v1/Waas/ListAccess", secondListRequest.target)
             assertEquals(
-                WaasWalletApi.ListAccess.encodeRequest(
+                WaasApi.ListAccess.encodeRequest(
                     ListAccessRequest(
                         walletId = "wallet-main",
                         page = Page(limit = 2u, cursor = "next"),
@@ -136,9 +136,9 @@ class WalletAccessTest {
                 ),
                 requireNotNull(secondListRequest.body).utf8(),
             )
-            assertEquals("/rpc/Wallet/RevokeAccess", revokeRequest.target)
+            assertEquals("/v1/Waas/RevokeAccess", revokeRequest.target)
             assertEquals(
-                WaasWalletApi.RevokeAccess.encodeRequest(
+                WaasApi.RevokeAccess.encodeRequest(
                     RevokeAccessRequest(
                         targetCredentialId = "credential-2",
                         walletId = "wallet-main",
@@ -198,7 +198,7 @@ class WalletAccessTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -225,7 +225,7 @@ class WalletAccessTest {
             assertEquals(listOf("credential-2"), pages[1].credentials.map { it.credentialId })
             assertEquals(null, pages[1].page?.cursor)
             assertEquals(
-                WaasWalletApi.ListAccess.encodeRequest(
+                WaasApi.ListAccess.encodeRequest(
                     ListAccessRequest(
                         walletId = "wallet-main",
                         page = Page(limit = 1u),
@@ -234,7 +234,7 @@ class WalletAccessTest {
                 requireNotNull(firstListRequest.body).utf8(),
             )
             assertEquals(
-                WaasWalletApi.ListAccess.encodeRequest(
+                WaasApi.ListAccess.encodeRequest(
                     ListAccessRequest(
                         walletId = "wallet-main",
                         page = Page(limit = 1u, cursor = "next"),
@@ -261,7 +261,7 @@ class WalletAccessTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     sessionStore =
@@ -289,9 +289,9 @@ class WalletAccessTest {
             val request = requireNotNull(server.takeRequest())
 
             assertEquals("id-token-value", idToken)
-            assertEquals("/rpc/Wallet/GetIDToken", request.target)
+            assertEquals("/v1/Waas/GetIDToken", request.target)
             assertEquals(
-                WaasWalletApi.GetIDToken.encodeRequest(
+                WaasApi.GetIDToken.encodeRequest(
                     GetIDTokenRequest(
                         walletId = "wallet-main",
                         ttlSeconds = 300u,
@@ -316,7 +316,7 @@ class WalletAccessTest {
                     projectId = "test-project-id",
                     environment =
                         OMSClientEnvironment(
-                            walletApiUrl = server.url("/rpc/Wallet/").toString(),
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
                         ),
                     transport = OMSClientHttpClient(),
                     credentialSigner = MockWebCryptoCredentialSigner(available = false),

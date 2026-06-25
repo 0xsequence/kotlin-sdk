@@ -27,8 +27,8 @@ SDK APIs documented below instead of importing generated classes.
 - transaction status lookup
 - wallet access listing and revocation
 - message and typed-data signature verification through WaaS
-- native and token balance lookups through the indexer service, including
-  optional token contract info and token metadata
+- native and token balance lookups plus transaction history through the indexer
+  service, including optional token contract info and token metadata
 - unit formatting and parsing helpers for raw token amounts
 
 ## Requirements
@@ -38,7 +38,6 @@ SDK APIs documented below instead of importing generated classes.
 - Java 17 Android compile options
 - Kotlin/Android app using the Android library module
 - a valid `publishableKey`
-- a valid `projectId`
 
 The sample app in this repository uses additional Google Sign-In / AndroidX
 Credential Manager dependencies and therefore compiles with SDK 35. That sample
@@ -53,23 +52,12 @@ Create the SDK with the Android-friendly constructor:
 val client = OMSClient(
     context = context,
     publishableKey = "YOUR_PUBLISHABLE_KEY",
-    projectId = "YOUR_PROJECT_ID",
 )
 ```
 
-That constructor wires two separate Android-backed pieces. Wallet API requests
-are authorized by a non-extractable Android Keystore P-256 credential
-(`ecdsa-p256-sha256`) owned by the credential signer, so the private credential
-key is never written to SDK session storage.
-
-Session restore uses a separate metadata store. The SDK persists only
-completed-session metadata in app-private no-backup storage: wallet id/address,
-signer address/algorithm, expiry, login type, and optional session email. This
-metadata is not wallet authorization material: by itself it cannot sign requests
-or access a wallet. Restore succeeds only while the matching Keystore credential
-still exists, and wallet operations must sign fresh requests with that
-credential. `publishableKey` is sent as `X-Access-Key`, while `projectId` is used
-as the WaaS signing scope.
+The SDK derives Wallet API and IndexerGateway routing from the publishable key.
+Session restore persists completed wallet-session metadata only; it does not
+store private signing material.
 
 Pending email OTP state is kept in memory. OIDC redirect state is stored only to
 complete the browser redirect flow and is cleared when the flow completes, fails,
@@ -82,32 +70,6 @@ metadata in storage until the app starts a new auth flow or calls `signOut()`.
 Subscribe with `client.wallet.onSessionExpired { event -> ... }` to route users
 back to sign-in while preserving the expired session snapshot for reauth.
 Listeners are delivered on the Android main thread.
-
-If you need a custom environment:
-
-```kotlin
-val client = OMSClient(
-    context = context,
-    publishableKey = "YOUR_PUBLISHABLE_KEY",
-    projectId = "YOUR_PROJECT_ID",
-    environment = OMSClientEnvironment(
-        walletApiUrl = "https://...",
-        apiRpcUrl = "https://...",
-        indexerUrlTemplate = "https://{value}-indexer.example.com/rpc/Indexer/",
-    ),
-)
-```
-
-For demo or staging-style defaults:
-
-```kotlin
-val client = OMSClient(
-    context = context,
-    publishableKey = "YOUR_PUBLISHABLE_KEY",
-    projectId = "YOUR_PROJECT_ID",
-    environment = OMSClientEnvironment.demoDefaults(),
-)
-```
 
 ## Example Flow
 
@@ -259,10 +221,10 @@ val loginType = client.session.loginType
 val sessionEmail = client.session.sessionEmail
 ```
 
-`client.session` only reports completed wallet-session state. Pending auth
-state, OIDC redirect verifier/state, and signer details are SDK internals. Show
-OTP or redirect waiting UI from the method result that started the flow, not from
-session state. Always pass incoming app links to `handleOidcRedirectCallback`;
+`client.session` only reports completed wallet-session state. It does not
+include pending auth progress. Show OTP or redirect waiting UI from the method
+result that started the flow, not from session state. Always pass incoming app
+links to `handleOidcRedirectCallback`;
 if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
 fresh SDK instance restores completed wallet sessions, including the session
 expiry, login type, and email returned by the wallet API, but not email OTP
@@ -379,17 +341,16 @@ For indexer balance lookups:
 ```kotlin
 val walletAddress = requireNotNull(client.wallet.walletAddress)
 
-val nativeBalance = client.indexer.getNativeTokenBalance(
-    network = network,
+val tokenBalances = client.indexer.getBalances(
     walletAddress = walletAddress,
-)
-
-val tokenBalances = client.indexer.getTokenBalances(
-    network = network,
-    contractAddress = "0xTokenContract",
-    walletAddress = walletAddress,
+    networks = listOf(network),
+    contractAddresses = listOf("0xTokenContract"),
     includeMetadata = true,
 )
+
+tokenBalances.nativeBalances.forEach { balance ->
+    println("${balance.symbol.orEmpty()} ${balance.balance.orEmpty()}")
+}
 
 tokenBalances.balances.forEach { balance ->
     println("${balance.contractInfo?.symbol.orEmpty()} ${balance.contractInfo?.decimals ?: 0}")
@@ -398,6 +359,15 @@ tokenBalances.balances.forEach { balance ->
 
 Pass `includeMetadata = true` when you need token contract details or NFT/token
 metadata from `balance.contractInfo` and `balance.tokenMetadata`.
+
+For transaction history:
+
+```kotlin
+val history = client.indexer.getTransactionHistory(
+    walletAddress = walletAddress,
+    networks = listOf(network),
+)
+```
 
 For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:
 
