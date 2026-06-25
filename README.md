@@ -7,7 +7,7 @@ Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.2")
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.3")
 ```
 
 This is the only artifact consumers add. The generated WaaS client is packaged
