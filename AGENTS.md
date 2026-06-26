@@ -186,7 +186,7 @@ result.
 ## Code Style
 
 - Kotlin code style is set to `official` in `gradle.properties`.
-- Android modules target Java 17 and Android `minSdk 26`.
+- Android modules target Java 17 and Android `minSdk 24`.
 - The repo uses Gradle Kotlin DSL and version catalog dependencies in
   `gradle/libs.versions.toml`.
 - Ktlint is configured through `org.jlleitschuh.gradle.ktlint` and

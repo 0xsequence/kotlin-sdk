@@ -11,11 +11,11 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
+import com.omsclient.kotlin_sdk.utils.OMSClientBase64Url
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertTrue
 import java.net.URI
 import java.net.URLDecoder
-import java.util.Base64
 
 internal val TEST_CREDENTIAL_ID: String = "0x04" + "11".repeat(64)
 internal val TEST_SIGNATURE: String = "0x" + "22".repeat(64)
@@ -86,10 +86,9 @@ internal fun listWalletsResponseBody(
     )
 
 internal fun fakeJwt(exp: Long): String {
-    val encoder = Base64.getUrlEncoder().withoutPadding()
-    val header = encoder.encodeToString("""{"alg":"RS256","typ":"JWT"}""".toByteArray())
+    val header = OMSClientBase64Url.encodeNoPadding("""{"alg":"RS256","typ":"JWT"}""".toByteArray())
     val payload =
-        encoder.encodeToString(
+        OMSClientBase64Url.encodeNoPadding(
             """
             {"iss":"https://accounts.google.com","aud":"demo-web-client-id","sub":"google-sub-123","email":"user@example.com","exp":$exp}
             """.trimIndent().toByteArray(),

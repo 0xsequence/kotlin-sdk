@@ -12,6 +12,7 @@ import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.text.TextUtils
+import android.util.Base64
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -58,7 +59,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.security.SecureRandom
-import java.util.Base64
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -1290,7 +1290,7 @@ class AuthDemoActivity : AppCompatActivity() {
         private fun generateSecureRandomNonce(byteLength: Int = 32): String {
             val randomBytes = ByteArray(byteLength)
             SecureRandom().nextBytes(randomBytes)
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(randomBytes)
+            return Base64.encodeToString(randomBytes, Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP)
         }
 
         private fun networkLabel(network: Network): String = "${network.name} (${network.id})"

@@ -1,8 +1,8 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.utils.OMSClientBase64Url
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
-import java.util.Base64
 
 internal object WalletAuthChallenge {
     fun hashAnswer(
@@ -14,6 +14,6 @@ internal object WalletAuthChallenge {
             MessageDigest
                 .getInstance("SHA-256")
                 .digest((challenge + code).toByteArray(StandardCharsets.UTF_8))
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+        return OMSClientBase64Url.encodeNoPadding(digest)
     }
 }

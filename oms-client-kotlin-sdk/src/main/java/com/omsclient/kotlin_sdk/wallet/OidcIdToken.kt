@@ -1,12 +1,12 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.utils.OMSClientBase64Url
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.security.MessageDigest
-import java.util.Base64
 
 internal object OidcIdToken {
     private val json = Json { ignoreUnknownKeys = true }
@@ -19,14 +19,14 @@ internal object OidcIdToken {
     }
 
     fun handleHash(idToken: String): String =
-        Base64.getUrlEncoder().withoutPadding().encodeToString(
+        OMSClientBase64Url.encodeNoPadding(
             MessageDigest.getInstance("SHA-256").digest(idToken.toByteArray(Charsets.UTF_8)),
         )
 
     private fun parsePayload(idToken: String): JsonObject {
         val parts = idToken.split('.')
         require(parts.size >= 2) { "OIDC ID token must contain header and payload sections" }
-        val payloadJson = String(Base64.getUrlDecoder().decode(parts[1]), Charsets.UTF_8)
+        val payloadJson = String(OMSClientBase64Url.decode(parts[1]), Charsets.UTF_8)
         return json.parseToJsonElement(payloadJson).jsonObject
     }
 }
