@@ -33,13 +33,18 @@ SDK APIs documented below instead of importing generated classes.
 
 ## Requirements
 
-- Android `minSdk 24`
+- Android 10 / API 29 or newer
 - Android `compileSdk 34` or newer
 - Java 17 Android compile options
 - Kotlin/Android app using the Android library module
 - a valid `publishableKey`
 
 The SDK does not require consumer apps to enable core library desugaring.
+
+The published artifact declares `minSdk 24` so apps with lower manifest floors,
+including Expo/React Native apps, can include the dependency. This is a packaging
+compatibility floor; the SDK requires Android 10 / API 29 or newer at runtime
+because the service endpoints require TLS 1.3.
 
 The sample app in this repository uses additional Google Sign-In / AndroidX
 Credential Manager dependencies and therefore compiles with SDK 35. That sample
