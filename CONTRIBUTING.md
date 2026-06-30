@@ -3,7 +3,8 @@
 ## Prerequisites
 
 - JDK 17 (temurin recommended)
-- Android SDK with API 26+
+- Android SDK platforms 34 and 35 for SDK and sample app builds
+- Android 10 / API 29 or newer for runtime/manual SDK flows
 - Android Studio or IntelliJ IDEA (optional but recommended)
 
 ## Setup
