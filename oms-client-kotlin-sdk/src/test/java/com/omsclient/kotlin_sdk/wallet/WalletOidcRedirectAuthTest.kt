@@ -14,6 +14,7 @@ import com.omsclient.kotlin_sdk.internal.generated.waas.WalletType
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.network.OMSClientHttpClient
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
+import com.omsclient.kotlin_sdk.utils.OMSClientBase64Url
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -23,7 +24,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.util.Base64
 
 class WalletOidcRedirectAuthTest {
     private lateinit var server: MockWebServer
@@ -114,7 +114,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals("wallet", query["audience"])
             assertEquals("pkce-challenge", result.challenge)
 
-            val decodedState = String(Base64.getUrlDecoder().decode(result.state), Charsets.UTF_8)
+            val decodedState = String(OMSClientBase64Url.decode(result.state), Charsets.UTF_8)
             assertTrue(decodedState.contains(""""nonce":"nonce-123""""))
             assertTrue(decodedState.contains(""""scope":"test-project-id""""))
             assertTrue(decodedState.contains(""""redirect_uri":"omsclientkotlindemo://auth/callback""""))

@@ -2,6 +2,7 @@ package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.models.Wallet
+import com.omsclient.kotlin_sdk.utils.OMSClientBase64Url
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -10,7 +11,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.net.URI
 import java.net.URLDecoder
 import java.security.SecureRandom
-import java.util.Base64
 
 /**
  * OIDC provider configuration for authorization-code PKCE redirect auth.
@@ -243,7 +243,7 @@ internal object OidcRedirectAuth {
 
     private fun String.urlDecode(): String = URLDecoder.decode(this, Charsets.UTF_8.name())
 
-    private fun base64UrlEncode(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+    private fun base64UrlEncode(bytes: ByteArray): String = OMSClientBase64Url.encodeNoPadding(bytes)
 
-    private fun base64UrlDecode(value: String): ByteArray = Base64.getUrlDecoder().decode(value)
+    private fun base64UrlDecode(value: String): ByteArray = OMSClientBase64Url.decode(value)
 }

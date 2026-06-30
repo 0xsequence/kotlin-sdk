@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ktlint)
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.0"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.20"
 }
 
 ktlint {
@@ -20,7 +20,7 @@ android {
 
     defaultConfig {
         applicationId = "com.omsclient.kotlin_sdk_trails_actions"
-        minSdk = 26
+        minSdk = 24
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"

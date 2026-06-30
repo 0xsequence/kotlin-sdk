@@ -15,7 +15,6 @@ import com.omsclient.kotlin_sdk.wallet.WalletClient
 import okhttp3.OkHttpClient
 import java.net.URI
 import java.security.MessageDigest
-import java.time.Instant
 
 /**
  * Main entry point for OMS Client.
@@ -78,7 +77,7 @@ class OMSClient internal constructor(
             }
             return OMSClientSessionState(
                 walletAddress = walletAddress,
-                expiresAt = snapshot.expiresAt?.toInstantOrNull(),
+                expiresAt = snapshot.expiresAt,
                 loginType = snapshot.loginType,
                 sessionEmail = snapshot.sessionEmail,
             )
@@ -194,5 +193,3 @@ class OMSClient internal constructor(
         }
     }
 }
-
-private fun String.toInstantOrNull(): Instant? = runCatching { Instant.parse(this) }.getOrNull()

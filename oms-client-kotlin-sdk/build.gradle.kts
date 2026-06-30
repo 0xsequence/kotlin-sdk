@@ -3,7 +3,7 @@ import java.io.File
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.ktlint)
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.0"
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.20"
     id("maven-publish")
     id("signing")
 }
@@ -36,7 +36,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 24
         consumerProguardFiles("proguard-rules.pro")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

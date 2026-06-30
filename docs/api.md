@@ -5,13 +5,19 @@ This document describes the intended public API for external consumers of the OM
 ## Installation and Requirements
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.3")
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.4")
 ```
 
-Consumer apps need Android `minSdk 26`, Android `compileSdk 34` or newer, and
-Java 17 Android compile options. Updating `compileSdk` is separate from
-`targetSdk`; consumers do not need to opt into a newer Android runtime behavior
-just to consume the SDK.
+Consumer apps need Android 10 / API 29 or newer, Android `compileSdk 34` or
+newer, and Java 17 Android compile options. The SDK does not require app-level
+core library desugaring.
+
+The published artifact declares `minSdk 24` so apps with lower manifest floors,
+including Expo/React Native apps, can include the dependency. This is a packaging
+compatibility floor; the SDK requires Android 10 / API 29 or newer at runtime
+because the service endpoints require TLS 1.3. Updating `compileSdk` is separate
+from `targetSdk`; consumers do not need to opt into a newer Android runtime
+behavior just to consume the SDK.
 
 The published SDK is a single Maven artifact. Consumers should use the SDK APIs
 documented here and do not need any separate service-client artifact.
@@ -42,7 +48,7 @@ val client.session: OMSClientSessionState
 ```kotlin
 data class OMSClientSessionState(
     val walletAddress: String?,
-    val expiresAt: Instant?,
+    val expiresAt: String?,
     val loginType: OMSClientSessionLoginType?,
     val sessionEmail: String?,
 )
@@ -51,9 +57,13 @@ data class OMSClientSessionState(
 ```kotlin
 data class OMSClientSessionExpiredEvent(
     val session: OMSClientSessionState,
-    val expiredAt: Instant,
+    val expiredAt: String,
 )
 ```
+
+`expiresAt` and `expiredAt` are ISO-8601 timestamp strings returned by the
+wallet API. They are strings so apps with `minSdk 24` do not need `java.time` or
+core library desugaring for these public session fields.
 
 ```kotlin
 enum class OMSClientSessionLoginType {

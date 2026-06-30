@@ -62,6 +62,8 @@ import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
 import com.omsclient.kotlin_sdk.toOmsSdkException
+import com.omsclient.kotlin_sdk.utils.OMSClientIsoTimestamps
+import com.omsclient.kotlin_sdk.utils.OMSClientTimestamps
 import com.omsclient.kotlin_sdk.utils.formatUnits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -69,8 +71,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import java.math.BigInteger
-import java.time.Duration
-import java.time.Instant
 import java.util.Timer
 import java.util.TimerTask
 import com.omsclient.kotlin_sdk.internal.generated.waas.AbiArg as WaasAbiArg
@@ -105,7 +105,7 @@ class WalletClient internal constructor(
     private val transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
     private val sessionExpiryScheduler: SessionExpiryScheduler = TimerSessionExpiryScheduler,
     private val sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
-    private val now: () -> Instant = { Instant.now() },
+    private val now: () -> Long = OMSClientTimestamps::nowMilliseconds,
 ) {
     companion object {
         /**
@@ -1076,8 +1076,8 @@ class WalletClient internal constructor(
 
     private fun scheduleSessionExpiry(snapshot: OMSClientSessionSnapshot) {
         clearSessionExpiryTask()
-        val expiresAt = snapshot.expiresAtInstant() ?: return
-        val delayMillis = maxOf(0L, Duration.between(now(), expiresAt).toMillis())
+        val expiresAt = snapshot.expiresAtEpochMillis() ?: return
+        val delayMillis = maxOf(0L, expiresAt - now())
         val task =
             sessionExpiryScheduler.schedule(delayMillis) {
                 sessionExpiryDispatcher.dispatch {
@@ -2026,18 +2026,16 @@ private object AndroidMainThreadSessionExpiryDispatcher : SessionExpiryDispatche
     }
 }
 
-private fun OMSClientSessionSnapshot.isExpired(referenceTime: Instant): Boolean {
-    val expiresAt = expiresAtInstant() ?: return false
-    return !expiresAt.isAfter(referenceTime)
+private fun OMSClientSessionSnapshot.isExpired(referenceTime: Long): Boolean {
+    val expiresAt = expiresAtEpochMillis() ?: return false
+    return expiresAt <= referenceTime
 }
 
-private fun OMSClientSessionSnapshot.expiresAtInstant(): Instant? =
-    expiresAt?.let { value ->
-        runCatching { Instant.parse(value) }.getOrNull()
-    }
+private fun OMSClientSessionSnapshot.expiresAtEpochMillis(): Long? = expiresAt?.let(OMSClientIsoTimestamps::parseEpochMillis)
 
 private fun OMSClientSessionSnapshot.toSessionExpiredEvent(): OMSClientSessionExpiredEvent? {
-    val expiredAt = expiresAtInstant() ?: return null
+    expiresAtEpochMillis() ?: return null
+    val expiredAt = expiresAt ?: return null
     return OMSClientSessionExpiredEvent(
         session =
             OMSClientSessionState(

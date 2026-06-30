@@ -1,7 +1,6 @@
 package com.omsclient.kotlin_sdk
 
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
-import java.time.Instant
 
 /**
  * Auth method that produced the current completed wallet session.
@@ -27,10 +26,10 @@ data class OMSClientSessionState(
      */
     val walletAddress: String?,
     /**
-     * Expiration time for the current completed wallet session, or null when
-     * the SDK is signed out.
+     * ISO-8601 expiration time for the current completed wallet session, or null
+     * when the SDK is signed out.
      */
-    val expiresAt: Instant? = null,
+    val expiresAt: String? = null,
     /**
      * Auth method that produced the current completed wallet session.
      */
@@ -50,5 +49,5 @@ data class OMSClientSessionState(
  */
 data class OMSClientSessionExpiredEvent(
     val session: OMSClientSessionState,
-    val expiredAt: Instant,
+    val expiredAt: String,
 )

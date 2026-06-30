@@ -7,7 +7,7 @@ Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.3")
+implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.4")
 ```
 
 This is the only artifact consumers add. The generated WaaS client is packaged
@@ -33,11 +33,18 @@ SDK APIs documented below instead of importing generated classes.
 
 ## Requirements
 
-- Android `minSdk 26`
+- Android 10 / API 29 or newer
 - Android `compileSdk 34` or newer
 - Java 17 Android compile options
 - Kotlin/Android app using the Android library module
 - a valid `publishableKey`
+
+The SDK does not require consumer apps to enable core library desugaring.
+
+The published artifact declares `minSdk 24` so apps with lower manifest floors,
+including Expo/React Native apps, can include the dependency. This is a packaging
+compatibility floor; the SDK requires Android 10 / API 29 or newer at runtime
+because the service endpoints require TLS 1.3.
 
 The sample app in this repository uses additional Google Sign-In / AndroidX
 Credential Manager dependencies and therefore compiles with SDK 35. That sample
@@ -220,6 +227,8 @@ val expiresAt = client.session.expiresAt
 val loginType = client.session.loginType
 val sessionEmail = client.session.sessionEmail
 ```
+
+`expiresAt` is an ISO-8601 timestamp string returned by the wallet API.
 
 `client.session` only reports completed wallet-session state. It does not
 include pending auth progress. Show OTP or redirect waiting UI from the method

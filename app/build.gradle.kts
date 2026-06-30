@@ -18,7 +18,7 @@ android {
 
     defaultConfig {
         applicationId = "com.omsclient.kotlin_sdk_samples"
-        minSdk = 26
+        minSdk = 24
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"

@@ -1,11 +1,9 @@
 package com.omsclient.kotlin_sdk.utils
 
-import java.time.Instant
-
 internal object OMSClientTimestamps {
     private val defaultNonceGenerator = MonotonicNonceGenerator()
 
-    fun nowSeconds(): Long = Instant.now().epochSecond
+    fun nowSeconds(): Long = nowMilliseconds() / 1_000L
 
     fun nowMilliseconds(): Long = System.currentTimeMillis()
 
