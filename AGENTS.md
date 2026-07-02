@@ -70,7 +70,7 @@ unit tests, Android lint for both modules, and sample app assembly.
 - `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/` - SDK entry
   point, wallet/indexer clients, session storage, networking, utilities, and
   models.
-- `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/generated/waas/`
+- `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/internal/generated/waas/`
   - generated WaaS WebRPC client/types.
 - `oms-client-kotlin-sdk/src/test/` - JVM unit tests for SDK behavior,
   serialization, service clients, signing vectors, and utility helpers.
@@ -157,10 +157,10 @@ result.
 - `OMSClientEnvironment`, `OMSClientHttpClient`, and `OMSClientJson` define
   service routing and JSON behavior. Preserve existing serialization defaults
   unless tests and API docs are updated together.
-- Some public models are client-facing aliases in `OMSClientModels.kt`, while
-  auth, wallet selection, and signing APIs also expose generated WaaS types
-  documented in `docs/api.md`. Check the docs and tests before changing that
-  public boundary.
+- Public auth, wallet selection, and signing APIs should expose client-facing
+  SDK models documented in `docs/api.md`, not generated WaaS classes. Some
+  public models are client-facing aliases in `OMSClientModels.kt`; check the
+  docs and tests before changing that public boundary.
 - Search for existing models, helper functions, serializers, and test fixtures
   before adding new ones. Do not add shallow wrappers unless they enforce a real
   invariant or isolate a real external boundary.

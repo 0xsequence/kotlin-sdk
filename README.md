@@ -18,6 +18,7 @@ SDK APIs documented below instead of importing generated classes.
 
 - email sign-in flow against the wallet API
 - OIDC ID-token sign-in flow against the wallet API
+- OIDC redirect sign-in flow with built-in Google and Apple provider defaults
 - non-extractable Android Keystore request credential for wallet API signing
 - persisted wallet session metadata
 - wallet selection and wallet creation flows
