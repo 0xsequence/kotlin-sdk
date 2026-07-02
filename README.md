@@ -95,8 +95,8 @@ mode for apps that need to let users choose between multiple wallets.
 Completed auth requests ask WaaS for a one-week session lifetime by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds).
 Pass `sessionLifetimeSeconds` to `completeEmailAuth`, `signInWithOidcIdToken`,
-or `handleOidcRedirectCallback` to request a different positive whole-number
-lifetime in seconds. Invalid lifetimes are reported as
+`startOidcRedirectAuth`, or `handleOidcRedirectCallback` to request a different
+positive whole-number lifetime in seconds. Invalid lifetimes are reported as
 `OmsSdkErrorCode.ValidationError`.
 
 ```kotlin
@@ -122,7 +122,7 @@ check(result is CompleteAuthResult.WalletSelected)
 showWallet(result.wallet)
 ```
 
-For OIDC authorization-code PKCE redirect flows, start the redirect, open the
+For OIDC authorization-code redirect flows, start the redirect, open the
 returned URL with your browser or Custom Tabs, then safely handle incoming app
 links from `onCreate` / `onNewIntent`:
 
@@ -145,11 +145,25 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
 Use a redirect URI that matches a deep link registered by your app, such as
 `yourapp://auth/callback`. If your Google OAuth setup uses a custom web client
 ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
+`OidcProviders.google()` uses the SDK default Google client ID, the SDK relay
+redirect URI, `openid email profile` scopes, PKCE auth-code mode, and Google
+authorization parameters `access_type=offline` and `prompt=consent`.
+`OidcProviders.apple()` uses the SDK default Apple Services ID, the SDK relay
+redirect URI, `openid email` scopes, `response_mode=form_post`, and PKCE
+auth-code mode. Apple `form_post` works through the default relay redirect URI;
+do not configure a direct app deep link as the Apple OAuth callback unless your
+provider flow supports it.
 Pass `loginHint` only when you want to prefill or select a specific Google
 account, such as during session-expiry reauth. When omitted, the SDK falls back
 to the previous active session email when one exists before redirect auth
 starts. Pass an empty string to force no `login_hint` for a call. Non-Google
 providers do not receive `login_hint`.
+
+Provider configs are the source of truth for redirect scopes and auth mode. If
+`scopes` is empty, the authorization URL omits `scope`. PKCE
+`code_challenge` parameters are sent only when
+`authMode = OidcRedirectAuthMode.AuthCodePKCE`; use
+`OidcRedirectAuthMode.AuthCode` for non-PKCE auth-code providers.
 
 With the default automatic behavior, a successful redirect callback returns
 `OidcRedirectAuthResult.Completed`; `WalletSelection` is only a successful branch
@@ -198,7 +212,18 @@ private suspend fun selectOrCreateWallet(
 `WalletPickerChoice` is app UI state in this example. Both SDK calls return the
 selected wallet and persist it as the active wallet session.
 
-For OIDC redirect auth, pass the same behavior when handling the callback:
+For OIDC redirect auth, pass the behavior when starting redirect auth to store it
+with the pending redirect state:
+
+```kotlin
+val started = client.wallet.startOidcRedirectAuth(
+    provider = OidcProviders.google(),
+    redirectUri = "yourapp://auth/callback",
+    walletSelection = WalletSelectionBehavior.Manual,
+)
+```
+
+You can also pass a callback value to override the pending redirect preference:
 
 ```kotlin
 when (
@@ -239,10 +264,13 @@ fresh SDK instance restores completed wallet sessions, including the session
 expiry, login type, and email returned by the wallet API, but not email OTP
 pending state. Completed auth requests ask the wallet API for a one-week session
 lifetime by default; pass `sessionLifetimeSeconds` to request a different
-positive whole-number lifetime in seconds. Auth completion loads all wallet
-pages before selecting or creating a wallet. If auth completes but wallet
-selection, wallet creation, or session persistence fails, the SDK clears the
-in-memory auth session instead of retaining unrecoverable transient state.
+positive whole-number lifetime in seconds. For OIDC redirects, values passed to
+`startOidcRedirectAuth` are stored with the pending redirect state and used on
+callback completion unless `handleOidcRedirectCallback` overrides them. Auth
+completion loads all wallet pages before selecting or creating a wallet. If auth
+completes but wallet selection, wallet creation, or session persistence fails,
+the SDK clears the in-memory auth session instead of retaining unrecoverable
+transient state.
 
 Use the selected wallet:
 

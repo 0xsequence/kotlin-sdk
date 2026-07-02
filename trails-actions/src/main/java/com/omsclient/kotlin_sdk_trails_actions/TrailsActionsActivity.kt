@@ -427,6 +427,8 @@ class TrailsActionsActivity : AppCompatActivity() {
         ) {
             persistAuthPreferences()
             clearExpiredSessionState()
+            val walletSelection = currentWalletSelectionBehavior()
+            val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
             val started =
                 sdk.wallet.startOidcRedirectAuth(
                     provider =
@@ -434,6 +436,8 @@ class TrailsActionsActivity : AppCompatActivity() {
                             clientId = DemoConfig.demoGoogleWebClientId,
                         ),
                     redirectUri = DemoConfig.oidcRedirectUri,
+                    walletSelection = walletSelection,
+                    sessionLifetimeSeconds = sessionLifetimeSeconds,
                     loginHint = expiredSessionEmail(),
                 )
             appendLog("Google redirect auth started: state=${started.state}")
@@ -1184,7 +1188,7 @@ class TrailsActionsActivity : AppCompatActivity() {
             label = "Handle Google redirect sign-in callback",
             onStart = { showGoogleRedirectPendingStep("Completing Google redirect sign-in...") },
         ) {
-            when (val result = handleOidcRedirectCallbackWithConfiguredLifetime(callbackUrl)) {
+            when (val result = handleOidcRedirectCallbackFromPendingAuth(callbackUrl)) {
                 is OidcRedirectAuthResult.Completed -> {
                     consumeIntentData()
                     renderSignedInWallet(result.wallet, "Google redirect login complete")
@@ -1471,22 +1475,8 @@ class TrailsActionsActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun handleOidcRedirectCallbackWithConfiguredLifetime(callbackUrl: String): OidcRedirectAuthResult {
-        val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
-        persistAuthPreferences()
-        return if (sessionLifetimeSeconds == null) {
-            sdk.wallet.handleOidcRedirectCallback(
-                callbackUrl = callbackUrl,
-                walletSelection = currentWalletSelectionBehavior(),
-            )
-        } else {
-            sdk.wallet.handleOidcRedirectCallback(
-                callbackUrl = callbackUrl,
-                walletSelection = currentWalletSelectionBehavior(),
-                sessionLifetimeSeconds = sessionLifetimeSeconds,
-            )
-        }
-    }
+    private suspend fun handleOidcRedirectCallbackFromPendingAuth(callbackUrl: String): OidcRedirectAuthResult =
+        sdk.wallet.handleOidcRedirectCallback(callbackUrl = callbackUrl)
 
     private fun currentWalletSelectionBehavior(): WalletSelectionBehavior =
         if (manualWalletSelectionCheckbox.isChecked) {
@@ -2160,6 +2150,6 @@ class TrailsActionsActivity : AppCompatActivity() {
 
 private object DemoConfig {
     const val demoPublishableKey: String = "pk_dev_sdbx_project_key"
-    const val demoGoogleWebClientId: String = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com"
+    const val demoGoogleWebClientId: String = "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com"
     const val oidcRedirectUri: String = "omsclientkotlindemo://auth/callback"
 }

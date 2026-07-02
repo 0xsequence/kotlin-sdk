@@ -4,6 +4,7 @@ import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
 import com.omsclient.kotlin_sdk.session.OMSClientSession
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.storage.OMSClientSessionMetadataStore
+import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthMode
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
 import com.omsclient.kotlin_sdk.wallet.TrackingCredentialSigner
@@ -98,10 +99,13 @@ class OMSClientTest {
                             verifier = "verifier-123",
                             challenge = "challenge-123",
                             nonce = "nonce-123",
+                            authMode = OidcRedirectAuthMode.AuthCodePKCE,
                             redirectUri = "omsclientkotlindemo://auth/callback",
                             issuer = "https://issuer.example",
                             projectId = "test-project-id",
                             walletType = "ethereum",
+                            walletSelection = null,
+                            sessionLifetimeSeconds = null,
                             signerAddress = "0xsigner",
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                         ),

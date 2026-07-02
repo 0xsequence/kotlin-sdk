@@ -82,12 +82,14 @@ revives completed wallet sessions, including the session expiry, login type, and
 email returned by the wallet API, but not pending email OTP state. Completed auth
 requests use a one-week wallet API session lifetime by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds); pass
-`sessionLifetimeSeconds` to auth completion methods to request a different
-positive whole-number lifetime in seconds. Invalid values return
-`OmsSdkErrorCode.ValidationError` before an auth completion request is sent. Auth
-completion loads all wallet pages before selecting or creating a wallet. If auth
-completes but wallet selection or session persistence fails, the SDK clears the
-in-memory auth session instead of leaving transient state active.
+`sessionLifetimeSeconds` to auth completion methods or `startOidcRedirectAuth`
+to request a different positive whole-number lifetime in seconds. For OIDC
+redirects, start-time values are stored with pending redirect state and used on
+callback completion unless the callback provides an override. Invalid values
+return `OmsSdkErrorCode.ValidationError` before the SDK sends the affected auth
+request. Auth completion loads all wallet pages before selecting or creating a
+wallet. If auth completes but wallet selection or session persistence fails, the
+SDK clears the in-memory auth session instead of leaving transient state active.
 Starting a new email, OIDC ID-token, or OIDC redirect auth flow replaces any
 existing wallet session so expired or stale sessions do not block
 re-authentication.
@@ -142,7 +144,15 @@ data class OidcProviderConfig(
     val scopes: List<String> = listOf("openid", "email", "profile"),
     val relayRedirectUri: String? = null,
     val authorizeParams: Map<String, String> = emptyMap(),
+    val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
 )
+```
+
+```kotlin
+enum class OidcRedirectAuthMode {
+    AuthCode,
+    AuthCodePKCE,
+}
 ```
 
 ```kotlin
@@ -152,6 +162,15 @@ object OidcProviders {
         relayRedirectUri: String = OidcProviders.defaultRelayRedirectUri,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
+        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
+    ): OidcProviderConfig
+
+    fun apple(
+        clientId: String = OidcProviders.defaultAppleClientId,
+        relayRedirectUri: String = OidcProviders.defaultRelayRedirectUri,
+        scopes: List<String> = listOf("openid", "email"),
+        authorizeParams: Map<String, String> = emptyMap(),
+        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
     ): OidcProviderConfig
 }
 ```
@@ -169,6 +188,8 @@ suspend fun client.wallet.startOidcRedirectAuth(
     provider: OidcProviderConfig,
     redirectUri: String,
     walletType: WalletType = WalletType.Ethereum,
+    walletSelection: WalletSelectionBehavior? = null,
+    sessionLifetimeSeconds: Long? = null,
     relayRedirectUri: String? = provider.relayRedirectUri,
     authorizeParams: Map<String, String> = emptyMap(),
     loginHint: String? = null,
@@ -190,8 +211,8 @@ sealed interface OidcRedirectAuthResult {
 ```kotlin
 suspend fun client.wallet.handleOidcRedirectCallback(
     callbackUrl: String?,
-    walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-    sessionLifetimeSeconds: Long = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
+    walletSelection: WalletSelectionBehavior? = null,
+    sessionLifetimeSeconds: Long? = null,
 ): OidcRedirectAuthResult
 ```
 
@@ -205,8 +226,24 @@ provider or completion failures return `Failed` with an `OmsSdkException` when
 the SDK can classify the failure. With
 `WalletSelectionBehavior.Automatic`, successful callbacks return `Completed`.
 With `WalletSelectionBehavior.Manual`, successful callbacks return
-`WalletSelection`. Starting a new auth flow clears or replaces stale redirect
-state, and `signOut()` clears it.
+`WalletSelection`. Pass `walletSelection` or `sessionLifetimeSeconds` to
+`startOidcRedirectAuth` to store completion preferences in the pending redirect
+state. Non-null values passed to `handleOidcRedirectCallback` override pending
+values; omitted callback values fall back to pending values and then SDK
+defaults. Starting a new auth flow clears or replaces stale redirect state, and
+`signOut()` clears it.
+
+Provider configs are the source of truth for redirect scopes and auth mode. If
+`scopes` is empty, the authorization URL omits `scope`. PKCE
+`code_challenge` parameters are sent only when
+`authMode = OidcRedirectAuthMode.AuthCodePKCE`. `OidcProviders.google()` uses
+the SDK default Google client ID, the SDK relay redirect URI, `openid email
+profile` scopes, PKCE auth-code mode, and Google authorization parameters
+`access_type=offline` and `prompt=consent`. `OidcProviders.apple()` uses the SDK
+default Apple Services ID, the SDK relay redirect URI, `openid email` scopes,
+`response_mode=form_post`, and PKCE auth-code mode. Apple `form_post` works
+through the default relay redirect URI; a direct app deep link should not be
+used as the Apple OAuth callback unless that provider flow supports it.
 
 Pass `loginHint` to `startOidcRedirectAuth` only when you want to prefill or
 select a specific Google account, such as during session-expiry reauth. The SDK
@@ -990,6 +1027,8 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
 Use a redirect URI that matches a deep link registered by your app, such as
 `yourapp://auth/callback`. For a custom Google web client ID, call
 `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
+For Apple, use `OidcProviders.apple()` with the default relay redirect URI so
+the relay can receive Apple's `response_mode=form_post` callback.
 
 ### Manual Wallet Selection
 
@@ -1035,7 +1074,18 @@ private suspend fun selectOrCreateWallet(
 `WalletPickerChoice` is app UI state in this example. Both SDK calls return the
 selected wallet and persist it as the active wallet session.
 
-For OIDC redirect flows, pass the same behavior to the callback handler:
+For OIDC redirect flows, pass the behavior when starting redirect auth to store
+it with pending redirect state:
+
+```kotlin
+val started = client.wallet.startOidcRedirectAuth(
+    provider = OidcProviders.google(),
+    redirectUri = "yourapp://auth/callback",
+    walletSelection = WalletSelectionBehavior.Manual,
+)
+```
+
+You can also pass a callback value to override the pending redirect preference:
 
 ```kotlin
 when (

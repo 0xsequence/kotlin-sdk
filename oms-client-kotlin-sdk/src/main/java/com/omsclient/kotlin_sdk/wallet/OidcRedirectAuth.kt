@@ -1,5 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
+import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
 import com.omsclient.kotlin_sdk.internal.generated.waas.WebRpcJson
 import com.omsclient.kotlin_sdk.models.Wallet
 import com.omsclient.kotlin_sdk.utils.OMSClientBase64Url
@@ -13,7 +14,7 @@ import java.net.URLDecoder
 import java.security.SecureRandom
 
 /**
- * OIDC provider configuration for authorization-code PKCE redirect auth.
+ * OIDC provider configuration for authorization-code redirect auth.
  */
 data class OidcProviderConfig(
     val issuer: String,
@@ -22,10 +23,32 @@ data class OidcProviderConfig(
     val scopes: List<String> = listOf("openid", "email", "profile"),
     val relayRedirectUri: String? = null,
     val authorizeParams: Map<String, String> = emptyMap(),
+    val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
 )
 
 /**
- * Result returned after starting an OIDC authorization-code PKCE redirect flow.
+ * WaaS redirect auth-code mode supported by OIDC redirect providers.
+ */
+@Serializable
+enum class OidcRedirectAuthMode {
+    @SerialName("auth-code")
+    AuthCode,
+
+    @SerialName("auth-code-pkce")
+    AuthCodePKCE,
+}
+
+internal fun OidcRedirectAuthMode.toWaasAuthMode(): AuthMode =
+    when (this) {
+        OidcRedirectAuthMode.AuthCode -> AuthMode.AuthCode
+        OidcRedirectAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
+    }
+
+internal val OidcRedirectAuthMode.usesPkce: Boolean
+    get() = this == OidcRedirectAuthMode.AuthCodePKCE
+
+/**
+ * Result returned after starting an OIDC authorization-code redirect flow.
  *
  * Open [authorizationUrl] in a browser or Custom Tabs, then pass the final app
  * callback URL to `handleOidcRedirectCallback`.
@@ -62,7 +85,9 @@ sealed interface OidcRedirectAuthResult {
  */
 object OidcProviders {
     const val defaultGoogleClientId: String =
-        "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com"
+        "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com"
+    const val defaultAppleClientId: String =
+        "service.oms.polygon.technology"
     const val defaultRelayRedirectUri: String =
         "https://waas-cf-relay-staging.0xsequence.workers.dev/callback"
 
@@ -71,6 +96,7 @@ object OidcProviders {
         relayRedirectUri: String = defaultRelayRedirectUri,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
+        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
     ): OidcProviderConfig =
         OidcProviderConfig(
             issuer = "https://accounts.google.com",
@@ -83,6 +109,27 @@ object OidcProviders {
                     "access_type" to "offline",
                     "prompt" to "consent",
                 ) + authorizeParams,
+            authMode = authMode,
+        )
+
+    fun apple(
+        clientId: String = defaultAppleClientId,
+        relayRedirectUri: String = defaultRelayRedirectUri,
+        scopes: List<String> = listOf("openid", "email"),
+        authorizeParams: Map<String, String> = emptyMap(),
+        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
+    ): OidcProviderConfig =
+        OidcProviderConfig(
+            issuer = "https://appleid.apple.com",
+            clientId = clientId,
+            authorizationUrl = "https://appleid.apple.com/auth/authorize",
+            scopes = scopes,
+            relayRedirectUri = relayRedirectUri,
+            authorizeParams =
+                mapOf(
+                    "response_mode" to "form_post",
+                ) + authorizeParams,
+            authMode = authMode,
         )
 }
 
@@ -91,10 +138,13 @@ internal data class PendingOidcRedirectAuth(
     val verifier: String,
     val challenge: String,
     val nonce: String,
+    val authMode: OidcRedirectAuthMode,
     val redirectUri: String,
     val issuer: String,
     val projectId: String,
     val walletType: String,
+    val walletSelection: WalletSelectionBehavior?,
+    val sessionLifetimeSeconds: Long?,
     val signerAddress: String,
     val signerKeyType: WalletSigningAlgorithm,
 )
@@ -153,6 +203,7 @@ internal object OidcRedirectAuth {
         redirectUri: String,
         state: String,
         challenge: String,
+        usePkce: Boolean,
         loginHint: String?,
         authorizeParams: Map<String, String>,
     ): String {
@@ -163,14 +214,26 @@ internal object OidcRedirectAuth {
         if (!loginHint.isNullOrBlank()) {
             builder.setQueryParameter("login_hint", loginHint)
         }
-        return builder
+        builder
             .setQueryParameter("client_id", provider.clientId)
             .setQueryParameter("redirect_uri", redirectUri)
             .setQueryParameter("response_type", "code")
-            .setQueryParameter("scope", provider.scopes.joinToString(" "))
             .setQueryParameter("state", state)
-            .setQueryParameter("code_challenge", challenge)
-            .setQueryParameter("code_challenge_method", "S256")
+        if (provider.scopes.isEmpty()) {
+            builder.removeAllQueryParameters("scope")
+        } else {
+            builder.setQueryParameter("scope", provider.scopes.joinToString(" "))
+        }
+        if (usePkce) {
+            builder
+                .setQueryParameter("code_challenge", challenge)
+                .setQueryParameter("code_challenge_method", "S256")
+        } else {
+            builder
+                .removeAllQueryParameters("code_challenge")
+                .removeAllQueryParameters("code_challenge_method")
+        }
+        return builder
             .build()
             .toString()
     }

@@ -109,10 +109,13 @@ internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
         verifier = "stale-oidc-verifier",
         challenge = "stale-oidc-challenge",
         nonce = "stale-oidc-nonce",
+        authMode = OidcRedirectAuthMode.AuthCodePKCE,
         redirectUri = "omsclientkotlindemo://auth/callback",
         issuer = "https://issuer.example",
         projectId = "test-project-id",
         walletType = WalletType.Ethereum.wireValue,
+        walletSelection = null,
+        sessionLifetimeSeconds = null,
         signerAddress = TEST_CREDENTIAL_ID,
         signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
     )

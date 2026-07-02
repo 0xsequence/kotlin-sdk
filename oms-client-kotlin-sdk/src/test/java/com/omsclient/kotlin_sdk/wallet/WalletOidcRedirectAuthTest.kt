@@ -40,6 +40,36 @@ class WalletOidcRedirectAuthTest {
     }
 
     @Test
+    fun oidcProvidersUseGoogleDefaults() {
+        val provider = OidcProviders.google()
+
+        assertEquals(
+            "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com",
+            provider.clientId,
+        )
+        assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", provider.relayRedirectUri)
+        assertEquals("https://accounts.google.com", provider.issuer)
+        assertEquals("https://accounts.google.com/o/oauth2/v2/auth", provider.authorizationUrl)
+        assertEquals(listOf("openid", "email", "profile"), provider.scopes)
+        assertEquals(OidcRedirectAuthMode.AuthCodePKCE, provider.authMode)
+        assertEquals("offline", provider.authorizeParams["access_type"])
+        assertEquals("consent", provider.authorizeParams["prompt"])
+    }
+
+    @Test
+    fun oidcProvidersUseAppleDefaults() {
+        val provider = OidcProviders.apple()
+
+        assertEquals("service.oms.polygon.technology", provider.clientId)
+        assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", provider.relayRedirectUri)
+        assertEquals("https://appleid.apple.com", provider.issuer)
+        assertEquals("https://appleid.apple.com/auth/authorize", provider.authorizationUrl)
+        assertEquals(listOf("openid", "email"), provider.scopes)
+        assertEquals(OidcRedirectAuthMode.AuthCodePKCE, provider.authMode)
+        assertEquals("form_post", provider.authorizeParams["response_mode"])
+    }
+
+    @Test
     fun startOidcRedirectAuthCommitsPkceVerifierBuildsAuthorizationUrlAndStoresPendingAuth() =
         runBlocking {
             server.enqueue(
@@ -121,8 +151,11 @@ class WalletOidcRedirectAuthTest {
             assertEquals("oidc-verifier-123", redirectStore.pending?.verifier)
             assertEquals("pkce-challenge", redirectStore.pending?.challenge)
             assertEquals("nonce-123", redirectStore.pending?.nonce)
+            assertEquals(OidcRedirectAuthMode.AuthCodePKCE, redirectStore.pending?.authMode)
             assertEquals("omsclientkotlindemo://auth/callback", redirectStore.pending?.redirectUri)
             assertEquals(WalletType.Ethereum.wireValue, redirectStore.pending?.walletType)
+            assertNull(redirectStore.pending?.walletSelection)
+            assertNull(redirectStore.pending?.sessionLifetimeSeconds)
             assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, redirectStore.pending?.signerKeyType)
             assertEquals("oidc-verifier-123", client.snapshotSession()?.verifier)
         }
@@ -212,6 +245,67 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
+    fun startOidcRedirectAuthUsesAppleDefaultsWithoutLoginHint() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","challenge":"pkce-challenge"}""")
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
+                    oidcNonceGenerator = { "nonce-123" },
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+
+            val result =
+                client.startOidcRedirectAuth(
+                    provider = OidcProviders.apple(),
+                    redirectUri = "omsclientkotlindemo://auth/callback",
+                    loginHint = "last@example.com",
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals(
+                WaasApi.CommitVerifier.encodeRequest(
+                    CommitVerifierRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.AuthCodePKCE,
+                        metadata =
+                            mapOf(
+                                "iss" to "https://appleid.apple.com",
+                                "aud" to "service.oms.polygon.technology",
+                                "redirect_uri" to "https://waas-cf-relay-staging.0xsequence.workers.dev/callback",
+                            ),
+                    ),
+                ),
+                requireNotNull(request.body).utf8(),
+            )
+
+            val query = queryParams(result.authorizationUrl)
+            assertEquals("https://appleid.apple.com/auth/authorize", uriOriginAndPath(result.authorizationUrl))
+            assertEquals("service.oms.polygon.technology", query["client_id"])
+            assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", query["redirect_uri"])
+            assertEquals("form_post", query["response_mode"])
+            assertEquals("openid email", query["scope"])
+            assertEquals("pkce-challenge", query["code_challenge"])
+            assertEquals("S256", query["code_challenge_method"])
+            assertNull(query["login_hint"])
+        }
+
+    @Test
     fun startOidcRedirectAuthReplacesActiveSessionAndPersistedPendingRedirectAuth() =
         runBlocking {
             server.enqueue(
@@ -266,6 +360,118 @@ class WalletOidcRedirectAuthTest {
             assertNull(sessionStore.snapshot)
             assertEquals(1, redirectStore.clearCalls)
             assertEquals(result.state, queryParams(result.authorizationUrl)["state"])
+        }
+
+    @Test
+    fun startAndHandleOidcRedirectAuthUseConfiguredAuthCodeModeWithoutPkceParamsOrScope() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","challenge":"pkce-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://issuer.example",
+                                    sub = "oidc-sub-123",
+                                ),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
+                    oidcNonceGenerator = { "nonce-123" },
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+            val provider =
+                OidcProviderConfig(
+                    issuer = "https://issuer.example",
+                    clientId = "client-123",
+                    authorizationUrl = "https://issuer.example/oauth/authorize",
+                    scopes = emptyList(),
+                    authorizeParams =
+                        mapOf(
+                            "scope" to "openid email",
+                            "code_challenge" to "manual-challenge",
+                            "code_challenge_method" to "plain",
+                        ),
+                    authMode = OidcRedirectAuthMode.AuthCode,
+                )
+
+            val started =
+                client.startOidcRedirectAuth(
+                    provider = provider,
+                    redirectUri = "omsclientkotlindemo://auth/callback",
+                )
+            val query = queryParams(started.authorizationUrl)
+            assertNull(query["scope"])
+            assertNull(query["code_challenge"])
+            assertNull(query["code_challenge_method"])
+
+            val result =
+                client.handleOidcRedirectCallback(
+                    callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}",
+                )
+
+            assertTrue(result is OidcRedirectAuthResult.Completed)
+            val commitRequest = requireNotNull(server.takeRequest())
+            val completeAuthRequest = requireNotNull(server.takeRequest())
+            val useWalletRequest = requireNotNull(server.takeRequest())
+            assertEquals(
+                WaasApi.CommitVerifier.encodeRequest(
+                    CommitVerifierRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.AuthCode,
+                        metadata =
+                            mapOf(
+                                "iss" to "https://issuer.example",
+                                "aud" to "client-123",
+                                "redirect_uri" to "omsclientkotlindemo://auth/callback",
+                            ),
+                    ),
+                ),
+                requireNotNull(commitRequest.body).utf8(),
+            )
+            assertEquals(
+                WaasApi.CompleteAuth.encodeRequest(
+                    CompleteAuthRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.AuthCode,
+                        verifier = "oidc-verifier-123",
+                        answer = "auth-code",
+                        lifetime = 604_800u,
+                    ),
+                ),
+                requireNotNull(completeAuthRequest.body).utf8(),
+            )
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
         }
 
     @Test
@@ -450,6 +656,174 @@ class WalletOidcRedirectAuthTest {
                 ),
                 requireNotNull(completeAuthRequest.body).utf8(),
             )
+        }
+
+    @Test
+    fun handleOidcRedirectCallbackUsesPendingStartPreferencesWhenCallbackDoesNotOverride() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","challenge":"pkce-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://issuer.example",
+                                    sub = "oidc-sub-123",
+                                ),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+
+            val redirectStore = InMemoryOidcRedirectAuthStore()
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = redirectStore,
+                    oidcNonceGenerator = { "nonce-123" },
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+
+            val started =
+                client.startOidcRedirectAuth(
+                    provider =
+                        OidcProviderConfig(
+                            issuer = "https://issuer.example",
+                            clientId = "client-123",
+                            authorizationUrl = "https://issuer.example/oauth/authorize",
+                        ),
+                    redirectUri = "omsclientkotlindemo://auth/callback",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                    sessionLifetimeSeconds = 120L,
+                )
+            assertEquals(WalletSelectionBehavior.Manual, redirectStore.pending?.walletSelection)
+            assertEquals(120L, redirectStore.pending?.sessionLifetimeSeconds)
+
+            val result =
+                client.handleOidcRedirectCallback(
+                    callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}",
+                )
+
+            requireNotNull(server.takeRequest())
+            val completeAuthRequest = requireNotNull(server.takeRequest())
+            assertEquals(
+                WaasApi.CompleteAuth.encodeRequest(
+                    CompleteAuthRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.AuthCodePKCE,
+                        verifier = "oidc-verifier-123",
+                        answer = "auth-code",
+                        lifetime = 120u,
+                    ),
+                ),
+                requireNotNull(completeAuthRequest.body).utf8(),
+            )
+            assertTrue(result is OidcRedirectAuthResult.WalletSelection)
+            assertEquals(2, server.requestCount)
+        }
+
+    @Test
+    fun handleOidcRedirectCallbackUsesCallbackOverridesBeforePendingStartPreferences() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","challenge":"pkce-challenge"}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        completeAuthResponseBody(
+                            identity =
+                                identityFixture(
+                                    type = IdentityType.OIDC,
+                                    iss = "https://issuer.example",
+                                    sub = "oidc-sub-123",
+                                ),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                        ),
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
+                    .build(),
+            )
+
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSClientEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                        ),
+                    transport = OMSClientHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
+                    oidcNonceGenerator = { "nonce-123" },
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+
+            val started =
+                client.startOidcRedirectAuth(
+                    provider =
+                        OidcProviderConfig(
+                            issuer = "https://issuer.example",
+                            clientId = "client-123",
+                            authorizationUrl = "https://issuer.example/oauth/authorize",
+                        ),
+                    redirectUri = "omsclientkotlindemo://auth/callback",
+                    walletSelection = WalletSelectionBehavior.Manual,
+                    sessionLifetimeSeconds = 120L,
+                )
+            val result =
+                client.handleOidcRedirectCallback(
+                    callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}",
+                    walletSelection = WalletSelectionBehavior.Automatic,
+                    sessionLifetimeSeconds = 240L,
+                )
+
+            requireNotNull(server.takeRequest())
+            val completeAuthRequest = requireNotNull(server.takeRequest())
+            val useWalletRequest = requireNotNull(server.takeRequest())
+            assertEquals(
+                WaasApi.CompleteAuth.encodeRequest(
+                    CompleteAuthRequest(
+                        identityType = IdentityType.OIDC,
+                        authMode = AuthMode.AuthCodePKCE,
+                        verifier = "oidc-verifier-123",
+                        answer = "auth-code",
+                        lifetime = 240u,
+                    ),
+                ),
+                requireNotNull(completeAuthRequest.body).utf8(),
+            )
+            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
+            assertTrue(result is OidcRedirectAuthResult.Completed)
         }
 
     @Test

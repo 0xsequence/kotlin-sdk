@@ -330,6 +330,8 @@ class WalletClient internal constructor(
         provider: OidcProviderConfig,
         redirectUri: String,
         walletType: WalletType = environment.defaultWalletType,
+        walletSelection: WalletSelectionBehavior? = null,
+        sessionLifetimeSeconds: Long? = null,
         relayRedirectUri: String? = provider.relayRedirectUri,
         authorizeParams: Map<String, String> = emptyMap(),
         loginHint: String? = null,
@@ -340,14 +342,20 @@ class WalletClient internal constructor(
                     "OIDC redirect auth requires an OIDC redirect auth store"
                 }
             val previousSessionEmail = session.snapshot()?.sessionEmail
+            val requestedSessionLifetimeSeconds =
+                sessionLifetimeSeconds?.also {
+                    requireWaasSessionLifetimeSeconds(it)
+                }
             clearSession(clearOidcRedirectAuth = true)
             try {
                 val signerAddress = signer.credentialId()
+                val authMode = provider.authMode
                 val oauthRedirectUri = relayRedirectUri ?: redirectUri
                 val response =
                     gateway.commitOidcRedirectVerifier(
                         provider = provider,
                         redirectUri = oauthRedirectUri,
+                        authMode = authMode.toWaasAuthMode(),
                     )
                 val nonce = oidcNonceGenerator()
                 val state =
@@ -368,10 +376,13 @@ class WalletClient internal constructor(
                         verifier = response.verifier,
                         challenge = response.challenge,
                         nonce = nonce,
+                        authMode = authMode,
                         redirectUri = redirectUri,
                         issuer = provider.issuer,
                         projectId = projectId,
                         walletType = walletType.wireValue,
+                        walletSelection = walletSelection,
+                        sessionLifetimeSeconds = requestedSessionLifetimeSeconds,
                         signerAddress = signerAddress,
                         signerKeyType = signer.signingAlgorithm,
                     ),
@@ -383,6 +394,7 @@ class WalletClient internal constructor(
                         redirectUri = oauthRedirectUri,
                         state = state,
                         challenge = response.challenge,
+                        usePkce = authMode.usesPkce,
                         loginHint = loginHintForProvider(provider, loginHint ?: previousSessionEmail),
                         authorizeParams = provider.authorizeParams + authorizeParams,
                     )
@@ -402,8 +414,8 @@ class WalletClient internal constructor(
 
     suspend fun handleOidcRedirectCallback(
         callbackUrl: String?,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-        sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
+        walletSelection: WalletSelectionBehavior? = null,
+        sessionLifetimeSeconds: Long? = null,
     ): OidcRedirectAuthResult {
         if (callbackUrl.isNullOrBlank()) {
             return OidcRedirectAuthResult.NotOidcRedirectCallback
@@ -437,18 +449,25 @@ class WalletClient internal constructor(
             }
             val code = requireNotNull(callback.code) { "OIDC callback URL is missing code" }
             restorePendingOidcRedirectAuth(pending)
+            val resolvedWalletSelection =
+                walletSelection
+                    ?: pending.walletSelection
+                    ?: WalletSelectionBehavior.Automatic
             val validatedSessionLifetimeSeconds =
                 requireWaasSessionLifetimeSeconds(
-                    sessionLifetimeSeconds,
+                    sessionLifetimeSeconds
+                        ?: pending.sessionLifetimeSeconds
+                        ?: DEFAULT_SESSION_LIFETIME_SECONDS,
                 )
 
             val auth =
                 gateway.completeOidcRedirectAuth(
                     verifier = pending.verifier,
                     code = code,
+                    authMode = pending.authMode.toWaasAuthMode(),
                     sessionLifetimeSeconds = validatedSessionLifetimeSeconds,
                 )
-            when (val result = completeWalletAuth(auth, pending.walletType.toWalletType(), walletSelection)) {
+            when (val result = completeWalletAuth(auth, pending.walletType.toWalletType(), resolvedWalletSelection)) {
                 is CompleteAuthResult.WalletSelected -> {
                     OidcRedirectAuthResult.Completed(result.wallet)
                 }
@@ -1499,12 +1518,13 @@ private class WaasWalletGateway(
     suspend fun commitOidcRedirectVerifier(
         provider: OidcProviderConfig,
         redirectUri: String,
+        authMode: AuthMode,
     ): VerifierCommitment =
         signedClient()
             .commitVerifier(
                 CommitVerifierRequest(
                     identityType = IdentityType.OIDC,
-                    authMode = AuthMode.AuthCodePKCE,
+                    authMode = authMode,
                     metadata =
                         mapOf(
                             "iss" to provider.issuer,
@@ -1554,13 +1574,14 @@ private class WaasWalletGateway(
     suspend fun completeOidcRedirectAuth(
         verifier: String,
         code: String,
+        authMode: AuthMode,
         sessionLifetimeSeconds: UInt,
     ): WalletAuthCompletion =
         signedClient()
             .completeAuth(
                 CompleteAuthRequest(
                     identityType = IdentityType.OIDC,
-                    authMode = AuthMode.AuthCodePKCE,
+                    authMode = authMode,
                     verifier = verifier,
                     answer = code,
                     lifetime = sessionLifetimeSeconds,

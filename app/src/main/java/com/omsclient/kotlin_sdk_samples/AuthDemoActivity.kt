@@ -221,6 +221,8 @@ class AuthDemoActivity : AppCompatActivity() {
                 },
             ) {
                 persistAuthPreferences()
+                val walletSelection = currentWalletSelectionBehavior()
+                val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
                 val started =
                     sdk.wallet.startOidcRedirectAuth(
                         provider =
@@ -228,6 +230,8 @@ class AuthDemoActivity : AppCompatActivity() {
                                 clientId = DemoConfig.demoGoogleWebClientId,
                             ),
                         redirectUri = DemoConfig.oidcRedirectUri,
+                        walletSelection = walletSelection,
+                        sessionLifetimeSeconds = sessionLifetimeSeconds,
                         loginHint = expiredSessionEmail(),
                     )
                 appendLog("Google redirect auth started: state=${started.state}")
@@ -439,7 +443,7 @@ class AuthDemoActivity : AppCompatActivity() {
         ) {
             when (
                 val result =
-                    handleOidcRedirectCallbackWithConfiguredLifetime(callbackUrl)
+                    handleOidcRedirectCallbackFromPendingAuth(callbackUrl)
             ) {
                 is OidcRedirectAuthResult.Completed -> {
                     consumeIntentData()
@@ -702,23 +706,8 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun handleOidcRedirectCallbackWithConfiguredLifetime(callbackUrl: String): OidcRedirectAuthResult {
-        val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
-        persistAuthPreferences()
-        val walletSelection = currentWalletSelectionBehavior()
-        return if (sessionLifetimeSeconds == null) {
-            sdk.wallet.handleOidcRedirectCallback(
-                callbackUrl = callbackUrl,
-                walletSelection = walletSelection,
-            )
-        } else {
-            sdk.wallet.handleOidcRedirectCallback(
-                callbackUrl = callbackUrl,
-                walletSelection = walletSelection,
-                sessionLifetimeSeconds = sessionLifetimeSeconds,
-            )
-        }
-    }
+    private suspend fun handleOidcRedirectCallbackFromPendingAuth(callbackUrl: String): OidcRedirectAuthResult =
+        sdk.wallet.handleOidcRedirectCallback(callbackUrl = callbackUrl)
 
     private fun currentWalletSelectionBehavior(): WalletSelectionBehavior =
         if (manualWalletSelectionCheckbox.isChecked) {
