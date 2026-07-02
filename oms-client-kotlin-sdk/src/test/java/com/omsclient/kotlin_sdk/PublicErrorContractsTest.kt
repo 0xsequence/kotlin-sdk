@@ -12,6 +12,8 @@ import com.omsclient.kotlin_sdk.wallet.InMemoryOidcRedirectAuthStore
 import com.omsclient.kotlin_sdk.wallet.InMemorySessionStore
 import com.omsclient.kotlin_sdk.wallet.OidcProviderConfig
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
+import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthStore
+import com.omsclient.kotlin_sdk.wallet.PendingOidcRedirectAuth
 import com.omsclient.kotlin_sdk.wallet.TEST_CREDENTIAL_ID
 import com.omsclient.kotlin_sdk.wallet.TrackingCredentialSigner
 import com.omsclient.kotlin_sdk.wallet.WalletClient
@@ -440,6 +442,13 @@ class PublicErrorContractsTest {
             val invalidLifetimeClient = createOmsClient()
             val signerMismatchSigner = MutableCredentialSigner()
             val signerMismatchClient = createOmsClient(credentialSigner = signerMismatchSigner)
+            val storageFailureClient =
+                createOmsClient(
+                    oidcRedirectAuthStore =
+                        ThrowingOidcRedirectAuthStore(
+                            IOException("OIDC redirect state save failed"),
+                        ),
+                )
 
             enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val providerErrorStart =
@@ -480,6 +489,15 @@ class PublicErrorContractsTest {
                             "?code=auth-code&state=${signerMismatchStart.state}",
                 )
 
+            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            val storageFailure =
+                publicError {
+                    storageFailureClient.wallet.startOidcRedirectAuth(
+                        provider = testOidcProvider(),
+                        redirectUri = "omsclientkotlindemo://auth/callback",
+                    )
+                }
+
             assertEquals(
                 listOf(
                     labeled(
@@ -489,6 +507,15 @@ class PublicErrorContractsTest {
                             code = "ValidationError",
                             operation = "wallet.startOidcRedirectAuth",
                             message = "OIDC redirect auth requires an OIDC redirect auth store",
+                        ),
+                    ),
+                    labeled(
+                        "wallet.startOidcRedirectAuth.redirectStorageWriteFailure",
+                        error(
+                            name = "IOException",
+                            code = null,
+                            operation = null,
+                            message = "OIDC redirect state save failed",
                         ),
                     ),
                     labeled(
@@ -529,6 +556,7 @@ class PublicErrorContractsTest {
                             )
                         },
                     ),
+                    labeled("wallet.startOidcRedirectAuth.redirectStorageWriteFailure", storageFailure),
                     labeled("wallet.handleOidcRedirectCallback.providerError", oidcFailure(providerFailure)),
                     labeled("wallet.handleOidcRedirectCallback.invalidLifetime", oidcFailure(invalidLifetimeFailure)),
                     labeled("wallet.handleOidcRedirectCallback.signerMismatch", oidcFailure(signerMismatchFailure)),
@@ -1065,7 +1093,7 @@ class PublicErrorContractsTest {
 
     private fun createOmsClient(
         okHttpClient: OkHttpClient = OkHttpClient(),
-        oidcRedirectAuthStore: InMemoryOidcRedirectAuthStore? = InMemoryOidcRedirectAuthStore(),
+        oidcRedirectAuthStore: OidcRedirectAuthStore? = InMemoryOidcRedirectAuthStore(),
         credentialSigner: CredentialSigner = TrackingCredentialSigner(),
     ): OMSClient =
         OMSClient(
@@ -1315,4 +1343,14 @@ class PublicErrorContractsTest {
         val message: String?,
         val status: Int?,
     )
+
+    private class ThrowingOidcRedirectAuthStore(
+        private val saveFailure: Throwable,
+    ) : OidcRedirectAuthStore {
+        override fun load(): PendingOidcRedirectAuth? = null
+
+        override fun save(pending: PendingOidcRedirectAuth): Unit = throw saveFailure
+
+        override fun clear() = Unit
+    }
 }
