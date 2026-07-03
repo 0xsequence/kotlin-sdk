@@ -19,7 +19,7 @@ ktlint {
 }
 
 group = providers.gradleProperty("POM_GROUP_ID").orElse("io.github.0xsequence").get()
-version = providers.gradleProperty("POM_VERSION_NAME").orElse("0.1.0-SNAPSHOT").get()
+version = providers.gradleProperty("POM_VERSION_NAME").orElse("0.2.0-SNAPSHOT").get()
 
 evaluationDependsOn(":oms-wallet-kotlin-sdk-waas-generated")
 val waasGeneratedProject = project(":oms-wallet-kotlin-sdk-waas-generated")

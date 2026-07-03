@@ -5,7 +5,7 @@ This document describes the intended public API for external consumers of the OM
 ## Installation and Requirements
 
 ```kotlin
-implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.1.0-alpha.4")
+implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.0")
 ```
 
 Consumer apps need Android 10 / API 29 or newer, Android `compileSdk 34` or
