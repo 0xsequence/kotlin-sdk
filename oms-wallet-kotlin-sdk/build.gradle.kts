@@ -183,8 +183,8 @@ tasks.named("check") {
 dependencies {
     implementation(waasGeneratedClassesJar)
     implementation(libs.androidx.core.ktx)
-    implementation(libs.okhttp)
-    implementation(libs.kotlinx.serialization.json)
+    api(libs.okhttp)
+    api(libs.kotlinx.serialization.json)
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
