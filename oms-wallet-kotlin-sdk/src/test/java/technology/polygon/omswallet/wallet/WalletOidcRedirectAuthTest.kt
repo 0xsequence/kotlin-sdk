@@ -6,6 +6,7 @@ import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -13,6 +14,7 @@ import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
 import technology.polygon.omswallet.OmsSdkErrorCode
 import technology.polygon.omswallet.OmsSdkException
 import technology.polygon.omswallet.OmsSdkOperation
+import technology.polygon.omswallet.OmsStorageException
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
@@ -24,6 +26,7 @@ import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.utils.OMSWalletBase64Url
+import java.io.IOException
 
 class WalletOidcRedirectAuthTest {
     private lateinit var server: MockWebServer
@@ -375,6 +378,56 @@ class WalletOidcRedirectAuthTest {
             assertNull(sessionStore.snapshot)
             assertEquals(1, redirectStore.clearCalls)
             assertEquals(result.state, queryParams(result.authorizationUrl)["state"])
+        }
+
+    @Test
+    fun startOidcRedirectAuthWrapsRedirectStateStorageFailure() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+                    .build(),
+            )
+
+            val storageFailure = IOException("OIDC redirect state save failed")
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                        ),
+                    transport = OMSWalletHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = ThrowingSaveOidcRedirectAuthStore(storageFailure),
+                    oidcNonceGenerator = { "nonce-123" },
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+
+            val error =
+                runCatching {
+                    client.startOidcRedirectAuth(
+                        provider =
+                            OidcProviderConfig(
+                                issuer = "https://issuer.example",
+                                clientId = "client-123",
+                                authorizationUrl = "https://issuer.example/oauth/authorize",
+                            ),
+                        redirectUri = "omsclientkotlindemo://auth/callback",
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is OmsStorageException)
+            val sdkError = error as OmsStorageException
+            assertEquals(OmsSdkErrorCode.StorageError, sdkError.code)
+            assertEquals(OmsSdkOperation.WalletStartOidcRedirectAuth, sdkError.operation)
+            assertEquals("OIDC redirect auth state persistence failed", sdkError.message)
+            assertSame(storageFailure, sdkError.cause)
+            assertNull(client.snapshotSession())
+            assertEquals(1, server.requestCount)
         }
 
     @Test
@@ -1304,4 +1357,14 @@ class WalletOidcRedirectAuthTest {
             assertNull(redirectStore.pending)
             assertEquals(2, redirectStore.clearCalls)
         }
+
+    private class ThrowingSaveOidcRedirectAuthStore(
+        private val failure: Throwable,
+    ) : OidcRedirectAuthStore {
+        override fun load(): PendingOidcRedirectAuth? = null
+
+        override fun save(pending: PendingOidcRedirectAuth): Unit = throw failure
+
+        override fun clear() = Unit
+    }
 }

@@ -512,10 +512,10 @@ class PublicErrorContractsTest {
                     labeled(
                         "wallet.startOidcRedirectAuth.redirectStorageWriteFailure",
                         error(
-                            name = "IOException",
-                            code = null,
-                            operation = null,
-                            message = "OIDC redirect state save failed",
+                            name = "OmsStorageException",
+                            code = "StorageError",
+                            operation = "wallet.startOidcRedirectAuth",
+                            message = "OIDC redirect auth state persistence failed",
                         ),
                     ),
                     labeled(

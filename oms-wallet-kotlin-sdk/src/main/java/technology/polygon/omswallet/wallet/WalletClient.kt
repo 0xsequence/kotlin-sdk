@@ -18,6 +18,7 @@ import technology.polygon.omswallet.OMSWalletSessionState
 import technology.polygon.omswallet.OmsSdkErrorCode
 import technology.polygon.omswallet.OmsSdkOperation
 import technology.polygon.omswallet.OmsSessionException
+import technology.polygon.omswallet.OmsStorageException
 import technology.polygon.omswallet.OmsTransactionException
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
@@ -396,24 +397,34 @@ class WalletClient internal constructor(
                     signerAddress = signerAddress,
                     signerKeyType = signer.signingAlgorithm,
                 )
-                redirectAuthStore.save(
-                    PendingOidcRedirectAuth(
-                        verifier = response.verifier,
-                        challenge = response.challenge,
-                        nonce = nonce,
-                        authMode = authMode,
-                        redirectUri = redirectUri,
-                        issuer = provider.issuer,
-                        provider = provider.provider ?: builtInOidcProviderForIssuer(provider.issuer),
-                        providerLabel = provider.providerLabel ?: builtInOidcProviderLabelForIssuer(provider.issuer),
-                        projectId = projectId,
-                        walletType = walletType.wireValue,
-                        walletSelection = walletSelection,
-                        sessionLifetimeSeconds = requestedSessionLifetimeSeconds,
-                        signerAddress = signerAddress,
-                        signerKeyType = signer.signingAlgorithm,
-                    ),
-                )
+                try {
+                    redirectAuthStore.save(
+                        PendingOidcRedirectAuth(
+                            verifier = response.verifier,
+                            challenge = response.challenge,
+                            nonce = nonce,
+                            authMode = authMode,
+                            redirectUri = redirectUri,
+                            issuer = provider.issuer,
+                            provider = provider.provider ?: builtInOidcProviderForIssuer(provider.issuer),
+                            providerLabel = provider.providerLabel ?: builtInOidcProviderLabelForIssuer(provider.issuer),
+                            projectId = projectId,
+                            walletType = walletType.wireValue,
+                            walletSelection = walletSelection,
+                            sessionLifetimeSeconds = requestedSessionLifetimeSeconds,
+                            signerAddress = signerAddress,
+                            signerKeyType = signer.signingAlgorithm,
+                        ),
+                    )
+                } catch (throwable: CancellationException) {
+                    throw throwable
+                } catch (throwable: Throwable) {
+                    throw OmsStorageException(
+                        operation = OmsSdkOperation.WalletStartOidcRedirectAuth,
+                        message = "OIDC redirect auth state persistence failed",
+                        cause = throwable,
+                    )
+                }
 
                 val authorizationUrl =
                     OidcRedirectAuth.buildAuthorizationUrl(

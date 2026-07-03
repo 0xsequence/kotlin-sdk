@@ -21,6 +21,7 @@ enum class OmsSdkErrorCode {
     TransactionExecutionUnconfirmed,
     TransactionStatusLookupFailed,
     ValidationError,
+    StorageError,
 }
 
 /**
@@ -178,6 +179,17 @@ class OmsValidationException(
     cause: Throwable? = null,
 ) : OmsSdkException(
         code = OmsSdkErrorCode.ValidationError,
+        operation = operation,
+        message = message,
+        cause = cause,
+    )
+
+class OmsStorageException(
+    operation: OmsSdkOperation? = null,
+    message: String,
+    cause: Throwable? = null,
+) : OmsSdkException(
+        code = OmsSdkErrorCode.StorageError,
         operation = operation,
         message = message,
         cause = cause,
@@ -382,6 +394,14 @@ private fun OmsSdkException.withOperation(operation: OmsSdkOperation): OmsSdkExc
 
         is OmsValidationException -> {
             OmsValidationException(
+                operation = operation,
+                message = message ?: operation.id,
+                cause = this,
+            )
+        }
+
+        is OmsStorageException -> {
+            OmsStorageException(
                 operation = operation,
                 message = message ?: operation.id,
                 cause = this,

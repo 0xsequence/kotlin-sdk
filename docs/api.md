@@ -612,6 +612,7 @@ enum class OmsSdkErrorCode {
     TransactionExecutionUnconfirmed,
     TransactionStatusLookupFailed,
     ValidationError,
+    StorageError,
 }
 ```
 
@@ -681,8 +682,8 @@ reserved for malformed or unparseable responses.
 `upstreamError` is normalized diagnostic detail from a remote OMS service response
 or transport failure. Use SDK-level `code` for app branching; use
 `upstreamError` for logging and service-specific troubleshooting. SDK-local
-validation, session, and wallet-selection failures do not include upstream
-details.
+validation, session, storage, and wallet-selection failures do not include
+upstream details.
 
 `TransactionExecutionUnconfirmed` means transaction preparation succeeded and
 the SDK has a `txnId`, but the execute request failed before the SDK could
