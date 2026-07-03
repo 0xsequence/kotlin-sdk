@@ -106,3 +106,44 @@ Prerequisites:
    git tag -a <version> -m "Release <version>"
    git push origin master <version>
    ```
+
+## Alpha, Beta, and Snapshot Releases
+
+Alpha and beta releases use the same release flow as stable releases. Set
+`POM_VERSION_NAME` to a SemVer prerelease such as `0.2.1-alpha.1` or
+`0.2.1-beta.1`, update exact dependency snippets that should point at the
+prerelease, run the same validation commands, publish through Central Portal,
+and tag the exact published commit. Maven Central versions are immutable, so do
+not reuse a published prerelease version.
+
+Consumers install prereleases with the exact version:
+
+```kotlin
+implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.1-beta.1")
+```
+
+For snapshot testing, prefer local or internal test publication unless a remote
+snapshot repository is intentionally added to this repo. The current Gradle
+setup supports local snapshot artifacts through Maven Local:
+
+```sh
+./gradlew -PPOM_VERSION_NAME=0.2.1-SNAPSHOT :oms-wallet-kotlin-sdk:publishToMavenLocal
+```
+
+Consumers on the same machine can test that local snapshot with `mavenLocal()`:
+
+```kotlin
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.1-SNAPSHOT")
+}
+```
+
+Do not point README or `docs/api.md` install snippets at a snapshot unless that
+snapshot is intentionally the documented tester install. Do not run the Central
+Portal publish task for `-SNAPSHOT` versions unless the repository has been
+explicitly configured and approved for remote snapshot publication.
