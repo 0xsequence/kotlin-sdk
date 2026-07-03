@@ -3,8 +3,11 @@ package com.omsclient.kotlin_sdk.wallet
 import android.os.Handler
 import android.os.Looper
 import com.omsclient.kotlin_sdk.Network
+import com.omsclient.kotlin_sdk.OMSClientEmailSessionAuth
+import com.omsclient.kotlin_sdk.OMSClientOidcSessionAuth
+import com.omsclient.kotlin_sdk.OMSClientOidcSessionAuthFlow
+import com.omsclient.kotlin_sdk.OMSClientSessionAuth
 import com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent
-import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.OMSClientSessionState
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkOperation
@@ -190,6 +193,7 @@ class WalletClient internal constructor(
             !snapshot.walletId.isNullOrBlank() &&
                 !snapshot.walletAddress.isNullOrBlank() &&
                 !snapshot.signerAddress.isNullOrBlank() &&
+                snapshot.auth != null &&
                 snapshot.signerKeyType == signer.signingAlgorithm &&
                 signer.hasCredential()
         if (!isRestorable) {
@@ -317,7 +321,12 @@ class WalletClient internal constructor(
                     signOut()
                     throw throwable
                 }
-            return completeWalletAuth(auth, walletType, walletSelection)
+            return completeWalletAuth(
+                completeAuth = auth,
+                walletType = walletType,
+                walletSelection = walletSelection,
+                sessionAuth = oidcIdTokenSessionAuth(issuer = issuer, completeAuth = auth),
+            )
         } catch (throwable: CancellationException) {
             throw throwable
         } catch (throwable: Throwable) {
@@ -341,7 +350,7 @@ class WalletClient internal constructor(
                 requireNotNull(oidcRedirectAuthStore) {
                     "OIDC redirect auth requires an OIDC redirect auth store"
                 }
-            val previousSessionEmail = session.snapshot()?.sessionEmail
+            val previousSessionEmail = session.snapshot()?.auth?.email
             val requestedSessionLifetimeSeconds =
                 sessionLifetimeSeconds?.also {
                     requireWaasSessionLifetimeSeconds(it)
@@ -379,6 +388,8 @@ class WalletClient internal constructor(
                         authMode = authMode,
                         redirectUri = redirectUri,
                         issuer = provider.issuer,
+                        provider = provider.provider ?: builtInOidcProviderForIssuer(provider.issuer),
+                        providerLabel = provider.providerLabel ?: builtInOidcProviderLabelForIssuer(provider.issuer),
                         projectId = projectId,
                         walletType = walletType.wireValue,
                         walletSelection = walletSelection,
@@ -467,7 +478,15 @@ class WalletClient internal constructor(
                     authMode = pending.authMode.toWaasAuthMode(),
                     sessionLifetimeSeconds = validatedSessionLifetimeSeconds,
                 )
-            when (val result = completeWalletAuth(auth, pending.walletType.toWalletType(), resolvedWalletSelection)) {
+            when (
+                val result =
+                    completeWalletAuth(
+                        completeAuth = auth,
+                        walletType = pending.walletType.toWalletType(),
+                        walletSelection = resolvedWalletSelection,
+                        sessionAuth = oidcRedirectSessionAuth(pending = pending, completeAuth = auth),
+                    )
+            ) {
                 is CompleteAuthResult.WalletSelected -> {
                     OidcRedirectAuthResult.Completed(result.wallet)
                 }
@@ -545,6 +564,7 @@ class WalletClient internal constructor(
                 completeAuth = auth,
                 walletType = walletType,
                 walletSelection = walletSelection,
+                sessionAuth = OMSClientEmailSessionAuth(email = auth.email),
             )
         }
 
@@ -698,12 +718,12 @@ class WalletClient internal constructor(
         completeAuth: WalletAuthCompletion,
         walletType: WalletType,
         walletSelection: WalletSelectionBehavior,
+        sessionAuth: OMSClientSessionAuth,
     ): CompleteAuthResult {
         val pendingWalletSelectionId =
             session.markAuthVerified(
                 expiresAt = completeAuth.credential.expiresAt,
-                loginType = completeAuth.loginType,
-                sessionEmail = completeAuth.email,
+                auth = sessionAuth,
             )
         val pendingSnapshot = session.requireSnapshot()
         scheduleSessionExpiry(pendingSnapshot)
@@ -1188,6 +1208,48 @@ class WalletClient internal constructor(
         loginHint: String?,
     ): String? = loginHint.takeIf { provider.issuer == GOOGLE_ISSUER }
 
+    private fun oidcIdTokenSessionAuth(
+        issuer: String,
+        completeAuth: WalletAuthCompletion,
+    ): OMSClientOidcSessionAuth {
+        val resolvedIssuer = completeAuth.identity.iss?.takeIf { it.isNotBlank() } ?: issuer
+        return OMSClientOidcSessionAuth(
+            flow = OMSClientOidcSessionAuthFlow.IdToken,
+            issuer = resolvedIssuer,
+            provider = builtInOidcProviderForIssuer(resolvedIssuer),
+            providerLabel = builtInOidcProviderLabelForIssuer(resolvedIssuer),
+            email = completeAuth.email,
+        )
+    }
+
+    private fun oidcRedirectSessionAuth(
+        pending: PendingOidcRedirectAuth,
+        completeAuth: WalletAuthCompletion,
+    ): OMSClientOidcSessionAuth {
+        val resolvedIssuer = completeAuth.identity.iss?.takeIf { it.isNotBlank() } ?: pending.issuer
+        return OMSClientOidcSessionAuth(
+            flow = OMSClientOidcSessionAuthFlow.Redirect,
+            issuer = resolvedIssuer,
+            provider = pending.provider ?: builtInOidcProviderForIssuer(resolvedIssuer),
+            providerLabel = pending.providerLabel ?: builtInOidcProviderLabelForIssuer(resolvedIssuer),
+            email = completeAuth.email,
+        )
+    }
+
+    private fun builtInOidcProviderForIssuer(issuer: String): String? =
+        when (issuer) {
+            GOOGLE_ISSUER -> "google"
+            APPLE_ISSUER -> "apple"
+            else -> null
+        }
+
+    private fun builtInOidcProviderLabelForIssuer(issuer: String): String? =
+        when (issuer) {
+            GOOGLE_ISSUER -> "Google"
+            APPLE_ISSUER -> "Apple"
+            else -> null
+        }
+
     private fun requireWaasSessionLifetimeSeconds(sessionLifetimeSeconds: Long): UInt {
         require(sessionLifetimeSeconds > 0L) {
             "sessionLifetimeSeconds must be a positive whole number"
@@ -1435,10 +1497,10 @@ private data class VerifierCommitment(
 )
 
 private data class WalletAuthCompletion(
-    val loginType: OMSClientSessionLoginType?,
     val wallets: List<Wallet>,
     val nextWalletsCursor: String?,
     val email: String?,
+    val identity: Identity,
     val credential: CredentialInfo,
 )
 
@@ -1855,34 +1917,12 @@ private class WaasWalletGateway(
 
     private fun CompleteAuthResponse.toWalletAuthCompletion(): WalletAuthCompletion =
         WalletAuthCompletion(
-            loginType = identity.toSessionLoginType(),
             wallets = wallets.map { it.toModel() },
             nextWalletsCursor = page?.cursor?.takeIf { it.isNotBlank() },
             email = email,
+            identity = identity,
             credential = credential.toModel(),
         )
-
-    private fun Identity.toSessionLoginType(): OMSClientSessionLoginType? =
-        when (type) {
-            IdentityType.Email -> {
-                OMSClientSessionLoginType.Email
-            }
-
-            IdentityType.OIDC -> {
-                if (iss == GOOGLE_ISSUER) {
-                    OMSClientSessionLoginType.GoogleAuth
-                } else {
-                    OMSClientSessionLoginType.Oidc
-                }
-            }
-
-            IdentityType.Phone,
-            IdentityType.Passkey,
-            IdentityType.UNKNOWN_DEFAULT,
-            -> {
-                null
-            }
-        }
 
     private fun WalletType.toWaas(): WaasWalletType =
         when (this) {
@@ -2062,8 +2102,7 @@ private fun OMSClientSessionSnapshot.toSessionExpiredEvent(): OMSClientSessionEx
             OMSClientSessionState(
                 walletAddress = walletAddress,
                 expiresAt = expiredAt,
-                loginType = loginType,
-                sessionEmail = sessionEmail,
+                auth = auth,
             ),
         expiredAt = expiredAt,
     )
@@ -2071,3 +2110,4 @@ private fun OMSClientSessionSnapshot.toSessionExpiredEvent(): OMSClientSessionEx
 
 private const val MAX_WAAS_SESSION_LIFETIME_SECONDS: Long = 4_294_967_295L
 private const val GOOGLE_ISSUER: String = "https://accounts.google.com"
+private const val APPLE_ISSUER: String = "https://appleid.apple.com"

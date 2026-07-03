@@ -78,8 +78,7 @@ class OMSClient internal constructor(
             return OMSClientSessionState(
                 walletAddress = walletAddress,
                 expiresAt = snapshot.expiresAt,
-                loginType = snapshot.loginType,
-                sessionEmail = snapshot.sessionEmail,
+                auth = snapshot.auth,
             )
         }
 

@@ -67,8 +67,7 @@ class OMSClientTest {
                 signerAddress = "0xsigner",
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2099-01-01T00:00:00Z",
-                loginType = OMSClientSessionLoginType.Email,
-                sessionEmail = "user@example.com",
+                auth = OMSClientEmailSessionAuth(email = "user@example.com"),
             )
         val sdk =
             OMSClient(
@@ -82,8 +81,7 @@ class OMSClientTest {
         assertEquals("0xwallet", sdk.wallet.walletAddress)
         assertEquals("0xwallet", sdk.session.walletAddress)
         assertEquals("2099-01-01T00:00:00Z", sdk.session.expiresAt)
-        assertEquals(OMSClientSessionLoginType.Email, sdk.session.loginType)
-        assertEquals("user@example.com", sdk.session.sessionEmail)
+        assertEquals(OMSClientEmailSessionAuth(email = "user@example.com"), sdk.session.auth)
     }
 
     @Test
@@ -114,8 +112,7 @@ class OMSClientTest {
 
         assertNull(sdk.session.walletAddress)
         assertNull(sdk.session.expiresAt)
-        assertNull(sdk.session.loginType)
-        assertNull(sdk.session.sessionEmail)
+        assertNull(sdk.session.auth)
     }
 
     @Test
@@ -127,6 +124,7 @@ class OMSClientTest {
                     walletAddress = "0xwallet",
                     signerAddress = "0xsigner",
                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                    auth = OMSClientEmailSessionAuth(email = "user@example.com"),
                 ),
             )
         val sdk =
@@ -143,8 +141,7 @@ class OMSClientTest {
         assertNull(sdk.wallet.walletAddress)
         assertNull(sdk.session.walletAddress)
         assertNull(sdk.session.expiresAt)
-        assertNull(sdk.session.loginType)
-        assertNull(sdk.session.sessionEmail)
+        assertNull(sdk.session.auth)
         assertNull(store.snapshot)
         assertEquals(1, store.clearCalls)
     }

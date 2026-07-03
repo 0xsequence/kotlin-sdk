@@ -1,6 +1,5 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.OmsSdkOperation
@@ -434,7 +433,7 @@ class WalletEmailAuthTest {
                 request.headers[OMSClientEnvironment.walletSignatureHeaderName],
             )
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
-            assertEquals("user@example.com", client.snapshotSession()?.sessionEmail)
+            assertEmailSessionAuth(client.snapshotSession()?.auth)
             assertEquals(1, response.wallets.size)
             assertEquals(com.omsclient.kotlin_sdk.models.WalletType.Ethereum, response.wallets.single().type)
             assertEquals("0xabc", response.wallets.single().address)
@@ -937,8 +936,7 @@ class WalletEmailAuthTest {
             assertEquals("wallet-bbb", store.snapshot?.walletId)
             assertEquals("0xbbb", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
-            assertEquals(OMSClientSessionLoginType.Email, store.snapshot?.loginType)
-            assertEquals("user@example.com", store.snapshot?.sessionEmail)
+            assertEmailSessionAuth(store.snapshot?.auth)
         }
 
     @Test
@@ -1460,8 +1458,7 @@ class WalletEmailAuthTest {
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
-            assertEquals(OMSClientSessionLoginType.Email, store.snapshot?.loginType)
-            assertEquals("user@example.com", store.snapshot?.sessionEmail)
+            assertEmailSessionAuth(store.snapshot?.auth)
             assertEquals(1, store.saveCalls)
         }
 

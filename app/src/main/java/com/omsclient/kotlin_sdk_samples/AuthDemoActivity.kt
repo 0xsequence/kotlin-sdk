@@ -42,6 +42,9 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
+import com.omsclient.kotlin_sdk.OMSClientEmailSessionAuth
+import com.omsclient.kotlin_sdk.OMSClientOidcSessionAuth
+import com.omsclient.kotlin_sdk.OMSClientSessionAuth
 import com.omsclient.kotlin_sdk.OMSClientSessionExpiredEvent
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.models.FeeOptionSelection
@@ -49,6 +52,7 @@ import com.omsclient.kotlin_sdk.models.FeeOptionWithBalance
 import com.omsclient.kotlin_sdk.models.Wallet
 import com.omsclient.kotlin_sdk.utils.parseUnits
 import com.omsclient.kotlin_sdk.wallet.CompleteAuthResult
+import com.omsclient.kotlin_sdk.wallet.OidcProviderConfig
 import com.omsclient.kotlin_sdk.wallet.OidcProviders
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
 import com.omsclient.kotlin_sdk.wallet.PendingWalletSelection
@@ -100,6 +104,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var cancelCodeStepButton: MaterialButton
     private lateinit var startGoogleSignInButton: MaterialButton
     private lateinit var startGoogleRedirectSignInButton: MaterialButton
+    private lateinit var startAppleRedirectSignInButton: MaterialButton
     private lateinit var manualWalletSelectionCheckbox: MaterialCheckBox
     private lateinit var sessionLifetimeInput: TextInputEditText
 
@@ -161,6 +166,7 @@ class AuthDemoActivity : AppCompatActivity() {
         cancelCodeStepButton = findViewById(R.id.cancelCodeStepButton)
         startGoogleSignInButton = findViewById(R.id.startGoogleSignInButton)
         startGoogleRedirectSignInButton = findViewById(R.id.startGoogleRedirectSignInButton)
+        startAppleRedirectSignInButton = findViewById(R.id.startAppleRedirectSignInButton)
         manualWalletSelectionCheckbox = findViewById(R.id.manualWalletSelectionCheckbox)
         sessionLifetimeInput = findViewById(R.id.sessionLifetimeInput)
     }
@@ -209,35 +215,21 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         startGoogleRedirectSignInButton.setOnClickListener {
-            launchAction(
-                label = "Start Google redirect sign-in",
-                onStart = {
-                    showGoogleRedirectPendingStep("Opening Google redirect sign-in...")
-                },
-                onFailure = {
-                    showEmailStep()
-                    authStatusView.text = "Google redirect sign-in failed: ${it.message ?: "Unknown error"}"
-                    appendLog("Google redirect start error: ${describeThrowable(it)}")
-                },
-            ) {
-                persistAuthPreferences()
-                val walletSelection = currentWalletSelectionBehavior()
-                val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
-                val started =
-                    sdk.wallet.startOidcRedirectAuth(
-                        provider =
-                            OidcProviders.google(
-                                clientId = DemoConfig.demoGoogleWebClientId,
-                            ),
-                        redirectUri = DemoConfig.oidcRedirectUri,
-                        walletSelection = walletSelection,
-                        sessionLifetimeSeconds = sessionLifetimeSeconds,
-                        loginHint = expiredSessionEmail(),
-                    )
-                appendLog("Google redirect auth started: state=${started.state}")
-                showGoogleRedirectPendingStep("Waiting for Google redirect callback...")
-                openInAppBrowser(started.authorizationUrl)
-            }
+            startOidcRedirectSignIn(
+                providerName = "Google",
+                provider =
+                    OidcProviders.google(
+                        clientId = DemoConfig.demoGoogleWebClientId,
+                    ),
+                loginHint = expiredSessionEmail(),
+            )
+        }
+
+        startAppleRedirectSignInButton.setOnClickListener {
+            startOidcRedirectSignIn(
+                providerName = "Apple",
+                provider = OidcProviders.apple(),
+            )
         }
 
         findViewById<MaterialButton>(R.id.startEmailSignInButton).setOnClickListener {
@@ -412,6 +404,39 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
+    private fun startOidcRedirectSignIn(
+        providerName: String,
+        provider: OidcProviderConfig,
+        loginHint: String? = null,
+    ) {
+        launchAction(
+            label = "Start $providerName redirect sign-in",
+            onStart = {
+                showOidcRedirectPendingStep("Opening $providerName redirect sign-in...")
+            },
+            onFailure = {
+                showEmailStep()
+                authStatusView.text = "$providerName redirect sign-in failed: ${it.message ?: "Unknown error"}"
+                appendLog("$providerName redirect start error: ${describeThrowable(it)}")
+            },
+        ) {
+            persistAuthPreferences()
+            val walletSelection = currentWalletSelectionBehavior()
+            val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
+            val started =
+                sdk.wallet.startOidcRedirectAuth(
+                    provider = provider,
+                    redirectUri = DemoConfig.oidcRedirectUri,
+                    walletSelection = walletSelection,
+                    sessionLifetimeSeconds = sessionLifetimeSeconds,
+                    loginHint = loginHint,
+                )
+            appendLog("$providerName redirect auth started: state=${started.state}")
+            showOidcRedirectPendingStep("Waiting for OIDC redirect callback...")
+            openInAppBrowser(started.authorizationUrl)
+        }
+    }
+
     private fun openInAppBrowser(url: String) {
         val colorSchemeParams =
             CustomTabColorSchemeParams
@@ -436,9 +461,9 @@ class AuthDemoActivity : AppCompatActivity() {
     private fun handleOidcRedirectCallback(intent: Intent?) {
         val callbackUrl = intent?.data?.toString() ?: return
         launchAction(
-            label = "Handle Google redirect sign-in callback",
+            label = "Handle OIDC redirect sign-in callback",
             onStart = {
-                showGoogleRedirectPendingStep("Completing Google redirect sign-in...")
+                showOidcRedirectPendingStep("Completing OIDC redirect sign-in...")
             },
         ) {
             when (
@@ -447,23 +472,23 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 is OidcRedirectAuthResult.Completed -> {
                     consumeIntentData()
-                    renderSignedInWallet(result.wallet, "Google redirect login complete")
-                    appendLog("Google redirect sign-in complete: ${result.wallet.address}")
+                    renderSignedInWallet(result.wallet, "OIDC redirect login complete")
+                    appendLog("OIDC redirect sign-in complete: ${result.wallet.address}")
                 }
 
                 is OidcRedirectAuthResult.WalletSelection -> {
                     consumeIntentData()
                     completePendingWalletSelection(
                         pendingSelection = result.pendingSelection,
-                        status = "Google redirect login complete",
+                        status = "OIDC redirect login complete",
                     )
                 }
 
                 is OidcRedirectAuthResult.Failed -> {
                     consumeIntentData()
                     showEmailStep()
-                    authStatusView.text = "Google redirect completion failed: ${result.error.message ?: "Unknown error"}"
-                    appendLog("Google redirect completion error: ${describeThrowable(result.error)}")
+                    authStatusView.text = "OIDC redirect completion failed: ${result.error.message ?: "Unknown error"}"
+                    appendLog("OIDC redirect completion error: ${describeThrowable(result.error)}")
                 }
 
                 OidcRedirectAuthResult.NoPendingAuth -> {
@@ -641,7 +666,8 @@ class AuthDemoActivity : AppCompatActivity() {
     private fun expiredSessionEmail(): String? =
         expiredSessionEvent
             ?.session
-            ?.sessionEmail
+            ?.auth
+            ?.email
             ?.takeIf { it.isNotBlank() }
 
     private fun clearExpiredSessionState() {
@@ -1130,7 +1156,7 @@ class AuthDemoActivity : AppCompatActivity() {
         authStatusView.text =
             buildString {
                 append("Wallet session expired. Sign in again")
-                event.session.sessionEmail?.takeIf { it.isNotBlank() }?.let { email ->
+                event.session.auth?.email?.takeIf { it.isNotBlank() }?.let { email ->
                     append(" as ")
                     append(email)
                 }
@@ -1153,7 +1179,7 @@ class AuthDemoActivity : AppCompatActivity() {
         if (isNewEvent) {
             appendLog(
                 "Wallet session expired at ${event.expiredAt}: " +
-                    "wallet=${event.session.walletAddress ?: "none"} email=${event.session.sessionEmail ?: "none"}",
+                    "wallet=${event.session.walletAddress ?: "none"} email=${event.session.auth?.email ?: "none"}",
             )
         }
     }
@@ -1191,7 +1217,7 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
-    private fun showGoogleRedirectPendingStep(status: String) {
+    private fun showOidcRedirectPendingStep(status: String) {
         renderSessionStateBox()
         authStatusView.text = status
         walletAddressView.text = addressLabel("Wallet address", null)
@@ -1230,18 +1256,25 @@ class AuthDemoActivity : AppCompatActivity() {
                     appendLine("expiredAt: ${expiredEvent.expiredAt}")
                     appendLine("walletAddress: ${expiredEvent.session.walletAddress ?: "null"}")
                     appendLine("expiresAt: ${expiredEvent.session.expiresAt ?: "null"}")
-                    appendLine("loginType: ${expiredEvent.session.loginType ?: "null"}")
-                    append("sessionEmail: ${expiredEvent.session.sessionEmail ?: "null"}")
+                    appendLine("auth: ${formatSessionAuth(expiredEvent.session.auth)}")
+                    append("authEmail: ${expiredEvent.session.auth?.email ?: "null"}")
                 }
             } else {
                 buildString {
                     appendLine("walletAddress: ${session.walletAddress ?: "null"}")
                     appendLine("expiresAt: ${session.expiresAt ?: "null"}")
-                    appendLine("loginType: ${session.loginType ?: "null"}")
-                    append("sessionEmail: ${session.sessionEmail ?: "null"}")
+                    appendLine("auth: ${formatSessionAuth(session.auth)}")
+                    append("authEmail: ${session.auth?.email ?: "null"}")
                 }
             }
     }
+
+    private fun formatSessionAuth(auth: OMSClientSessionAuth?): String =
+        when (auth) {
+            null -> "null"
+            is OMSClientEmailSessionAuth -> "Email"
+            is OMSClientOidcSessionAuth -> auth.providerLabel ?: auth.provider ?: "OIDC"
+        }
 
     private fun prefillExpiredSessionEmail() {
         val email = expiredSessionEmail() ?: return

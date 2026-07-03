@@ -49,8 +49,7 @@ val client.session: OMSClientSessionState
 data class OMSClientSessionState(
     val walletAddress: String?,
     val expiresAt: String?,
-    val loginType: OMSClientSessionLoginType?,
-    val sessionEmail: String?,
+    val auth: OMSClientSessionAuth?,
 )
 ```
 
@@ -66,11 +65,26 @@ wallet API. They are strings so apps with `minSdk 24` do not need `java.time` or
 core library desugaring for these public session fields.
 
 ```kotlin
-enum class OMSClientSessionLoginType {
-    Email,
-    GoogleAuth,
-    Oidc,
+sealed interface OMSClientSessionAuth {
+    val email: String?
 }
+
+data class OMSClientEmailSessionAuth(
+    override val email: String?,
+) : OMSClientSessionAuth
+
+enum class OMSClientOidcSessionAuthFlow {
+    Redirect,
+    IdToken,
+}
+
+data class OMSClientOidcSessionAuth(
+    val flow: OMSClientOidcSessionAuthFlow,
+    val issuer: String,
+    val provider: String?,
+    val providerLabel: String?,
+    override val email: String?,
+) : OMSClientSessionAuth
 ```
 
 `client.session` only reports completed wallet-session state. Apps should show
@@ -78,8 +92,10 @@ OTP or redirect waiting UI from the method result that started the flow, not
 from session state. Always pass incoming app-link URLs to
 `handleOidcRedirectCallback`; stale callbacks return `NoPendingAuth`, and the
 app can show sign-in UI and let the user start again. Persisted session restore
-revives completed wallet sessions, including the session expiry, login type, and
-email returned by the wallet API, but not pending email OTP state. Completed auth
+revives completed wallet sessions, including the session expiry and auth
+metadata returned by the wallet API, but not pending email OTP state. OIDC
+sessions include the flow (`Redirect` or `IdToken`), issuer, provider key,
+provider label, and email when available. Completed auth
 requests use a one-week wallet API session lifetime by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds); pass
 `sessionLifetimeSeconds` to auth completion methods or `startOidcRedirectAuth`
@@ -97,8 +113,8 @@ re-authentication.
 Expired sessions are made inactive before protected wallet operations and throw
 `OmsSessionException` with `code = OmsSdkErrorCode.SessionExpired`. Use
 `onSessionExpired` to route users back to sign-in; the event includes the
-expired session snapshot so apps can reuse `sessionEmail` for email OTP reauth or
-as a Google `loginHint`, including after process recreation.
+expired session snapshot so apps can reuse `session.auth?.email` for email OTP
+reauth or as a Google `loginHint`, including after process recreation.
 
 ```kotlin
 fun client.wallet.signOut()

@@ -1,7 +1,10 @@
 package com.omsclient.kotlin_sdk.storage
 
 import android.content.Context
-import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OMSClientEmailSessionAuth
+import com.omsclient.kotlin_sdk.OMSClientOidcSessionAuth
+import com.omsclient.kotlin_sdk.OMSClientOidcSessionAuthFlow
+import com.omsclient.kotlin_sdk.OMSClientSessionAuth
 import com.omsclient.kotlin_sdk.session.OMSClientSessionSnapshot
 import com.omsclient.kotlin_sdk.wallet.WalletSigningAlgorithm
 import org.json.JSONObject
@@ -35,8 +38,7 @@ internal class AndroidSessionMetadataStore(
                 signerAddress = persisted.signerAddress,
                 signerKeyType = persisted.signerKeyType,
                 expiresAt = persisted.expiresAt,
-                loginType = persisted.loginType,
-                sessionEmail = persisted.sessionEmail,
+                auth = persisted.auth,
             )
         }.getOrNull()
     }
@@ -44,6 +46,9 @@ internal class AndroidSessionMetadataStore(
     override fun save(snapshot: OMSClientSessionSnapshot) {
         require(!snapshot.walletId.isNullOrBlank() && !snapshot.walletAddress.isNullOrBlank()) {
             "Cannot persist pending OMS Client auth state"
+        }
+        require(snapshot.auth != null) {
+            "Cannot persist OMS Client session without auth metadata"
         }
         sessionFile.parentFile?.mkdirs()
         val persisted =
@@ -53,8 +58,7 @@ internal class AndroidSessionMetadataStore(
                 signerAddress = snapshot.signerAddress,
                 signerKeyType = snapshot.signerKeyType,
                 expiresAt = snapshot.expiresAt,
-                loginType = snapshot.loginType,
-                sessionEmail = snapshot.sessionEmail,
+                auth = snapshot.auth,
             )
         sessionFile.writeText(persisted.toJson())
     }
@@ -71,14 +75,14 @@ internal class AndroidSessionMetadataStore(
         val signerAddress: String? = null,
         val signerKeyType: WalletSigningAlgorithm? = null,
         val expiresAt: String? = null,
-        val loginType: OMSClientSessionLoginType? = null,
-        val sessionEmail: String? = null,
+        val auth: OMSClientSessionAuth? = null,
     ) {
         fun isRestorable(): Boolean =
             !walletId.isNullOrBlank() &&
                 !walletAddress.isNullOrBlank() &&
                 !signerAddress.isNullOrBlank() &&
-                signerKeyType == WalletSigningAlgorithm.ECDSA_P256_SHA256
+                signerKeyType == WalletSigningAlgorithm.ECDSA_P256_SHA256 &&
+                auth != null
 
         fun toJson(): String =
             JSONObject()
@@ -88,8 +92,7 @@ internal class AndroidSessionMetadataStore(
                     put("signerAddress", signerAddress)
                     put("signerKeyType", signerKeyType?.wireValue)
                     put("expiresAt", expiresAt)
-                    put("loginType", loginType?.name)
-                    put("sessionEmail", sessionEmail)
+                    put("auth", auth?.toJson())
                 }.toString()
 
         companion object {
@@ -106,16 +109,7 @@ internal class AndroidSessionMetadataStore(
                             ?.let(WalletSigningAlgorithm::fromWireValue)
                             ?.takeIf { it != WalletSigningAlgorithm.UNKNOWN_DEFAULT },
                     expiresAt = jsonObject.optString("expiresAt").ifBlank { null },
-                    loginType =
-                        jsonObject
-                            .optString("loginType")
-                            .ifBlank { null }
-                            ?.let { value ->
-                                runCatching {
-                                    OMSClientSessionLoginType.valueOf(value)
-                                }.getOrNull()
-                            },
-                    sessionEmail = jsonObject.optString("sessionEmail").ifBlank { null },
+                    auth = jsonObject.optJSONObject("auth")?.toSessionAuth(),
                 )
             }
         }
@@ -125,3 +119,66 @@ internal class AndroidSessionMetadataStore(
         private const val DEFAULT_FILE_NAME = "oms-client-session.json"
     }
 }
+
+private fun OMSClientSessionAuth.toJson(): JSONObject =
+    when (this) {
+        is OMSClientEmailSessionAuth -> {
+            JSONObject()
+                .put("type", "email")
+                .put("email", email)
+        }
+
+        is OMSClientOidcSessionAuth -> {
+            JSONObject()
+                .put("type", "oidc")
+                .put("flow", flow.wireValue)
+                .put("issuer", issuer)
+                .put("provider", provider)
+                .put("providerLabel", providerLabel)
+                .put("email", email)
+        }
+    }
+
+private fun JSONObject.toSessionAuth(): OMSClientSessionAuth? =
+    when (optionalString("type")) {
+        "email" -> {
+            OMSClientEmailSessionAuth(email = optionalString("email"))
+        }
+
+        "oidc" -> {
+            val issuer = optionalString("issuer") ?: return null
+            val flow = optionalString("flow")?.toSessionAuthFlow() ?: return null
+            OMSClientOidcSessionAuth(
+                flow = flow,
+                issuer = issuer,
+                provider = optionalString("provider"),
+                providerLabel = optionalString("providerLabel"),
+                email = optionalString("email"),
+            )
+        }
+
+        else -> {
+            null
+        }
+    }
+
+private fun JSONObject.optionalString(key: String): String? =
+    if (isNull(key)) {
+        null
+    } else {
+        optString(key).ifBlank { null }
+    }
+
+private val OMSClientOidcSessionAuthFlow.wireValue: String
+    get() =
+        when (this) {
+            OMSClientOidcSessionAuthFlow.Redirect -> "redirect"
+            OMSClientOidcSessionAuthFlow.IdToken -> "id-token"
+        }
+
+private fun String.toSessionAuthFlow(): OMSClientOidcSessionAuthFlow? =
+    when (this) {
+        "redirect" -> OMSClientOidcSessionAuthFlow.Redirect
+        "id-token" -> OMSClientOidcSessionAuthFlow.IdToken
+        else -> null
+    }

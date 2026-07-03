@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OMSClientOidcSessionAuthFlow
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.internal.generated.waas.AuthMode
@@ -144,8 +144,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("wallet-def", store.snapshot?.walletId)
             assertEquals("0xdef", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
-            assertEquals(OMSClientSessionLoginType.GoogleAuth, store.snapshot?.loginType)
-            assertEquals("user@example.com", store.snapshot?.sessionEmail)
+            assertOidcSessionAuth(store.snapshot?.auth, flow = OMSClientOidcSessionAuthFlow.IdToken)
             assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, store.snapshot?.signerKeyType)
             assertNull(store.snapshot?.verifier)
             assertNull(store.snapshot?.challenge)
@@ -317,7 +316,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
             assertNull(client.walletAddress)
             assertTrue(client.hasPendingSignIn)
-            assertEquals("user@example.com", client.snapshotSession()?.sessionEmail)
+            assertOidcSessionAuth(client.snapshotSession()?.auth, flow = OMSClientOidcSessionAuthFlow.IdToken)
             assertNull(client.snapshotSession()?.walletId)
             assertNull(store.snapshot)
             assertEquals(2, server.requestCount)

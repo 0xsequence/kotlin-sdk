@@ -52,6 +52,7 @@ class WalletSigningTest {
                             walletAddress = "0xwallet",
                             signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                            auth = emailSessionAuth(),
                         ),
                 )
             val client =
@@ -109,6 +110,7 @@ class WalletSigningTest {
                                     walletAddress = "0xwallet",
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                                    auth = emailSessionAuth(),
                                 ),
                         ),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000109"),

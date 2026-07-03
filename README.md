@@ -250,11 +250,13 @@ Useful state checks:
 ```kotlin
 val walletAddress = client.session.walletAddress
 val expiresAt = client.session.expiresAt
-val loginType = client.session.loginType
-val sessionEmail = client.session.sessionEmail
+val auth = client.session.auth
+val authEmail = auth?.email
 ```
 
-`expiresAt` is an ISO-8601 timestamp string returned by the wallet API.
+`expiresAt` is an ISO-8601 timestamp string returned by the wallet API. OIDC
+sessions include issuer/provider metadata on `OMSClientOidcSessionAuth`, so apps
+can display built-in Google and Apple sessions by provider label.
 
 `client.session` only reports completed wallet-session state. It does not
 include pending auth progress. Show OTP or redirect waiting UI from the method
@@ -262,7 +264,7 @@ result that started the flow, not from session state. Always pass incoming app
 links to `handleOidcRedirectCallback`;
 if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
 fresh SDK instance restores completed wallet sessions, including the session
-expiry, login type, and email returned by the wallet API, but not email OTP
+expiry and auth metadata returned by the wallet API, but not email OTP
 pending state. Completed auth requests ask the wallet API for a one-week session
 lifetime by default; pass `sessionLifetimeSeconds` to request a different
 positive whole-number lifetime in seconds. For OIDC redirects, values passed to
@@ -503,7 +505,7 @@ The full public API surface is documented in [docs/api.md](docs/api.md).
 This repository includes an Android sample app in [`app/`](app/) that demonstrates:
 
 - Google sign-in with Android Credential Manager
-- Google OIDC redirect sign-in
+- Google and Apple OIDC redirect sign-in
 - email sign-in
 - custom session lifetime input for expiry testing
 - expired-session reauth UI

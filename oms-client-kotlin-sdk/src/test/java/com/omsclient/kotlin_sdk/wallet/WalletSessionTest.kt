@@ -1,7 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
 import com.omsclient.kotlin_sdk.Network
-import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.network.OMSClientEnvironment
@@ -23,6 +22,7 @@ class WalletSessionTest {
                 walletAddress = "0xabc",
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                auth = emailSessionAuth(),
             )
         val store = InMemorySessionStore(snapshot)
         val client =
@@ -53,6 +53,7 @@ class WalletSessionTest {
                 walletAddress = "0xabc",
                 signerAddress = "0x04" + "11".repeat(64),
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                auth = emailSessionAuth(),
             )
         val store = InMemorySessionStore(snapshot)
         val client =
@@ -80,8 +81,7 @@ class WalletSessionTest {
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:00:00Z",
-                loginType = OMSClientSessionLoginType.Email,
-                sessionEmail = "user@example.com",
+                auth = emailSessionAuth(),
             )
         val store = InMemorySessionStore(snapshot)
         val signer = TrackingCredentialSigner()
@@ -109,8 +109,7 @@ class WalletSessionTest {
         val event = requireNotNull(replayedEvent)
         assertEquals("0xabc", event.session.walletAddress)
         assertEquals("2026-01-01T00:00:00Z", event.session.expiresAt)
-        assertEquals(OMSClientSessionLoginType.Email, event.session.loginType)
-        assertEquals("user@example.com", event.session.sessionEmail)
+        assertEmailSessionAuth(event.session.auth)
         assertEquals("2026-01-01T00:00:00Z", event.expiredAt)
     }
 
@@ -124,8 +123,7 @@ class WalletSessionTest {
                     signerAddress = TEST_CREDENTIAL_ID,
                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                     expiresAt = "2026-01-01T00:00:00Z",
-                    loginType = OMSClientSessionLoginType.Email,
-                    sessionEmail = "user@example.com",
+                    auth = emailSessionAuth(),
                 )
             val store = InMemorySessionStore(snapshot)
             val signer = TrackingCredentialSigner()
@@ -174,8 +172,7 @@ class WalletSessionTest {
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:02:00Z",
-                loginType = OMSClientSessionLoginType.GoogleAuth,
-                sessionEmail = "user@example.com",
+                auth = googleRedirectSessionAuth(),
             )
         val store = InMemorySessionStore(snapshot)
         val client =
@@ -216,8 +213,7 @@ class WalletSessionTest {
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:02:00Z",
-                loginType = OMSClientSessionLoginType.GoogleAuth,
-                sessionEmail = "user@example.com",
+                auth = googleRedirectSessionAuth(),
             )
         val client =
             WalletClient(
@@ -260,8 +256,7 @@ class WalletSessionTest {
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:00:00Z",
-                loginType = OMSClientSessionLoginType.Email,
-                sessionEmail = "user@example.com",
+                auth = emailSessionAuth(),
             )
         val client =
             WalletClient(
@@ -290,6 +285,7 @@ class WalletSessionTest {
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "not-a-timestamp",
+                auth = emailSessionAuth(),
             )
         val scheduler = RecordingSessionExpiryScheduler()
         val client =
@@ -317,6 +313,7 @@ class WalletSessionTest {
                 walletId = "wallet-abc",
                 walletAddress = "0xabc",
                 signerAddress = TEST_CREDENTIAL_ID,
+                auth = emailSessionAuth(),
             )
         val store = InMemorySessionStore(snapshot)
         val client =
@@ -343,6 +340,7 @@ class WalletSessionTest {
                 walletAddress = "0xabc",
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                auth = emailSessionAuth(),
             )
         val store = InMemorySessionStore(snapshot)
         val client =
@@ -378,6 +376,7 @@ class WalletSessionTest {
                                 walletAddress = "0xwallet",
                                 signerAddress = TEST_CREDENTIAL_ID,
                                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                                auth = emailSessionAuth(),
                             ),
                     ),
                 credentialSigner = TrackingCredentialSigner(),

@@ -1125,6 +1125,7 @@ class PublicErrorContractsTest {
                             walletAddress = "0x9999999999999999999999999999999999999999",
                             signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                            auth = OMSClientEmailSessionAuth(email = "user@example.com"),
                         ),
                     ),
                 credentialSigner = TrackingCredentialSigner(),

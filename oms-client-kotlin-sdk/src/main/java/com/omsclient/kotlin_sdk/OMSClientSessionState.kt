@@ -2,14 +2,26 @@ package com.omsclient.kotlin_sdk
 
 import com.omsclient.kotlin_sdk.wallet.OidcRedirectAuthResult
 
-/**
- * Auth method that produced the current completed wallet session.
- */
-enum class OMSClientSessionLoginType {
-    Email,
-    GoogleAuth,
-    Oidc,
+sealed interface OMSClientSessionAuth {
+    val email: String?
 }
+
+data class OMSClientEmailSessionAuth(
+    override val email: String?,
+) : OMSClientSessionAuth
+
+enum class OMSClientOidcSessionAuthFlow {
+    Redirect,
+    IdToken,
+}
+
+data class OMSClientOidcSessionAuth(
+    val flow: OMSClientOidcSessionAuthFlow,
+    val issuer: String,
+    val provider: String?,
+    val providerLabel: String?,
+    override val email: String?,
+) : OMSClientSessionAuth
 
 /**
  * Current durable wallet-session state for an [OMSClient].
@@ -30,15 +42,7 @@ data class OMSClientSessionState(
      * when the SDK is signed out.
      */
     val expiresAt: String? = null,
-    /**
-     * Auth method that produced the current completed wallet session.
-     */
-    val loginType: OMSClientSessionLoginType? = null,
-    /**
-     * Email associated with the current completed wallet session when the
-     * wallet API returns one.
-     */
-    val sessionEmail: String? = null,
+    val auth: OMSClientSessionAuth? = null,
 )
 
 /**

@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.session
 
-import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OMSClientSessionAuth
 import com.omsclient.kotlin_sdk.wallet.WalletSigningAlgorithm
 
 internal data class OMSClientSessionSnapshot(
@@ -11,8 +11,7 @@ internal data class OMSClientSessionSnapshot(
     val signerAddress: String? = null,
     val signerKeyType: WalletSigningAlgorithm? = null,
     val expiresAt: String? = null,
-    val loginType: OMSClientSessionLoginType? = null,
-    val sessionEmail: String? = null,
+    val auth: OMSClientSessionAuth? = null,
 )
 
 internal data class OMSClientPendingAuthSnapshot(
@@ -49,8 +48,7 @@ internal class OMSClientSession(
             val signerAddress: String,
             val signerKeyType: WalletSigningAlgorithm?,
             val expiresAt: String,
-            val loginType: OMSClientSessionLoginType?,
-            val sessionEmail: String?,
+            val auth: OMSClientSessionAuth,
             val pendingWalletSelectionId: Long?,
         ) : SessionState {
             override fun snapshot(): OMSClientSessionSnapshot =
@@ -58,8 +56,7 @@ internal class OMSClientSession(
                     signerAddress = signerAddress,
                     signerKeyType = signerKeyType,
                     expiresAt = expiresAt,
-                    loginType = loginType,
-                    sessionEmail = sessionEmail,
+                    auth = auth,
                 )
         }
 
@@ -69,8 +66,7 @@ internal class OMSClientSession(
             val signerAddress: String?,
             val signerKeyType: WalletSigningAlgorithm?,
             val expiresAt: String?,
-            val loginType: OMSClientSessionLoginType?,
-            val sessionEmail: String?,
+            val auth: OMSClientSessionAuth,
         ) : SessionState {
             override fun snapshot(): OMSClientSessionSnapshot =
                 OMSClientSessionSnapshot(
@@ -79,8 +75,7 @@ internal class OMSClientSession(
                     signerAddress = signerAddress,
                     signerKeyType = signerKeyType,
                     expiresAt = expiresAt,
-                    loginType = loginType,
-                    sessionEmail = sessionEmail,
+                    auth = auth,
                 )
         }
     }
@@ -115,8 +110,7 @@ internal class OMSClientSession(
 
     fun markAuthVerified(
         expiresAt: String,
-        loginType: OMSClientSessionLoginType?,
-        sessionEmail: String?,
+        auth: OMSClientSessionAuth,
     ): Long {
         val current =
             when (val current = state) {
@@ -129,8 +123,7 @@ internal class OMSClientSession(
                 signerAddress = current.signerAddress,
                 signerKeyType = current.signerKeyType,
                 expiresAt = expiresAt,
-                loginType = loginType,
-                sessionEmail = sessionEmail,
+                auth = auth,
                 pendingWalletSelectionId = pendingWalletSelectionId,
             )
         return pendingWalletSelectionId
@@ -149,8 +142,7 @@ internal class OMSClientSession(
                         signerAddress = current.signerAddress,
                         signerKeyType = current.signerKeyType,
                         expiresAt = current.expiresAt,
-                        loginType = current.loginType,
-                        sessionEmail = current.sessionEmail,
+                        auth = current.auth,
                     )
                 }
 
@@ -183,8 +175,7 @@ internal class OMSClientSession(
                 signerAddress = current.signerAddress,
                 signerKeyType = current.signerKeyType,
                 expiresAt = current.expiresAt,
-                loginType = current.loginType,
-                sessionEmail = current.sessionEmail,
+                auth = current.auth,
             )
     }
 
@@ -237,14 +228,14 @@ internal class OMSClientSession(
         val snapshot = this ?: return SessionState.NoSession
         return when {
             !snapshot.walletId.isNullOrBlank() && !snapshot.walletAddress.isNullOrBlank() -> {
+                val auth = snapshot.auth ?: return SessionState.NoSession
                 SessionState.ActiveSession(
                     walletId = snapshot.walletId,
                     walletAddress = snapshot.walletAddress,
                     signerAddress = snapshot.signerAddress,
                     signerKeyType = snapshot.signerKeyType,
                     expiresAt = snapshot.expiresAt,
-                    loginType = snapshot.loginType,
-                    sessionEmail = snapshot.sessionEmail,
+                    auth = auth,
                 )
             }
 
@@ -259,12 +250,12 @@ internal class OMSClientSession(
             }
 
             !snapshot.signerAddress.isNullOrBlank() -> {
+                val auth = snapshot.auth ?: return SessionState.NoSession
                 SessionState.AwaitingWalletSelection(
                     signerAddress = snapshot.signerAddress,
                     signerKeyType = snapshot.signerKeyType,
                     expiresAt = snapshot.expiresAt.orEmpty(),
-                    loginType = snapshot.loginType,
-                    sessionEmail = snapshot.sessionEmail,
+                    auth = auth,
                     pendingWalletSelectionId = null,
                 )
             }

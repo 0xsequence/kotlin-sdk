@@ -173,6 +173,14 @@
                         android:layout_marginTop="16dp"
                         android:text="Continue with Google" />
 
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/startAppleRedirectSignInButton"
+                        style="@style/Widget.Kotlinsdk.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Continue with Apple" />
+
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"

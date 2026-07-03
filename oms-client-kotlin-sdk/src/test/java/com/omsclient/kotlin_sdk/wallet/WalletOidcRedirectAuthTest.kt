@@ -1,6 +1,6 @@
 package com.omsclient.kotlin_sdk.wallet
 
-import com.omsclient.kotlin_sdk.OMSClientSessionLoginType
+import com.omsclient.kotlin_sdk.OMSClientOidcSessionAuthFlow
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.OmsSdkOperation
@@ -50,6 +50,8 @@ class WalletOidcRedirectAuthTest {
         assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", provider.relayRedirectUri)
         assertEquals("https://accounts.google.com", provider.issuer)
         assertEquals("https://accounts.google.com/o/oauth2/v2/auth", provider.authorizationUrl)
+        assertEquals("google", provider.provider)
+        assertEquals("Google", provider.providerLabel)
         assertEquals(listOf("openid", "email", "profile"), provider.scopes)
         assertEquals(OidcRedirectAuthMode.AuthCodePKCE, provider.authMode)
         assertEquals("offline", provider.authorizeParams["access_type"])
@@ -64,6 +66,8 @@ class WalletOidcRedirectAuthTest {
         assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", provider.relayRedirectUri)
         assertEquals("https://appleid.apple.com", provider.issuer)
         assertEquals("https://appleid.apple.com/auth/authorize", provider.authorizationUrl)
+        assertEquals("apple", provider.provider)
+        assertEquals("Apple", provider.providerLabel)
         assertEquals(listOf("openid", "email"), provider.scopes)
         assertEquals(OidcRedirectAuthMode.AuthCodePKCE, provider.authMode)
         assertEquals("form_post", provider.authorizeParams["response_mode"])
@@ -214,8 +218,7 @@ class WalletOidcRedirectAuthTest {
                     signerAddress = TEST_CREDENTIAL_ID,
                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                     expiresAt = "2099-01-01T00:00:00Z",
-                    loginType = OMSClientSessionLoginType.GoogleAuth,
-                    sessionEmail = "previous@example.com",
+                    auth = googleRedirectSessionAuth(email = "previous@example.com"),
                 )
             val sessionStore = InMemorySessionStore(activeSession)
             val client =
@@ -573,8 +576,13 @@ class WalletOidcRedirectAuthTest {
             assertEquals("wallet-def", sessionStore.snapshot?.walletId)
             assertEquals("0xdef", sessionStore.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", sessionStore.snapshot?.expiresAt)
-            assertEquals(OMSClientSessionLoginType.Oidc, sessionStore.snapshot?.loginType)
-            assertEquals("user@example.com", sessionStore.snapshot?.sessionEmail)
+            assertOidcSessionAuth(
+                sessionStore.snapshot?.auth,
+                flow = OMSClientOidcSessionAuthFlow.Redirect,
+                issuer = "https://issuer.example",
+                provider = null,
+                providerLabel = null,
+            )
         }
 
     @Test

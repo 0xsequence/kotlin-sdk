@@ -2,6 +2,7 @@ package com.omsclient.kotlin_sdk.network
 
 import com.omsclient.kotlin_sdk.Network
 import com.omsclient.kotlin_sdk.OMSClient
+import com.omsclient.kotlin_sdk.OMSClientEmailSessionAuth
 import com.omsclient.kotlin_sdk.OmsSdkErrorCode
 import com.omsclient.kotlin_sdk.OmsSdkException
 import com.omsclient.kotlin_sdk.OmsSdkOperation
@@ -67,6 +68,7 @@ class ServiceClientsTest {
                 OMSClientSessionSnapshot(
                     walletId = "wallet-id",
                     walletAddress = "0xwallet",
+                    auth = OMSClientEmailSessionAuth(email = "user@example.com"),
                 ),
             )
 
@@ -334,6 +336,7 @@ class ServiceClientsTest {
                 OMSClientSessionSnapshot(
                     walletId = "wallet-id",
                     walletAddress = "0xwallet",
+                    auth = OMSClientEmailSessionAuth(email = "user@example.com"),
                 ),
             )
 
@@ -380,6 +383,7 @@ class ServiceClientsTest {
                 OMSClientSessionSnapshot(
                     walletId = "wallet-id",
                     walletAddress = "0xwallet",
+                    auth = OMSClientEmailSessionAuth(email = "user@example.com"),
                 ),
             )
 

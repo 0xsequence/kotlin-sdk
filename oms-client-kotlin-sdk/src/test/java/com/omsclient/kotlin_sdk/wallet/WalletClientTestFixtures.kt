@@ -102,6 +102,7 @@ internal fun activeSessionSnapshot(): OMSClientSessionSnapshot =
         walletAddress = "0xactive",
         signerAddress = TEST_CREDENTIAL_ID,
         signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+        auth = emailSessionAuth(),
     )
 
 internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
