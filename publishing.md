@@ -103,7 +103,7 @@ Prerequisites:
    ```sh
    POM_PATH=io/github/0xsequence/oms-wallet-kotlin-sdk/<version>/oms-wallet-kotlin-sdk-<version>.pom
    curl -I "https://repo1.maven.org/maven2/$POM_PATH"
-   git tag -a <version> -m "Release <version>"
+   git tag -s <version> -m <version>
    git push origin master <version>
    ```
 
