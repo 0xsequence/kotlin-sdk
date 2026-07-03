@@ -265,9 +265,10 @@ and the execution command reference.
 
 - Do not commit secrets, access keys, signing keys, `local.properties`, Android
   Studio state, or local Gradle/cache files.
-- `publishableKey` and `projectId` are required by SDK consumers and sample flows.
-  Keep examples placeholder-based unless the user explicitly provides test
-  credentials.
+- `publishableKey` and `projectId` are public identifiers required by SDK
+  consumers and sample flows. Concrete sandbox publishable keys may be checked
+  into sample app configs when intentionally provided for runnable examples; do
+  not flag or replace them solely because they are concrete values.
 - Android Keystore credential and session code must continue to avoid persisting
   private key material in app storage.
 - Publishing/signing properties are read from Gradle properties. Do not add real
