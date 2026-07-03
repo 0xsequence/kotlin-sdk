@@ -1,11 +1,11 @@
 # Public API
 
-This document describes the intended public API for external consumers of the OMS Client Kotlin SDK.
+This document describes the intended public API for external consumers of the OMS Wallet Kotlin SDK.
 
 ## Installation and Requirements
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.4")
+implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.1.0-alpha.4")
 ```
 
 Consumer apps need Android 10 / API 29 or newer, Android `compileSdk 34` or
@@ -25,7 +25,7 @@ documented here and do not need any separate service-client artifact.
 ## Entry Point
 
 ```kotlin
-OMSClient(
+OMSWallet(
     context: Context,
     publishableKey: String,
     okHttpClient: OkHttpClient = OkHttpClient(),
@@ -42,20 +42,20 @@ The SDK derives required service configuration from the publishable key.
 ## Auth and Session
 
 ```kotlin
-val client.session: OMSClientSessionState
+val client.session: OMSWalletSessionState
 ```
 
 ```kotlin
-data class OMSClientSessionState(
+data class OMSWalletSessionState(
     val walletAddress: String?,
     val expiresAt: String?,
-    val auth: OMSClientSessionAuth?,
+    val auth: OMSWalletSessionAuth?,
 )
 ```
 
 ```kotlin
-data class OMSClientSessionExpiredEvent(
-    val session: OMSClientSessionState,
+data class OMSWalletSessionExpiredEvent(
+    val session: OMSWalletSessionState,
     val expiredAt: String,
 )
 ```
@@ -65,26 +65,26 @@ wallet API. They are strings so apps with `minSdk 24` do not need `java.time` or
 core library desugaring for these public session fields.
 
 ```kotlin
-sealed interface OMSClientSessionAuth {
+sealed interface OMSWalletSessionAuth {
     val email: String?
 }
 
-data class OMSClientEmailSessionAuth(
+data class OMSWalletEmailSessionAuth(
     override val email: String?,
-) : OMSClientSessionAuth
+) : OMSWalletSessionAuth
 
-enum class OMSClientOidcSessionAuthFlow {
+enum class OMSWalletOidcSessionAuthFlow {
     Redirect,
     IdToken,
 }
 
-data class OMSClientOidcSessionAuth(
-    val flow: OMSClientOidcSessionAuthFlow,
+data class OMSWalletOidcSessionAuth(
+    val flow: OMSWalletOidcSessionAuthFlow,
     val issuer: String,
     val provider: String?,
     val providerLabel: String?,
     override val email: String?,
-) : OMSClientSessionAuth
+) : OMSWalletSessionAuth
 ```
 
 `client.session` only reports completed wallet-session state. Apps should show
@@ -122,7 +122,7 @@ fun client.wallet.signOut()
 
 ```kotlin
 fun client.wallet.onSessionExpired(
-    listener: (OMSClientSessionExpiredEvent) -> Unit,
+    listener: (OMSWalletSessionExpiredEvent) -> Unit,
 ): () -> Unit
 ```
 
@@ -145,19 +145,25 @@ suspend fun client.wallet.signInWithOidcIdToken(
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
     sessionLifetimeSeconds: Long = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
+    provider: String? = null,
+    providerLabel: String? = null,
 ): CompleteAuthResult
 ```
 
 Pass `walletSelection = WalletSelectionBehavior.Manual` for OIDC ID-token auth
 when the app needs to show its own wallet-selection UI before selecting or
-creating a wallet.
+creating a wallet. Pass `provider` and `providerLabel` when you want custom
+session metadata for non-built-in identity providers. When omitted, Google and
+Apple are derived from the issuer and custom issuers leave those fields null.
 
 ```kotlin
 data class OidcProviderConfig(
     val issuer: String,
     val clientId: String,
     val authorizationUrl: String,
-    val scopes: List<String> = listOf("openid", "email", "profile"),
+    val provider: String? = null,
+    val providerLabel: String? = null,
+    val scopes: List<String> = emptyList(),
     val relayRedirectUri: String? = null,
     val authorizeParams: Map<String, String> = emptyMap(),
     val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -249,17 +255,17 @@ values; omitted callback values fall back to pending values and then SDK
 defaults. Starting a new auth flow clears or replaces stale redirect state, and
 `signOut()` clears it.
 
-Provider configs are the source of truth for redirect scopes and auth mode. If
-`scopes` is empty, the authorization URL omits `scope`. PKCE
-`code_challenge` parameters are sent only when
-`authMode = OidcRedirectAuthMode.AuthCodePKCE`. `OidcProviders.google()` uses
-the SDK default Google client ID, the SDK relay redirect URI, `openid email
+Provider configs are the source of truth for redirect scopes, auth mode, and
+optional provider display metadata. If `scopes` is omitted or empty, the
+authorization URL omits `scope`. PKCE `code_challenge` parameters are sent only
+when `authMode = OidcRedirectAuthMode.AuthCodePKCE`. `OidcProviders.google()`
+uses the SDK default Google client ID, the SDK relay redirect URI, `openid email
 profile` scopes, PKCE auth-code mode, and Google authorization parameters
 `access_type=offline` and `prompt=consent`. `OidcProviders.apple()` uses the SDK
 default Apple Services ID, the SDK relay redirect URI, `openid email` scopes,
 `response_mode=form_post`, and PKCE auth-code mode. Apple `form_post` works
-through the default relay redirect URI; a direct app deep link should not be
-used as the Apple OAuth callback unless that provider flow supports it.
+through the default relay redirect URI; a direct app deep link should not be used
+as the Apple OAuth callback unless that provider flow supports it.
 
 Pass `loginHint` to `startOidcRedirectAuth` only when you want to prefill or
 select a specific Google account, such as during session-expiry reauth. The SDK
@@ -533,7 +539,7 @@ URLs, while `displayName` is the user-facing label. Ethereum mainnet uses
 
 ## Utils
 
-Top-level unit helpers live in `com.omsclient.kotlin_sdk.utils`.
+Top-level unit helpers live in `technology.polygon.omswallet.utils`.
 
 ```kotlin
 fun formatUnits(

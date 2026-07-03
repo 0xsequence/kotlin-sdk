@@ -1,7 +1,7 @@
 # Publishing
 
 The SDK is published as
-`io.github.0xsequence:oms-client-kotlin-sdk:<POM_VERSION_NAME>`.
+`io.github.0xsequence:oms-wallet-kotlin-sdk:<POM_VERSION_NAME>`.
 Maven Central versions are immutable; choose a new `POM_VERSION_NAME` for each
 release.
 
@@ -17,7 +17,7 @@ Prerequisites:
    ```sh
    git switch master
    git pull --ff-only origin master
-   git switch -c release-oms-client-kotlin-sdk-<version>
+   git switch -c release-oms-wallet-kotlin-sdk-<version>
    ```
 
 2. Update `POM_VERSION_NAME` in `gradle.properties`. Update `README.md` and
@@ -28,12 +28,12 @@ Prerequisites:
    ```sh
    ./gradlew ktlintCheck
    ./gradlew --build-cache \
-     :oms-client-kotlin-sdk:checkPublicApiDoesNotExposeGeneratedWaas \
-     :oms-client-kotlin-sdk:testDebugUnitTest \
-     :oms-client-kotlin-sdk:lintDebug \
+     :oms-wallet-kotlin-sdk:checkPublicApiDoesNotExposeGeneratedWaas \
+     :oms-wallet-kotlin-sdk:testDebugUnitTest \
+     :oms-wallet-kotlin-sdk:lintDebug \
      :app:lintDebug \
      :app:assembleDebug
-   ./gradlew :oms-client-kotlin-sdk:publishToMavenLocal
+   ./gradlew :oms-wallet-kotlin-sdk:publishToMavenLocal
    ./gradlew nmcpZipAggregation
    unzip -l build/nmcp/zip/aggregation.zip
    ```
@@ -48,18 +48,18 @@ Prerequisites:
 4. Inspect the local publication:
 
    ```sh
-   RELEASE_DIR=~/.m2/repository/io/github/0xsequence/oms-client-kotlin-sdk/<version>
+   RELEASE_DIR=~/.m2/repository/io/github/0xsequence/oms-wallet-kotlin-sdk/<version>
 
-   jar tf "$RELEASE_DIR/oms-client-kotlin-sdk-<version>.aar" | \
-     rg '^libs/oms-client-kotlin-sdk-waas-generated\.jar$'
+   jar tf "$RELEASE_DIR/oms-wallet-kotlin-sdk-<version>.aar" | \
+     rg '^libs/oms-wallet-kotlin-sdk-waas-generated\.jar$'
 
-   rg "oms-client-kotlin-sdk-waas-generated|generated\\.waas" \
+   rg "oms-wallet-kotlin-sdk-waas-generated|generated\\.waas" \
      "$RELEASE_DIR"/*.pom "$RELEASE_DIR"/*.module
 
-   jar tf "$RELEASE_DIR/oms-client-kotlin-sdk-<version>-sources.jar" | \
+   jar tf "$RELEASE_DIR/oms-wallet-kotlin-sdk-<version>-sources.jar" | \
      rg "generated/waas|WaasWallet"
 
-   jar tf "$RELEASE_DIR/oms-client-kotlin-sdk-<version>-javadoc.jar" | \
+   jar tf "$RELEASE_DIR/oms-wallet-kotlin-sdk-<version>-javadoc.jar" | \
      rg "generated/waas|WaasWallet|waas"
    ```
 
@@ -72,7 +72,7 @@ Prerequisites:
    checks you ran.
 
    ```sh
-   git push -u origin release-oms-client-kotlin-sdk-<version>
+   git push -u origin release-oms-wallet-kotlin-sdk-<version>
    gh pr create --base master --title "chore(release): publish <version>"
    ```
 
@@ -95,13 +95,13 @@ Prerequisites:
 
    After the `USER_MANAGED` upload validates, open
    [Central Portal](https://central.sonatype.com/), review the deployment named
-   `oms-client-kotlin-sdk:<version>`, and publish it.
+   `oms-wallet-kotlin-sdk:<version>`, and publish it.
 
 7. After Maven Central propagation, verify the published POM is reachable and tag
    the exact published commit:
 
    ```sh
-   POM_PATH=io/github/0xsequence/oms-client-kotlin-sdk/<version>/oms-client-kotlin-sdk-<version>.pom
+   POM_PATH=io/github/0xsequence/oms-wallet-kotlin-sdk/<version>/oms-wallet-kotlin-sdk-<version>.pom
    curl -I "https://repo1.maven.org/maven2/$POM_PATH"
    git tag -a <version> -m "Release <version>"
    git push origin master <version>

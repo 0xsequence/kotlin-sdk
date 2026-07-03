@@ -14,8 +14,8 @@
 <!-- How was this verified? Commands run, manual steps, screenshots. -->
 
 - [ ] `./gradlew ktlintCheck` passes
-- [ ] `./gradlew :oms-client-kotlin-sdk:testDebugUnitTest` passes
-- [ ] `./gradlew :oms-client-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug` passes
+- [ ] `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest` passes
+- [ ] `./gradlew :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug` passes
 - [ ] Instrumented tests run if Android Keystore / credential / session behavior changed
 
 ## Related

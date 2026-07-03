@@ -1,4 +1,4 @@
-# OMS Client Kotlin SDK
+# OMS Wallet Kotlin SDK
 
 Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 
@@ -7,7 +7,7 @@ Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
 Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-client-kotlin-sdk:0.1.0-alpha.4")
+implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.1.0-alpha.4")
 ```
 
 This is the only artifact consumers add. The generated WaaS client is packaged
@@ -57,7 +57,7 @@ app requirement does not raise the published SDK artifact's consumer
 Create the SDK with the Android-friendly constructor:
 
 ```kotlin
-val client = OMSClient(
+val client = OMSWallet(
     context = context,
     publishableKey = "YOUR_PUBLISHABLE_KEY",
 )
@@ -81,7 +81,7 @@ Listeners are delivered on the Android main thread.
 
 ## Example Flow
 
-`OMSClient` restores a persisted session automatically when it is created. Apps
+`OMSWallet` restores a persisted session automatically when it is created. Apps
 can hide sign-in controls while a wallet is selected, but starting a new auth
 flow intentionally replaces any existing wallet session so users can re-auth or
 switch accounts:
@@ -123,6 +123,9 @@ check(result is CompleteAuthResult.WalletSelected)
 showWallet(result.wallet)
 ```
 
+Pass `provider` and `providerLabel` to `signInWithOidcIdToken` for custom
+ID-token providers when you want those labels stored in `client.session.auth`.
+
 For OIDC authorization-code redirect flows, start the redirect, open the
 returned URL with your browser or Custom Tabs, then safely handle incoming app
 links from `onCreate` / `onNewIntent`:
@@ -161,7 +164,7 @@ starts. Pass an empty string to force no `login_hint` for a call. Non-Google
 providers do not receive `login_hint`.
 
 Provider configs are the source of truth for redirect scopes and auth mode. If
-`scopes` is empty, the authorization URL omits `scope`. PKCE
+`scopes` is omitted or empty, the authorization URL omits `scope`. PKCE
 `code_challenge` parameters are sent only when
 `authMode = OidcRedirectAuthMode.AuthCodePKCE`; use
 `OidcRedirectAuthMode.AuthCode` for non-PKCE auth-code providers.
@@ -255,7 +258,7 @@ val authEmail = auth?.email
 ```
 
 `expiresAt` is an ISO-8601 timestamp string returned by the wallet API. OIDC
-sessions include issuer/provider metadata on `OMSClientOidcSessionAuth`, so apps
+sessions include issuer/provider metadata on `OMSWalletOidcSessionAuth`, so apps
 can display built-in Google and Apple sessions by provider label.
 
 `client.session` only reports completed wallet-session state. It does not
@@ -305,7 +308,7 @@ val typedDataJson =
         }
         put("primaryType", "Message")
         putJsonObject("domain") {
-            put("name", "OMS Client")
+            put("name", "OMS Wallet")
             put("version", "1")
             put("chainId", JsonPrimitive(network.id.toLong()))
         }
@@ -343,7 +346,7 @@ transaction is still pending when polling times out, the response keeps the
 `txnId` with `status = TransactionStatus.Pending` and `txnHash = null`.
 Transaction values are raw base-unit integers. Use `parseUnits` to convert
 human-entered decimal values before sending. Import the helpers from
-`com.omsclient.kotlin_sdk.utils`.
+`technology.polygon.omswallet.utils`.
 
 ## Errors
 
@@ -525,9 +528,9 @@ The hook runs `./gradlew ktlintCheck` before push. This is intentionally local
 and is not wired into GitHub CI.
 
 ```sh
-./gradlew :oms-client-kotlin-sdk:testDebugUnitTest
+./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest
 ./gradlew ktlintCheck
-./gradlew :oms-client-kotlin-sdk:lintDebug
+./gradlew :oms-wallet-kotlin-sdk:lintDebug
 ./gradlew :app:lintDebug
 ./gradlew :app:assembleDebug
 ```

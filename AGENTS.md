@@ -57,7 +57,7 @@ available, set it up: https://context7.com/install
 
 ## Project Overview
 
-This repository is an Android/Kotlin SDK for OMS Client wallet, auth, signing,
+This repository is an Android/Kotlin SDK for OMS Wallet wallet, auth, signing,
 indexer, and API integrations. It contains the publishable Android library
 module plus a small Android sample app used for manual flows.
 
@@ -66,15 +66,15 @@ unit tests, Android lint for both modules, and sample app assembly.
 
 ## Repository Layout
 
-- `oms-client-kotlin-sdk/` - Android library module and public SDK surface.
-- `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/` - SDK entry
+- `oms-wallet-kotlin-sdk/` - Android library module and public SDK surface.
+- `oms-wallet-kotlin-sdk/src/main/java/technology/polygon/omswallet/` - SDK entry
   point, wallet/indexer clients, session storage, networking, utilities, and
   models.
-- `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/internal/generated/waas/`
+- `oms-wallet-kotlin-sdk/src/main/java/technology/polygon/omswallet/internal/generated/waas/`
   - generated WaaS WebRPC client/types.
-- `oms-client-kotlin-sdk/src/test/` - JVM unit tests for SDK behavior,
+- `oms-wallet-kotlin-sdk/src/test/` - JVM unit tests for SDK behavior,
   serialization, service clients, signing vectors, and utility helpers.
-- `oms-client-kotlin-sdk/src/androidTest/` - instrumented Android tests for
+- `oms-wallet-kotlin-sdk/src/androidTest/` - instrumented Android tests for
   Android Keystore credential behavior.
 - `app/` - Android sample app for auth, signing, transaction, and testbed flows.
 - `docs/` - public API notes and request-signing parity vectors.
@@ -85,11 +85,11 @@ unit tests, Android lint for both modules, and sample app assembly.
 
 ## Development Commands
 
-- `./gradlew --build-cache :oms-client-kotlin-sdk:testDebugUnitTest :oms-client-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug`
+- `./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug`
   - CI-equivalent check from `.github/workflows/android-ci.yml`.
-- `./gradlew :oms-client-kotlin-sdk:testDebugUnitTest`
+- `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest`
   - Run SDK JVM unit tests. Use for most library logic changes.
-- `./gradlew :oms-client-kotlin-sdk:lintDebug`
+- `./gradlew :oms-wallet-kotlin-sdk:lintDebug`
   - Run Android lint for the SDK module.
 - `./gradlew :app:lintDebug`
   - Run Android lint for the sample app.
@@ -109,11 +109,11 @@ unit tests, Android lint for both modules, and sample app assembly.
     `./gradlew ktlintCheck`.
 - `./gradlew ktlintFormat`
   - Auto-format Kotlin files where ktlint can safely correct violations.
-- `./gradlew :oms-client-kotlin-sdk:connectedDebugAndroidTest`
+- `./gradlew :oms-wallet-kotlin-sdk:connectedDebugAndroidTest`
   - Run local/manual instrumented SDK tests on a connected Android device or
     emulator. Use this when changing Android Keystore, credential, nonce, or
     platform session behavior.
-- `./gradlew :oms-client-kotlin-sdk:publishToMavenLocal`
+- `./gradlew :oms-wallet-kotlin-sdk:publishToMavenLocal`
   - Publish the SDK artifact to the local Maven cache for packaging checks.
 
 Use the Gradle wrapper; it resolves dependencies from Google Maven, Maven
@@ -124,7 +124,7 @@ Central, and the Gradle Plugin Portal.
 Always run the smallest relevant checks before reporting completion:
 
 1. Kotlin style: `./gradlew ktlintCheck`.
-2. SDK logic: `./gradlew :oms-client-kotlin-sdk:testDebugUnitTest`.
+2. SDK logic: `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest`.
 3. Sample app, manifest, or resource changes: `./gradlew :app:lintDebug`
    and `./gradlew :app:assembleDebug`.
 4. Broad or cross-module changes: run the full CI-equivalent command listed in
@@ -133,19 +133,19 @@ Always run the smallest relevant checks before reporting completion:
 Run only when relevant:
 
 - Android Keystore, credential, nonce, or platform session changes:
-  `./gradlew :oms-client-kotlin-sdk:connectedDebugAndroidTest` locally with a
+  `./gradlew :oms-wallet-kotlin-sdk:connectedDebugAndroidTest` locally with a
   connected emulator or device. This is an intentional local/manual gate, not a
   GitHub CI requirement.
-- Publishing/package validation: `./gradlew :oms-client-kotlin-sdk:publishToMavenLocal`
+- Publishing/package validation: `./gradlew :oms-wallet-kotlin-sdk:publishToMavenLocal`
   when changing publication metadata or release packaging.
 
-Add or update focused tests under `oms-client-kotlin-sdk/src/test/` for behavior
+Add or update focused tests under `oms-wallet-kotlin-sdk/src/test/` for behavior
 changes. Do not claim a check passed unless you ran it and have the command
 result.
 
 ## Architecture and Boundaries
 
-- `OMSClient` is the main public entry point. Keep public API changes aligned
+- `OMSWallet` is the main public entry point. Keep public API changes aligned
   with `README.md` and `docs/api.md`.
 - `WalletClient`, request signing, auth completion, wallet selection, fee
   selection, and transaction status polling are central library behavior; prefer
@@ -154,12 +154,12 @@ result.
   public SDK operation boundaries. Wrap their network-backed actions with
   `runOmsOperation` and the matching `PendingWalletSelection...` operation so
   generated WebRPC and transport exceptions are classified as `OmsSdkException`.
-- `OMSClientEnvironment`, `OMSClientHttpClient`, and `OMSClientJson` define
+- `OMSWalletEnvironment`, `OMSWalletHttpClient`, and `OMSWalletJson` define
   service routing and JSON behavior. Preserve existing serialization defaults
   unless tests and API docs are updated together.
 - Public auth, wallet selection, and signing APIs should expose client-facing
   SDK models documented in `docs/api.md`, not generated WaaS classes. Some
-  public models are client-facing aliases in `OMSClientModels.kt`; check the
+  public models are client-facing aliases in `OMSWalletModels.kt`; check the
   docs and tests before changing that public boundary.
 - Search for existing models, helper functions, serializers, and test fixtures
   before adding new ones. Do not add shallow wrappers unless they enforce a real
@@ -169,7 +169,7 @@ result.
 
 ## High-Risk Areas
 
-- `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/internal/generated/waas/WaasWalletClient.kt`
+- `oms-wallet-kotlin-sdk/src/main/java/technology/polygon/omswallet/internal/generated/waas/WaasWalletClient.kt`
   is generated WebRPC code and the largest production source file. Do not hand
   edit it casually. The upstream source of truth is the
   `https://github.com/0xsequence/waas` project; update this generated client
@@ -179,7 +179,7 @@ result.
   handle auth state, credentials, nonces, signing, and persisted sessions. Treat
   behavior changes here as security-sensitive and add regression tests.
 - Wallet auth, signing, access, session, and transaction tests live under
-  `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/`. Add
+  `oms-wallet-kotlin-sdk/src/test/java/technology/polygon/omswallet/wallet/`. Add
   narrowly scoped tests near the behavior being changed instead of broad setup
   rewrites.
 
@@ -192,11 +192,11 @@ result.
   `gradle/libs.versions.toml`.
 - Ktlint is configured through `org.jlleitschuh.gradle.ktlint` and
   `.editorconfig`, with `ktlint_code_style = ktlint_official`.
-- `ktlint_standard_package-name` is disabled because current package names
-  include underscores as part of the existing SDK/sample namespace.
+- `ktlint_standard_package-name` is disabled to avoid churn from package-name
+  rules if generated or legacy Android names are introduced.
 - `ktlint_standard_property-naming` is disabled because the repo intentionally
   exposes lowerCamel companion constants such as
-  `OMSClientEnvironment.walletApiUrlDefault`; renaming those would change the
+  `OMSWalletEnvironment.walletApiUrlDefault`; renaming those would change the
   documented API.
 - Do not change ktlint rule exceptions casually. If a rule starts enforcing a
   real project invariant, remove the exception in the same change that fixes the
@@ -210,7 +210,7 @@ result.
 See **[TESTING.md](./TESTING.md)** for full testing conventions, unit vs. integration boundaries,
 and the execution command reference.
 
-- Unit tests live in `oms-client-kotlin-sdk/src/test/java/...` and use JUnit 4.
+- Unit tests live in `oms-wallet-kotlin-sdk/src/test/java/...` and use JUnit 4.
 - Network-facing client tests use MockWebServer where local HTTP behavior is
   needed.
 - Signing parity tests are documented in `docs/complete_auth_vectors.md`; keep
@@ -249,7 +249,7 @@ and the execution command reference.
 
 ## Generated Files and External Artifacts
 
-- `oms-client-kotlin-sdk/src/main/java/com/omsclient/kotlin_sdk/internal/generated/waas/WaasWalletClient.kt`
+- `oms-wallet-kotlin-sdk/src/main/java/technology/polygon/omswallet/internal/generated/waas/WaasWalletClient.kt`
   is generated by `webrpc-gen` from the upstream `0xsequence/waas` project.
   Treat that upstream repository as the source of truth and update the generated
   client here only when the SDK needs a WaaS API refresh.
