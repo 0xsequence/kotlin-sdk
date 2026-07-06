@@ -5,8 +5,8 @@ import technology.polygon.omswallet.parsePublishableKey
 import java.net.URI
 
 internal class OMSWalletEnvironment(
-    val walletApiUrl: String = walletApiUrlDefault,
-    val indexerGatewayUrl: String = indexerGatewayUrlDefault,
+    val walletApiUrl: String,
+    val indexerGatewayUrl: String,
 ) {
     internal val defaultWalletType: WalletType = WalletType.Ethereum
 
@@ -35,8 +35,6 @@ internal class OMSWalletEnvironment(
         internal const val accessKeyHeaderName: String = "Api-Key"
         internal const val walletSignatureHeaderName: String = "OMS-Wallet-Signature"
         internal const val walletSignatureHeaderPrefix: String = "$walletSignatureHeaderName: "
-        const val walletApiUrlDefault: String = "https://d26giflyqapd29.cloudfront.net"
-        const val indexerGatewayUrlDefault: String = "https://api.polygon.technology/v1/IndexerGateway/"
 
         fun fromPublishableKey(publishableKey: String): OMSWalletEnvironment {
             val parsed = parsePublishableKey(publishableKey)

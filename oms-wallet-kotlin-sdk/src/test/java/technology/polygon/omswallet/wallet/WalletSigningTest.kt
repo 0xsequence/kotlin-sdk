@@ -62,6 +62,7 @@ class WalletSigningTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,
@@ -100,6 +101,7 @@ class WalletSigningTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =

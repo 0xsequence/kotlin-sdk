@@ -83,12 +83,10 @@ object OidcProviders {
         "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com"
     const val defaultAppleClientId: String =
         "service.oms.polygon.technology"
-    const val defaultRelayRedirectUri: String =
-        "https://waas-cf-relay-staging.0xsequence.workers.dev/callback"
 
     fun google(
         clientId: String = defaultGoogleClientId,
-        relayRedirectUri: String = defaultRelayRedirectUri,
+        relayRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -111,7 +109,7 @@ object OidcProviders {
 
     fun apple(
         clientId: String = defaultAppleClientId,
-        relayRedirectUri: String = defaultRelayRedirectUri,
+        relayRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,

@@ -80,17 +80,31 @@ internal class OMSWalletSession(
         }
     }
 
+    private val lock = Any()
     private var state: SessionState = initialSnapshot.toSessionState()
     private var nextPendingWalletSelectionId: Long = 1L
+    private var revision: Long = 0L
 
-    fun snapshot(): OMSWalletSessionSnapshot? = state.snapshot()
+    fun snapshot(): OMSWalletSessionSnapshot? = synchronized(lock) { state.snapshot() }
+
+    fun revision(): Long = synchronized(lock) { revision }
+
+    fun requireRevision(expectedRevision: Long) {
+        synchronized(lock) {
+            requireCurrentRevision(expectedRevision)
+        }
+    }
 
     fun restore(snapshot: OMSWalletSessionSnapshot) {
-        state = snapshot.toSessionState()
+        synchronized(lock) {
+            replaceState(snapshot.toSessionState())
+        }
     }
 
     fun clear() {
-        state = SessionState.NoSession
+        synchronized(lock) {
+            replaceState(SessionState.NoSession)
+        }
     }
 
     fun replaceForPendingAuth(
@@ -98,66 +112,80 @@ internal class OMSWalletSession(
         verifier: String,
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
+        requiredRevision: Long? = null,
     ) {
-        state =
-            SessionState.PendingAuth(
-                challenge = challenge,
-                verifier = verifier,
-                signerAddress = signerAddress,
-                signerKeyType = signerKeyType,
+        synchronized(lock) {
+            requiredRevision?.let(::requireCurrentRevision)
+            replaceState(
+                SessionState.PendingAuth(
+                    challenge = challenge,
+                    verifier = verifier,
+                    signerAddress = signerAddress,
+                    signerKeyType = signerKeyType,
+                ),
             )
+        }
     }
 
     fun markAuthVerified(
         expiresAt: String,
         auth: OMSWalletSessionAuth,
+        requiredRevision: Long? = null,
     ): Long {
-        val current =
-            when (val current = state) {
-                is SessionState.PendingAuth -> current
-                else -> error("No active pending auth challenge")
-            }
-        val pendingWalletSelectionId = nextPendingWalletSelectionId++
-        state =
-            SessionState.AwaitingWalletSelection(
-                signerAddress = current.signerAddress,
-                signerKeyType = current.signerKeyType,
-                expiresAt = expiresAt,
-                auth = auth,
-                pendingWalletSelectionId = pendingWalletSelectionId,
+        synchronized(lock) {
+            requiredRevision?.let(::requireCurrentRevision)
+            val current =
+                when (val current = state) {
+                    is SessionState.PendingAuth -> current
+                    else -> error("No active pending auth challenge")
+                }
+            val pendingWalletSelectionId = nextPendingWalletSelectionId++
+            replaceState(
+                SessionState.AwaitingWalletSelection(
+                    signerAddress = current.signerAddress,
+                    signerKeyType = current.signerKeyType,
+                    expiresAt = expiresAt,
+                    auth = auth,
+                    pendingWalletSelectionId = pendingWalletSelectionId,
+                ),
             )
-        return pendingWalletSelectionId
+            return pendingWalletSelectionId
+        }
     }
 
     fun selectWallet(
         walletId: String,
         walletAddress: String,
+        requiredRevision: Long? = null,
     ) {
-        val selected =
-            when (val current = state) {
-                is SessionState.AwaitingWalletSelection -> {
-                    SessionState.ActiveSession(
-                        walletId = walletId,
-                        walletAddress = walletAddress,
-                        signerAddress = current.signerAddress,
-                        signerKeyType = current.signerKeyType,
-                        expiresAt = current.expiresAt,
-                        auth = current.auth,
-                    )
-                }
+        synchronized(lock) {
+            requiredRevision?.let(::requireCurrentRevision)
+            val selected =
+                when (val current = state) {
+                    is SessionState.AwaitingWalletSelection -> {
+                        SessionState.ActiveSession(
+                            walletId = walletId,
+                            walletAddress = walletAddress,
+                            signerAddress = current.signerAddress,
+                            signerKeyType = current.signerKeyType,
+                            expiresAt = current.expiresAt,
+                            auth = current.auth,
+                        )
+                    }
 
-                is SessionState.ActiveSession -> {
-                    current.copy(
-                        walletId = walletId,
-                        walletAddress = walletAddress,
-                    )
-                }
+                    is SessionState.ActiveSession -> {
+                        current.copy(
+                            walletId = walletId,
+                            walletAddress = walletAddress,
+                        )
+                    }
 
-                else -> {
-                    error("No authenticated wallet selection in progress")
+                    else -> {
+                        error("No authenticated wallet selection in progress")
+                    }
                 }
-            }
-        state = selected
+            replaceState(selected)
+        }
     }
 
     fun selectWalletForPendingSelection(
@@ -167,33 +195,40 @@ internal class OMSWalletSession(
         walletId: String,
         walletAddress: String,
     ) {
-        val current = currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
-        state =
-            SessionState.ActiveSession(
-                walletId = walletId,
-                walletAddress = walletAddress,
-                signerAddress = current.signerAddress,
-                signerKeyType = current.signerKeyType,
-                expiresAt = current.expiresAt,
-                auth = current.auth,
+        synchronized(lock) {
+            val current = currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
+            replaceState(
+                SessionState.ActiveSession(
+                    walletId = walletId,
+                    walletAddress = walletAddress,
+                    signerAddress = current.signerAddress,
+                    signerKeyType = current.signerKeyType,
+                    expiresAt = current.expiresAt,
+                    auth = current.auth,
+                ),
             )
+        }
     }
 
     fun requireSnapshot(): OMSWalletSessionSnapshot =
-        state.snapshot()
-            ?: error("No active wallet session")
+        synchronized(lock) {
+            state.snapshot()
+                ?: error("No active wallet session")
+        }
 
     fun requirePendingAuth(): OMSWalletPendingAuthSnapshot =
-        when (val current = state) {
-            is SessionState.PendingAuth -> {
-                OMSWalletPendingAuthSnapshot(
-                    challenge = current.challenge,
-                    verifier = current.verifier,
-                )
-            }
+        synchronized(lock) {
+            when (val current = state) {
+                is SessionState.PendingAuth -> {
+                    OMSWalletPendingAuthSnapshot(
+                        challenge = current.challenge,
+                        verifier = current.verifier,
+                    )
+                }
 
-            else -> {
-                error("No active pending auth challenge")
+                else -> {
+                    error("No active pending auth challenge")
+                }
             }
         }
 
@@ -202,7 +237,20 @@ internal class OMSWalletSession(
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
     ) {
-        currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
+        synchronized(lock) {
+            currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
+        }
+    }
+
+    private fun replaceState(nextState: SessionState) {
+        state = nextState
+        revision += 1
+    }
+
+    private fun requireCurrentRevision(expectedRevision: Long) {
+        check(revision == expectedRevision) {
+            "Wallet session changed before operation completed"
+        }
     }
 
     private fun currentPendingWalletSelection(

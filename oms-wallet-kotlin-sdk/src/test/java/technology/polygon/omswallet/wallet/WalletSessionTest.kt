@@ -7,8 +7,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import technology.polygon.omswallet.Network
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkException
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.utils.OMSWalletIsoTimestamps
@@ -29,7 +29,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = TrackingCredentialSigner(),
             )
@@ -60,7 +60,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = MockWebCryptoCredentialSigner(available = false),
             )
@@ -89,7 +89,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = signer,
                 now = { epochMillis("2026-01-01T00:00:01Z") },
@@ -131,7 +131,7 @@ class WalletSessionTest {
                 WalletClient(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
-                    environment = OMSWalletEnvironment(),
+                    environment = testEnvironment(),
                     sessionStore = store,
                     credentialSigner = signer,
                     sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
@@ -150,9 +150,9 @@ class WalletSessionTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is OmsSdkException)
-            error as OmsSdkException
-            assertEquals(OmsSdkErrorCode.SessionExpired, error.code)
+            assertTrue(error is OMSWalletException)
+            error as OMSWalletException
+            assertEquals(OMSWalletErrorCode.SessionExpired, error.code)
             assertEquals("wallet.signMessage", error.operation?.id)
             assertEquals("Wallet session expired", error.message)
             assertNull(client.snapshotSession())
@@ -179,7 +179,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = TrackingCredentialSigner(),
                 sessionExpiryScheduler = scheduler,
@@ -219,7 +219,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = InMemorySessionStore(snapshot),
                 credentialSigner = TrackingCredentialSigner(),
                 sessionExpiryScheduler = scheduler,
@@ -262,7 +262,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = InMemorySessionStore(snapshot),
                 credentialSigner = ThrowingClearCredentialSigner(),
                 now = { epochMillis("2026-01-01T00:00:01Z") },
@@ -292,7 +292,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = InMemorySessionStore(snapshot),
                 credentialSigner = TrackingCredentialSigner(),
                 sessionExpiryScheduler = scheduler,
@@ -320,7 +320,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = TrackingCredentialSigner(),
             )
@@ -347,7 +347,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = TrackingCredentialSigner(),
             )
@@ -367,7 +367,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore =
                     InMemorySessionStore(
                         snapshot =
@@ -402,7 +402,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = TrackingCredentialSigner(),
             )
@@ -421,7 +421,7 @@ class WalletSessionTest {
             WalletClient(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
-                environment = OMSWalletEnvironment(),
+                environment = testEnvironment(),
                 sessionStore = InMemorySessionStore(),
                 credentialSigner = TrackingCredentialSigner(),
             )

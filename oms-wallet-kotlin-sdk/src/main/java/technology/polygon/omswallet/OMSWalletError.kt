@@ -8,7 +8,7 @@ import technology.polygon.omswallet.internal.generated.waas.WebRpcTransportExcep
 /**
  * Stable SDK-level error categories for app-facing error handling.
  */
-enum class OmsSdkErrorCode {
+enum class OMSWalletErrorCode {
     HttpError,
     InvalidResponse,
     RequestFailed,
@@ -25,9 +25,9 @@ enum class OmsSdkErrorCode {
 }
 
 /**
- * Stable identifiers for SDK operations that can appear on [OmsSdkException].
+ * Stable identifiers for SDK operations that can appear on [OMSWalletException].
  */
-enum class OmsSdkOperation(
+enum class OMSWalletOperation(
     val id: String,
 ) {
     PendingWalletSelection("wallet.pendingWalletSelection"),
@@ -62,7 +62,7 @@ enum class OmsSdkOperation(
 /**
  * Remote OMS service that produced diagnostic failure details.
  */
-enum class OmsUpstreamService {
+enum class OMSWalletUpstreamService {
     Waas,
     Indexer,
 }
@@ -70,11 +70,11 @@ enum class OmsUpstreamService {
 /**
  * Normalized diagnostic detail from a remote OMS service response or transport failure.
  *
- * Branch app behavior on [OmsSdkException.code]; use upstream details for logs and
+ * Branch app behavior on [OMSWalletException.code]; use upstream details for logs and
  * service-specific troubleshooting.
  */
-data class OmsUpstreamError(
-    val service: OmsUpstreamService,
+data class OMSWalletUpstreamError(
+    val service: OMSWalletUpstreamService,
     val name: String? = null,
     val code: String? = null,
     val message: String? = null,
@@ -85,38 +85,38 @@ data class OmsUpstreamError(
  * Base exception type thrown by public SDK APIs when a failure can be
  * categorized without exposing generated transport details.
  */
-open class OmsSdkException(
-    val code: OmsSdkErrorCode,
-    val operation: OmsSdkOperation? = null,
+open class OMSWalletException(
+    val code: OMSWalletErrorCode,
+    val operation: OMSWalletOperation? = null,
     val status: Int? = null,
     val txnId: String? = null,
     val retryable: Boolean? = null,
-    val upstreamError: OmsUpstreamError? = null,
+    val upstreamError: OMSWalletUpstreamError? = null,
     message: String,
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)
 
-class OmsSessionException(
-    code: OmsSdkErrorCode = OmsSdkErrorCode.SessionMissing,
-    operation: OmsSdkOperation? = null,
+class OMSWalletSessionException(
+    code: OMSWalletErrorCode = OMSWalletErrorCode.SessionMissing,
+    operation: OMSWalletOperation? = null,
     message: String = "No active wallet session",
     cause: Throwable? = null,
-) : OmsSdkException(
+) : OMSWalletException(
         code = code,
         operation = operation,
         message = message,
         cause = cause,
     )
 
-class OmsRequestException(
-    code: OmsSdkErrorCode = OmsSdkErrorCode.RequestFailed,
-    operation: OmsSdkOperation? = null,
+class OMSWalletRequestException(
+    code: OMSWalletErrorCode = OMSWalletErrorCode.RequestFailed,
+    operation: OMSWalletOperation? = null,
     status: Int? = null,
     retryable: Boolean? = status == null || status >= 500,
-    upstreamError: OmsUpstreamError? = null,
+    upstreamError: OMSWalletUpstreamError? = null,
     message: String = "OMS request failed",
     cause: Throwable? = null,
-) : OmsSdkException(
+) : OMSWalletException(
         code = code,
         operation = operation,
         status = status,
@@ -126,14 +126,14 @@ class OmsRequestException(
         cause = cause,
     )
 
-class OmsResponseException(
-    operation: OmsSdkOperation? = null,
+class OMSWalletResponseException(
+    operation: OMSWalletOperation? = null,
     status: Int? = null,
-    upstreamError: OmsUpstreamError? = null,
+    upstreamError: OMSWalletUpstreamError? = null,
     message: String = "OMS response was invalid",
     cause: Throwable? = null,
-) : OmsSdkException(
-        code = OmsSdkErrorCode.InvalidResponse,
+) : OMSWalletException(
+        code = OMSWalletErrorCode.InvalidResponse,
         operation = operation,
         status = status,
         upstreamError = upstreamError,
@@ -141,16 +141,16 @@ class OmsResponseException(
         cause = cause,
     )
 
-class OmsTransactionException(
-    code: OmsSdkErrorCode = OmsSdkErrorCode.TransactionStatusLookupFailed,
-    operation: OmsSdkOperation? = null,
+class OMSWalletTransactionException(
+    code: OMSWalletErrorCode = OMSWalletErrorCode.TransactionStatusLookupFailed,
+    operation: OMSWalletOperation? = null,
     status: Int? = null,
     txnId: String? = null,
     retryable: Boolean? = true,
-    upstreamError: OmsUpstreamError? = null,
+    upstreamError: OMSWalletUpstreamError? = null,
     message: String = "Transaction status lookup failed",
     cause: Throwable? = null,
-) : OmsSdkException(
+) : OMSWalletException(
         code = code,
         operation = operation,
         status = status,
@@ -162,84 +162,84 @@ class OmsTransactionException(
     )
 
 class OMSWalletSelectionException(
-    code: OmsSdkErrorCode,
-    operation: OmsSdkOperation? = null,
+    code: OMSWalletErrorCode,
+    operation: OMSWalletOperation? = null,
     message: String,
     cause: Throwable? = null,
-) : OmsSdkException(
+) : OMSWalletException(
         code = code,
         operation = operation,
         message = message,
         cause = cause,
     )
 
-class OmsValidationException(
-    operation: OmsSdkOperation? = null,
+class OMSWalletValidationException(
+    operation: OMSWalletOperation? = null,
     message: String,
     cause: Throwable? = null,
-) : OmsSdkException(
-        code = OmsSdkErrorCode.ValidationError,
+) : OMSWalletException(
+        code = OMSWalletErrorCode.ValidationError,
         operation = operation,
         message = message,
         cause = cause,
     )
 
-class OmsStorageException(
-    operation: OmsSdkOperation? = null,
+class OMSWalletStorageException(
+    operation: OMSWalletOperation? = null,
     message: String,
     cause: Throwable? = null,
-) : OmsSdkException(
-        code = OmsSdkErrorCode.StorageError,
+) : OMSWalletException(
+        code = OMSWalletErrorCode.StorageError,
         operation = operation,
         message = message,
         cause = cause,
     )
 
-internal suspend fun <T> runOmsOperation(
-    operation: OmsSdkOperation,
+internal suspend fun <T> runOMSWalletOperation(
+    operation: OMSWalletOperation,
     block: suspend () -> T,
 ): T =
     try {
         block()
     } catch (throwable: CancellationException) {
         throw throwable
-    } catch (throwable: OmsSdkException) {
+    } catch (throwable: OMSWalletException) {
         if (throwable.operation == operation || throwable.isNestedTransactionBoundary()) {
             throw throwable
         }
         throw throwable.withOperation(operation)
     } catch (throwable: WebRpcError) {
-        throw throwable.toOmsSdkException(operation)
+        throw throwable.toOMSWalletException(operation)
     } catch (throwable: WebRpcTransportException) {
-        throw OmsRequestException(
+        throw OMSWalletRequestException(
             operation = operation,
             upstreamError = throwable.toWaasUpstreamError(),
             message = throwable.message ?: "WebRPC transport failed",
             cause = throwable,
         )
     } catch (throwable: IllegalArgumentException) {
-        throw OmsValidationException(
+        throw OMSWalletValidationException(
             operation = operation,
             message = throwable.message ?: "Validation failed",
             cause = throwable,
         )
     } catch (throwable: IllegalStateException) {
-        throw OmsSessionException(
+        throw OMSWalletSessionException(
             operation = operation,
             message = throwable.message ?: "No active wallet session",
             cause = throwable,
         )
     }
 
-private fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkException {
+private fun WebRpcError.toOMSWalletException(operation: OMSWalletOperation): OMSWalletException {
     val normalizedStatus = normalizedStatus()
     val upstreamError = toWaasUpstreamError(normalizedStatus)
     val normalizedMessage = normalizedMessage()
 
     return when {
         errorKind == ErrorKind.COMMITMENT_CONSUMED -> {
-            OmsRequestException(
-                code = OmsSdkErrorCode.AuthCommitmentConsumed,
+            OMSWalletRequestException(
+                code = OMSWalletErrorCode.AuthCommitmentConsumed,
                 operation = operation,
                 status = normalizedStatus,
                 retryable = false,
@@ -250,8 +250,8 @@ private fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExc
         }
 
         isHttpWebRpcError(normalizedStatus) -> {
-            OmsRequestException(
-                code = OmsSdkErrorCode.HttpError,
+            OMSWalletRequestException(
+                code = OMSWalletErrorCode.HttpError,
                 operation = operation,
                 status = normalizedStatus,
                 retryable = normalizedStatus != null && normalizedStatus >= 500,
@@ -263,7 +263,7 @@ private fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExc
 
         errorKind == ErrorKind.WEBRPC_BAD_RESPONSE ||
             (errorKind == ErrorKind.UNKNOWN && code == ErrorKind.UNKNOWN.code) -> {
-            OmsResponseException(
+            OMSWalletResponseException(
                 operation = operation,
                 status = normalizedStatus,
                 upstreamError = upstreamError,
@@ -273,7 +273,7 @@ private fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExc
         }
 
         else -> {
-            OmsRequestException(
+            OMSWalletRequestException(
                 operation = operation,
                 status = normalizedStatus,
                 retryable = normalizedStatus == null || normalizedStatus >= 500,
@@ -285,13 +285,13 @@ private fun WebRpcError.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExc
     }
 }
 
-private fun OmsSdkException.isNestedTransactionBoundary(): Boolean =
-    code == OmsSdkErrorCode.TransactionExecutionUnconfirmed ||
-        code == OmsSdkErrorCode.TransactionStatusLookupFailed
+private fun OMSWalletException.isNestedTransactionBoundary(): Boolean =
+    code == OMSWalletErrorCode.TransactionExecutionUnconfirmed ||
+        code == OMSWalletErrorCode.TransactionStatusLookupFailed
 
-internal fun Throwable.toOmsSdkException(operation: OmsSdkOperation): OmsSdkException =
+internal fun Throwable.toOMSWalletException(operation: OMSWalletOperation): OMSWalletException =
     when (this) {
-        is OmsSdkException -> {
+        is OMSWalletException -> {
             if (this.operation == operation) {
                 this
             } else {
@@ -300,11 +300,11 @@ internal fun Throwable.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExce
         }
 
         is WebRpcError -> {
-            toOmsSdkException(operation)
+            toOMSWalletException(operation)
         }
 
         is WebRpcTransportException -> {
-            OmsRequestException(
+            OMSWalletRequestException(
                 operation = operation,
                 upstreamError = toWaasUpstreamError(),
                 message = message ?: "WebRPC transport failed",
@@ -313,7 +313,7 @@ internal fun Throwable.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExce
         }
 
         is IllegalArgumentException -> {
-            OmsValidationException(
+            OMSWalletValidationException(
                 operation = operation,
                 message = message ?: "Validation failed",
                 cause = this,
@@ -321,7 +321,7 @@ internal fun Throwable.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExce
         }
 
         is IllegalStateException -> {
-            OmsSessionException(
+            OMSWalletSessionException(
                 operation = operation,
                 message = message ?: "No active wallet session",
                 cause = this,
@@ -329,7 +329,7 @@ internal fun Throwable.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExce
         }
 
         else -> {
-            OmsRequestException(
+            OMSWalletRequestException(
                 operation = operation,
                 message = message ?: operation.id,
                 cause = this,
@@ -337,10 +337,10 @@ internal fun Throwable.toOmsSdkException(operation: OmsSdkOperation): OmsSdkExce
         }
     }
 
-private fun OmsSdkException.withOperation(operation: OmsSdkOperation): OmsSdkException =
+private fun OMSWalletException.withOperation(operation: OMSWalletOperation): OMSWalletException =
     when (this) {
-        is OmsRequestException -> {
-            OmsRequestException(
+        is OMSWalletRequestException -> {
+            OMSWalletRequestException(
                 code = code,
                 operation = operation,
                 status = status,
@@ -351,8 +351,8 @@ private fun OmsSdkException.withOperation(operation: OmsSdkOperation): OmsSdkExc
             )
         }
 
-        is OmsResponseException -> {
-            OmsResponseException(
+        is OMSWalletResponseException -> {
+            OMSWalletResponseException(
                 operation = operation,
                 status = status,
                 upstreamError = upstreamError,
@@ -361,8 +361,8 @@ private fun OmsSdkException.withOperation(operation: OmsSdkOperation): OmsSdkExc
             )
         }
 
-        is OmsTransactionException -> {
-            OmsTransactionException(
+        is OMSWalletTransactionException -> {
+            OMSWalletTransactionException(
                 code = code,
                 operation = operation,
                 status = status,
@@ -374,8 +374,8 @@ private fun OmsSdkException.withOperation(operation: OmsSdkOperation): OmsSdkExc
             )
         }
 
-        is OmsSessionException -> {
-            OmsSessionException(
+        is OMSWalletSessionException -> {
+            OMSWalletSessionException(
                 code = code,
                 operation = operation,
                 message = message ?: operation.id,
@@ -392,16 +392,16 @@ private fun OmsSdkException.withOperation(operation: OmsSdkOperation): OmsSdkExc
             )
         }
 
-        is OmsValidationException -> {
-            OmsValidationException(
+        is OMSWalletValidationException -> {
+            OMSWalletValidationException(
                 operation = operation,
                 message = message ?: operation.id,
                 cause = this,
             )
         }
 
-        is OmsStorageException -> {
-            OmsStorageException(
+        is OMSWalletStorageException -> {
+            OMSWalletStorageException(
                 operation = operation,
                 message = message ?: operation.id,
                 cause = this,
@@ -409,7 +409,7 @@ private fun OmsSdkException.withOperation(operation: OmsSdkOperation): OmsSdkExc
         }
 
         else -> {
-            OmsSdkException(
+            OMSWalletException(
                 code = code,
                 operation = operation,
                 status = status,
@@ -429,9 +429,9 @@ private fun WebRpcError.normalizedStatus(): Int? {
     return status
 }
 
-private fun WebRpcError.toWaasUpstreamError(status: Int? = normalizedStatus()): OmsUpstreamError =
-    OmsUpstreamError(
-        service = OmsUpstreamService.Waas,
+private fun WebRpcError.toWaasUpstreamError(status: Int? = normalizedStatus()): OMSWalletUpstreamError =
+    OMSWalletUpstreamError(
+        service = OMSWalletUpstreamService.Waas,
         name = error,
         code = normalizedCode(),
         message = normalizedMessage(),
@@ -452,9 +452,9 @@ private fun WebRpcError.normalizedMessage(): String =
         message
     }
 
-private fun WebRpcTransportException.toWaasUpstreamError(): OmsUpstreamError =
-    OmsUpstreamError(
-        service = OmsUpstreamService.Waas,
+private fun WebRpcTransportException.toWaasUpstreamError(): OMSWalletUpstreamError =
+    OMSWalletUpstreamError(
+        service = OMSWalletUpstreamService.Waas,
         name = "WebrpcRequestFailed",
         code = ErrorKind.WEBRPC_REQUEST_FAILED.code.toString(),
         message = message ?: "WebRPC transport failed",

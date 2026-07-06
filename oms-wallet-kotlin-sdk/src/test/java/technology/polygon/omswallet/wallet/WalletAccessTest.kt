@@ -11,8 +11,8 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkException
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.internal.generated.waas.GetIDTokenRequest
 import technology.polygon.omswallet.internal.generated.waas.ListAccessRequest
 import technology.polygon.omswallet.internal.generated.waas.Page
@@ -92,6 +92,7 @@ class WalletAccessTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -200,6 +201,7 @@ class WalletAccessTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -264,6 +266,7 @@ class WalletAccessTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -320,6 +323,7 @@ class WalletAccessTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     credentialSigner = MockWebCryptoCredentialSigner(available = false),
@@ -331,8 +335,8 @@ class WalletAccessTest {
                     client.revokeAccess(targetCredentialId = "credential-2")
                 }.exceptionOrNull()
 
-            assertTrue(error is OmsSdkException)
-            assertEquals(OmsSdkErrorCode.SessionMissing, (error as OmsSdkException).code)
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.SessionMissing, (error as OMSWalletException).code)
             assertEquals(0, server.requestCount)
         }
 }

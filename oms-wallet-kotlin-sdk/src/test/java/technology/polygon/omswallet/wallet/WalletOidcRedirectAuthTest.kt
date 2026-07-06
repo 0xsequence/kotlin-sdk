@@ -10,11 +10,11 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkException
-import technology.polygon.omswallet.OmsSdkOperation
-import technology.polygon.omswallet.OmsStorageException
+import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletStorageException
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
@@ -50,7 +50,7 @@ class WalletOidcRedirectAuthTest {
             "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com",
             provider.clientId,
         )
-        assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", provider.relayRedirectUri)
+        assertNull(provider.relayRedirectUri)
         assertEquals("https://accounts.google.com", provider.issuer)
         assertEquals("https://accounts.google.com/o/oauth2/v2/auth", provider.authorizationUrl)
         assertEquals("google", provider.provider)
@@ -66,7 +66,7 @@ class WalletOidcRedirectAuthTest {
         val provider = OidcProviders.apple()
 
         assertEquals("service.oms.polygon.technology", provider.clientId)
-        assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", provider.relayRedirectUri)
+        assertNull(provider.relayRedirectUri)
         assertEquals("https://appleid.apple.com", provider.issuer)
         assertEquals("https://appleid.apple.com/auth/authorize", provider.authorizationUrl)
         assertEquals("apple", provider.provider)
@@ -102,6 +102,7 @@ class WalletOidcRedirectAuthTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
@@ -197,6 +198,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -243,6 +245,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = sessionStore,
@@ -280,6 +283,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -305,7 +309,7 @@ class WalletOidcRedirectAuthTest {
                             mapOf(
                                 "iss" to "https://appleid.apple.com",
                                 "aud" to "service.oms.polygon.technology",
-                                "redirect_uri" to "https://waas-cf-relay-staging.0xsequence.workers.dev/callback",
+                                "redirect_uri" to server.url("/v1/Waas/auth/waas/callback/apple").toString(),
                             ),
                     ),
                 ),
@@ -315,7 +319,7 @@ class WalletOidcRedirectAuthTest {
             val query = queryParams(result.authorizationUrl)
             assertEquals("https://appleid.apple.com/auth/authorize", uriOriginAndPath(result.authorizationUrl))
             assertEquals("service.oms.polygon.technology", query["client_id"])
-            assertEquals("https://waas-cf-relay-staging.0xsequence.workers.dev/callback", query["redirect_uri"])
+            assertEquals(server.url("/v1/Waas/auth/waas/callback/apple").toString(), query["redirect_uri"])
             assertEquals("form_post", query["response_mode"])
             assertEquals("openid email", query["scope"])
             assertEquals("pkce-challenge", query["code_challenge"])
@@ -338,6 +342,7 @@ class WalletOidcRedirectAuthTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val sessionStore = InMemorySessionStore(activeSession)
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
@@ -399,6 +404,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -420,10 +426,10 @@ class WalletOidcRedirectAuthTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is OmsStorageException)
-            val sdkError = error as OmsStorageException
-            assertEquals(OmsSdkErrorCode.StorageError, sdkError.code)
-            assertEquals(OmsSdkOperation.WalletStartOidcRedirectAuth, sdkError.operation)
+            assertTrue(error is OMSWalletStorageException)
+            val sdkError = error as OMSWalletStorageException
+            assertEquals(OMSWalletErrorCode.StorageError, sdkError.code)
+            assertEquals(OMSWalletOperation.WalletStartOidcRedirectAuth, sdkError.operation)
             assertEquals("OIDC redirect auth state persistence failed", sdkError.message)
             assertSame(storageFailure, sdkError.cause)
             assertNull(client.snapshotSession())
@@ -471,6 +477,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -580,6 +587,7 @@ class WalletOidcRedirectAuthTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val sessionStore = InMemorySessionStore()
             val redirectStore = InMemoryOidcRedirectAuthStore()
@@ -691,6 +699,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -766,6 +775,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -853,6 +863,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -916,6 +927,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -943,9 +955,9 @@ class WalletOidcRedirectAuthTest {
 
             assertTrue(result is OidcRedirectAuthResult.Failed)
             result as OidcRedirectAuthResult.Failed
-            assertTrue(result.error is OmsSdkException)
-            val error = result.error as OmsSdkException
-            assertEquals(OmsSdkErrorCode.ValidationError, error.code)
+            assertTrue(result.error is OMSWalletException)
+            val error = result.error as OMSWalletException
+            assertEquals(OMSWalletErrorCode.ValidationError, error.code)
             assertEquals("wallet.handleOidcRedirectCallback", error.operation?.id)
             assertEquals(1, server.requestCount)
         }
@@ -981,6 +993,7 @@ class WalletOidcRedirectAuthTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val sessionStore = InMemorySessionStore()
             val redirectStore = InMemoryOidcRedirectAuthStore()
@@ -1039,6 +1052,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(activeSession),
@@ -1069,6 +1083,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
@@ -1113,6 +1128,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1162,6 +1178,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1210,6 +1227,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1258,6 +1276,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1285,8 +1304,8 @@ class WalletOidcRedirectAuthTest {
                             "&state=${started.state}",
                 )
 
-            val failure = (result as OidcRedirectAuthResult.Failed).error as OmsSdkException
-            assertEquals(OmsSdkOperation.WalletHandleOidcRedirectCallback, failure.operation)
+            val failure = (result as OidcRedirectAuthResult.Failed).error as OMSWalletException
+            assertEquals(OMSWalletOperation.WalletHandleOidcRedirectCallback, failure.operation)
             assertEquals("User cancelled", failure.message)
             assertNull(client.snapshotSession())
             assertNull(redirectStore.pending)
@@ -1295,7 +1314,7 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
-    fun handleOidcRedirectCallbackWrapsCompleteAuthFailureInOmsSdkException() =
+    fun handleOidcRedirectCallbackWrapsCompleteAuthFailureInOMSWalletException() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -1320,6 +1339,7 @@ class WalletOidcRedirectAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -1345,9 +1365,9 @@ class WalletOidcRedirectAuthTest {
             val commitRequest = requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
 
-            val failure = (result as OidcRedirectAuthResult.Failed).error as OmsSdkException
-            assertEquals(OmsSdkErrorCode.RequestFailed, failure.code)
-            assertEquals(OmsSdkOperation.WalletHandleOidcRedirectCallback, failure.operation)
+            val failure = (result as OidcRedirectAuthResult.Failed).error as OMSWalletException
+            assertEquals(OMSWalletErrorCode.RequestFailed, failure.code)
+            assertEquals(OMSWalletOperation.WalletHandleOidcRedirectCallback, failure.operation)
             assertEquals(400, failure.status)
             assertEquals("Bad callback", failure.message)
             assertEquals(false, failure.retryable)

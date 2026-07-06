@@ -1,6 +1,7 @@
 package technology.polygon.omswallet.storage
 
 import android.content.Context
+import android.util.AtomicFile
 import org.json.JSONObject
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
@@ -60,7 +61,7 @@ internal class AndroidSessionMetadataStore(
                 expiresAt = snapshot.expiresAt,
                 auth = snapshot.auth,
             )
-        sessionFile.writeText(persisted.toJson())
+        writeTextAtomically(sessionFile, persisted.toJson())
     }
 
     override fun clear() {
@@ -117,6 +118,21 @@ internal class AndroidSessionMetadataStore(
 
     companion object {
         private const val DEFAULT_FILE_NAME = "oms-wallet-session.json"
+    }
+}
+
+private fun writeTextAtomically(
+    file: File,
+    value: String,
+) {
+    val atomicFile = AtomicFile(file)
+    val output = atomicFile.startWrite()
+    try {
+        output.write(value.toByteArray(Charsets.UTF_8))
+        atomicFile.finishWrite(output)
+    } catch (throwable: Throwable) {
+        atomicFile.failWrite(output)
+        throw throwable
     }
 }
 

@@ -9,17 +9,17 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonElement
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
+import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
+import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletSelectionException
 import technology.polygon.omswallet.OMSWalletSessionAuth
+import technology.polygon.omswallet.OMSWalletSessionException
 import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
 import technology.polygon.omswallet.OMSWalletSessionState
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkOperation
-import technology.polygon.omswallet.OmsSessionException
-import technology.polygon.omswallet.OmsStorageException
-import technology.polygon.omswallet.OmsTransactionException
+import technology.polygon.omswallet.OMSWalletStorageException
+import technology.polygon.omswallet.OMSWalletTransactionException
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
@@ -66,11 +66,11 @@ import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
-import technology.polygon.omswallet.runOmsOperation
+import technology.polygon.omswallet.runOMSWalletOperation
 import technology.polygon.omswallet.session.OMSWalletSession
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
-import technology.polygon.omswallet.toOmsSdkException
+import technology.polygon.omswallet.toOMSWalletException
 import technology.polygon.omswallet.utils.OMSWalletIsoTimestamps
 import technology.polygon.omswallet.utils.OMSWalletTimestamps
 import technology.polygon.omswallet.utils.formatUnits
@@ -236,15 +236,16 @@ class WalletClient internal constructor(
 
     private fun requireWalletId(): String =
         requireActiveWalletSession(operation = null).walletId
-            ?: throw OmsSessionException(message = "No wallet selected")
+            ?: throw OMSWalletSessionException(message = "No wallet selected")
 
     private fun requireWalletAddress(): String =
         requireActiveWalletSession(operation = null).walletAddress
-            ?: throw OmsSessionException(message = "No wallet selected")
+            ?: throw OMSWalletSessionException(message = "No wallet selected")
 
     suspend fun startEmailAuth(email: String): Unit =
-        runOmsOperation(OmsSdkOperation.WalletStartEmailAuth) {
+        runOMSWalletOperation(OMSWalletOperation.WalletStartEmailAuth) {
             clearSession(clearOidcRedirectAuth = true)
+            val requiredSessionRevision = session.revision()
             try {
                 val signerAddress = signer.credentialId()
                 val response = gateway.commitEmailVerifier(email)
@@ -254,6 +255,7 @@ class WalletClient internal constructor(
                     verifier = response.verifier,
                     signerAddress = signerAddress,
                     signerKeyType = signer.signingAlgorithm,
+                    requiredRevision = requiredSessionRevision,
                 )
             } catch (throwable: CancellationException) {
                 throw throwable
@@ -273,7 +275,7 @@ class WalletClient internal constructor(
         provider: String? = null,
         providerLabel: String? = null,
     ): CompleteAuthResult =
-        runOmsOperation(OmsSdkOperation.WalletSignInWithOidcIdToken) {
+        runOMSWalletOperation(OMSWalletOperation.WalletSignInWithOidcIdToken) {
             completeOidcIdTokenAuth(
                 idToken = idToken,
                 issuer = issuer,
@@ -300,6 +302,7 @@ class WalletClient internal constructor(
         sessionLifetimeSeconds: UInt,
     ): CompleteAuthResult {
         clearSession(clearOidcRedirectAuth = true)
+        val requiredSessionRevision = session.revision()
         try {
             val signerAddress = signer.credentialId()
             val response =
@@ -314,6 +317,7 @@ class WalletClient internal constructor(
                 verifier = response.verifier,
                 signerAddress = signerAddress,
                 signerKeyType = signer.signingAlgorithm,
+                requiredRevision = requiredSessionRevision,
             )
 
             val auth =
@@ -339,6 +343,7 @@ class WalletClient internal constructor(
                         providerLabel = providerLabel,
                         completeAuth = auth,
                     ),
+                requiredSessionRevision = session.revision(),
             )
         } catch (throwable: CancellationException) {
             throw throwable
@@ -354,11 +359,11 @@ class WalletClient internal constructor(
         walletType: WalletType = environment.defaultWalletType,
         walletSelection: WalletSelectionBehavior? = null,
         sessionLifetimeSeconds: Long? = null,
-        relayRedirectUri: String? = provider.relayRedirectUri,
+        relayRedirectUri: String? = provider.relayRedirectUri ?: derivedRelayRedirectUri(provider),
         authorizeParams: Map<String, String> = emptyMap(),
         loginHint: String? = null,
     ): StartOidcRedirectAuthResult =
-        runOmsOperation(OmsSdkOperation.WalletStartOidcRedirectAuth) {
+        runOMSWalletOperation(OMSWalletOperation.WalletStartOidcRedirectAuth) {
             val redirectAuthStore =
                 requireNotNull(oidcRedirectAuthStore) {
                     "OIDC redirect auth requires an OIDC redirect auth store"
@@ -369,6 +374,7 @@ class WalletClient internal constructor(
                     requireWaasSessionLifetimeSeconds(it)
                 }
             clearSession(clearOidcRedirectAuth = true)
+            val requiredSessionRevision = session.revision()
             try {
                 val signerAddress = signer.credentialId()
                 val authMode = provider.authMode
@@ -396,7 +402,10 @@ class WalletClient internal constructor(
                     verifier = response.verifier,
                     signerAddress = signerAddress,
                     signerKeyType = signer.signingAlgorithm,
+                    requiredRevision = requiredSessionRevision,
                 )
+                val pendingSessionRevision = session.revision()
+                session.requireRevision(pendingSessionRevision)
                 try {
                     redirectAuthStore.save(
                         PendingOidcRedirectAuth(
@@ -419,11 +428,17 @@ class WalletClient internal constructor(
                 } catch (throwable: CancellationException) {
                     throw throwable
                 } catch (throwable: Throwable) {
-                    throw OmsStorageException(
-                        operation = OmsSdkOperation.WalletStartOidcRedirectAuth,
+                    throw OMSWalletStorageException(
+                        operation = OMSWalletOperation.WalletStartOidcRedirectAuth,
                         message = "OIDC redirect auth state persistence failed",
                         cause = throwable,
                     )
+                }
+                try {
+                    session.requireRevision(pendingSessionRevision)
+                } catch (throwable: Throwable) {
+                    redirectAuthStore.clear()
+                    throw throwable
                 }
 
                 val authorizationUrl =
@@ -486,7 +501,7 @@ class WalletClient internal constructor(
                 throw IllegalStateException(callback.errorDescription ?: "OIDC provider returned error: $error")
             }
             val code = requireNotNull(callback.code) { "OIDC callback URL is missing code" }
-            restorePendingOidcRedirectAuth(pending)
+            val requiredSessionRevision = restorePendingOidcRedirectAuth(pending)
             val resolvedWalletSelection =
                 walletSelection
                     ?: pending.walletSelection
@@ -516,6 +531,7 @@ class WalletClient internal constructor(
                         walletType = pending.walletType.toWalletType(),
                         walletSelection = resolvedWalletSelection,
                         sessionAuth = oidcRedirectSessionAuth(pending = pending, completeAuth = auth),
+                        requiredSessionRevision = requiredSessionRevision,
                     )
             ) {
                 is CompleteAuthResult.WalletSelected -> {
@@ -532,7 +548,7 @@ class WalletClient internal constructor(
             clearPendingAuth = false
             throw throwable
         } catch (throwable: Throwable) {
-            val failure = throwable.toOmsSdkException(OmsSdkOperation.WalletHandleOidcRedirectCallback)
+            val failure = throwable.toOMSWalletException(OMSWalletOperation.WalletHandleOidcRedirectCallback)
             clearSession(clearOidcRedirectAuth = false)
             OidcRedirectAuthResult.Failed(failure)
         } finally {
@@ -550,8 +566,8 @@ class WalletClient internal constructor(
             try {
                 session.requirePendingAuth()
             } catch (throwable: IllegalStateException) {
-                throw OmsSessionException(
-                    operation = OmsSdkOperation.WalletCompleteEmailAuth,
+                throw OMSWalletSessionException(
+                    operation = OMSWalletOperation.WalletCompleteEmailAuth,
                     message = "No pending email auth attempt",
                     cause = throwable,
                 )
@@ -582,7 +598,8 @@ class WalletClient internal constructor(
         walletType: WalletType = environment.defaultWalletType,
         sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
     ): CompleteAuthResult =
-        runOmsOperation(OmsSdkOperation.WalletCompleteEmailAuth) {
+        runOMSWalletOperation(OMSWalletOperation.WalletCompleteEmailAuth) {
+            val requiredSessionRevision = session.revision()
             val auth =
                 completeEmailSignIn(
                     code = code,
@@ -596,6 +613,7 @@ class WalletClient internal constructor(
                 walletType = walletType,
                 walletSelection = walletSelection,
                 sessionAuth = OMSWalletEmailSessionAuth(email = auth.email),
+                requiredSessionRevision = requiredSessionRevision,
             )
         }
 
@@ -603,16 +621,24 @@ class WalletClient internal constructor(
      * Selects an existing wallet by its WaaS wallet id.
      */
     suspend fun useWallet(walletId: String): WalletSelectionResult =
-        runOmsOperation(OmsSdkOperation.WalletUseWallet) {
-            requireWalletSelectionOrActiveSession()
-            requireActiveCredential()
-            val wallet = requestUseWallet(walletId)
-            session.selectWallet(
-                walletId = wallet.id,
-                walletAddress = wallet.address,
-            )
-            persistSelectedWallet(wallet)
+        runOMSWalletOperation(OMSWalletOperation.WalletUseWallet) {
+            useWalletForCurrentSession(walletId, session.revision())
         }
+
+    private suspend fun useWalletForCurrentSession(
+        walletId: String,
+        requiredSessionRevision: Long,
+    ): WalletSelectionResult {
+        requireWalletSelectionOrActiveSession()
+        requireActiveCredential()
+        val wallet = requestUseWallet(walletId)
+        session.selectWallet(
+            walletId = wallet.id,
+            walletAddress = wallet.address,
+            requiredRevision = requiredSessionRevision,
+        )
+        return persistSelectedWallet(wallet)
+    }
 
     /**
      * Creates and selects a new wallet for the authenticated user.
@@ -621,16 +647,25 @@ class WalletClient internal constructor(
         walletType: WalletType = environment.defaultWalletType,
         reference: String? = null,
     ): WalletSelectionResult =
-        runOmsOperation(OmsSdkOperation.WalletCreateWallet) {
-            requireWalletSelectionOrActiveSession()
-            requireActiveCredential()
-            val wallet = requestCreateWallet(walletType, reference)
-            session.selectWallet(
-                walletId = wallet.id,
-                walletAddress = wallet.address,
-            )
-            persistSelectedWallet(wallet)
+        runOMSWalletOperation(OMSWalletOperation.WalletCreateWallet) {
+            createWalletForCurrentSession(walletType, reference, session.revision())
         }
+
+    private suspend fun createWalletForCurrentSession(
+        walletType: WalletType,
+        reference: String?,
+        requiredSessionRevision: Long,
+    ): WalletSelectionResult {
+        requireWalletSelectionOrActiveSession()
+        requireActiveCredential()
+        val wallet = requestCreateWallet(walletType, reference)
+        session.selectWallet(
+            walletId = wallet.id,
+            walletAddress = wallet.address,
+            requiredRevision = requiredSessionRevision,
+        )
+        return persistSelectedWallet(wallet)
+    }
 
     private suspend fun useWalletForPendingSelection(
         pendingWalletSelectionId: Long,
@@ -676,7 +711,7 @@ class WalletClient internal constructor(
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
     ) {
-        expireCurrentSessionIfNeeded(operation = OmsSdkOperation.PendingWalletSelection)
+        expireCurrentSessionIfNeeded(operation = OMSWalletOperation.PendingWalletSelection)
         try {
             session.requirePendingWalletSelection(
                 pendingWalletSelectionId = pendingWalletSelectionId,
@@ -685,8 +720,8 @@ class WalletClient internal constructor(
             )
         } catch (throwable: IllegalStateException) {
             throw OMSWalletSelectionException(
-                code = OmsSdkErrorCode.WalletSelectionStale,
-                operation = OmsSdkOperation.PendingWalletSelection,
+                code = OMSWalletErrorCode.WalletSelectionStale,
+                operation = OMSWalletOperation.PendingWalletSelection,
                 message = throwable.message ?: "Pending wallet selection is no longer active",
                 cause = throwable,
             )
@@ -712,7 +747,7 @@ class WalletClient internal constructor(
      * Lists all wallets available to the authenticated credential.
      */
     suspend fun listWallets(): List<Wallet> =
-        runOmsOperation(OmsSdkOperation.WalletListWallets) {
+        runOMSWalletOperation(OMSWalletOperation.WalletListWallets) {
             requireWalletSelectionOrActiveSession()
             requireActiveCredential()
             val wallets = mutableListOf<Wallet>()
@@ -730,7 +765,7 @@ class WalletClient internal constructor(
         val snapshot = session.requireSnapshot()
         expireSnapshotIfNeeded(snapshot, operation = null)
         if (snapshot.walletId.isNullOrBlank() && snapshot.expiresAt.isNullOrBlank()) {
-            throw OmsSessionException(message = "No authenticated wallet session")
+            throw OMSWalletSessionException(message = "No authenticated wallet session")
         }
     }
 
@@ -750,18 +785,22 @@ class WalletClient internal constructor(
         walletType: WalletType,
         walletSelection: WalletSelectionBehavior,
         sessionAuth: OMSWalletSessionAuth,
+        requiredSessionRevision: Long,
     ): CompleteAuthResult {
         val pendingWalletSelectionId =
             session.markAuthVerified(
                 expiresAt = completeAuth.credential.expiresAt,
                 auth = sessionAuth,
+                requiredRevision = requiredSessionRevision,
             )
         val pendingSnapshot = session.requireSnapshot()
+        val pendingSessionRevision = session.revision()
         scheduleSessionExpiry(pendingSnapshot)
         val pendingSignerAddress = requireNotNull(pendingSnapshot.signerAddress) { "No active signer" }
         val pendingSignerKeyType = pendingSnapshot.signerKeyType
         return try {
             val wallets = walletsFromAuthResponse(completeAuth)
+            session.requireRevision(pendingSessionRevision)
             if (walletSelection == WalletSelectionBehavior.Manual) {
                 CompleteAuthResult.WalletSelection(
                     pendingSelection =
@@ -793,11 +832,11 @@ class WalletClient internal constructor(
                 val selected =
                     when {
                         candidateWallets.isEmpty() -> {
-                            createWallet(walletType)
+                            createWalletForCurrentSession(walletType, reference = null, pendingSessionRevision)
                         }
 
                         else -> {
-                            useWallet(candidateWallets.first().id)
+                            useWalletForCurrentSession(candidateWallets.first().id, pendingSessionRevision)
                         }
                     }
                 CompleteAuthResult.WalletSelected(
@@ -815,7 +854,7 @@ class WalletClient internal constructor(
         }
     }
 
-    private suspend fun restorePendingOidcRedirectAuth(pending: PendingOidcRedirectAuth) {
+    private suspend fun restorePendingOidcRedirectAuth(pending: PendingOidcRedirectAuth): Long {
         requireActiveCredential()
         val currentSignerAddress = signer.credentialId()
         check(currentSignerAddress == pending.signerAddress) {
@@ -832,6 +871,7 @@ class WalletClient internal constructor(
                 signerKeyType = pending.signerKeyType,
             ),
         )
+        return session.revision()
     }
 
     private fun persistCurrentSession() {
@@ -848,7 +888,7 @@ class WalletClient internal constructor(
         network: Network,
         message: String,
     ): String =
-        runOmsOperation(OmsSdkOperation.WalletSignMessage) {
+        runOMSWalletOperation(OMSWalletOperation.WalletSignMessage) {
             session.requireSnapshot()
             requireActiveCredential()
             gateway.signMessage(
@@ -865,7 +905,7 @@ class WalletClient internal constructor(
         network: Network,
         typedData: JsonElement,
     ): String =
-        runOmsOperation(OmsSdkOperation.WalletSignTypedData) {
+        runOMSWalletOperation(OMSWalletOperation.WalletSignTypedData) {
             session.requireSnapshot()
             requireActiveCredential()
             gateway.signTypedData(
@@ -883,7 +923,7 @@ class WalletClient internal constructor(
         message: String,
         signature: String,
     ): Boolean =
-        runOmsOperation(OmsSdkOperation.WalletIsValidMessageSignature) {
+        runOMSWalletOperation(OMSWalletOperation.WalletIsValidMessageSignature) {
             gateway.isValidMessageSignature(
                 walletId = requireWalletId(),
                 network = network,
@@ -900,7 +940,7 @@ class WalletClient internal constructor(
         typedData: JsonElement,
         signature: String,
     ): Boolean =
-        runOmsOperation(OmsSdkOperation.WalletIsValidTypedDataSignature) {
+        runOMSWalletOperation(OMSWalletOperation.WalletIsValidTypedDataSignature) {
             gateway.isValidTypedDataSignature(
                 walletId = requireWalletId(),
                 network = network,
@@ -947,7 +987,7 @@ class WalletClient internal constructor(
         statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse =
-        runOmsOperation(OmsSdkOperation.WalletSendTransaction) {
+        runOMSWalletOperation(OMSWalletOperation.WalletSendTransaction) {
             val snapshot = session.requireSnapshot()
             require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
             requireActiveCredential()
@@ -959,7 +999,7 @@ class WalletClient internal constructor(
                 )
             executePreparedTransaction(
                 network = network,
-                walletAddress = snapshot.walletAddress ?: throw OmsSessionException(message = "No wallet selected"),
+                walletAddress = snapshot.walletAddress ?: throw OMSWalletSessionException(message = "No wallet selected"),
                 prepared = prepared,
                 selectFeeOption = selectFeeOption,
                 waitForStatus = waitForStatus,
@@ -981,7 +1021,7 @@ class WalletClient internal constructor(
         statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse =
-        runOmsOperation(OmsSdkOperation.WalletCallContract) {
+        runOMSWalletOperation(OMSWalletOperation.WalletCallContract) {
             val snapshot = session.requireSnapshot()
             requireActiveCredential()
             val prepared =
@@ -995,7 +1035,7 @@ class WalletClient internal constructor(
                 )
             executePreparedTransaction(
                 network = network,
-                walletAddress = snapshot.walletAddress ?: throw OmsSessionException(message = "No wallet selected"),
+                walletAddress = snapshot.walletAddress ?: throw OMSWalletSessionException(message = "No wallet selected"),
                 prepared = prepared,
                 selectFeeOption = selectFeeOption,
                 waitForStatus = waitForStatus,
@@ -1008,8 +1048,8 @@ class WalletClient internal constructor(
      * transaction.
      */
     suspend fun getTransactionStatus(txnId: String): TransactionStatusResponse =
-        runOmsOperation(OmsSdkOperation.WalletGetTransactionStatus) {
-            requireActiveWalletSession(OmsSdkOperation.WalletGetTransactionStatus)
+        runOMSWalletOperation(OMSWalletOperation.WalletGetTransactionStatus) {
+            requireActiveWalletSession(OMSWalletOperation.WalletGetTransactionStatus)
             requireActiveCredential()
             gateway.transactionStatus(txnId)
         }
@@ -1021,7 +1061,7 @@ class WalletClient internal constructor(
      * size and returns the combined credential list.
      */
     suspend fun listAccess(pageSize: UInt? = null): List<CredentialInfo> =
-        runOmsOperation(OmsSdkOperation.WalletListAccess) {
+        runOMSWalletOperation(OMSWalletOperation.WalletListAccess) {
             session.requireSnapshot()
             requireActiveCredential()
             val credentials = mutableListOf<CredentialInfo>()
@@ -1040,7 +1080,7 @@ class WalletClient internal constructor(
             var cursor: String? = null
             do {
                 val response =
-                    runOmsOperation(OmsSdkOperation.WalletListAccessPages) {
+                    runOMSWalletOperation(OMSWalletOperation.WalletListAccessPages) {
                         requestListAccessPage(
                             pageSize = pageSize,
                             cursor = cursor,
@@ -1058,7 +1098,7 @@ class WalletClient internal constructor(
         pageSize: UInt? = null,
         cursor: String? = null,
     ): ListAccessResponse =
-        runOmsOperation(OmsSdkOperation.WalletListAccessPage) {
+        runOMSWalletOperation(OMSWalletOperation.WalletListAccessPage) {
             requestListAccessPage(pageSize, cursor)
         }
 
@@ -1081,7 +1121,7 @@ class WalletClient internal constructor(
         ttlSeconds: UInt? = null,
         customClaims: Map<String, JsonElement>? = null,
     ): String =
-        runOmsOperation(OmsSdkOperation.WalletGetIdToken) {
+        runOMSWalletOperation(OMSWalletOperation.WalletGetIdToken) {
             session.requireSnapshot()
             requireActiveCredential()
             gateway.getIdToken(
@@ -1097,7 +1137,7 @@ class WalletClient internal constructor(
      * Use [listAccess] or [listAccessPage] to find credential IDs.
      */
     suspend fun revokeAccess(targetCredentialId: String): Unit =
-        runOmsOperation(OmsSdkOperation.WalletRevokeAccess) {
+        runOMSWalletOperation(OMSWalletOperation.WalletRevokeAccess) {
             session.requireSnapshot()
             requireActiveCredential()
             gateway.revokeAccess(
@@ -1109,36 +1149,36 @@ class WalletClient internal constructor(
     private fun requireActiveCredential() {
         if (!signer.hasCredential()) {
             signOut()
-            throw OmsSessionException(message = "No active wallet session")
+            throw OMSWalletSessionException(message = "No active wallet session")
         }
     }
 
-    private fun requireActiveWalletSession(operation: OmsSdkOperation?): OMSWalletSessionSnapshot {
+    private fun requireActiveWalletSession(operation: OMSWalletOperation?): OMSWalletSessionSnapshot {
         val snapshot =
             session.snapshot()
-                ?: throw OmsSessionException(operation = operation)
+                ?: throw OMSWalletSessionException(operation = operation)
         expireSnapshotIfNeeded(snapshot, operation)
         if (snapshot.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
-            throw OmsSessionException(operation = operation, message = "No wallet selected")
+            throw OMSWalletSessionException(operation = operation, message = "No wallet selected")
         }
         return snapshot
     }
 
-    private fun expireCurrentSessionIfNeeded(operation: OmsSdkOperation?) {
+    private fun expireCurrentSessionIfNeeded(operation: OMSWalletOperation?) {
         val snapshot = session.snapshot() ?: return
         expireSnapshotIfNeeded(snapshot, operation)
     }
 
     private fun expireSnapshotIfNeeded(
         snapshot: OMSWalletSessionSnapshot,
-        operation: OmsSdkOperation?,
+        operation: OMSWalletOperation?,
     ) {
         if (!snapshot.isExpired(now())) {
             return
         }
         expireSession(snapshot)
-        throw OmsSessionException(
-            code = OmsSdkErrorCode.SessionExpired,
+        throw OMSWalletSessionException(
+            code = OMSWalletErrorCode.SessionExpired,
             operation = operation,
             message = "Wallet session expired",
         )
@@ -1276,6 +1316,14 @@ class WalletClient internal constructor(
             else -> null
         }
 
+    private fun derivedRelayRedirectUri(provider: OidcProviderConfig): String? {
+        val relayProvider = provider.provider ?: builtInOidcProviderForIssuer(provider.issuer)
+        if (relayProvider != "google" && relayProvider != "apple") {
+            return null
+        }
+        return "${environment.walletApiUrl.trimEnd('/')}/auth/waas/callback/$relayProvider"
+    }
+
     private fun builtInOidcProviderLabelForIssuer(issuer: String): String? =
         when (issuer) {
             GOOGLE_ISSUER -> "Google"
@@ -1335,10 +1383,10 @@ class WalletClient internal constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Throwable) {
-                val sdkError = throwable.toOmsSdkException(OmsSdkOperation.WalletExecute)
-                throw OmsTransactionException(
-                    code = OmsSdkErrorCode.TransactionExecutionUnconfirmed,
-                    operation = OmsSdkOperation.WalletExecute,
+                val sdkError = throwable.toOMSWalletException(OMSWalletOperation.WalletExecute)
+                throw OMSWalletTransactionException(
+                    code = OMSWalletErrorCode.TransactionExecutionUnconfirmed,
+                    operation = OMSWalletOperation.WalletExecute,
                     status = sdkError.status,
                     txnId = prepared.txnId,
                     retryable = false,
@@ -1476,9 +1524,9 @@ class WalletClient internal constructor(
                 } catch (throwable: CancellationException) {
                     throw throwable
                 } catch (throwable: Throwable) {
-                    val sdkError = throwable.toOmsSdkException(OmsSdkOperation.WalletTransactionStatus)
-                    throw OmsTransactionException(
-                        operation = OmsSdkOperation.WalletTransactionStatus,
+                    val sdkError = throwable.toOMSWalletException(OMSWalletOperation.WalletTransactionStatus)
+                    throw OMSWalletTransactionException(
+                        operation = OMSWalletOperation.WalletTransactionStatus,
                         status = sdkError.status,
                         txnId = txnId,
                         retryable = true,

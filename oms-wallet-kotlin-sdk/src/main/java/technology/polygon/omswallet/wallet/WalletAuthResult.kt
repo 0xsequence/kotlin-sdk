@@ -1,13 +1,13 @@
 package technology.polygon.omswallet.wallet
 
 import kotlinx.coroutines.sync.Mutex
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletSelectionException
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkOperation
 import technology.polygon.omswallet.models.CredentialInfo
 import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.models.WalletType
-import technology.polygon.omswallet.runOmsOperation
+import technology.polygon.omswallet.runOMSWalletOperation
 
 /**
  * Result returned after selecting or creating a wallet.
@@ -52,13 +52,13 @@ class PendingWalletSelection internal constructor(
      * Selects one of [wallets] and persists it as the active wallet session.
      */
     suspend fun selectWallet(walletId: String): WalletSelectionResult {
-        val operation = OmsSdkOperation.PendingWalletSelectionSelectWallet
-        return runOmsOperation(operation) {
+        val operation = OMSWalletOperation.PendingWalletSelectionSelectWallet
+        return runOMSWalletOperation(operation) {
             lockSelection(operation)
             try {
                 if (wallets.none { it.id == walletId }) {
                     throw OMSWalletSelectionException(
-                        code = OmsSdkErrorCode.WalletSelectionUnavailable,
+                        code = OMSWalletErrorCode.WalletSelectionUnavailable,
                         operation = operation,
                         message = "Selected wallet is not one of the available options",
                     )
@@ -75,8 +75,8 @@ class PendingWalletSelection internal constructor(
      * active wallet session.
      */
     suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult {
-        val operation = OmsSdkOperation.PendingWalletSelectionCreateAndSelectWallet
-        return runOmsOperation(operation) {
+        val operation = OMSWalletOperation.PendingWalletSelectionCreateAndSelectWallet
+        return runOMSWalletOperation(operation) {
             lockSelection(operation)
             try {
                 createAndSelectWalletAction(reference)
@@ -86,10 +86,10 @@ class PendingWalletSelection internal constructor(
         }
     }
 
-    private fun lockSelection(operation: OmsSdkOperation) {
+    private fun lockSelection(operation: OMSWalletOperation) {
         if (!selectionMutex.tryLock()) {
             throw OMSWalletSelectionException(
-                code = OmsSdkErrorCode.WalletSelectionInFlight,
+                code = OMSWalletErrorCode.WalletSelectionInFlight,
                 operation = operation,
                 message = "Pending wallet selection already has an action in flight",
             )

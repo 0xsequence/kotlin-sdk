@@ -11,9 +11,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkException
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
@@ -76,6 +76,7 @@ class WalletOidcIdTokenAuthTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val store = InMemorySessionStore()
             val client =
@@ -195,6 +196,7 @@ class WalletOidcIdTokenAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,
@@ -260,6 +262,7 @@ class WalletOidcIdTokenAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -299,6 +302,7 @@ class WalletOidcIdTokenAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -315,9 +319,9 @@ class WalletOidcIdTokenAuthTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is OmsSdkException)
-            error as OmsSdkException
-            assertEquals(OmsSdkErrorCode.ValidationError, error.code)
+            assertTrue(error is OMSWalletException)
+            error as OMSWalletException
+            assertEquals(OMSWalletErrorCode.ValidationError, error.code)
             assertEquals("wallet.signInWithOidcIdToken", error.operation?.id)
             assertEquals(0, server.requestCount)
         }
@@ -354,6 +358,7 @@ class WalletOidcIdTokenAuthTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val store = InMemorySessionStore()
             val client =
@@ -433,6 +438,7 @@ class WalletOidcIdTokenAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = InMemorySessionStore(),
@@ -498,6 +504,7 @@ class WalletOidcIdTokenAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,
@@ -546,6 +553,7 @@ class WalletOidcIdTokenAuthTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val store = InMemorySessionStore()
             val client =
@@ -602,6 +610,7 @@ class WalletOidcIdTokenAuthTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,

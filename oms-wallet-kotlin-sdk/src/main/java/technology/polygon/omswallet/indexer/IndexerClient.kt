@@ -13,12 +13,12 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import technology.polygon.omswallet.Network
-import technology.polygon.omswallet.OmsRequestException
-import technology.polygon.omswallet.OmsResponseException
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkOperation
-import technology.polygon.omswallet.OmsUpstreamError
-import technology.polygon.omswallet.OmsUpstreamService
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletRequestException
+import technology.polygon.omswallet.OMSWalletResponseException
+import technology.polygon.omswallet.OMSWalletUpstreamError
+import technology.polygon.omswallet.OMSWalletUpstreamService
 import technology.polygon.omswallet.models.ContractVerificationStatus
 import technology.polygon.omswallet.models.IndexerNetworkType
 import technology.polygon.omswallet.models.MetadataOptions
@@ -63,7 +63,7 @@ class IndexerClient internal constructor(
         contractStatus: ContractVerificationStatus? = null,
         page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
     ): TokenBalancesResult {
-        val operation = OmsSdkOperation.IndexerGetBalances
+        val operation = OMSWalletOperation.IndexerGetBalances
         val response =
             postIndexerGatewayJson(
                 operation = operation,
@@ -122,7 +122,7 @@ class IndexerClient internal constructor(
         metadataOptions: MetadataOptions? = null,
         page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
     ): TransactionHistoryResult {
-        val operation = OmsSdkOperation.IndexerGetTransactionHistory
+        val operation = OMSWalletOperation.IndexerGetTransactionHistory
         val response =
             postIndexerGatewayJson(
                 operation = operation,
@@ -172,7 +172,7 @@ class IndexerClient internal constructor(
     }
 
     private suspend fun postIndexerGatewayJson(
-        operation: OmsSdkOperation,
+        operation: OMSWalletOperation,
         path: String,
         body: String,
     ): OMSWalletHttpResponse {
@@ -187,7 +187,7 @@ class IndexerClient internal constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Throwable) {
-                throw OmsRequestException(
+                throw OMSWalletRequestException(
                     operation = operation,
                     upstreamError = throwable.toIndexerUpstreamError(),
                     message = throwable.message ?: "${operation.id} request failed",
@@ -198,8 +198,8 @@ class IndexerClient internal constructor(
         if (response.statusCode !in 200..299) {
             val parsed = parseJsonOrText(response.body)
             val message = indexerResponseMessage(parsed, operation, response.statusCode)
-            throw OmsRequestException(
-                code = OmsSdkErrorCode.HttpError,
+            throw OMSWalletRequestException(
+                code = OMSWalletErrorCode.HttpError,
                 operation = operation,
                 status = response.statusCode,
                 retryable = response.statusCode >= 500,
@@ -217,18 +217,18 @@ class IndexerClient internal constructor(
 
     private fun parseIndexerJsonObject(
         response: OMSWalletHttpResponse,
-        operation: OmsSdkOperation,
+        operation: OMSWalletOperation,
     ): JsonObject =
         try {
             parseJsonObject(response.body)
         } catch (throwable: Throwable) {
             val message = "Invalid JSON response from ${operation.id}"
-            throw OmsResponseException(
+            throw OMSWalletResponseException(
                 operation = operation,
                 status = response.statusCode,
                 upstreamError =
-                    OmsUpstreamError(
-                        service = OmsUpstreamService.Indexer,
+                    OMSWalletUpstreamError(
+                        service = OMSWalletUpstreamService.Indexer,
                         message = message,
                         status = response.statusCode,
                     ),
@@ -420,7 +420,7 @@ class IndexerClient internal constructor(
 
     private fun indexerResponseMessage(
         payload: Any,
-        operation: OmsSdkOperation,
+        operation: OMSWalletOperation,
         status: Int,
     ): String =
         when (payload) {
@@ -431,11 +431,11 @@ class IndexerClient internal constructor(
     private fun Any.toIndexerUpstreamError(
         status: Int,
         fallbackMessage: String,
-    ): OmsUpstreamError =
+    ): OMSWalletUpstreamError =
         when (this) {
             is JsonObject -> {
-                OmsUpstreamError(
-                    service = OmsUpstreamService.Indexer,
+                OMSWalletUpstreamError(
+                    service = OMSWalletUpstreamService.Indexer,
                     name = string("name") ?: string("error"),
                     code = stringOrNumber("code"),
                     message = string("message") ?: string("msg") ?: fallbackMessage,
@@ -444,17 +444,17 @@ class IndexerClient internal constructor(
             }
 
             else -> {
-                OmsUpstreamError(
-                    service = OmsUpstreamService.Indexer,
+                OMSWalletUpstreamError(
+                    service = OMSWalletUpstreamService.Indexer,
                     message = fallbackMessage,
                     status = status,
                 )
             }
         }
 
-    private fun Throwable.toIndexerUpstreamError(): OmsUpstreamError =
-        OmsUpstreamError(
-            service = OmsUpstreamService.Indexer,
+    private fun Throwable.toIndexerUpstreamError(): OMSWalletUpstreamError =
+        OMSWalletUpstreamError(
+            service = OMSWalletUpstreamService.Indexer,
             name = javaClass.simpleName,
             message = message,
             status = null,

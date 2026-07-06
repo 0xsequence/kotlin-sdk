@@ -11,6 +11,7 @@ import technology.polygon.omswallet.internal.generated.waas.Page
 import technology.polygon.omswallet.internal.generated.waas.Wallet
 import technology.polygon.omswallet.internal.generated.waas.WalletType
 import technology.polygon.omswallet.internal.generated.waas.WebRpcJson
+import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import technology.polygon.omswallet.utils.OMSWalletBase64Url
@@ -19,6 +20,15 @@ import java.net.URLDecoder
 
 internal val TEST_CREDENTIAL_ID: String = "0x04" + "11".repeat(64)
 internal val TEST_SIGNATURE: String = "0x" + "22".repeat(64)
+
+internal fun testEnvironment(
+    walletApiUrl: String = "https://wallet.example.com/v1/Waas",
+    indexerGatewayUrl: String = "https://indexer.example.com/v1/IndexerGateway/",
+): OMSWalletEnvironment =
+    OMSWalletEnvironment(
+        walletApiUrl = walletApiUrl,
+        indexerGatewayUrl = indexerGatewayUrl,
+    )
 
 internal fun walletFixture(
     walletId: String,

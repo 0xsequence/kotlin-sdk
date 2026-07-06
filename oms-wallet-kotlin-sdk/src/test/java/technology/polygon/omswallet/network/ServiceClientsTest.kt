@@ -14,10 +14,10 @@ import org.junit.Test
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkException
-import technology.polygon.omswallet.OmsSdkOperation
-import technology.polygon.omswallet.OmsUpstreamService
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletException
+import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletUpstreamService
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.models.TokenBalancesPageRequest
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
@@ -57,6 +57,7 @@ class ServiceClientsTest {
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
                 OMSWallet(
@@ -168,6 +169,7 @@ class ServiceClientsTest {
 
             val environment =
                 OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client = IndexerClient("test-publishable-key", environment, OMSWalletHttpClient())
@@ -226,6 +228,7 @@ class ServiceClientsTest {
 
             val environment =
                 OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client = IndexerClient("test-publishable-key", environment, OMSWalletHttpClient())
@@ -289,6 +292,7 @@ class ServiceClientsTest {
 
             val environment =
                 OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client = IndexerClient("test-publishable-key", environment, OMSWalletHttpClient())
@@ -330,7 +334,11 @@ class ServiceClientsTest {
                 OMSWallet(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
-                    environment = OMSWalletEnvironment(walletApiUrl = server.url("/v1/Waas/").toString()),
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                        ),
                 )
             client.wallet.restoreSession(
                 OMSWalletSessionSnapshot(
@@ -347,15 +355,15 @@ class ServiceClientsTest {
                         message = "hello",
                         signature = "0xsig",
                     )
-                }.exceptionOrNull() as? OmsSdkException
+                }.exceptionOrNull() as? OMSWalletException
 
             requireNotNull(failure)
-            assertEquals(OmsSdkErrorCode.InvalidResponse, failure.code)
-            assertEquals(OmsSdkOperation.WalletIsValidMessageSignature, failure.operation)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, failure.code)
+            assertEquals(OMSWalletOperation.WalletIsValidMessageSignature, failure.operation)
             assertEquals("endpoint error", failure.message)
             assertEquals(400, failure.status)
             assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
-            assertEquals(OmsUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals(OMSWalletUpstreamService.Waas, failure.upstreamError?.service)
             assertEquals("WebrpcEndpoint", failure.upstreamError?.name)
             assertEquals("-999", failure.upstreamError?.code)
             assertEquals("endpoint error", failure.upstreamError?.message)
@@ -377,7 +385,11 @@ class ServiceClientsTest {
                 OMSWallet(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
-                    environment = OMSWalletEnvironment(walletApiUrl = server.url("/v1/Waas/").toString()),
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                        ),
                 )
             client.wallet.restoreSession(
                 OMSWalletSessionSnapshot(
@@ -394,15 +406,15 @@ class ServiceClientsTest {
                         message = "hello",
                         signature = "0xsig",
                     )
-                }.exceptionOrNull() as? OmsSdkException
+                }.exceptionOrNull() as? OMSWalletException
 
             requireNotNull(failure)
-            assertEquals(OmsSdkErrorCode.RequestFailed, failure.code)
-            assertEquals(OmsSdkOperation.WalletIsValidMessageSignature, failure.operation)
+            assertEquals(OMSWalletErrorCode.RequestFailed, failure.code)
+            assertEquals(OMSWalletOperation.WalletIsValidMessageSignature, failure.operation)
             assertEquals("Backend rollout error", failure.message)
             assertEquals(409, failure.status)
             assertEquals(false, failure.retryable)
-            assertEquals(OmsUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals(OMSWalletUpstreamService.Waas, failure.upstreamError?.service)
             assertEquals("NewBackendError", failure.upstreamError?.name)
             assertEquals("7999", failure.upstreamError?.code)
             assertEquals("Backend rollout error", failure.upstreamError?.message)

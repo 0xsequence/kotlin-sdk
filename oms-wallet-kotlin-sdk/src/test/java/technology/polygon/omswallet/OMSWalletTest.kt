@@ -54,7 +54,7 @@ class OMSWalletTest {
                 OMSWallet(publishableKey = "pk_test_sdbx_project_key")
             }.exceptionOrNull()
 
-        assertTrue(error is OmsValidationException)
+        assertTrue(error is OMSWalletValidationException)
         assertEquals("Invalid publishableKey.", error?.message)
     }
 
@@ -73,6 +73,7 @@ class OMSWalletTest {
             OMSWallet(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
+                environment = testEnvironment(),
                 walletSession = OMSWalletSession(),
                 sessionStore = StubSessionMetadataStore(snapshot),
                 credentialSigner = TrackingCredentialSigner(),
@@ -90,6 +91,7 @@ class OMSWalletTest {
             OMSWallet(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
+                environment = testEnvironment(),
                 walletSession = OMSWalletSession(),
                 oidcRedirectAuthStore =
                     StubOidcRedirectAuthStore(
@@ -131,6 +133,7 @@ class OMSWalletTest {
             OMSWallet(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
+                environment = testEnvironment(),
                 walletSession = OMSWalletSession(),
                 sessionStore = store,
                 credentialSigner = TrackingCredentialSigner(),
@@ -148,7 +151,12 @@ class OMSWalletTest {
 
     @Test
     fun exposesSupportedNetworks() {
-        val sdk = OMSWallet(publishableKey = "test-publishable-key", projectId = "test-project-id")
+        val sdk =
+            OMSWallet(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = testEnvironment(),
+            )
 
         assertEquals(supportedNetworks, sdk.supportedNetworks)
         assertEquals(16, sdk.supportedNetworks.size)
@@ -185,9 +193,10 @@ class OMSWalletTest {
 
     @Test
     fun scopedAndroidStorageDiffersAcrossConfigs() {
-        val defaultEnvironment = OMSWalletEnvironment()
+        val defaultEnvironment = testEnvironment()
         val differentIndexerEnvironment =
             OMSWalletEnvironment(
+                walletApiUrl = defaultEnvironment.walletApiUrl,
                 indexerGatewayUrl = "https://indexer-2.example.com/v1/IndexerGateway/",
             )
         val projectId = "test-project-id"
@@ -217,18 +226,22 @@ class OMSWalletTest {
         val withoutTrailingSlash =
             OMSWalletEnvironment(
                 walletApiUrl = "https://wallet.example.com/v1/Waas",
+                indexerGatewayUrl = "https://indexer.example.com/v1/IndexerGateway/",
             )
         val withTrailingSlash =
             OMSWalletEnvironment(
                 walletApiUrl = "https://wallet.example.com/v1/Waas/",
+                indexerGatewayUrl = "https://indexer.example.com/v1/IndexerGateway/",
             )
         val withDifferentPath =
             OMSWalletEnvironment(
                 walletApiUrl = "https://wallet.example.com/custom/wallet",
+                indexerGatewayUrl = "https://indexer.example.com/v1/IndexerGateway/",
             )
         val withQuery =
             OMSWalletEnvironment(
                 walletApiUrl = "https://wallet.example.com/v1/Waas?foo=bar",
+                indexerGatewayUrl = "https://indexer.example.com/v1/IndexerGateway/",
             )
         val projectId = "test-project-id"
 
@@ -266,6 +279,12 @@ class OMSWalletTest {
         assertNotEquals(first.credentialNonceStoreName, second.credentialNonceStoreName)
         assertNotEquals(first.oidcRedirectAuthFileName, second.oidcRedirectAuthFileName)
     }
+
+    private fun testEnvironment(): OMSWalletEnvironment =
+        OMSWalletEnvironment(
+            walletApiUrl = "https://wallet.example.com/v1/Waas",
+            indexerGatewayUrl = "https://indexer.example.com/v1/IndexerGateway/",
+        )
 
     private data class ScopedAndroidStorageIds(
         val sessionFileName: String,

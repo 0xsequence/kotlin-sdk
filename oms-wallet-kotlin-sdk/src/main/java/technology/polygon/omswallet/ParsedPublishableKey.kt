@@ -12,7 +12,7 @@ internal data class ParsedPublishableKey(
 /**
  * Parses an OMS publishable key into the project id and service URLs it routes to.
  *
- * @throws OmsValidationException when [publishableKey] does not match a supported OMS key shape.
+ * @throws OMSWalletValidationException when [publishableKey] does not match a supported OMS key shape.
  */
 internal fun parsePublishableKey(publishableKey: String): ParsedPublishableKey {
     val route =
@@ -45,4 +45,4 @@ private val publishableKeyRoutes =
         PublishableKeyRoute("pk_live_", "https://api.polygon.technology"),
     )
 
-private fun invalidPublishableKey(): OmsValidationException = OmsValidationException(message = "Invalid publishableKey.")
+private fun invalidPublishableKey(): OMSWalletValidationException = OMSWalletValidationException(message = "Invalid publishableKey.")

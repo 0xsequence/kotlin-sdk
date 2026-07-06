@@ -35,11 +35,7 @@ class OMSWallet internal constructor(
     private val resolvedProjectId: String = projectId ?: parsePublishableKey(publishableKey).projectId
     private val resolvedEnvironment: OMSWalletEnvironment =
         environment
-            ?: if (projectId == null) {
-                OMSWalletEnvironment.fromPublishableKey(publishableKey)
-            } else {
-                OMSWalletEnvironment()
-            }
+            ?: OMSWalletEnvironment.fromPublishableKey(publishableKey)
     private val transport = OMSWalletHttpClient(okHttpClient)
 
     val wallet: WalletClient =

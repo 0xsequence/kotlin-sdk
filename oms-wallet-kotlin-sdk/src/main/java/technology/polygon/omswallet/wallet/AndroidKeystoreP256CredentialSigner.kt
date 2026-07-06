@@ -35,6 +35,7 @@ internal class AndroidKeystoreP256CredentialSigner(
     private val appContext = context.applicationContext
     private val noncePreferences = appContext.getSharedPreferences(nonceStoreName, Context.MODE_PRIVATE)
     private val nonceLock = nonceLockFor(nonceStoreName, alias)
+    private val keyStoreLock = keyStoreLockFor(alias)
 
     override suspend fun credentialId(): String =
         withContext(ioDispatcher) {
@@ -61,12 +62,17 @@ internal class AndroidKeystoreP256CredentialSigner(
             OMSWalletHex.encode(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
         }
 
-    override fun hasCredential(): Boolean = keyStore().containsAlias(alias)
+    override fun hasCredential(): Boolean =
+        synchronized(keyStoreLock) {
+            keyStore().containsAlias(alias)
+        }
 
     override fun clear() {
-        val store = keyStore()
-        if (store.containsAlias(alias)) {
-            store.deleteEntry(alias)
+        synchronized(keyStoreLock) {
+            val store = keyStore()
+            if (store.containsAlias(alias)) {
+                store.deleteEntry(alias)
+            }
         }
         synchronized(nonceLock) {
             noncePreferences.edit().remove(alias).apply()
@@ -74,34 +80,37 @@ internal class AndroidKeystoreP256CredentialSigner(
     }
 
     private fun requirePrivateKey(): PrivateKey =
-        requireNotNull(keyStore().getKey(alias, null) as? PrivateKey) {
-            "No active OMS Wallet signing credential"
+        synchronized(keyStoreLock) {
+            requireNotNull(keyStore().getKey(alias, null) as? PrivateKey) {
+                "No active OMS Wallet signing credential"
+            }
         }
 
-    private fun getOrCreateKeyPair(): KeyPair {
-        val store = keyStore()
-        val privateKey = store.getKey(alias, null) as? PrivateKey
-        val publicKey = store.getCertificate(alias)?.publicKey
-        if (privateKey != null && publicKey != null) {
-            return KeyPair(publicKey, privateKey)
-        }
+    private fun getOrCreateKeyPair(): KeyPair =
+        synchronized(keyStoreLock) {
+            val store = keyStore()
+            val privateKey = store.getKey(alias, null) as? PrivateKey
+            val publicKey = store.getCertificate(alias)?.publicKey
+            if (privateKey != null && publicKey != null) {
+                return KeyPair(publicKey, privateKey)
+            }
 
-        val keyPairGenerator =
-            KeyPairGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_EC,
-                ANDROID_KEYSTORE,
-            )
-        val spec =
-            KeyGenParameterSpec
-                .Builder(
-                    alias,
-                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
-                ).setAlgorithmParameterSpec(ECGenParameterSpec(SECP256R1))
-                .setDigests(KeyProperties.DIGEST_SHA256)
-                .build()
-        keyPairGenerator.initialize(spec)
-        return keyPairGenerator.generateKeyPair()
-    }
+            val keyPairGenerator =
+                KeyPairGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_EC,
+                    ANDROID_KEYSTORE,
+                )
+            val spec =
+                KeyGenParameterSpec
+                    .Builder(
+                        alias,
+                        KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+                    ).setAlgorithmParameterSpec(ECGenParameterSpec(SECP256R1))
+                    .setDigests(KeyProperties.DIGEST_SHA256)
+                    .build()
+            keyPairGenerator.initialize(spec)
+            keyPairGenerator.generateKeyPair()
+        }
 
     private fun credentialId(publicKey: PublicKey): String {
         val ecPublicKey = publicKey as ECPublicKey
@@ -132,11 +141,14 @@ internal class AndroidKeystoreP256CredentialSigner(
         )
 
         private val nonceLocks = ConcurrentHashMap<NonceLockKey, Any>()
+        private val keyStoreLocks = ConcurrentHashMap<String, Any>()
 
         private fun nonceLockFor(
             storeName: String,
             alias: String,
         ): Any = nonceLocks.computeIfAbsent(NonceLockKey(storeName, alias)) { Any() }
+
+        private fun keyStoreLockFor(alias: String): Any = keyStoreLocks.computeIfAbsent(alias) { Any() }
 
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val SECP256R1 = "secp256r1"

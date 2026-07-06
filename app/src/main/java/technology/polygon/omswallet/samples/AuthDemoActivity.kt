@@ -47,10 +47,10 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
+import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
-import technology.polygon.omswallet.OmsSdkException
 import technology.polygon.omswallet.models.FeeOptionSelection
 import technology.polygon.omswallet.models.FeeOptionWithBalance
 import technology.polygon.omswallet.models.Wallet
@@ -594,8 +594,8 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun describeThrowable(throwable: Throwable): String =
         buildString {
-            if (throwable is OmsSdkException) {
-                append("OmsSdkException(")
+            if (throwable is OMSWalletException) {
+                append("OMSWalletException(")
                 append("code=")
                 append(throwable.code.name)
                 throwable.operation?.let {

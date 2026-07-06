@@ -11,8 +11,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import technology.polygon.omswallet.Network
-import technology.polygon.omswallet.OmsSdkErrorCode
-import technology.polygon.omswallet.OmsSdkException
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.internal.generated.waas.ExecuteRequest
 import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumContractCallRequest
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatusRequest
@@ -55,6 +55,7 @@ class WalletTransactionTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -84,8 +85,8 @@ class WalletTransactionTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is OmsSdkException)
-            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.ValidationError, (error as OMSWalletException).code)
         }
 
     @Test
@@ -435,8 +436,8 @@ class WalletTransactionTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is OmsSdkException)
-            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.ValidationError, (error as OMSWalletException).code)
             assertEquals(1, server.requestCount)
         }
 
@@ -489,8 +490,8 @@ class WalletTransactionTest {
                 }.exceptionOrNull()
 
             assertTrue(selectorCalled)
-            assertTrue(error is OmsSdkException)
-            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.ValidationError, (error as OMSWalletException).code)
             assertEquals(2, server.requestCount)
         }
 
@@ -606,8 +607,8 @@ class WalletTransactionTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is OmsSdkException)
-            assertEquals(OmsSdkErrorCode.ValidationError, (error as OmsSdkException).code)
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.ValidationError, (error as OMSWalletException).code)
             assertEquals(2, server.requestCount)
         }
 
@@ -662,6 +663,7 @@ class WalletTransactionTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -720,6 +722,7 @@ class WalletTransactionTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -810,6 +813,7 @@ class WalletTransactionTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -892,6 +896,7 @@ class WalletTransactionTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -969,6 +974,7 @@ class WalletTransactionTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -1025,6 +1031,7 @@ class WalletTransactionTest {
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore =
@@ -1066,6 +1073,7 @@ class WalletTransactionTest {
         environment: OMSWalletEnvironment =
             OMSWalletEnvironment(
                 walletApiUrl = server.url("/v1/Waas/").toString(),
+                indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
             ),
     ): WalletClient {
         val client =
