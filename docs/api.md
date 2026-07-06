@@ -99,13 +99,15 @@ provider label, and email when available. Completed auth
 requests use a one-week wallet API session lifetime by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds); pass
 `sessionLifetimeSeconds` to auth completion methods or `startOidcRedirectAuth`
-to request a different positive whole-number lifetime in seconds. For OIDC
-redirects, start-time values are stored with pending redirect state and used on
-callback completion unless the callback provides an override. Invalid values
-return `OMSWalletErrorCode.ValidationError` before the SDK sends the affected auth
-request. Auth completion loads all wallet pages before selecting or creating a
-wallet. If auth completes but wallet selection or session persistence fails, the
-SDK clears the in-memory auth session instead of leaving transient state active.
+to request a different value from 1 through
+`WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000` seconds, 30 days). For
+OIDC redirects, start-time values are stored with pending redirect state and used
+on callback completion unless the callback provides an override. Invalid values
+return `OMSWalletErrorCode.ValidationError` before the SDK sends the affected
+auth request. Auth completion loads all wallet pages before selecting or creating
+a wallet. If auth completes but wallet selection or session persistence fails,
+the SDK clears the in-memory auth session instead of leaving transient state
+active.
 Starting a new email, OIDC ID-token, or OIDC redirect auth flow replaces any
 existing wallet session so expired or stale sessions do not block
 re-authentication.
@@ -252,8 +254,10 @@ With `WalletSelectionBehavior.Manual`, successful callbacks return
 `startOidcRedirectAuth` to store completion preferences in the pending redirect
 state. Non-null values passed to `handleOidcRedirectCallback` override pending
 values; omitted callback values fall back to pending values and then SDK
-defaults. Starting a new auth flow clears or replaces stale redirect state, and
-`signOut()` clears it.
+defaults. Custom session lifetime values must be from 1 through
+`WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000` seconds, 30 days).
+Starting a new auth flow clears or replaces stale redirect state, and `signOut()`
+clears it.
 
 Provider configs are the source of truth for redirect scopes, auth mode, and
 optional provider display metadata. If `scopes` is omitted or empty, the

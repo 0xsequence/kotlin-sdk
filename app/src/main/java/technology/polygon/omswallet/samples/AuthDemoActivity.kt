@@ -781,8 +781,8 @@ class AuthDemoActivity : AppCompatActivity() {
             return null
         }
         val parsed = rawValue.toLongOrNull()
-        require(parsed != null && parsed > 0L) {
-            "Session lifetime seconds must be a positive whole number"
+        require(parsed != null && parsed in 1L..WalletClient.MAX_SESSION_LIFETIME_SECONDS) {
+            "Session lifetime seconds must be between 1 and ${WalletClient.MAX_SESSION_LIFETIME_SECONDS}"
         }
         return parsed
     }

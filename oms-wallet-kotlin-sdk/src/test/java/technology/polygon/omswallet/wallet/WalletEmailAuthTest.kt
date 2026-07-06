@@ -549,6 +549,7 @@ class WalletEmailAuthTest {
             error as OMSWalletException
             assertEquals(OMSWalletErrorCode.ValidationError, error.code)
             assertEquals("wallet.completeEmailAuth", error.operation?.id)
+            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
             assertEquals(0, server.requestCount)
         }
 

@@ -181,6 +181,49 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
+    fun startOidcRedirectAuthRejectsInvalidSessionLifetimeBeforeRequest() =
+        runBlocking {
+            val redirectStore = InMemoryOidcRedirectAuthStore()
+            val client =
+                WalletClient(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                        ),
+                    transport = OMSWalletHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    oidcRedirectAuthStore = redirectStore,
+                    oidcNonceGenerator = { "nonce-123" },
+                    credentialSigner = TrackingCredentialSigner(),
+                )
+
+            val error =
+                runCatching {
+                    client.startOidcRedirectAuth(
+                        provider =
+                            OidcProviderConfig(
+                                issuer = "https://issuer.example",
+                                clientId = "client-123",
+                                authorizationUrl = "https://issuer.example/oauth/authorize",
+                            ),
+                        redirectUri = "omsclientkotlindemo://auth/callback",
+                        sessionLifetimeSeconds = 2_592_001L,
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            error as OMSWalletException
+            assertEquals(OMSWalletErrorCode.ValidationError, error.code)
+            assertEquals("wallet.startOidcRedirectAuth", error.operation?.id)
+            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
+            assertEquals(0, server.requestCount)
+            assertNull(redirectStore.pending)
+        }
+
+    @Test
     fun startOidcRedirectAuthUsesExplicitGoogleLoginHint() =
         runBlocking {
             server.enqueue(
@@ -959,6 +1002,7 @@ class WalletOidcRedirectAuthTest {
             val error = result.error as OMSWalletException
             assertEquals(OMSWalletErrorCode.ValidationError, error.code)
             assertEquals("wallet.handleOidcRedirectCallback", error.operation?.id)
+            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
             assertEquals(1, server.requestCount)
         }
 

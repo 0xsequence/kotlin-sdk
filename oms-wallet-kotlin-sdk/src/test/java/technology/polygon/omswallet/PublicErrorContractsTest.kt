@@ -187,7 +187,7 @@ class PublicErrorContractsTest {
                             name = "OMSWalletValidationException",
                             code = "ValidationError",
                             operation = "wallet.completeEmailAuth",
-                            message = "sessionLifetimeSeconds must be a positive whole number",
+                            message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
                         ),
                     ),
                 ),
@@ -533,7 +533,7 @@ class PublicErrorContractsTest {
                             name = "OMSWalletValidationException",
                             code = "ValidationError",
                             operation = "wallet.handleOidcRedirectCallback",
-                            message = "sessionLifetimeSeconds must be a positive whole number",
+                            message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
                         ),
                     ),
                     labeled(

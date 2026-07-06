@@ -116,6 +116,11 @@ class WalletClient internal constructor(
          * Default requested WaaS wallet session lifetime in seconds.
          */
         const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 604_800L
+
+        /**
+         * Maximum requested WaaS wallet session lifetime in seconds.
+         */
+        const val MAX_SESSION_LIFETIME_SECONDS: Long = 2_592_000L
     }
 
     private val signer: CredentialSigner = credentialSigner ?: MissingCredentialSigner
@@ -1332,11 +1337,8 @@ class WalletClient internal constructor(
         }
 
     private fun requireWaasSessionLifetimeSeconds(sessionLifetimeSeconds: Long): UInt {
-        require(sessionLifetimeSeconds > 0L) {
-            "sessionLifetimeSeconds must be a positive whole number"
-        }
-        require(sessionLifetimeSeconds <= MAX_WAAS_SESSION_LIFETIME_SECONDS) {
-            "sessionLifetimeSeconds must be less than or equal to $MAX_WAAS_SESSION_LIFETIME_SECONDS"
+        require(sessionLifetimeSeconds in 1L..MAX_SESSION_LIFETIME_SECONDS) {
+            "sessionLifetimeSeconds must be an integer between 1 and $MAX_SESSION_LIFETIME_SECONDS"
         }
         return sessionLifetimeSeconds.toUInt()
     }
@@ -2189,6 +2191,5 @@ private fun OMSWalletSessionSnapshot.toSessionExpiredEvent(): OMSWalletSessionEx
     )
 }
 
-private const val MAX_WAAS_SESSION_LIFETIME_SECONDS: Long = 4_294_967_295L
 private const val GOOGLE_ISSUER: String = "https://accounts.google.com"
 private const val APPLE_ISSUER: String = "https://appleid.apple.com"
