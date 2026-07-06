@@ -102,7 +102,7 @@ requests use a one-week wallet API session lifetime by default
 to request a different positive whole-number lifetime in seconds. For OIDC
 redirects, start-time values are stored with pending redirect state and used on
 callback completion unless the callback provides an override. Invalid values
-return `OmsSdkErrorCode.ValidationError` before the SDK sends the affected auth
+return `OMSWalletErrorCode.ValidationError` before the SDK sends the affected auth
 request. Auth completion loads all wallet pages before selecting or creating a
 wallet. If auth completes but wallet selection or session persistence fails, the
 SDK clears the in-memory auth session instead of leaving transient state active.
@@ -111,7 +111,7 @@ existing wallet session so expired or stale sessions do not block
 re-authentication.
 
 Expired sessions are made inactive before protected wallet operations and throw
-`OmsSessionException` with `code = OmsSdkErrorCode.SessionExpired`. Use
+`OMSWalletSessionException` with `code = OMSWalletErrorCode.SessionExpired`. Use
 `onSessionExpired` to route users back to sign-in; the event includes the
 expired session snapshot so apps can reuse `session.auth?.email` for email OTP
 reauth or as a Google `loginHint`, including after process recreation.
@@ -181,7 +181,7 @@ enum class OidcRedirectAuthMode {
 object OidcProviders {
     fun google(
         clientId: String = OidcProviders.defaultGoogleClientId,
-        relayRedirectUri: String = OidcProviders.defaultRelayRedirectUri,
+        relayRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -189,7 +189,7 @@ object OidcProviders {
 
     fun apple(
         clientId: String = OidcProviders.defaultAppleClientId,
-        relayRedirectUri: String = OidcProviders.defaultRelayRedirectUri,
+        relayRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -212,7 +212,7 @@ suspend fun client.wallet.startOidcRedirectAuth(
     walletType: WalletType = WalletType.Ethereum,
     walletSelection: WalletSelectionBehavior? = null,
     sessionLifetimeSeconds: Long? = null,
-    relayRedirectUri: String? = provider.relayRedirectUri,
+    relayRedirectUri: String? = provider.relayRedirectUri ?: /* derived for built-in providers */ null,
     authorizeParams: Map<String, String> = emptyMap(),
     loginHint: String? = null,
 ): StartOidcRedirectAuthResult
@@ -244,7 +244,7 @@ completed wallet session so Android can resume after the browser redirect. Open
 Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
 handler is idempotent and safe to call from `onCreate` / `onNewIntent`: unrelated
 links return `NotOidcRedirectCallback`, stale links return `NoPendingAuth`, and
-provider or completion failures return `Failed` with an `OmsSdkException` when
+provider or completion failures return `Failed` with an `OMSWalletException` when
 the SDK can classify the failure. With
 `WalletSelectionBehavior.Automatic`, successful callbacks return `Completed`.
 With `WalletSelectionBehavior.Manual`, successful callbacks return
@@ -259,13 +259,17 @@ Provider configs are the source of truth for redirect scopes, auth mode, and
 optional provider display metadata. If `scopes` is omitted or empty, the
 authorization URL omits `scope`. PKCE `code_challenge` parameters are sent only
 when `authMode = OidcRedirectAuthMode.AuthCodePKCE`. `OidcProviders.google()`
-uses the SDK default Google client ID, the SDK relay redirect URI, `openid email
-profile` scopes, PKCE auth-code mode, and Google authorization parameters
+uses the SDK default Google client ID, `openid email profile` scopes, PKCE
+auth-code mode, and Google authorization parameters
 `access_type=offline` and `prompt=consent`. `OidcProviders.apple()` uses the SDK
-default Apple Services ID, the SDK relay redirect URI, `openid email` scopes,
-`response_mode=form_post`, and PKCE auth-code mode. Apple `form_post` works
-through the default relay redirect URI; a direct app deep link should not be used
-as the Apple OAuth callback unless that provider flow supports it.
+default Apple Services ID, `openid email` scopes, `response_mode=form_post`, and
+PKCE auth-code mode. When the provider relay URL is omitted,
+`startOidcRedirectAuth` derives the relay URL from the publishable-key Wallet API
+base as `{walletApiUrl}/auth/waas/callback/{google|apple}` for built-in Google
+and Apple providers. Apple `form_post` works through that derived relay; a direct
+app deep link should not be used as the Apple OAuth callback unless that provider
+flow supports it. Pass `relayRedirectUri = null` explicitly to bypass the relay
+for providers whose response mode can call your app callback directly.
 
 Pass `loginHint` to `startOidcRedirectAuth` only when you want to prefill or
 select a specific Google account, such as during session-expiry reauth. The SDK
@@ -596,10 +600,10 @@ suspend fun indexer.getTransactionHistory(
 
 ## Errors
 
-Public SDK APIs throw `OmsSdkException` when the SDK can classify a failure.
+Public SDK APIs throw `OMSWalletException` when the SDK can classify a failure.
 
 ```kotlin
-enum class OmsSdkErrorCode {
+enum class OMSWalletErrorCode {
     HttpError,
     InvalidResponse,
     RequestFailed,
@@ -617,24 +621,24 @@ enum class OmsSdkErrorCode {
 ```
 
 ```kotlin
-open class OmsSdkException(
-    val code: OmsSdkErrorCode,
-    val operation: OmsSdkOperation?,
+open class OMSWalletException(
+    val code: OMSWalletErrorCode,
+    val operation: OMSWalletOperation?,
     val status: Int?,
     val txnId: String?,
     val retryable: Boolean?,
-    val upstreamError: OmsUpstreamError?,
+    val upstreamError: OMSWalletUpstreamError?,
 ) : RuntimeException
 ```
 
 ```kotlin
-enum class OmsUpstreamService {
+enum class OMSWalletUpstreamService {
     Waas,
     Indexer,
 }
 
-data class OmsUpstreamError(
-    val service: OmsUpstreamService,
+data class OMSWalletUpstreamError(
+    val service: OMSWalletUpstreamService,
     val name: String?,
     val code: String?,
     val message: String?,
@@ -643,7 +647,7 @@ data class OmsUpstreamError(
 ```
 
 ```kotlin
-enum class OmsSdkOperation(
+enum class OMSWalletOperation(
     val id: String,
 ) {
     PendingWalletSelection("wallet.pendingWalletSelection"),
@@ -1050,8 +1054,8 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
 Use a redirect URI that matches a deep link registered by your app, such as
 `yourapp://auth/callback`. For a custom Google web client ID, call
 `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
-For Apple, use `OidcProviders.apple()` with the default relay redirect URI so
-the relay can receive Apple's `response_mode=form_post` callback.
+For Apple, use `OidcProviders.apple()` with the derived relay so the relay can
+receive Apple's `response_mode=form_post` callback.
 
 ### Manual Wallet Selection
 

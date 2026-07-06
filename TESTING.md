@@ -53,7 +53,7 @@ Key subdirectories:
   duplicating the full public-field matrix.
 - Exercise real public runtime APIs such as `client.wallet.*`, `client.indexer.*`, auth result
   actions, and public exception classes.
-- Do not assert manually constructed `OmsSdkException` subclasses unless the error class or helper
+- Do not assert manually constructed `OMSWalletException` subclasses unless the error class or helper
   is the unit under test.
 - Mock only external boundaries: network responses, time, randomness, Android platform services, or
   signer behavior.
@@ -68,7 +68,7 @@ Key subdirectories:
   details.
 - Android storage and Keystore signer classes are internal platform boundaries, not separate public
   SDK error surfaces. Cover their failures in focused JVM or instrumented tests unless a failure is
-  intentionally normalized through a documented public `OmsSdkException`.
+  intentionally normalized through a documented public `OMSWalletException`.
 - Serialized contract changes are not automatically regressions. Decide whether the new error shape
   is the intended public contract: if correct, update the assertion and related docs; if accidental,
   fix the implementation. Never update expectations blindly.

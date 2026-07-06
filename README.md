@@ -72,7 +72,7 @@ complete the browser redirect flow and is cleared when the flow completes, fails
 or is replaced.
 
 Expired sessions are made inactive before protected wallet operations and throw
-`OmsSessionException` with `code = OmsSdkErrorCode.SessionExpired`. The SDK
+`OMSWalletSessionException` with `code = OMSWalletErrorCode.SessionExpired`. The SDK
 clears the active signer/session state, but keeps expired completed-session
 metadata in storage until the app starts a new auth flow or calls `signOut()`.
 Subscribe with `client.wallet.onSessionExpired { event -> ... }` to route users
@@ -98,7 +98,7 @@ Completed auth requests ask WaaS for a one-week session lifetime by default
 Pass `sessionLifetimeSeconds` to `completeEmailAuth`, `signInWithOidcIdToken`,
 `startOidcRedirectAuth`, or `handleOidcRedirectCallback` to request a different
 positive whole-number lifetime in seconds. Invalid lifetimes are reported as
-`OmsSdkErrorCode.ValidationError`.
+`OMSWalletErrorCode.ValidationError`.
 
 ```kotlin
 if (client.wallet.walletAddress == null) {
@@ -149,14 +149,15 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
 Use a redirect URI that matches a deep link registered by your app, such as
 `yourapp://auth/callback`. If your Google OAuth setup uses a custom web client
 ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
-`OidcProviders.google()` uses the SDK default Google client ID, the SDK relay
-redirect URI, `openid email profile` scopes, PKCE auth-code mode, and Google
-authorization parameters `access_type=offline` and `prompt=consent`.
-`OidcProviders.apple()` uses the SDK default Apple Services ID, the SDK relay
-redirect URI, `openid email` scopes, `response_mode=form_post`, and PKCE
-auth-code mode. Apple `form_post` works through the default relay redirect URI;
-do not configure a direct app deep link as the Apple OAuth callback unless your
-provider flow supports it.
+`OidcProviders.google()` uses the SDK default Google client ID, `openid email
+profile` scopes, PKCE auth-code mode, and Google authorization parameters
+`access_type=offline` and `prompt=consent`. `OidcProviders.apple()` uses the SDK
+default Apple Services ID, `openid email` scopes, `response_mode=form_post`, and
+PKCE auth-code mode. When the provider relay URL is omitted,
+`startOidcRedirectAuth` derives the relay URL from the publishable-key Wallet API
+base for built-in Google and Apple providers. Apple `form_post` works through
+that derived relay; do not configure a direct app deep link as the Apple OAuth
+callback unless your provider flow supports it.
 Pass `loginHint` only when you want to prefill or select a specific Google
 account, such as during session-expiry reauth. When omitted, the SDK falls back
 to the previous active session email when one exists before redirect auth
@@ -350,7 +351,7 @@ human-entered decimal values before sending. Import the helpers from
 
 ## Errors
 
-Public SDK APIs throw `OmsSdkException` subclasses with stable fields such as
+Public SDK APIs throw `OMSWalletException` subclasses with stable fields such as
 `code`, `operation`, `status`, nullable `retryable`, and `txnId`. When a failure comes
 from a remote OMS service response or transport failure, the error also includes
 `upstreamError` with normalized WaaS or indexer details for logging and
@@ -367,7 +368,7 @@ status polling failed, so retry status lookup with the returned `txnId`.
 ```kotlin
 try {
     client.wallet.startEmailAuth("user@example.com")
-} catch (error: OmsSdkException) {
+} catch (error: OMSWalletException) {
     println("${error.code} ${error.operation?.id} ${error.upstreamError}")
 }
 ```
