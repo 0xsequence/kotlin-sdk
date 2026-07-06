@@ -1350,6 +1350,7 @@ class WalletOidcRedirectAuthTest {
 
             val failure = (result as OidcRedirectAuthResult.Failed).error as OMSWalletException
             assertEquals(OMSWalletOperation.WalletHandleOidcRedirectCallback, failure.operation)
+            assertEquals(OMSWalletErrorCode.ValidationError, failure.code)
             assertEquals("User cancelled", failure.message)
             assertNull(client.snapshotSession())
             assertNull(redirectStore.pending)

@@ -20,6 +20,7 @@ import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
 import technology.polygon.omswallet.OMSWalletSessionState
 import technology.polygon.omswallet.OMSWalletStorageException
 import technology.polygon.omswallet.OMSWalletTransactionException
+import technology.polygon.omswallet.OMSWalletValidationException
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
@@ -503,7 +504,9 @@ class WalletClient internal constructor(
         return try {
             clearPendingAuth = true
             callback.error?.let { error ->
-                throw IllegalStateException(callback.errorDescription ?: "OIDC provider returned error: $error")
+                throw OMSWalletValidationException(
+                    message = callback.errorDescription ?: "OIDC provider returned error: $error",
+                )
             }
             val code = requireNotNull(callback.code) { "OIDC callback URL is missing code" }
             val requiredSessionRevision = restorePendingOidcRedirectAuth(pending)

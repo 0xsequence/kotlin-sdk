@@ -359,11 +359,12 @@ from a remote OMS service response or transport failure, the error also includes
 service-specific troubleshooting. Application logic should usually branch on the
 SDK-level `code`.
 
-For transaction writes, `TransactionExecutionUnconfirmed` means the SDK has a
-`txnId` from preparation, but the execute request failed before the SDK could
-confirm whether the transaction was submitted; do not blindly resend the same
-write. `TransactionStatusLookupFailed` means the transaction was submitted but
-status polling failed, so retry status lookup with the returned `txnId`.
+For transaction writes, `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` means the SDK
+has a `txnId` from preparation, but the execute request failed before the SDK
+could confirm whether the transaction was submitted; do not blindly resend the
+same write. `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was
+submitted but status polling failed, so retry status lookup with the returned
+`txnId`.
 `retryable` describes the failed SDK operation, not the whole user intent.
 
 ```kotlin

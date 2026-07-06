@@ -607,22 +607,25 @@ suspend fun indexer.getTransactionHistory(
 Public SDK APIs throw `OMSWalletException` when the SDK can classify a failure.
 
 ```kotlin
-enum class OMSWalletErrorCode {
-    HttpError,
-    InvalidResponse,
-    RequestFailed,
-    AuthCommitmentConsumed,
-    SessionMissing,
-    SessionExpired,
-    WalletSelectionStale,
-    WalletSelectionUnavailable,
-    WalletSelectionInFlight,
-    TransactionExecutionUnconfirmed,
-    TransactionStatusLookupFailed,
-    ValidationError,
-    StorageError,
+enum class OMSWalletErrorCode(val id: String) {
+    HttpError("OMS_HTTP_ERROR"),
+    InvalidResponse("OMS_INVALID_RESPONSE"),
+    RequestFailed("OMS_REQUEST_FAILED"),
+    AuthCommitmentConsumed("OMS_AUTH_COMMITMENT_CONSUMED"),
+    SessionMissing("OMS_SESSION_MISSING"),
+    SessionExpired("OMS_SESSION_EXPIRED"),
+    WalletSelectionStale("OMS_WALLET_SELECTION_STALE"),
+    WalletSelectionUnavailable("OMS_WALLET_SELECTION_UNAVAILABLE"),
+    WalletSelectionInFlight("OMS_WALLET_SELECTION_IN_FLIGHT"),
+    TransactionExecutionUnconfirmed("OMS_TRANSACTION_EXECUTION_UNCONFIRMED"),
+    TransactionStatusLookupFailed("OMS_TRANSACTION_STATUS_LOOKUP_FAILED"),
+    ValidationError("OMS_VALIDATION_ERROR"),
+    StorageError("OMS_STORAGE_ERROR"),
 }
 ```
+
+Use enum values for Kotlin branching and `code.id` for stable cross-SDK logging
+or serialization.
 
 ```kotlin
 open class OMSWalletException(
@@ -684,8 +687,8 @@ enum class OMSWalletOperation(
 }
 ```
 
-`RequestFailed` covers classified backend failures. `InvalidResponse` is
-reserved for malformed or unparseable responses.
+`OMS_REQUEST_FAILED` covers classified backend failures.
+`OMS_INVALID_RESPONSE` is reserved for malformed or unparseable responses.
 
 `upstreamError` is normalized diagnostic detail from a remote OMS service response
 or transport failure. Use SDK-level `code` for app branching; use
@@ -693,12 +696,12 @@ or transport failure. Use SDK-level `code` for app branching; use
 validation, session, storage, and wallet-selection failures do not include
 upstream details.
 
-`TransactionExecutionUnconfirmed` means transaction preparation succeeded and
-the SDK has a `txnId`, but the execute request failed before the SDK could
+`OMS_TRANSACTION_EXECUTION_UNCONFIRMED` means transaction preparation succeeded
+and the SDK has a `txnId`, but the execute request failed before the SDK could
 confirm whether the transaction was submitted. Do not blindly resend the same
 write solely because the upstream failure looked temporary.
 
-`TransactionStatusLookupFailed` means the transaction was submitted, but
+`OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was submitted, but
 post-submit status polling failed. Retry by calling `getTransactionStatus` with
 the returned `txnId`; `retryable` describes that status lookup operation, not
 the original write.

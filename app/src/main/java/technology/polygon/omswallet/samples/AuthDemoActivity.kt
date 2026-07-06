@@ -597,7 +597,7 @@ class AuthDemoActivity : AppCompatActivity() {
             if (throwable is OMSWalletException) {
                 append("OMSWalletException(")
                 append("code=")
-                append(throwable.code.name)
+                append(throwable.code.id)
                 throwable.operation?.let {
                     append(", operation=")
                     append(it.id)

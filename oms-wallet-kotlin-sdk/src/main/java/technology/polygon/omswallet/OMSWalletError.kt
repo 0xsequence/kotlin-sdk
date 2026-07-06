@@ -8,20 +8,22 @@ import technology.polygon.omswallet.internal.generated.waas.WebRpcTransportExcep
 /**
  * Stable SDK-level error categories for app-facing error handling.
  */
-enum class OMSWalletErrorCode {
-    HttpError,
-    InvalidResponse,
-    RequestFailed,
-    AuthCommitmentConsumed,
-    SessionMissing,
-    SessionExpired,
-    WalletSelectionStale,
-    WalletSelectionUnavailable,
-    WalletSelectionInFlight,
-    TransactionExecutionUnconfirmed,
-    TransactionStatusLookupFailed,
-    ValidationError,
-    StorageError,
+enum class OMSWalletErrorCode(
+    val id: String,
+) {
+    HttpError("OMS_HTTP_ERROR"),
+    InvalidResponse("OMS_INVALID_RESPONSE"),
+    RequestFailed("OMS_REQUEST_FAILED"),
+    AuthCommitmentConsumed("OMS_AUTH_COMMITMENT_CONSUMED"),
+    SessionMissing("OMS_SESSION_MISSING"),
+    SessionExpired("OMS_SESSION_EXPIRED"),
+    WalletSelectionStale("OMS_WALLET_SELECTION_STALE"),
+    WalletSelectionUnavailable("OMS_WALLET_SELECTION_UNAVAILABLE"),
+    WalletSelectionInFlight("OMS_WALLET_SELECTION_IN_FLIGHT"),
+    TransactionExecutionUnconfirmed("OMS_TRANSACTION_EXECUTION_UNCONFIRMED"),
+    TransactionStatusLookupFailed("OMS_TRANSACTION_STATUS_LOOKUP_FAILED"),
+    ValidationError("OMS_VALIDATION_ERROR"),
+    StorageError("OMS_STORAGE_ERROR"),
 }
 
 /**
@@ -469,5 +471,7 @@ private fun WebRpcError.isHttpWebRpcError(status: Int?): Boolean =
                 errorKind == ErrorKind.WEBRPC_BAD_METHOD ||
                 errorKind == ErrorKind.WEBRPC_BAD_REQUEST ||
                 errorKind == ErrorKind.WEBRPC_BAD_RESPONSE ||
+                errorKind == ErrorKind.WEBRPC_SERVER_PANIC ||
+                errorKind == ErrorKind.WEBRPC_INTERNAL_ERROR ||
                 error == "WebrpcBadResponse"
         )

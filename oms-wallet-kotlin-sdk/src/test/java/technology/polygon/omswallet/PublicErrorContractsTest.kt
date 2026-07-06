@@ -65,7 +65,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletRequestException",
-                    code = "RequestFailed",
+                    code = "OMS_REQUEST_FAILED",
                     operation = "wallet.startEmailAuth",
                     message = "WebRPC request failed",
                     retryable = true,
@@ -109,7 +109,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletRequestException",
-                    code = "AuthCommitmentConsumed",
+                    code = "OMS_AUTH_COMMITMENT_CONSUMED",
                     operation = "wallet.completeEmailAuth",
                     message = "The authentication commitment has already been used",
                     status = 400,
@@ -145,7 +145,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletRequestException",
-                    code = "HttpError",
+                    code = "OMS_HTTP_ERROR",
                     operation = "wallet.startEmailAuth",
                     message = "bad response",
                     status = 502,
@@ -163,6 +163,38 @@ class PublicErrorContractsTest {
                     client.wallet.startEmailAuth("user@example.com")
                 },
             )
+
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(500)
+                    .body("""{"error":"WebrpcServerPanic","code":-6,"msg":"server panic","status":500}""")
+                    .build(),
+            )
+
+            val serverPanicClient = createOmsClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_HTTP_ERROR",
+                    operation = "wallet.startEmailAuth",
+                    message = "server panic",
+                    status = 500,
+                    retryable = true,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "WebrpcServerPanic",
+                            code = "-6",
+                            message = "server panic",
+                            status = 500,
+                        ),
+                ),
+                publicError {
+                    serverPanicClient.wallet.startEmailAuth("user@example.com")
+                },
+            )
         }
 
     @Test
@@ -176,7 +208,7 @@ class PublicErrorContractsTest {
                         "wallet.completeEmailAuth.noPendingAuth",
                         error(
                             name = "OMSWalletSessionException",
-                            code = "SessionMissing",
+                            code = "OMS_SESSION_MISSING",
                             operation = "wallet.completeEmailAuth",
                             message = "No pending email auth attempt",
                         ),
@@ -185,7 +217,7 @@ class PublicErrorContractsTest {
                         "wallet.completeEmailAuth.invalidLifetime",
                         error(
                             name = "OMSWalletValidationException",
-                            code = "ValidationError",
+                            code = "OMS_VALIDATION_ERROR",
                             operation = "wallet.completeEmailAuth",
                             message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
                         ),
@@ -308,7 +340,7 @@ class PublicErrorContractsTest {
                         "wallet.pendingWalletSelection.selectWallet.unavailable",
                         error(
                             name = "OMSWalletSelectionException",
-                            code = "WalletSelectionUnavailable",
+                            code = "OMS_WALLET_SELECTION_UNAVAILABLE",
                             operation = "wallet.pendingWalletSelection.selectWallet",
                             message = "Selected wallet is not one of the available options",
                         ),
@@ -317,7 +349,7 @@ class PublicErrorContractsTest {
                         "wallet.pendingWalletSelection.selectWallet.stale",
                         error(
                             name = "OMSWalletSelectionException",
-                            code = "WalletSelectionStale",
+                            code = "OMS_WALLET_SELECTION_STALE",
                             operation = "wallet.pendingWalletSelection.selectWallet",
                             message = "Pending wallet selection is no longer active",
                         ),
@@ -326,7 +358,7 @@ class PublicErrorContractsTest {
                         "wallet.pendingWalletSelection.createAndSelectWallet.stale",
                         error(
                             name = "OMSWalletSelectionException",
-                            code = "WalletSelectionStale",
+                            code = "OMS_WALLET_SELECTION_STALE",
                             operation = "wallet.pendingWalletSelection.createAndSelectWallet",
                             message = "Pending wallet selection is no longer active",
                         ),
@@ -335,7 +367,7 @@ class PublicErrorContractsTest {
                         "wallet.pendingWalletSelection.selectWallet.inFlight",
                         error(
                             name = "OMSWalletSelectionException",
-                            code = "WalletSelectionInFlight",
+                            code = "OMS_WALLET_SELECTION_IN_FLIGHT",
                             operation = "wallet.pendingWalletSelection.selectWallet",
                             message = "Pending wallet selection already has an action in flight",
                         ),
@@ -344,7 +376,7 @@ class PublicErrorContractsTest {
                         "wallet.pendingWalletSelection.createAndSelectWallet.inFlight",
                         error(
                             name = "OMSWalletSelectionException",
-                            code = "WalletSelectionInFlight",
+                            code = "OMS_WALLET_SELECTION_IN_FLIGHT",
                             operation = "wallet.pendingWalletSelection.createAndSelectWallet",
                             message = "Pending wallet selection already has an action in flight",
                         ),
@@ -504,7 +536,7 @@ class PublicErrorContractsTest {
                         "wallet.startOidcRedirectAuth.missingRedirectStorage",
                         error(
                             name = "OMSWalletValidationException",
-                            code = "ValidationError",
+                            code = "OMS_VALIDATION_ERROR",
                             operation = "wallet.startOidcRedirectAuth",
                             message = "OIDC redirect auth requires an OIDC redirect auth store",
                         ),
@@ -513,7 +545,7 @@ class PublicErrorContractsTest {
                         "wallet.startOidcRedirectAuth.redirectStorageWriteFailure",
                         error(
                             name = "OMSWalletStorageException",
-                            code = "StorageError",
+                            code = "OMS_STORAGE_ERROR",
                             operation = "wallet.startOidcRedirectAuth",
                             message = "OIDC redirect auth state persistence failed",
                         ),
@@ -521,8 +553,8 @@ class PublicErrorContractsTest {
                     labeled(
                         "wallet.handleOidcRedirectCallback.providerError",
                         error(
-                            name = "OMSWalletSessionException",
-                            code = "SessionMissing",
+                            name = "OMSWalletValidationException",
+                            code = "OMS_VALIDATION_ERROR",
                             operation = "wallet.handleOidcRedirectCallback",
                             message = "User cancelled",
                         ),
@@ -531,7 +563,7 @@ class PublicErrorContractsTest {
                         "wallet.handleOidcRedirectCallback.invalidLifetime",
                         error(
                             name = "OMSWalletValidationException",
-                            code = "ValidationError",
+                            code = "OMS_VALIDATION_ERROR",
                             operation = "wallet.handleOidcRedirectCallback",
                             message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
                         ),
@@ -540,7 +572,7 @@ class PublicErrorContractsTest {
                         "wallet.handleOidcRedirectCallback.signerMismatch",
                         error(
                             name = "OMSWalletSessionException",
-                            code = "SessionMissing",
+                            code = "OMS_SESSION_MISSING",
                             operation = "wallet.handleOidcRedirectCallback",
                             message = "OIDC redirect auth signer mismatch",
                         ),
@@ -572,7 +604,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletValidationException",
-                    code = "ValidationError",
+                    code = "OMS_VALIDATION_ERROR",
                     operation = "wallet.sendTransaction",
                     message = "Transaction value must be non-negative",
                 ),
@@ -597,7 +629,7 @@ class PublicErrorContractsTest {
                         "wallet.isValidMessageSignature",
                         error(
                             name = "OMSWalletRequestException",
-                            code = "RequestFailed",
+                            code = "OMS_REQUEST_FAILED",
                             operation = "wallet.isValidMessageSignature",
                             message = "WebRPC request failed",
                             retryable = true,
@@ -614,7 +646,7 @@ class PublicErrorContractsTest {
                         "wallet.isValidTypedDataSignature",
                         error(
                             name = "OMSWalletRequestException",
-                            code = "RequestFailed",
+                            code = "OMS_REQUEST_FAILED",
                             operation = "wallet.isValidTypedDataSignature",
                             message = "WebRPC request failed",
                             retryable = true,
@@ -666,7 +698,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletRequestException",
-                    code = "RequestFailed",
+                    code = "OMS_REQUEST_FAILED",
                     operation = "wallet.getTransactionStatus",
                     message = "Transaction not found",
                     status = 404,
@@ -696,7 +728,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletValidationException",
-                    code = "ValidationError",
+                    code = "OMS_VALIDATION_ERROR",
                     operation = "wallet.sendTransaction",
                     message = "No fee options available for unsponsored transaction",
                 ),
@@ -730,7 +762,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletTransactionException",
-                    code = "TransactionExecutionUnconfirmed",
+                    code = "OMS_TRANSACTION_EXECUTION_UNCONFIRMED",
                     operation = "wallet.execute",
                     message = "Transaction execution failed before status could be confirmed",
                     status = 502,
@@ -776,7 +808,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletTransactionException",
-                    code = "TransactionStatusLookupFailed",
+                    code = "OMS_TRANSACTION_STATUS_LOOKUP_FAILED",
                     operation = "wallet.transactionStatus",
                     message = "Transaction was submitted, but status polling failed",
                     status = 404,
@@ -815,7 +847,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletTransactionException",
-                    code = "TransactionStatusLookupFailed",
+                    code = "OMS_TRANSACTION_STATUS_LOOKUP_FAILED",
                     operation = "wallet.transactionStatus",
                     message = "Transaction was submitted, but status polling failed",
                     retryable = true,
@@ -865,7 +897,7 @@ class PublicErrorContractsTest {
                         operation,
                         error(
                             name = "OMSWalletRequestException",
-                            code = "RequestFailed",
+                            code = "OMS_REQUEST_FAILED",
                             operation = operation,
                             message = "Unauthorized",
                             status = 401,
@@ -914,7 +946,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletRequestException",
-                    code = "HttpError",
+                    code = "OMS_HTTP_ERROR",
                     operation = "indexer.getBalances",
                     message = "Indexer is unavailable",
                     status = 503,
@@ -962,7 +994,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletRequestException",
-                    code = "HttpError",
+                    code = "OMS_HTTP_ERROR",
                     operation = "indexer.getBalances",
                     message = "indexer.getBalances failed with HTTP 502",
                     status = 502,
@@ -991,7 +1023,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletRequestException",
-                    code = "RequestFailed",
+                    code = "OMS_REQUEST_FAILED",
                     operation = "indexer.getBalances",
                     message = "fetch failed",
                     retryable = true,
@@ -1028,7 +1060,7 @@ class PublicErrorContractsTest {
             assertEquals(
                 error(
                     name = "OMSWalletResponseException",
-                    code = "InvalidResponse",
+                    code = "OMS_INVALID_RESPONSE",
                     operation = "indexer.getBalances",
                     message = "Invalid JSON response from indexer.getBalances",
                     status = 200,
@@ -1073,7 +1105,7 @@ class PublicErrorContractsTest {
         assertEquals(
             error(
                 name = "OMSWalletRequestException",
-                code = "HttpError",
+                code = "OMS_HTTP_ERROR",
                 operation = "wallet.startEmailAuth",
                 message = "bad gateway",
                 status = 502,
@@ -1235,7 +1267,7 @@ class PublicErrorContractsTest {
             operation,
             error(
                 name = "OMSWalletSessionException",
-                code = "SessionMissing",
+                code = "OMS_SESSION_MISSING",
                 operation = operation,
                 message = message,
             ),
@@ -1245,7 +1277,7 @@ class PublicErrorContractsTest {
         val sdkError = this as? OMSWalletException
         return SerializedError(
             name = javaClass.simpleName,
-            code = sdkError?.code?.name,
+            code = sdkError?.code?.id,
             operation = sdkError?.operation?.id,
             message = message,
             status = sdkError?.status,
