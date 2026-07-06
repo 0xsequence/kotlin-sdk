@@ -195,9 +195,9 @@ result.
 - `ktlint_standard_package-name` is disabled to avoid churn from package-name
   rules if generated or legacy Android names are introduced.
 - `ktlint_standard_property-naming` is disabled because the repo intentionally
-  exposes lowerCamel companion constants such as
-  `OMSWalletEnvironment.walletApiUrlDefault`; renaming those would change the
-  documented API.
+  uses lowerCamel companion constants for internal wire/header names such as
+  `OMSWalletEnvironment.accessKeyHeaderName`; renaming those would add needless
+  churn.
 - Do not change ktlint rule exceptions casually. If a rule starts enforcing a
   real project invariant, remove the exception in the same change that fixes the
   affected code.
