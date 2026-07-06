@@ -152,8 +152,8 @@ result.
   small, tested changes there.
 - Treat returned wallet-auth action objects such as `PendingWalletSelection` as
   public SDK operation boundaries. Wrap their network-backed actions with
-  `runOmsOperation` and the matching `PendingWalletSelection...` operation so
-  generated WebRPC and transport exceptions are classified as `OmsSdkException`.
+  `runOMSWalletOperation` and the matching `PendingWalletSelection...` operation so
+  generated WebRPC and transport exceptions are classified as `OMSWalletException`.
 - `OMSWalletEnvironment`, `OMSWalletHttpClient`, and `OMSWalletJson` define
   service routing and JSON behavior. Preserve existing serialization defaults
   unless tests and API docs are updated together.
@@ -232,7 +232,7 @@ and the execution command reference.
   `PublicErrorContractsTest`; focused tests should cover behavior or edge cases
   without duplicating the full matrix.
 - Exercise real public runtime APIs and mock only external boundaries.
-- Do not assert manually constructed `OmsSdkException` subclasses unless the
+- Do not assert manually constructed `OMSWalletException` subclasses unless the
   error class or helper is the unit under test.
 - Assert stable public fields only; do not assert raw `cause`, stacks, generated
   internals, headers, timestamps, or full backend payloads as public contract.
