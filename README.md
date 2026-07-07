@@ -34,25 +34,26 @@ client.wallet.startEmailAuth("user@example.com")
 
 // Use the one-time code the user enters from their email inbox.
 val result = client.wallet.completeEmailAuth("123456")
-check(result is CompleteAuthResult.WalletSelected)
+if (result is CompleteAuthResult.WalletSelected) {
+    val wallet = result.wallet
+    println("Wallet address: ${wallet.address}")
 
-val wallet = result.wallet
-println("Wallet address: ${wallet.address}")
+    val signature =
+        client.wallet.signMessage(
+            network = Network.AMOY,
+            message = "hello from OMS Wallet",
+        )
+    println("Signature: $signature")
 
-val signature =
-    client.wallet.signMessage(
-        network = Network.AMOY,
-        message = "hello from OMS Wallet",
-    )
-println("Signature: $signature")
-
-val balances =
-    client.indexer.getBalances(
-        walletAddress = wallet.address,
-        networks = listOf(Network.AMOY),
-        includeMetadata = true,
-    )
-println("Native balances: ${balances.nativeBalances}")
+    // Read balances from the chains your app needs.
+    val balances =
+        client.indexer.getBalances(
+            walletAddress = wallet.address,
+            networks = listOf(Network.POLYGON, Network.BASE, Network.ARBITRUM),
+            includeMetadata = true,
+        )
+    println("Balances: $balances")
+}
 ```
 
 The SDK derives wallet API and indexer routing from the publishable key. Start
@@ -90,7 +91,7 @@ Subscribe with `client.wallet.onSessionExpired { event -> ... }` to route users
 back to sign-in while preserving the expired session snapshot for reauth.
 Listeners are delivered on the Android main thread.
 
-## Authentication Details
+## Authentication
 
 The quick start uses automatic wallet selection. Starting a new auth flow
 intentionally replaces any existing wallet session so users can re-authenticate
@@ -111,15 +112,7 @@ value from 1 through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000`
 seconds, 30 days). Invalid lifetimes are reported as
 `OMSWalletErrorCode.ValidationError`.
 
-```kotlin
-if (client.wallet.walletAddress == null) {
-    client.wallet.startEmailAuth("user@example.com")
-    // A one-time code is sent to the user's email inbox.
-    val result = client.wallet.completeEmailAuth("123456")
-    check(result is CompleteAuthResult.WalletSelected)
-    showWallet(result.wallet)
-}
-```
+### OIDC ID-Token Auth
 
 For OIDC ID-token flows such as Google Sign-In with Credential Manager:
 
@@ -130,12 +123,15 @@ val result =
         issuer = "https://accounts.google.com",
         audience = "YOUR_WEB_CLIENT_ID",
     )
-check(result is CompleteAuthResult.WalletSelected)
-showWallet(result.wallet)
+if (result is CompleteAuthResult.WalletSelected) {
+    println("Wallet address: ${result.wallet.address}")
+}
 ```
 
 Pass `provider` and `providerLabel` to `signInWithOidcIdToken` for custom
 ID-token providers when you want those labels stored in `client.wallet.session.auth`.
+
+### OIDC Redirect Auth
 
 For OIDC authorization-code redirect flows, start the redirect, open the
 returned URL with your browser or Custom Tabs, then safely handle incoming app
@@ -150,10 +146,10 @@ val started = client.wallet.startOidcRedirectAuth(
 // Open started.authorizationUrl.
 
 when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
-    is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
+    is OidcRedirectAuthResult.Completed -> println("Wallet address: ${result.wallet.address}")
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
-    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
+    is OidcRedirectAuthResult.Failed -> println(result.error.message)
 }
 ```
 
@@ -218,6 +214,8 @@ With the default automatic behavior, a successful redirect callback returns
 `OidcRedirectAuthResult.Completed`; `WalletSelection` is only a successful branch
 when the callback is handled with manual wallet selection.
 
+### Manual Wallet Selection
+
 To use your own wallet-selection UI, pass
 `walletSelection = WalletSelectionBehavior.Manual` when completing auth:
 
@@ -227,39 +225,21 @@ val result =
         code = "123456",
         walletSelection = WalletSelectionBehavior.Manual,
     )
-check(result is CompleteAuthResult.WalletSelection)
-
-val selected = selectOrCreateWallet(result.pendingSelection)
-showWallet(selected.wallet)
+if (result is CompleteAuthResult.WalletSelection) {
+    // Show result.pendingSelection.wallets in your app UI.
+    val selected = result.pendingSelection.selectWallet("wallet-id")
+    // or:
+    // val selected = result.pendingSelection.createAndSelectWallet()
+    println("Wallet address: ${selected.wallet.address}")
+}
 ```
 
 Manual mode completes auth but does not select or create a wallet until the app
 calls `pendingSelection.selectWallet(...)` or
 `pendingSelection.createAndSelectWallet(...)`. `pendingSelection.wallets` is
 already filtered to the requested wallet type, so the app picker can show those
-wallets plus a "Create New Wallet" action:
-
-```kotlin
-private suspend fun selectOrCreateWallet(
-    pendingSelection: PendingWalletSelection,
-): WalletSelectionResult {
-    val choice =
-        showWalletPickerAndWaitForChoice(
-            wallets = pendingSelection.wallets,
-            includeCreateNewWallet = true,
-        )
-
-    return when (choice) {
-        WalletPickerChoice.CreateNew ->
-            pendingSelection.createAndSelectWallet()
-        is WalletPickerChoice.Existing ->
-            pendingSelection.selectWallet(choice.wallet.id)
-    }
-}
-```
-
-`WalletPickerChoice` is app UI state in this example. Both SDK calls return the
-selected wallet and persist it as the active wallet session.
+wallets plus a "Create New Wallet" action. Both SDK calls return the selected
+wallet and persist it as the active wallet session.
 
 For OIDC redirect auth, pass the behavior when starting redirect auth to store it
 with the pending redirect state:
@@ -283,15 +263,20 @@ when (
         )
 ) {
     is OidcRedirectAuthResult.WalletSelection -> {
-        val selected = selectOrCreateWallet(result.pendingSelection)
-        showWallet(selected.wallet)
+        // Show result.pendingSelection.wallets in your app UI.
+        val selected = result.pendingSelection.selectWallet("wallet-id")
+        // or:
+        // val selected = result.pendingSelection.createAndSelectWallet()
+        println("Wallet address: ${selected.wallet.address}")
     }
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
-    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
-    is OidcRedirectAuthResult.Completed -> error("Expected manual wallet selection")
+    is OidcRedirectAuthResult.Failed -> println(result.error.message)
+    is OidcRedirectAuthResult.Completed -> Unit
 }
 ```
+
+### Session State
 
 Useful state checks:
 
@@ -323,9 +308,28 @@ pages before selecting or creating a wallet. If auth completes but wallet
 selection, wallet creation, or session persistence fails, the SDK clears the
 in-memory auth session instead of retaining unrecoverable transient state.
 
-Use the selected wallet. Transaction examples use Polygon Amoy and can move
-testnet funds; fund the wallet from a faucet before sending and switch networks
-only when you are ready for production.
+## Core Workflows
+
+### Sign and Verify Messages
+
+Use the selected wallet for signing.
+
+```kotlin
+val network = Network.AMOY
+
+val signResult = client.wallet.signMessage(
+    network = network,
+    message = "hello from android",
+)
+
+val verifyResult = client.wallet.isValidMessageSignature(
+    network = network,
+    message = "hello from android",
+    signature = signResult,
+)
+```
+
+### Sign Typed Data
 
 ```kotlin
 val network = Network.AMOY
@@ -364,21 +368,20 @@ val typedDataJson =
         }
     }
 
-val signResult = client.wallet.signMessage(
-    network = network,
-    message = "hello from android",
-)
-
-val verifyResult = client.wallet.isValidMessageSignature(
-    network = network,
-    message = "hello from android",
-    signature = signResult,
-)
-
 val typedSignature = client.wallet.signTypedData(
     network = network,
     typedData = typedDataJson,
 )
+```
+
+### Send a First Transaction
+
+Transaction examples use Polygon Amoy and can move testnet funds; fund the
+wallet from a faucet before sending and switch networks only when you are ready
+for production.
+
+```kotlin
+val network = Network.AMOY
 
 val txResult = client.wallet.sendTransaction(
     network = network,
@@ -395,46 +398,14 @@ Transaction values are raw base-unit integers. Use `parseUnits` to convert
 human-entered decimal values before sending. Import the helpers from
 `technology.polygon.omswallet.utils`.
 
-## Errors
-
-Public SDK APIs throw `OMSWalletException` subclasses with stable fields such as
-`code`, `operation`, `status`, nullable `retryable`, and `txnId`. When a failure comes
-from a remote OMS service response or transport failure, the error also includes
-`upstreamError` with normalized wallet API or indexer details for logging and
-service-specific troubleshooting. Application logic should usually branch on the
-SDK-level `code`.
-
-For transaction writes, `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` means the SDK
-has a `txnId` from preparation, but the execute request failed before the SDK
-could confirm whether the transaction was submitted; do not blindly resend the
-same write. `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was
-submitted but status polling failed, so retry status lookup with the returned
-`txnId`.
-`retryable` describes the failed SDK operation, not the whole user intent.
-
-```kotlin
-try {
-    client.wallet.startEmailAuth("user@example.com")
-} catch (error: OMSWalletException) {
-    println("${error.code} ${error.operation?.id} ${error.upstreamError}")
-}
-```
-
-For raw token amount formatting and parsing:
-
-```kotlin
-val rawAmount = parseUnits("1.5", 18)
-val displayAmount = formatUnits(rawAmount, 18)
-```
-
-For indexer balance lookups:
+### Query Balances
 
 ```kotlin
 val walletAddress = requireNotNull(client.wallet.walletAddress)
 
 val tokenBalances = client.indexer.getBalances(
     walletAddress = walletAddress,
-    networks = listOf(network),
+    networks = listOf(Network.POLYGON, Network.BASE, Network.ARBITRUM),
     contractAddresses = listOf("0x3333333333333333333333333333333333333333"),
     includeMetadata = true,
 )
@@ -451,14 +422,16 @@ tokenBalances.balances.forEach { balance ->
 Pass `includeMetadata = true` when you need token contract details or NFT/token
 metadata from `balance.contractInfo` and `balance.tokenMetadata`.
 
-For transaction history:
+### Query Transaction History
 
 ```kotlin
 val history = client.indexer.getTransactionHistory(
     walletAddress = walletAddress,
-    networks = listOf(network),
+    networks = listOf(Network.POLYGON, Network.BASE, Network.ARBITRUM),
 )
 ```
+
+### Advanced Transactions
 
 For raw calldata or transaction parameters beyond `to` and `value`, use the request overload:
 
@@ -519,8 +492,7 @@ val txResult = client.wallet.sendTransaction(
         mode = TransactionMode.Native,
     ),
 ) { feeOptions ->
-    val selected = showFeePickerAndWaitForChoice(feeOptions)
-    selected.selection
+    feeOptions.first().selection
 }
 ```
 
@@ -532,14 +504,53 @@ API-provided `tokenID` when present and falls back to the token symbol. Sponsore
 transactions skip fee selection; unsponsored transactions fail before execute
 when no fee option can be selected.
 
-To refresh a transaction later or manage active wallet credentials:
+To refresh a transaction later:
 
 ```kotlin
 val status = client.wallet.getTransactionStatus(txnId = txResult.txnId)
+```
+
+## Reference
+
+### Errors
+
+Public SDK APIs throw `OMSWalletException` subclasses with stable fields such as
+`code`, `operation`, `status`, nullable `retryable`, and `txnId`. When a failure comes
+from a remote OMS service response or transport failure, the error also includes
+`upstreamError` with normalized wallet API or indexer details for logging and
+service-specific troubleshooting. Application logic should usually branch on the
+SDK-level `code`.
+
+For transaction writes, `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` means the SDK
+has a `txnId` from preparation, but the execute request failed before the SDK
+could confirm whether the transaction was submitted; do not blindly resend the
+same write. `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was
+submitted but status polling failed, so retry status lookup with the returned
+`txnId`.
+`retryable` describes the failed SDK operation, not the whole user intent.
+
+```kotlin
+try {
+    client.wallet.startEmailAuth("user@example.com")
+} catch (error: OMSWalletException) {
+    println("${error.code} ${error.operation?.id} ${error.upstreamError}")
+}
+```
+
+### Unit Formatting
+
+```kotlin
+val rawAmount = parseUnits("1.5", 18)
+val displayAmount = formatUnits(rawAmount, 18)
+```
+
+### Wallet ID Tokens and Access
+
+```kotlin
 val idToken = client.wallet.getIdToken(ttlSeconds = 300u)
 val credentials = client.wallet.listAccess(pageSize = 25u)
 client.wallet.listAccessPages(pageSize = 25u).collect { page ->
-    renderCredentials(page.credentials)
+    println(page.credentials)
 }
 
 credentials
