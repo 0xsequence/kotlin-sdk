@@ -94,7 +94,6 @@ object OidcProviders {
 
     fun google(
         clientId: String = defaultGoogleClientId,
-        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -103,7 +102,7 @@ object OidcProviders {
             issuer = "https://accounts.google.com",
             clientId = clientId,
             authorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth",
-            providerRedirectUri = providerRedirectUri,
+            providerRedirectUri = null,
             provider = "google",
             providerLabel = "Google",
             scopes = scopes,
@@ -117,7 +116,6 @@ object OidcProviders {
 
     fun apple(
         clientId: String = defaultAppleClientId,
-        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -126,7 +124,7 @@ object OidcProviders {
             issuer = "https://appleid.apple.com",
             clientId = clientId,
             authorizationUrl = "https://appleid.apple.com/auth/authorize",
-            providerRedirectUri = providerRedirectUri,
+            providerRedirectUri = null,
             provider = "apple",
             providerLabel = "Apple",
             scopes = scopes,

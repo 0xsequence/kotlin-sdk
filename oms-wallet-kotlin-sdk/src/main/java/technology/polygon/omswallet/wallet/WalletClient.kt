@@ -1340,10 +1340,7 @@ class WalletClient internal constructor(
             require(omsRelayReturnUri.isNotBlank()) {
                 "omsRelayReturnUri is required when using a helper OIDC provider with the OMS relay"
             }
-            val providerRedirectUri =
-                provider.providerRedirectUri?.also {
-                    require(it.isNotBlank()) { "providerRedirectUri must not be blank" }
-                } ?: derivedRelayRedirectUri(relayProvider)
+            val providerRedirectUri = derivedRelayRedirectUri(relayProvider)
             return OidcRedirectUris(
                 oauthRedirectUri = providerRedirectUri,
                 expectedCallbackUri = omsRelayReturnUri,

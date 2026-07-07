@@ -183,7 +183,6 @@ enum class OidcRedirectAuthMode {
 object OidcProviders {
     fun google(
         clientId: String = OidcProviders.defaultGoogleClientId,
-        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -191,7 +190,6 @@ object OidcProviders {
 
     fun apple(
         clientId: String = OidcProviders.defaultAppleClientId,
-        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -269,16 +267,15 @@ the SDK default Google client ID, `openid email profile` scopes, PKCE auth-code
 mode, and Google authorization parameters `access_type=offline` and
 `prompt=consent`. `OidcProviders.apple()` uses the SDK default Apple Services ID,
 `openid email` scopes, `response_mode=form_post`, and PKCE auth-code mode.
-Helper-created Google and Apple configs may omit `providerRedirectUri`; in that
-case `startOidcRedirectAuth` requires `omsRelayReturnUri`, derives the OMS relay
-URL from the publishable-key Wallet API base as
+Helper-created Google and Apple configs are the SDK default OMS-relayed
+providers: `startOidcRedirectAuth` requires `omsRelayReturnUri`, derives the OMS
+relay URL from the publishable-key Wallet API base as
 `{walletApiUrl}/auth/waas/callback/{google|apple}`, and stores
 `omsRelayReturnUri` in OIDC state. Apple `form_post` works through that derived
 relay; a direct app deep link should not be used as the Apple OAuth callback
-unless that provider flow supports it. If you pass `providerRedirectUri` to a
-Google or Apple helper and still use an intermediate relay, pass
-`omsRelayReturnUri` to store the final app callback in OIDC state. To bypass the
-relay, omit `omsRelayReturnUri`.
+unless that provider flow supports it. To use Google or Apple without the SDK
+relay, configure that provider as a custom `OidcProviderConfig` with
+`providerRedirectUri`; custom providers do not use `omsRelayReturnUri`.
 
 Pass `loginHint` to `startOidcRedirectAuth` only when you want to prefill or
 select a specific Google account, such as during session-expiry reauth. The SDK

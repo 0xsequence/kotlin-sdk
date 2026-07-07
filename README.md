@@ -154,14 +154,14 @@ client ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
 profile` scopes, PKCE auth-code mode, and Google authorization parameters
 `access_type=offline` and `prompt=consent`. `OidcProviders.apple()` uses the SDK
 default Apple Services ID, `openid email` scopes, `response_mode=form_post`, and
-PKCE auth-code mode. The Google and Apple helpers omit `providerRedirectUri` by
-default, so `startOidcRedirectAuth` derives the OMS relay URL from the
-publishable-key Wallet API base and stores `omsRelayReturnUri` in OIDC state.
+PKCE auth-code mode. These helpers are the SDK default OMS-relayed providers, so
+`startOidcRedirectAuth` derives the OMS relay URL from the publishable-key Wallet
+API base and stores `omsRelayReturnUri` in OIDC state.
 Apple `form_post` works through that derived relay; do not configure a direct
 app deep link as the Apple OAuth callback unless your provider flow supports it.
-If you pass `providerRedirectUri` to a Google or Apple helper and still use an
-intermediate relay, pass `omsRelayReturnUri` to store the final app callback in
-OIDC state. To bypass the relay, omit `omsRelayReturnUri`.
+To use Google or Apple without the SDK relay, configure that provider as a custom
+`OidcProviderConfig` with `providerRedirectUri`; custom providers do not use
+`omsRelayReturnUri`.
 For custom providers, set `providerRedirectUri` on `OidcProviderConfig` and do
 not pass `omsRelayReturnUri`; the SDK sends `providerRedirectUri` as the OAuth
 `redirect_uri` and expects the provider callback at that URL.

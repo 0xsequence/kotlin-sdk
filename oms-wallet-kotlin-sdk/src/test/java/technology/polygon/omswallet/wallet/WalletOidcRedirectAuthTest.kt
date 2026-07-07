@@ -244,7 +244,7 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
-    fun startOidcRedirectAuthWithHelperGoogleProviderRedirectUriUsesOmsRelayReturnUriInState() =
+    fun startOidcRedirectAuthWithHelperGoogleUsesDerivedRelayUriInState() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -271,11 +271,11 @@ class WalletOidcRedirectAuthTest {
                     oidcNonceGenerator = { "nonce-123" },
                     credentialSigner = TrackingCredentialSigner(),
                 )
-            val explicitProviderRedirectUri = "https://custom-relay.example/google/callback"
+            val derivedRelayUri = server.url("/v1/Waas/").toString().trimEnd('/') + "/auth/waas/callback/google"
 
             val result =
                 client.startOidcRedirectAuth(
-                    provider = OidcProviders.google(providerRedirectUri = explicitProviderRedirectUri),
+                    provider = OidcProviders.google(),
                     omsRelayReturnUri = "omsclientkotlindemo://auth/callback",
                 )
             val request = requireNotNull(server.takeRequest())
@@ -289,7 +289,7 @@ class WalletOidcRedirectAuthTest {
                             mapOf(
                                 "iss" to "https://accounts.google.com",
                                 "aud" to OidcProviders.defaultGoogleClientId,
-                                "redirect_uri" to explicitProviderRedirectUri,
+                                "redirect_uri" to derivedRelayUri,
                             ),
                     ),
                 ),
@@ -297,7 +297,7 @@ class WalletOidcRedirectAuthTest {
             )
 
             val query = queryParams(result.authorizationUrl)
-            assertEquals(explicitProviderRedirectUri, query["redirect_uri"])
+            assertEquals(derivedRelayUri, query["redirect_uri"])
             val decodedState = String(OMSWalletBase64Url.decode(result.state), Charsets.UTF_8)
             assertTrue(decodedState.contains(""""redirect_uri":"omsclientkotlindemo://auth/callback""""))
             assertEquals("omsclientkotlindemo://auth/callback", redirectStore.pending?.redirectUri)
