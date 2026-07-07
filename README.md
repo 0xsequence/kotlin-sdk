@@ -1,8 +1,8 @@
 # OMS Wallet Kotlin SDK
 
-Android and Kotlin SDK for OMS Wallet. It handles wallet authentication,
-non-extractable request signing, session restore, transactions, message signing,
-and indexer reads through a single `OMSWallet` root object.
+Build non-custodial OMS Wallet experiences on Android and Kotlin with email and
+OIDC auth, secure session restore, message signing, transactions, and indexer
+reads through a single `OMSWallet` root object.
 
 ## Installation
 
@@ -11,26 +11,6 @@ Maven Central:
 ```kotlin
 implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.0")
 ```
-
-This is the only artifact consumers add.
-
-## Capabilities
-
-- email sign-in flow against the wallet API
-- OIDC ID-token sign-in flow against the wallet API
-- OIDC redirect sign-in flow with built-in Google and Apple provider defaults
-- non-extractable Android Keystore request credential for wallet API signing
-- persisted wallet session metadata
-- wallet selection and wallet creation flows
-- message signing
-- typed-data signing
-- transaction sending and contract calls
-- transaction status lookup
-- wallet access listing and revocation
-- message and typed-data signature verification
-- native and token balance lookups plus transaction history through the indexer
-  service, including optional token contract info and token metadata
-- unit formatting and parsing helpers for raw token amounts
 
 ## Compatibility
 
@@ -41,16 +21,6 @@ This is the only artifact consumers add.
 - a valid `publishableKey`
 
 The SDK does not require consumer apps to enable core library desugaring.
-
-The published artifact declares `minSdk 24` so apps with lower manifest floors,
-including Expo/React Native apps, can include the dependency. This is only a
-packaging compatibility floor: the SDK requires Android 10 / API 29 or newer at
-runtime because the service endpoints require TLS 1.3.
-
-The sample app in this repository uses additional Google Sign-In / AndroidX
-Credential Manager dependencies and therefore compiles with SDK 35. That sample
-app requirement does not raise the published SDK artifact's consumer
-`compileSdk` floor.
 
 ## Quick Start
 
@@ -89,6 +59,21 @@ The SDK derives wallet API and indexer routing from the publishable key. Start
 with sign-in, message signing, or balance reads. Transaction examples below use
 Polygon Amoy; mainnet transactions can move real funds.
 
+## Capabilities
+
+- email sign-in
+- OIDC ID-token sign-in
+- OIDC redirect sign-in with built-in Google and Apple provider defaults
+- Android Keystore-backed request signing
+- persisted wallet session metadata
+- wallet selection and wallet creation flows
+- message and typed-data signing
+- transaction sending, contract calls, and transaction status lookup
+- wallet access listing and revocation
+- message and typed-data signature verification
+- native and token balance lookups plus transaction history through the indexer
+- unit formatting and parsing helpers for raw token amounts
+
 ## Security Model
 
 Completed wallet-session metadata is restored automatically when `OMSWallet` is
@@ -107,10 +92,9 @@ Listeners are delivered on the Android main thread.
 
 ## Authentication Details
 
-The quick start uses automatic wallet selection. Apps
-can hide sign-in controls while a wallet is selected, but starting a new auth
-flow intentionally replaces any existing wallet session so users can re-auth or
-switch accounts:
+The quick start uses automatic wallet selection. Starting a new auth flow
+intentionally replaces any existing wallet session so users can re-authenticate
+or switch accounts.
 
 By default email OTP and OIDC ID-token auth completion use
 `WalletSelectionBehavior.Automatic`. They select a wallet for the requested
@@ -416,7 +400,7 @@ human-entered decimal values before sending. Import the helpers from
 Public SDK APIs throw `OMSWalletException` subclasses with stable fields such as
 `code`, `operation`, `status`, nullable `retryable`, and `txnId`. When a failure comes
 from a remote OMS service response or transport failure, the error also includes
-`upstreamError` with normalized WaaS or indexer details for logging and
+`upstreamError` with normalized wallet API or indexer details for logging and
 service-specific troubleshooting. Application logic should usually branch on the
 SDK-level `code`.
 
@@ -567,6 +551,13 @@ credentials
 
 The full public API surface is documented in [docs/api.md](docs/api.md).
 
+## Android Compatibility Notes
+
+The published artifact declares `minSdk 24` so apps with lower manifest floors,
+including Expo/React Native apps, can include the dependency. This is only a
+packaging compatibility floor: the SDK requires Android 10 / API 29 or newer at
+runtime because the service endpoints require TLS 1.3.
+
 ## Sample App
 
 This repository includes an Android sample app in [`app/`](app/) that demonstrates:
@@ -579,6 +570,10 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 - wallet selection after sign-in
 - message signing and verification
 - transaction sending
+
+The sample app uses additional Google Sign-In / AndroidX Credential Manager
+dependencies and therefore compiles with SDK 35. That sample app requirement
+does not raise the published SDK artifact's consumer `compileSdk` floor.
 
 ## Build From Source
 
