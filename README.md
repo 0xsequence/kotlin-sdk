@@ -1,6 +1,8 @@
 # OMS Wallet Kotlin SDK
 
-Android and Kotlin SDK for wallet, auth, signing, and API/indexer integrations.
+Android and Kotlin SDK for OMS Wallet. It handles wallet authentication,
+non-extractable request signing, session restore, transactions, message signing,
+and indexer reads through a single `OMSWallet` root object.
 
 ## Installation
 
@@ -10,11 +12,9 @@ Maven Central:
 implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.0")
 ```
 
-This is the only artifact consumers add. The generated WaaS client is packaged
-inside the AAR as an internal implementation detail; consumers should use the
-SDK APIs documented below instead of importing generated classes.
+This is the only artifact consumers add.
 
-## What It Provides
+## Capabilities
 
 - email sign-in flow against the wallet API
 - OIDC ID-token sign-in flow against the wallet API
@@ -27,12 +27,12 @@ SDK APIs documented below instead of importing generated classes.
 - transaction sending and contract calls
 - transaction status lookup
 - wallet access listing and revocation
-- message and typed-data signature verification through WaaS
+- message and typed-data signature verification
 - native and token balance lookups plus transaction history through the indexer
   service, including optional token contract info and token metadata
 - unit formatting and parsing helpers for raw token amounts
 
-## Requirements
+## Compatibility
 
 - Android 10 / API 29 or newer
 - Android `compileSdk 34` or newer
@@ -43,9 +43,9 @@ SDK APIs documented below instead of importing generated classes.
 The SDK does not require consumer apps to enable core library desugaring.
 
 The published artifact declares `minSdk 24` so apps with lower manifest floors,
-including Expo/React Native apps, can include the dependency. This is a packaging
-compatibility floor; the SDK requires Android 10 / API 29 or newer at runtime
-because the service endpoints require TLS 1.3.
+including Expo/React Native apps, can include the dependency. This is only a
+packaging compatibility floor: the SDK requires Android 10 / API 29 or newer at
+runtime because the service endpoints require TLS 1.3.
 
 The sample app in this repository uses additional Google Sign-In / AndroidX
 Credential Manager dependencies and therefore compiles with SDK 35. That sample
@@ -54,22 +54,48 @@ app requirement does not raise the published SDK artifact's consumer
 
 ## Quick Start
 
-Create the SDK with the Android-friendly constructor:
-
 ```kotlin
 val client = OMSWallet(
     context = context,
     publishableKey = "YOUR_PUBLISHABLE_KEY",
 )
+
+client.wallet.startEmailAuth("user@example.com")
+
+// Use the one-time code the user enters from their email inbox.
+val result = client.wallet.completeEmailAuth("123456")
+check(result is CompleteAuthResult.WalletSelected)
+
+val wallet = result.wallet
+println("Wallet address: ${wallet.address}")
+
+val signature =
+    client.wallet.signMessage(
+        network = Network.AMOY,
+        message = "hello from OMS Wallet",
+    )
+println("Signature: $signature")
+
+val balances =
+    client.indexer.getBalances(
+        walletAddress = wallet.address,
+        networks = listOf(Network.AMOY),
+        includeMetadata = true,
+    )
+println("Native balances: ${balances.nativeBalances}")
 ```
 
-The SDK derives Wallet API and IndexerGateway routing from the publishable key.
-Session restore persists completed wallet-session metadata only; it does not
-store private signing material.
+The SDK derives wallet API and indexer routing from the publishable key. Start
+with sign-in, message signing, or balance reads. Transaction examples below use
+Polygon Amoy; mainnet transactions can move real funds.
 
-Pending email OTP state is kept in memory. OIDC redirect state is stored only to
-complete the browser redirect flow and is cleared when the flow completes, fails,
-or is replaced.
+## Security Model
+
+Completed wallet-session metadata is restored automatically when `OMSWallet` is
+created. Session restore does not store private signing material. Pending email
+OTP state is kept in memory. OIDC redirect state is stored only to complete the
+browser redirect flow and is cleared when the flow completes, fails, or is
+replaced.
 
 Expired sessions are made inactive before protected wallet operations and throw
 `OMSWalletSessionException` with `code = OMSWalletErrorCode.SessionExpired`. The SDK
@@ -79,9 +105,9 @@ Subscribe with `client.wallet.onSessionExpired { event -> ... }` to route users
 back to sign-in while preserving the expired session snapshot for reauth.
 Listeners are delivered on the Android main thread.
 
-## Example Flow
+## Authentication Details
 
-`OMSWallet` restores a persisted session automatically when it is created. Apps
+The quick start uses automatic wallet selection. Apps
 can hide sign-in controls while a wallet is selected, but starting a new auth
 flow intentionally replaces any existing wallet session so users can re-auth or
 switch accounts:
@@ -90,10 +116,10 @@ By default email OTP and OIDC ID-token auth completion use
 `WalletSelectionBehavior.Automatic`. They select a wallet for the requested
 wallet type, create one when none exists, and return
 `CompleteAuthResult.WalletSelected`. If more than one matching wallet exists,
-automatic mode selects the first matching wallet returned by WaaS. Use manual
+automatic mode selects the first matching wallet returned by the wallet API. Use manual
 mode for apps that need to let users choose between multiple wallets.
 
-Completed auth requests ask WaaS for a one-week session lifetime by default
+Completed auth requests ask the wallet API for a one-week session lifetime by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds).
 Pass `sessionLifetimeSeconds` to `completeEmailAuth`, `signInWithOidcIdToken`,
 `startOidcRedirectAuth`, or `handleOidcRedirectCallback` to request a different
@@ -162,9 +188,36 @@ app deep link as the Apple OAuth callback unless your provider flow supports it.
 To use Google or Apple without the SDK relay, configure that provider as a custom
 `OidcProviderConfig` with `providerRedirectUri`; custom providers do not use
 `omsRelayReturnUri`.
+
+| Flow | Provider config | App return URL | Provider OAuth callback |
+|---|---|---|---|
+| SDK default Google/Apple | `OidcProviders.google()` / `OidcProviders.apple()` | `omsRelayReturnUri` | OMS relay callback derived as `{walletApiUrl}/auth/waas/callback/{google|apple}` |
+| Custom OIDC provider | Custom `OidcProviderConfig` | `providerRedirectUri` | `providerRedirectUri` |
+| Google/Apple without SDK relay | Custom `OidcProviderConfig` for Google or Apple | `providerRedirectUri` | `providerRedirectUri` |
+
+For Android redirect auth, register an app link or intent filter that matches the
+return URI, such as `yourapp://auth/callback`, then pass incoming links from
+`onCreate` / `onNewIntent` to `handleOidcRedirectCallback`.
+
 For custom providers, set `providerRedirectUri` on `OidcProviderConfig` and do
 not pass `omsRelayReturnUri`; the SDK sends `providerRedirectUri` as the OAuth
 `redirect_uri` and expects the provider callback at that URL.
+
+```kotlin
+val acmeProvider =
+    OidcProviderConfig(
+        issuer = "https://login.acme.example",
+        clientId = "acme-client-id",
+        authorizationUrl = "https://login.acme.example/oauth/authorize",
+        providerRedirectUri = "yourapp://auth/callback",
+        provider = "acme",
+        providerLabel = "Acme",
+        scopes = listOf("openid", "email"),
+    )
+
+val started = client.wallet.startOidcRedirectAuth(provider = acmeProvider)
+```
+
 Pass `loginHint` only when you want to prefill or select a specific Google
 account, such as during session-expiry reauth. When omitted, the SDK falls back
 to the previous active session email when one exists before redirect auth
@@ -286,7 +339,9 @@ pages before selecting or creating a wallet. If auth completes but wallet
 selection, wallet creation, or session persistence fails, the SDK clears the
 in-memory auth session instead of retaining unrecoverable transient state.
 
-Use the selected wallet:
+Use the selected wallet. Transaction examples use Polygon Amoy and can move
+testnet funds; fund the wallet from a faucet before sending and switch networks
+only when you are ready for production.
 
 ```kotlin
 val network = Network.AMOY
@@ -343,12 +398,12 @@ val typedSignature = client.wallet.signTypedData(
 
 val txResult = client.wallet.sendTransaction(
     network = network,
-    to = "0xE5E8B483FfC05967FcFed58cc98D053265af6D99",
+    to = "0x1111111111111111111111111111111111111111",
     value = parseUnits("0.01", 18),
 )
 ```
 
-`sendTransaction` prepares and executes the transaction, then polls the WaaS
+`sendTransaction` prepares and executes the transaction, then polls the wallet API
 status endpoint briefly for an executed status or transaction hash. If the
 transaction is still pending when polling times out, the response keeps the
 `txnId` with `status = TransactionStatus.Pending` and `txnHash = null`.
@@ -396,7 +451,7 @@ val walletAddress = requireNotNull(client.wallet.walletAddress)
 val tokenBalances = client.indexer.getBalances(
     walletAddress = walletAddress,
     networks = listOf(network),
-    contractAddresses = listOf("0xTokenContract"),
+    contractAddresses = listOf("0x3333333333333333333333333333333333333333"),
     includeMetadata = true,
 )
 
@@ -429,7 +484,7 @@ val network = Network.AMOY
 val txResult = client.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
-        to = "0xContractAddress",
+        to = "0x3333333333333333333333333333333333333333",
         value = parseUnits("0", 18),
         data = "0x1234",
         mode = TransactionMode.Native,
@@ -437,16 +492,16 @@ val txResult = client.wallet.sendTransaction(
 )
 ```
 
-For WaaS ABI-style contract calls, use `callContract`:
+For ABI-style contract calls, use `callContract`:
 
 ```kotlin
 val txResult = client.wallet.callContract(
     network = network,
-    contract = "0xContractAddress",
+    contract = "0x3333333333333333333333333333333333333333",
     method = "transfer(address,uint256)",
     args =
         listOf(
-            AbiArg(type = "address", value = JsonPrimitive("0xRecipient")),
+            AbiArg(type = "address", value = JsonPrimitive("0x1111111111111111111111111111111111111111")),
             AbiArg(type = "uint256", value = JsonPrimitive("1000000000000000000")),
         ),
 )
@@ -459,7 +514,7 @@ selector:
 val txResult = client.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
-        to = "0xContractAddress",
+        to = "0x3333333333333333333333333333333333333333",
         value = parseUnits("0", 18),
         data = "0x1234",
         mode = TransactionMode.Native,
@@ -474,7 +529,7 @@ For a custom fee picker, return the selected option's `selection`:
 val txResult = client.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
-        to = "0xContractAddress",
+        to = "0x3333333333333333333333333333333333333333",
         value = parseUnits("0", 18),
         data = "0x1234",
         mode = TransactionMode.Native,
