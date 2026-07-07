@@ -19,13 +19,21 @@ data class OidcProviderConfig(
     val issuer: String,
     val clientId: String,
     val authorizationUrl: String,
+    val providerRedirectUri: String?,
     val provider: String? = null,
     val providerLabel: String? = null,
     val scopes: List<String> = emptyList(),
-    val relayRedirectUri: String? = null,
     val authorizeParams: Map<String, String> = emptyMap(),
     val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
-)
+) {
+    internal var defaultRelayProvider: String? = null
+        private set
+
+    internal fun withDefaultRelayProvider(provider: String): OidcProviderConfig =
+        also {
+            defaultRelayProvider = provider
+        }
+}
 
 /**
  * WaaS redirect auth-code mode supported by OIDC redirect providers.
@@ -86,7 +94,7 @@ object OidcProviders {
 
     fun google(
         clientId: String = defaultGoogleClientId,
-        relayRedirectUri: String? = null,
+        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -95,21 +103,21 @@ object OidcProviders {
             issuer = "https://accounts.google.com",
             clientId = clientId,
             authorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth",
+            providerRedirectUri = providerRedirectUri,
             provider = "google",
             providerLabel = "Google",
             scopes = scopes,
-            relayRedirectUri = relayRedirectUri,
             authorizeParams =
                 mapOf(
                     "access_type" to "offline",
                     "prompt" to "consent",
                 ) + authorizeParams,
             authMode = authMode,
-        )
+        ).withDefaultRelayProvider("google")
 
     fun apple(
         clientId: String = defaultAppleClientId,
-        relayRedirectUri: String? = null,
+        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -118,16 +126,16 @@ object OidcProviders {
             issuer = "https://appleid.apple.com",
             clientId = clientId,
             authorizationUrl = "https://appleid.apple.com/auth/authorize",
+            providerRedirectUri = providerRedirectUri,
             provider = "apple",
             providerLabel = "Apple",
             scopes = scopes,
-            relayRedirectUri = relayRedirectUri,
             authorizeParams =
                 mapOf(
                     "response_mode" to "form_post",
                 ) + authorizeParams,
             authMode = authMode,
-        )
+        ).withDefaultRelayProvider("apple")
 }
 
 @Serializable

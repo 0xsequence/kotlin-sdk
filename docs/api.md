@@ -42,7 +42,7 @@ The SDK derives required service configuration from the publishable key.
 ## Auth and Session
 
 ```kotlin
-val client.session: OMSWalletSessionState
+val client.wallet.session: OMSWalletSessionState
 ```
 
 ```kotlin
@@ -87,7 +87,7 @@ data class OMSWalletOidcSessionAuth(
 ) : OMSWalletSessionAuth
 ```
 
-`client.session` only reports completed wallet-session state. Apps should show
+`client.wallet.session` only reports completed wallet-session state. Apps should show
 OTP or redirect waiting UI from the method result that started the flow, not
 from session state. Always pass incoming app-link URLs to
 `handleOidcRedirectCallback`; stale callbacks return `NoPendingAuth`, and the
@@ -163,10 +163,10 @@ data class OidcProviderConfig(
     val issuer: String,
     val clientId: String,
     val authorizationUrl: String,
+    val providerRedirectUri: String?,
     val provider: String? = null,
     val providerLabel: String? = null,
     val scopes: List<String> = emptyList(),
-    val relayRedirectUri: String? = null,
     val authorizeParams: Map<String, String> = emptyMap(),
     val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
 )
@@ -183,7 +183,7 @@ enum class OidcRedirectAuthMode {
 object OidcProviders {
     fun google(
         clientId: String = OidcProviders.defaultGoogleClientId,
-        relayRedirectUri: String? = null,
+        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email", "profile"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -191,7 +191,7 @@ object OidcProviders {
 
     fun apple(
         clientId: String = OidcProviders.defaultAppleClientId,
-        relayRedirectUri: String? = null,
+        providerRedirectUri: String? = null,
         scopes: List<String> = listOf("openid", "email"),
         authorizeParams: Map<String, String> = emptyMap(),
         authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
@@ -210,11 +210,10 @@ data class StartOidcRedirectAuthResult(
 ```kotlin
 suspend fun client.wallet.startOidcRedirectAuth(
     provider: OidcProviderConfig,
-    redirectUri: String,
+    omsRelayReturnUri: String? = null,
     walletType: WalletType = WalletType.Ethereum,
     walletSelection: WalletSelectionBehavior? = null,
     sessionLifetimeSeconds: Long? = null,
-    relayRedirectUri: String? = provider.relayRedirectUri ?: /* derived for built-in providers */ null,
     authorizeParams: Map<String, String> = emptyMap(),
     loginHint: String? = null,
 ): StartOidcRedirectAuthResult
@@ -259,21 +258,27 @@ defaults. Custom session lifetime values must be from 1 through
 Starting a new auth flow clears or replaces stale redirect state, and `signOut()`
 clears it.
 
-Provider configs are the source of truth for redirect scopes, auth mode, and
-optional provider display metadata. If `scopes` is omitted or empty, the
-authorization URL omits `scope`. PKCE `code_challenge` parameters are sent only
-when `authMode = OidcRedirectAuthMode.AuthCodePKCE`. `OidcProviders.google()`
-uses the SDK default Google client ID, `openid email profile` scopes, PKCE
-auth-code mode, and Google authorization parameters
-`access_type=offline` and `prompt=consent`. `OidcProviders.apple()` uses the SDK
-default Apple Services ID, `openid email` scopes, `response_mode=form_post`, and
-PKCE auth-code mode. When the provider relay URL is omitted,
-`startOidcRedirectAuth` derives the relay URL from the publishable-key Wallet API
-base as `{walletApiUrl}/auth/waas/callback/{google|apple}` for built-in Google
-and Apple providers. Apple `form_post` works through that derived relay; a direct
-app deep link should not be used as the Apple OAuth callback unless that provider
-flow supports it. Pass `relayRedirectUri = null` explicitly to bypass the relay
-for providers whose response mode can call your app callback directly.
+Provider configs are the source of truth for provider redirect URI, redirect
+scopes, auth mode, and optional provider display metadata. Plain/custom
+`OidcProviderConfig` values must provide `providerRedirectUri`; the SDK sends it
+as the OAuth `redirect_uri` and expects the provider callback at that URL. If
+`scopes` is omitted or empty, the authorization URL omits `scope`. PKCE
+`code_challenge` parameters are sent only when
+`authMode = OidcRedirectAuthMode.AuthCodePKCE`. `OidcProviders.google()` uses
+the SDK default Google client ID, `openid email profile` scopes, PKCE auth-code
+mode, and Google authorization parameters `access_type=offline` and
+`prompt=consent`. `OidcProviders.apple()` uses the SDK default Apple Services ID,
+`openid email` scopes, `response_mode=form_post`, and PKCE auth-code mode.
+Helper-created Google and Apple configs may omit `providerRedirectUri`; in that
+case `startOidcRedirectAuth` requires `omsRelayReturnUri`, derives the OMS relay
+URL from the publishable-key Wallet API base as
+`{walletApiUrl}/auth/waas/callback/{google|apple}`, and stores
+`omsRelayReturnUri` in OIDC state. Apple `form_post` works through that derived
+relay; a direct app deep link should not be used as the Apple OAuth callback
+unless that provider flow supports it. If you pass `providerRedirectUri` to a
+Google or Apple helper and still use an intermediate relay, pass
+`omsRelayReturnUri` to store the final app callback in OIDC state. To bypass the
+relay, omit `omsRelayReturnUri`.
 
 Pass `loginHint` to `startOidcRedirectAuth` only when you want to prefill or
 select a specific Google account, such as during session-expiry reauth. The SDK
@@ -507,10 +512,11 @@ multiple pages so each request uses an explicit limit.
 ## Networks
 
 ```kotlin
-val client.supportedNetworks: List<Network>
-val supportedNetworks: List<Network>
-fun findNetworkById(id: Int): Network?
-fun findNetworkByName(name: String): Network?
+object OMSWalletNetworks {
+    val supportedNetworks: List<Network>
+    fun findById(id: Int): Network?
+    fun findByName(name: String): Network?
+}
 ```
 
 ```kotlin
@@ -1045,7 +1051,7 @@ has its own web client ID or provider configuration:
 ```kotlin
 val started = client.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
-    redirectUri = "yourapp://auth/callback",
+    omsRelayReturnUri = "yourapp://auth/callback",
 )
 
 // Open started.authorizationUrl.
@@ -1058,8 +1064,8 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
 }
 ```
 
-Use a redirect URI that matches a deep link registered by your app, such as
-`yourapp://auth/callback`. For a custom Google web client ID, call
+Use an OMS relay return URI that matches a deep link registered by your app,
+such as `yourapp://auth/callback`. For a custom Google web client ID, call
 `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
 For Apple, use `OidcProviders.apple()` with the derived relay so the relay can
 receive Apple's `response_mode=form_post` callback.
@@ -1114,7 +1120,7 @@ it with pending redirect state:
 ```kotlin
 val started = client.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
-    redirectUri = "yourapp://auth/callback",
+    omsRelayReturnUri = "yourapp://auth/callback",
     walletSelection = WalletSelectionBehavior.Manual,
 )
 ```

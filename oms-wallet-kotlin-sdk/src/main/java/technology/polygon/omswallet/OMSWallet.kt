@@ -44,7 +44,7 @@ class OMSWallet internal constructor(
             projectId = resolvedProjectId,
             environment = resolvedEnvironment,
             transport = transport,
-            session = walletSession,
+            walletSession = walletSession,
             sessionStore = sessionStore,
             oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
@@ -60,29 +60,6 @@ class OMSWallet internal constructor(
     init {
         wallet.restorePersistedSession()
     }
-
-    /**
-     * Snapshot of the current durable wallet-session state.
-     */
-    val session: OMSWalletSessionState
-        get() {
-            val snapshot = wallet.snapshotSession()
-            val walletAddress = snapshot?.walletAddress
-            if (walletAddress.isNullOrBlank()) {
-                return OMSWalletSessionState(walletAddress = null)
-            }
-            return OMSWalletSessionState(
-                walletAddress = walletAddress,
-                expiresAt = snapshot.expiresAt,
-                auth = snapshot.auth,
-            )
-        }
-
-    /**
-     * Networks currently supported by this SDK build.
-     */
-    val supportedNetworks: List<Network>
-        get() = OMSWalletNetworks.supportedNetworks
 
     /**
      * Creates an Android-backed client with separate session metadata storage

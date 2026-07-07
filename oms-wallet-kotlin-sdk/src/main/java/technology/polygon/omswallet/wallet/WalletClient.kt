@@ -98,7 +98,7 @@ class WalletClient internal constructor(
     private val projectId: String,
     private val environment: OMSWalletEnvironment,
     private val transport: OMSWalletHttpClient = OMSWalletHttpClient(),
-    private val session: OMSWalletSession = OMSWalletSession(),
+    private val walletSession: OMSWalletSession = OMSWalletSession(),
     private val sessionStore: OMSWalletSessionMetadataStore? = null,
     private val oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
     private val oidcNonceGenerator: () -> String = OidcRedirectAuth::generateNonce,
@@ -146,7 +146,7 @@ class WalletClient internal constructor(
 
     internal val hasPendingSignIn: Boolean
         get() {
-            val snapshot = session.snapshot() ?: return false
+            val snapshot = walletSession.snapshot() ?: return false
             return snapshot.walletAddress.isNullOrBlank()
         }
 
@@ -154,7 +154,16 @@ class WalletClient internal constructor(
      * Address of the currently selected wallet, or null when no wallet is selected.
      */
     val walletAddress: String?
-        get() = session.snapshot()?.walletAddress
+        get() = walletSession.snapshot()?.walletAddress
+
+    /**
+     * Snapshot of the current completed wallet-session state.
+     *
+     * Pending email OTP, OIDC redirect, and manual wallet-selection state are
+     * intentionally not exposed here.
+     */
+    val session: OMSWalletSessionState
+        get() = walletSession.snapshot().toSessionState()
 
     /**
      * Registers a listener for expired wallet sessions.
@@ -180,15 +189,15 @@ class WalletClient internal constructor(
     }
 
     internal val signerAddress: String?
-        get() = session.snapshot()?.signerAddress
+        get() = walletSession.snapshot()?.signerAddress
 
     internal fun restoreSession(snapshot: OMSWalletSessionSnapshot) {
         clearLatestSessionExpiredEvent()
-        session.restore(snapshot)
+        walletSession.restore(snapshot)
         scheduleSessionExpiry(snapshot)
     }
 
-    internal fun snapshotSession(): OMSWalletSessionSnapshot? = session.snapshot()
+    internal fun snapshotSession(): OMSWalletSessionSnapshot? = walletSession.snapshot()
 
     internal fun restorePersistedSession(): Boolean {
         val snapshot = sessionStore?.load() ?: return false
@@ -208,7 +217,7 @@ class WalletClient internal constructor(
             return false
         }
         clearLatestSessionExpiredEvent()
-        session.restore(snapshot)
+        walletSession.restore(snapshot)
         scheduleSessionExpiry(snapshot)
         return true
     }
@@ -222,7 +231,7 @@ class WalletClient internal constructor(
         clearSessionStore: Boolean = true,
         clearExpiredEvent: Boolean = true,
     ) {
-        session.clear()
+        walletSession.clear()
         clearSessionExpiryTask()
         signer.clear()
         if (clearSessionStore) {
@@ -244,19 +253,15 @@ class WalletClient internal constructor(
         requireActiveWalletSession(operation = null).walletId
             ?: throw OMSWalletSessionException(message = "No wallet selected")
 
-    private fun requireWalletAddress(): String =
-        requireActiveWalletSession(operation = null).walletAddress
-            ?: throw OMSWalletSessionException(message = "No wallet selected")
-
     suspend fun startEmailAuth(email: String): Unit =
         runOMSWalletOperation(OMSWalletOperation.WalletStartEmailAuth) {
             clearSession(clearOidcRedirectAuth = true)
-            val requiredSessionRevision = session.revision()
+            val requiredSessionRevision = walletSession.revision()
             try {
                 val signerAddress = signer.credentialId()
                 val response = gateway.commitEmailVerifier(email)
 
-                session.replaceForPendingAuth(
+                walletSession.replaceForPendingAuth(
                     challenge = response.challenge,
                     verifier = response.verifier,
                     signerAddress = signerAddress,
@@ -308,7 +313,7 @@ class WalletClient internal constructor(
         sessionLifetimeSeconds: UInt,
     ): CompleteAuthResult {
         clearSession(clearOidcRedirectAuth = true)
-        val requiredSessionRevision = session.revision()
+        val requiredSessionRevision = walletSession.revision()
         try {
             val signerAddress = signer.credentialId()
             val response =
@@ -318,7 +323,7 @@ class WalletClient internal constructor(
                     audience = audience,
                 )
 
-            session.replaceForPendingAuth(
+            walletSession.replaceForPendingAuth(
                 challenge = response.challenge,
                 verifier = response.verifier,
                 signerAddress = signerAddress,
@@ -349,7 +354,7 @@ class WalletClient internal constructor(
                         providerLabel = providerLabel,
                         completeAuth = auth,
                     ),
-                requiredSessionRevision = session.revision(),
+                requiredSessionRevision = walletSession.revision(),
             )
         } catch (throwable: CancellationException) {
             throw throwable
@@ -361,11 +366,10 @@ class WalletClient internal constructor(
 
     suspend fun startOidcRedirectAuth(
         provider: OidcProviderConfig,
-        redirectUri: String,
+        omsRelayReturnUri: String? = null,
         walletType: WalletType = environment.defaultWalletType,
         walletSelection: WalletSelectionBehavior? = null,
         sessionLifetimeSeconds: Long? = null,
-        relayRedirectUri: String? = provider.relayRedirectUri ?: derivedRelayRedirectUri(provider),
         authorizeParams: Map<String, String> = emptyMap(),
         loginHint: String? = null,
     ): StartOidcRedirectAuthResult =
@@ -374,21 +378,21 @@ class WalletClient internal constructor(
                 requireNotNull(oidcRedirectAuthStore) {
                     "OIDC redirect auth requires an OIDC redirect auth store"
                 }
-            val previousSessionEmail = session.snapshot()?.auth?.email
+            val previousSessionEmail = walletSession.snapshot()?.auth?.email
             val requestedSessionLifetimeSeconds =
                 sessionLifetimeSeconds?.also {
                     requireWaasSessionLifetimeSeconds(it)
                 }
+            val redirectUris = resolveOidcRedirectUris(provider, omsRelayReturnUri)
             clearSession(clearOidcRedirectAuth = true)
-            val requiredSessionRevision = session.revision()
+            val requiredSessionRevision = walletSession.revision()
             try {
                 val signerAddress = signer.credentialId()
                 val authMode = provider.authMode
-                val oauthRedirectUri = relayRedirectUri ?: redirectUri
                 val response =
                     gateway.commitOidcRedirectVerifier(
                         provider = provider,
-                        redirectUri = oauthRedirectUri,
+                        redirectUri = redirectUris.oauthRedirectUri,
                         authMode =
                             when (authMode) {
                                 OidcRedirectAuthMode.AuthCode -> AuthMode.AuthCode
@@ -400,18 +404,18 @@ class WalletClient internal constructor(
                     OidcRedirectAuth.encodeState(
                         nonce = nonce,
                         scope = projectId,
-                        redirectUri = redirectUri.takeIf { oauthRedirectUri != redirectUri },
+                        redirectUri = redirectUris.stateRedirectUri,
                     )
 
-                session.replaceForPendingAuth(
+                walletSession.replaceForPendingAuth(
                     challenge = response.challenge,
                     verifier = response.verifier,
                     signerAddress = signerAddress,
                     signerKeyType = signer.signingAlgorithm,
                     requiredRevision = requiredSessionRevision,
                 )
-                val pendingSessionRevision = session.revision()
-                session.requireRevision(pendingSessionRevision)
+                val pendingSessionRevision = walletSession.revision()
+                walletSession.requireRevision(pendingSessionRevision)
                 try {
                     redirectAuthStore.save(
                         PendingOidcRedirectAuth(
@@ -419,7 +423,7 @@ class WalletClient internal constructor(
                             challenge = response.challenge,
                             nonce = nonce,
                             authMode = authMode,
-                            redirectUri = redirectUri,
+                            redirectUri = redirectUris.expectedCallbackUri,
                             issuer = provider.issuer,
                             provider = provider.provider ?: builtInOidcProviderForIssuer(provider.issuer),
                             providerLabel = provider.providerLabel ?: builtInOidcProviderLabelForIssuer(provider.issuer),
@@ -441,7 +445,7 @@ class WalletClient internal constructor(
                     )
                 }
                 try {
-                    session.requireRevision(pendingSessionRevision)
+                    walletSession.requireRevision(pendingSessionRevision)
                 } catch (throwable: Throwable) {
                     redirectAuthStore.clear()
                     throw throwable
@@ -450,7 +454,7 @@ class WalletClient internal constructor(
                 val authorizationUrl =
                     OidcRedirectAuth.buildAuthorizationUrl(
                         provider = provider,
-                        redirectUri = oauthRedirectUri,
+                        redirectUri = redirectUris.oauthRedirectUri,
                         state = state,
                         challenge = response.challenge,
                         usePkce = authMode.usesPkce,
@@ -572,7 +576,7 @@ class WalletClient internal constructor(
     ): WalletAuthCompletion {
         val snapshot =
             try {
-                session.requirePendingAuth()
+                walletSession.requirePendingAuth()
             } catch (throwable: IllegalStateException) {
                 throw OMSWalletSessionException(
                     operation = OMSWalletOperation.WalletCompleteEmailAuth,
@@ -592,7 +596,7 @@ class WalletClient internal constructor(
         idToken: String,
         sessionLifetimeSeconds: UInt,
     ): WalletAuthCompletion {
-        val snapshot = session.requirePendingAuth()
+        val snapshot = walletSession.requirePendingAuth()
         return gateway.completeOidcIdTokenAuth(
             verifier = snapshot.verifier,
             idToken = idToken,
@@ -607,7 +611,7 @@ class WalletClient internal constructor(
         sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
     ): CompleteAuthResult =
         runOMSWalletOperation(OMSWalletOperation.WalletCompleteEmailAuth) {
-            val requiredSessionRevision = session.revision()
+            val requiredSessionRevision = walletSession.revision()
             val auth =
                 completeEmailSignIn(
                     code = code,
@@ -630,7 +634,7 @@ class WalletClient internal constructor(
      */
     suspend fun useWallet(walletId: String): WalletSelectionResult =
         runOMSWalletOperation(OMSWalletOperation.WalletUseWallet) {
-            useWalletForCurrentSession(walletId, session.revision())
+            useWalletForCurrentSession(walletId, walletSession.revision())
         }
 
     private suspend fun useWalletForCurrentSession(
@@ -640,7 +644,7 @@ class WalletClient internal constructor(
         requireWalletSelectionOrActiveSession()
         requireActiveCredential()
         val wallet = requestUseWallet(walletId)
-        session.selectWallet(
+        walletSession.selectWallet(
             walletId = wallet.id,
             walletAddress = wallet.address,
             requiredRevision = requiredSessionRevision,
@@ -656,7 +660,7 @@ class WalletClient internal constructor(
         reference: String? = null,
     ): WalletSelectionResult =
         runOMSWalletOperation(OMSWalletOperation.WalletCreateWallet) {
-            createWalletForCurrentSession(walletType, reference, session.revision())
+            createWalletForCurrentSession(walletType, reference, walletSession.revision())
         }
 
     private suspend fun createWalletForCurrentSession(
@@ -667,7 +671,7 @@ class WalletClient internal constructor(
         requireWalletSelectionOrActiveSession()
         requireActiveCredential()
         val wallet = requestCreateWallet(walletType, reference)
-        session.selectWallet(
+        walletSession.selectWallet(
             walletId = wallet.id,
             walletAddress = wallet.address,
             requiredRevision = requiredSessionRevision,
@@ -684,7 +688,7 @@ class WalletClient internal constructor(
         requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         requireActiveCredential()
         val wallet = requestUseWallet(walletId)
-        session.selectWalletForPendingSelection(
+        walletSession.selectWalletForPendingSelection(
             pendingWalletSelectionId = pendingWalletSelectionId,
             signerAddress = signerAddress,
             signerKeyType = signerKeyType,
@@ -704,7 +708,7 @@ class WalletClient internal constructor(
         requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         requireActiveCredential()
         val wallet = requestCreateWallet(walletType, reference)
-        session.selectWalletForPendingSelection(
+        walletSession.selectWalletForPendingSelection(
             pendingWalletSelectionId = pendingWalletSelectionId,
             signerAddress = signerAddress,
             signerKeyType = signerKeyType,
@@ -721,7 +725,7 @@ class WalletClient internal constructor(
     ) {
         expireCurrentSessionIfNeeded(operation = OMSWalletOperation.PendingWalletSelection)
         try {
-            session.requirePendingWalletSelection(
+            walletSession.requirePendingWalletSelection(
                 pendingWalletSelectionId = pendingWalletSelectionId,
                 signerAddress = signerAddress,
                 signerKeyType = signerKeyType,
@@ -770,7 +774,7 @@ class WalletClient internal constructor(
         }
 
     private fun requireWalletSelectionOrActiveSession() {
-        val snapshot = session.requireSnapshot()
+        val snapshot = walletSession.requireSnapshot()
         expireSnapshotIfNeeded(snapshot, operation = null)
         if (snapshot.walletId.isNullOrBlank() && snapshot.expiresAt.isNullOrBlank()) {
             throw OMSWalletSessionException(message = "No authenticated wallet session")
@@ -796,19 +800,19 @@ class WalletClient internal constructor(
         requiredSessionRevision: Long,
     ): CompleteAuthResult {
         val pendingWalletSelectionId =
-            session.markAuthVerified(
+            walletSession.markAuthVerified(
                 expiresAt = completeAuth.credential.expiresAt,
                 auth = sessionAuth,
                 requiredRevision = requiredSessionRevision,
             )
-        val pendingSnapshot = session.requireSnapshot()
-        val pendingSessionRevision = session.revision()
+        val pendingSnapshot = walletSession.requireSnapshot()
+        val pendingSessionRevision = walletSession.revision()
         scheduleSessionExpiry(pendingSnapshot)
         val pendingSignerAddress = requireNotNull(pendingSnapshot.signerAddress) { "No active signer" }
         val pendingSignerKeyType = pendingSnapshot.signerKeyType
         return try {
             val wallets = walletsFromAuthResponse(completeAuth)
-            session.requireRevision(pendingSessionRevision)
+            walletSession.requireRevision(pendingSessionRevision)
             if (walletSelection == WalletSelectionBehavior.Manual) {
                 CompleteAuthResult.WalletSelection(
                     pendingSelection =
@@ -871,7 +875,7 @@ class WalletClient internal constructor(
         check(pending.signerKeyType == signer.signingAlgorithm) {
             "OIDC redirect auth signer mismatch"
         }
-        session.restore(
+        walletSession.restore(
             OMSWalletSessionSnapshot(
                 challenge = pending.challenge,
                 verifier = pending.verifier,
@@ -879,11 +883,11 @@ class WalletClient internal constructor(
                 signerKeyType = pending.signerKeyType,
             ),
         )
-        return session.revision()
+        return walletSession.revision()
     }
 
     private fun persistCurrentSession() {
-        val snapshot = session.snapshot() ?: return
+        val snapshot = walletSession.snapshot() ?: return
         clearLatestSessionExpiredEvent()
         sessionStore?.save(snapshot)
         scheduleSessionExpiry(snapshot)
@@ -897,7 +901,7 @@ class WalletClient internal constructor(
         message: String,
     ): String =
         runOMSWalletOperation(OMSWalletOperation.WalletSignMessage) {
-            session.requireSnapshot()
+            walletSession.requireSnapshot()
             requireActiveCredential()
             gateway.signMessage(
                 walletId = requireWalletId(),
@@ -914,7 +918,7 @@ class WalletClient internal constructor(
         typedData: JsonElement,
     ): String =
         runOMSWalletOperation(OMSWalletOperation.WalletSignTypedData) {
-            session.requireSnapshot()
+            walletSession.requireSnapshot()
             requireActiveCredential()
             gateway.signTypedData(
                 walletId = requireWalletId(),
@@ -996,7 +1000,7 @@ class WalletClient internal constructor(
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletSendTransaction) {
-            val snapshot = session.requireSnapshot()
+            val snapshot = walletSession.requireSnapshot()
             require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
             requireActiveCredential()
             val prepared =
@@ -1030,7 +1034,7 @@ class WalletClient internal constructor(
         selectFeeOption: FeeOptionSelector? = null,
     ): ClientSendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletCallContract) {
-            val snapshot = session.requireSnapshot()
+            val snapshot = walletSession.requireSnapshot()
             requireActiveCredential()
             val prepared =
                 gateway.prepareEthereumContractCall(
@@ -1070,7 +1074,7 @@ class WalletClient internal constructor(
      */
     suspend fun listAccess(pageSize: UInt? = null): List<CredentialInfo> =
         runOMSWalletOperation(OMSWalletOperation.WalletListAccess) {
-            session.requireSnapshot()
+            walletSession.requireSnapshot()
             requireActiveCredential()
             val credentials = mutableListOf<CredentialInfo>()
             listAccessPages(pageSize = pageSize).collect { response ->
@@ -1114,7 +1118,7 @@ class WalletClient internal constructor(
         pageSize: UInt?,
         cursor: String?,
     ): ListAccessResponse {
-        session.requireSnapshot()
+        walletSession.requireSnapshot()
         requireActiveCredential()
         return gateway.listAccessPage(
             walletId = requireWalletId(),
@@ -1130,7 +1134,7 @@ class WalletClient internal constructor(
         customClaims: Map<String, JsonElement>? = null,
     ): String =
         runOMSWalletOperation(OMSWalletOperation.WalletGetIdToken) {
-            session.requireSnapshot()
+            walletSession.requireSnapshot()
             requireActiveCredential()
             gateway.getIdToken(
                 walletId = requireWalletId(),
@@ -1146,7 +1150,7 @@ class WalletClient internal constructor(
      */
     suspend fun revokeAccess(targetCredentialId: String): Unit =
         runOMSWalletOperation(OMSWalletOperation.WalletRevokeAccess) {
-            session.requireSnapshot()
+            walletSession.requireSnapshot()
             requireActiveCredential()
             gateway.revokeAccess(
                 walletId = requireWalletId(),
@@ -1163,7 +1167,7 @@ class WalletClient internal constructor(
 
     private fun requireActiveWalletSession(operation: OMSWalletOperation?): OMSWalletSessionSnapshot {
         val snapshot =
-            session.snapshot()
+            walletSession.snapshot()
                 ?: throw OMSWalletSessionException(operation = operation)
         expireSnapshotIfNeeded(snapshot, operation)
         if (snapshot.walletId.isNullOrBlank() || snapshot.walletAddress.isNullOrBlank()) {
@@ -1173,7 +1177,7 @@ class WalletClient internal constructor(
     }
 
     private fun expireCurrentSessionIfNeeded(operation: OMSWalletOperation?) {
-        val snapshot = session.snapshot() ?: return
+        val snapshot = walletSession.snapshot() ?: return
         expireSnapshotIfNeeded(snapshot, operation)
     }
 
@@ -1224,7 +1228,7 @@ class WalletClient internal constructor(
     }
 
     private fun expireSessionFromTimer(snapshot: OMSWalletSessionSnapshot) {
-        if (session.snapshot() != snapshot) {
+        if (walletSession.snapshot() != snapshot) {
             return
         }
         if (!snapshot.isExpired(now())) {
@@ -1236,7 +1240,7 @@ class WalletClient internal constructor(
 
     private fun expireSession(snapshot: OMSWalletSessionSnapshot) {
         val event = snapshot.toSessionExpiredEvent() ?: return
-        session.clear()
+        walletSession.clear()
         clearSessionExpiryTask()
         clearPendingOidcRedirectAuth()
         try {
@@ -1324,13 +1328,46 @@ class WalletClient internal constructor(
             else -> null
         }
 
-    private fun derivedRelayRedirectUri(provider: OidcProviderConfig): String? {
-        val relayProvider = provider.provider ?: builtInOidcProviderForIssuer(provider.issuer)
-        if (relayProvider != "google" && relayProvider != "apple") {
-            return null
+    private fun resolveOidcRedirectUris(
+        provider: OidcProviderConfig,
+        omsRelayReturnUri: String?,
+    ): OidcRedirectUris {
+        val relayProvider = provider.defaultRelayProvider
+        if (omsRelayReturnUri != null) {
+            require(relayProvider == "google" || relayProvider == "apple") {
+                "omsRelayReturnUri is only supported for helper OIDC providers that use the OMS relay"
+            }
+            require(omsRelayReturnUri.isNotBlank()) {
+                "omsRelayReturnUri is required when using a helper OIDC provider with the OMS relay"
+            }
+            val providerRedirectUri =
+                provider.providerRedirectUri?.also {
+                    require(it.isNotBlank()) { "providerRedirectUri must not be blank" }
+                } ?: derivedRelayRedirectUri(relayProvider)
+            return OidcRedirectUris(
+                oauthRedirectUri = providerRedirectUri,
+                expectedCallbackUri = omsRelayReturnUri,
+                stateRedirectUri = omsRelayReturnUri,
+            )
         }
-        return "${environment.walletApiUrl.trimEnd('/')}/auth/waas/callback/$relayProvider"
+
+        provider.providerRedirectUri?.let { providerRedirectUri ->
+            require(providerRedirectUri.isNotBlank()) { "providerRedirectUri must not be blank" }
+            return OidcRedirectUris(
+                oauthRedirectUri = providerRedirectUri,
+                expectedCallbackUri = providerRedirectUri,
+                stateRedirectUri = null,
+            )
+        }
+
+        require(relayProvider == "google" || relayProvider == "apple") {
+            "providerRedirectUri is required for custom OIDC providers"
+        }
+        throw IllegalArgumentException("omsRelayReturnUri is required when using a helper OIDC provider with the OMS relay")
     }
+
+    private fun derivedRelayRedirectUri(relayProvider: String): String =
+        "${environment.walletApiUrl.trimEnd('/')}/auth/waas/callback/$relayProvider"
 
     private fun builtInOidcProviderLabelForIssuer(issuer: String): String? =
         when (issuer) {
@@ -1603,6 +1640,12 @@ private data class PreparedWalletTransaction(
 
 private data class ExecutedWalletTransaction(
     val status: TransactionStatus,
+)
+
+private data class OidcRedirectUris(
+    val oauthRedirectUri: String,
+    val expectedCallbackUri: String,
+    val stateRedirectUri: String?,
 )
 
 private class WaasWalletGateway(
@@ -2180,16 +2223,24 @@ private fun OMSWalletSessionSnapshot.isExpired(referenceTime: Long): Boolean {
 
 private fun OMSWalletSessionSnapshot.expiresAtEpochMillis(): Long? = expiresAt?.let(OMSWalletIsoTimestamps::parseEpochMillis)
 
+private fun OMSWalletSessionSnapshot?.toSessionState(): OMSWalletSessionState {
+    val snapshot = this ?: return OMSWalletSessionState(walletAddress = null)
+    val walletAddress = snapshot.walletAddress
+    if (snapshot.walletId.isNullOrBlank() || walletAddress.isNullOrBlank()) {
+        return OMSWalletSessionState(walletAddress = null)
+    }
+    return OMSWalletSessionState(
+        walletAddress = walletAddress,
+        expiresAt = snapshot.expiresAt,
+        auth = snapshot.auth,
+    )
+}
+
 private fun OMSWalletSessionSnapshot.toSessionExpiredEvent(): OMSWalletSessionExpiredEvent? {
     expiresAtEpochMillis() ?: return null
     val expiredAt = expiresAt ?: return null
     return OMSWalletSessionExpiredEvent(
-        session =
-            OMSWalletSessionState(
-                walletAddress = walletAddress,
-                expiresAt = expiredAt,
-                auth = auth,
-            ),
+        session = toSessionState(),
         expiredAt = expiredAt,
     )
 }

@@ -44,7 +44,7 @@ class OMSWalletTest {
     fun constructorDerivesProjectIdFromPublishableKey() {
         val sdk = OMSWallet(publishableKey = "pk_live_project_key")
 
-        assertEquals(supportedNetworks, sdk.supportedNetworks)
+        assertNull(sdk.wallet.session.walletAddress)
     }
 
     @Test
@@ -80,9 +80,9 @@ class OMSWalletTest {
             )
 
         assertEquals("0xwallet", sdk.wallet.walletAddress)
-        assertEquals("0xwallet", sdk.session.walletAddress)
-        assertEquals("2099-01-01T00:00:00Z", sdk.session.expiresAt)
-        assertEquals(OMSWalletEmailSessionAuth(email = "user@example.com"), sdk.session.auth)
+        assertEquals("0xwallet", sdk.wallet.session.walletAddress)
+        assertEquals("2099-01-01T00:00:00Z", sdk.wallet.session.expiresAt)
+        assertEquals(OMSWalletEmailSessionAuth(email = "user@example.com"), sdk.wallet.session.auth)
     }
 
     @Test
@@ -112,9 +112,9 @@ class OMSWalletTest {
                     ),
             )
 
-        assertNull(sdk.session.walletAddress)
-        assertNull(sdk.session.expiresAt)
-        assertNull(sdk.session.auth)
+        assertNull(sdk.wallet.session.walletAddress)
+        assertNull(sdk.wallet.session.expiresAt)
+        assertNull(sdk.wallet.session.auth)
     }
 
     @Test
@@ -142,29 +142,22 @@ class OMSWalletTest {
         sdk.wallet.signOut()
 
         assertNull(sdk.wallet.walletAddress)
-        assertNull(sdk.session.walletAddress)
-        assertNull(sdk.session.expiresAt)
-        assertNull(sdk.session.auth)
+        assertNull(sdk.wallet.session.walletAddress)
+        assertNull(sdk.wallet.session.expiresAt)
+        assertNull(sdk.wallet.session.auth)
         assertNull(store.snapshot)
         assertEquals(1, store.clearCalls)
     }
 
     @Test
     fun exposesSupportedNetworks() {
-        val sdk =
-            OMSWallet(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = testEnvironment(),
-            )
-
-        assertEquals(supportedNetworks, sdk.supportedNetworks)
-        assertEquals(16, sdk.supportedNetworks.size)
-        assertEquals(Network.MAINNET, findNetworkById(1))
-        assertEquals(Network.MAINNET, findNetworkByName("mainnet"))
-        assertEquals(Network.POLYGON, findNetworkById(137))
-        assertEquals(Network.AMOY, findNetworkById(80_002))
-        assertEquals(Network.BASE, findNetworkByName("base"))
+        assertEquals(Network.entries, OMSWalletNetworks.supportedNetworks)
+        assertEquals(16, OMSWalletNetworks.supportedNetworks.size)
+        assertEquals(Network.MAINNET, OMSWalletNetworks.findById(1))
+        assertEquals(Network.MAINNET, OMSWalletNetworks.findByName("mainnet"))
+        assertEquals(Network.POLYGON, OMSWalletNetworks.findById(137))
+        assertEquals(Network.AMOY, OMSWalletNetworks.findById(80_002))
+        assertEquals(Network.BASE, OMSWalletNetworks.findByName("base"))
         assertEquals("POL", Network.POLYGON.nativeTokenSymbol)
         assertEquals("https://amoy.polygonscan.com", Network.AMOY.explorerUrl)
         assertEquals(
@@ -186,9 +179,9 @@ class OMSWalletTest {
                 "Avalanche Testnet",
                 "Katana",
             ),
-            sdk.supportedNetworks.map { it.displayName },
+            OMSWalletNetworks.supportedNetworks.map { it.displayName },
         )
-        assertNull(findNetworkById(999_999))
+        assertNull(OMSWalletNetworks.findById(999_999))
     }
 
     @Test

@@ -170,7 +170,7 @@ class TrailsActionsActivity : AppCompatActivity() {
         restoreAuthPreferences()
         subscribeSessionExpiry()
         renderSessionState()
-        if (sdk.session.walletAddress != null) {
+        if (sdk.wallet.session.walletAddress != null) {
             refreshSignedInData()
         }
         handleOidcRedirectCallback(intent)
@@ -462,7 +462,7 @@ class TrailsActionsActivity : AppCompatActivity() {
             val started =
                 sdk.wallet.startOidcRedirectAuth(
                     provider = provider,
-                    redirectUri = DemoConfig.oidcRedirectUri,
+                    omsRelayReturnUri = DemoConfig.oidcRedirectUri,
                     walletSelection = walletSelection,
                     sessionLifetimeSeconds = sessionLifetimeSeconds,
                     loginHint = loginHint,
@@ -1273,7 +1273,7 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private fun renderSessionState() {
-        val walletAddress = sdk.session.walletAddress
+        val walletAddress = sdk.wallet.session.walletAddress
         if (walletAddress == null) {
             renderSessionStateBox()
             expiredSessionEvent?.let(::renderExpiredSession) ?: resetUiForNoSession()
@@ -1426,7 +1426,7 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private fun renderSessionStateBox() {
-        val session = sdk.session
+        val session = sdk.wallet.session
         val expiredEvent = expiredSessionEvent
         sessionStateCard.visibility =
             if (session.walletAddress == null && expiredEvent == null) {
@@ -1461,7 +1461,8 @@ class TrailsActionsActivity : AppCompatActivity() {
         }
 
     private fun requireWalletAddress(): String =
-        sdk.session.walletAddress?.takeIf { it.isNotBlank() }
+        sdk.wallet.session.walletAddress
+            ?.takeIf { it.isNotBlank() }
             ?: throw IllegalStateException("Sign in before preparing a Trails action.")
 
     private fun requireEmailForSignIn(): String {
@@ -1643,7 +1644,7 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private fun copyWalletAddress() {
-        val address = sdk.session.walletAddress
+        val address = sdk.wallet.session.walletAddress
         if (address.isNullOrBlank()) {
             Toast.makeText(this, "No wallet address", Toast.LENGTH_SHORT).show()
             return

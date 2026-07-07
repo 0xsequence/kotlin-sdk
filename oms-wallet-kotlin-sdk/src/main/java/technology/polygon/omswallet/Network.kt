@@ -3,7 +3,7 @@ package technology.polygon.omswallet
 /**
  * A network supported by the OMS Wallet SDK.
  *
- * Use values from [OMSWallet.supportedNetworks] when calling wallet, utility,
+ * Use values from [OMSWalletNetworks.supportedNetworks] when calling wallet, utility,
  * or indexer APIs that need a network.
  */
 data class Network(
@@ -182,26 +182,22 @@ data class Network(
     }
 }
 
-internal object OMSWalletNetworks {
-    val supportedNetworks: List<Network> = Network.entries
-
-    fun findById(id: Int): Network? = supportedNetworks.firstOrNull { it.id == id }
-
-    fun findByName(name: String): Network? = supportedNetworks.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
-}
-
 /**
  * Networks currently supported by this SDK build.
  */
-val supportedNetworks: List<Network>
-    get() = OMSWalletNetworks.supportedNetworks
+object OMSWalletNetworks {
+    /**
+     * All networks currently supported by this SDK build.
+     */
+    val supportedNetworks: List<Network> = Network.entries
 
-/**
- * Returns a supported network by id.
- */
-fun findNetworkById(id: Int): Network? = OMSWalletNetworks.findById(id)
+    /**
+     * Returns a supported network by chain id.
+     */
+    fun findById(id: Int): Network? = supportedNetworks.firstOrNull { it.id == id }
 
-/**
- * Returns a supported network by registry name.
- */
-fun findNetworkByName(name: String): Network? = OMSWalletNetworks.findByName(name)
+    /**
+     * Returns a supported network by registry name.
+     */
+    fun findByName(name: String): Network? = supportedNetworks.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
+}

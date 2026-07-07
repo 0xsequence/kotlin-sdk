@@ -39,6 +39,9 @@ class WalletSessionTest {
         assertTrue(restored)
         assertEquals(snapshot, client.snapshotSession())
         assertEquals("0xabc", client.walletAddress)
+        assertEquals("0xabc", client.session.walletAddress)
+        assertNull(client.session.expiresAt)
+        assertEmailSessionAuth(client.session.auth)
         assertEquals(
             TEST_CREDENTIAL_ID,
             client.signerAddress,
@@ -111,6 +114,38 @@ class WalletSessionTest {
         assertEquals("2026-01-01T00:00:00Z", event.session.expiresAt)
         assertEmailSessionAuth(event.session.auth)
         assertEquals("2026-01-01T00:00:00Z", event.expiredAt)
+    }
+
+    @Test
+    fun signOutClearsLatestSessionExpiredReplay() {
+        val snapshot =
+            OMSWalletSessionSnapshot(
+                walletId = "wallet-abc",
+                walletAddress = "0xabc",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2026-01-01T00:00:00Z",
+                auth = emailSessionAuth(),
+            )
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = testEnvironment(),
+                sessionStore = InMemorySessionStore(snapshot),
+                credentialSigner = TrackingCredentialSigner(),
+                now = { epochMillis("2026-01-01T00:00:01Z") },
+            )
+        assertFalse(client.restorePersistedSession())
+
+        var replayCount = 0
+        client.onSessionExpired { replayCount += 1 }
+        assertEquals(1, replayCount)
+
+        client.signOut()
+        client.onSessionExpired { replayCount += 1 }
+
+        assertEquals(1, replayCount)
     }
 
     @Test
@@ -248,6 +283,45 @@ class WalletSessionTest {
     }
 
     @Test
+    fun unsubscribedSessionExpiredListenerDoesNotReceivePendingDispatch() {
+        val scheduler = RecordingSessionExpiryScheduler()
+        val dispatcher = RecordingSessionExpiryDispatcher()
+        var currentTime = epochMillis("2026-01-01T00:00:00Z")
+        val snapshot =
+            OMSWalletSessionSnapshot(
+                walletId = "wallet-abc",
+                walletAddress = "0xabc",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2026-01-01T00:02:00Z",
+                auth = emailSessionAuth(),
+            )
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = testEnvironment(),
+                sessionStore = InMemorySessionStore(snapshot),
+                credentialSigner = TrackingCredentialSigner(),
+                sessionExpiryScheduler = scheduler,
+                sessionExpiryDispatcher = dispatcher,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+
+        var notificationCount = 0
+        val unsubscribe = client.onSessionExpired { notificationCount += 1 }
+
+        currentTime = epochMillis("2026-01-01T00:02:00Z")
+        scheduler.scheduledTasks.single().action()
+        dispatcher.runNext()
+        unsubscribe()
+        dispatcher.runNext()
+
+        assertEquals(0, notificationCount)
+    }
+
+    @Test
     fun sessionExpiryEventStillNotifiesWhenCredentialCleanupFails() {
         val snapshot =
             OMSWalletSessionSnapshot(
@@ -333,6 +407,32 @@ class WalletSessionTest {
     }
 
     @Test
+    fun sessionStateOnlyReflectsCompletedWalletSession() {
+        val client =
+            WalletClient(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = testEnvironment(),
+                sessionStore = InMemorySessionStore(),
+                credentialSigner = TrackingCredentialSigner(),
+            )
+        client.restoreSession(
+            OMSWalletSessionSnapshot(
+                challenge = "challenge",
+                verifier = "verifier-123",
+                signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2099-01-01T00:00:00Z",
+                auth = emailSessionAuth(),
+            ),
+        )
+
+        assertNull(client.session.walletAddress)
+        assertNull(client.session.expiresAt)
+        assertNull(client.session.auth)
+    }
+
+    @Test
     fun signOutClearsPersistedStore() {
         val snapshot =
             OMSWalletSessionSnapshot(
@@ -358,6 +458,7 @@ class WalletSessionTest {
         assertNull(client.snapshotSession())
         assertNull(store.snapshot)
         assertNull(client.walletAddress)
+        assertNull(client.session.walletAddress)
         assertNull(client.signerAddress)
     }
 
@@ -439,6 +540,9 @@ class WalletSessionTest {
             client.signerAddress,
         )
         assertNull(client.walletAddress)
+        assertNull(client.session.walletAddress)
+        assertNull(client.session.expiresAt)
+        assertNull(client.session.auth)
     }
 }
 

@@ -486,7 +486,6 @@ class PublicErrorContractsTest {
             val providerErrorStart =
                 providerErrorClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
-                    redirectUri = "omsclientkotlindemo://auth/callback",
                 )
             val providerFailure =
                 providerErrorClient.wallet.handleOidcRedirectCallback(
@@ -499,7 +498,6 @@ class PublicErrorContractsTest {
             val invalidLifetimeStart =
                 invalidLifetimeClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
-                    redirectUri = "omsclientkotlindemo://auth/callback",
                 )
             val invalidLifetimeFailure =
                 invalidLifetimeClient.wallet.handleOidcRedirectCallback(
@@ -511,7 +509,6 @@ class PublicErrorContractsTest {
             val signerMismatchStart =
                 signerMismatchClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
-                    redirectUri = "omsclientkotlindemo://auth/callback",
                 )
             signerMismatchSigner.credentialIdValue = "0x04" + "99".repeat(64)
             val signerMismatchFailure =
@@ -526,7 +523,6 @@ class PublicErrorContractsTest {
                 publicError {
                     storageFailureClient.wallet.startOidcRedirectAuth(
                         provider = testOidcProvider(),
-                        redirectUri = "omsclientkotlindemo://auth/callback",
                     )
                 }
 
@@ -584,7 +580,6 @@ class PublicErrorContractsTest {
                         publicError {
                             missingStoreClient.wallet.startOidcRedirectAuth(
                                 provider = testOidcProvider(),
-                                redirectUri = "omsclientkotlindemo://auth/callback",
                             )
                         },
                     ),
@@ -1185,6 +1180,7 @@ class PublicErrorContractsTest {
             issuer = "https://issuer.example",
             clientId = "client-id",
             authorizationUrl = "https://issuer.example/oauth/authorize",
+            providerRedirectUri = "omsclientkotlindemo://auth/callback",
         )
 
     private fun failingOkHttpClient(message: String): OkHttpClient =

@@ -12,33 +12,9 @@ internal data class OMSWalletHttpResponse(
     val body: String,
 )
 
-internal class OMSWalletHttpException(
-    val statusCode: Int,
-    val responseBody: String,
-) : IllegalStateException("OMS Wallet request failed with status $statusCode")
-
 internal class OMSWalletHttpClient(
     private val okHttpClient: OkHttpClient = OkHttpClient(),
 ) {
-    suspend fun postJson(
-        baseUrl: String,
-        path: String,
-        body: String,
-        headers: Map<String, String>,
-    ): OMSWalletHttpResponse {
-        val response =
-            postJsonWithStatus(
-                baseUrl = baseUrl,
-                path = path,
-                body = body,
-                headers = headers,
-            )
-        if (response.statusCode !in 200..299) {
-            throw OMSWalletHttpException(response.statusCode, response.body)
-        }
-        return response
-    }
-
     suspend fun postJsonWithStatus(
         baseUrl: String,
         path: String,

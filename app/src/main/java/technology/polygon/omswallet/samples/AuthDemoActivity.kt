@@ -48,6 +48,7 @@ import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
 import technology.polygon.omswallet.OMSWalletException
+import technology.polygon.omswallet.OMSWalletNetworks
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
@@ -426,7 +427,7 @@ class AuthDemoActivity : AppCompatActivity() {
             val started =
                 sdk.wallet.startOidcRedirectAuth(
                     provider = provider,
-                    redirectUri = DemoConfig.oidcRedirectUri,
+                    omsRelayReturnUri = DemoConfig.oidcRedirectUri,
                     walletSelection = walletSelection,
                     sessionLifetimeSeconds = sessionLifetimeSeconds,
                     loginHint = loginHint,
@@ -510,7 +511,9 @@ class AuthDemoActivity : AppCompatActivity() {
     private fun configureNetworkPicker() {
         val networks =
             listOf(Network.AMOY, Network.POLYGON)
-                .filter { network -> sdk.supportedNetworks.any { it.id == network.id } }
+                .filter { network ->
+                    OMSWalletNetworks.supportedNetworks.any { it.id == network.id }
+                }
         val labels = networks.map(::networkLabel)
         networkInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
         networkInput.setText(networkLabel(selectedNetwork), false)
@@ -680,7 +683,7 @@ class AuthDemoActivity : AppCompatActivity() {
     ): String = "$label:\n${address ?: "none"}"
 
     private fun copyWalletAddress() {
-        val address = sdk.session.walletAddress
+        val address = sdk.wallet.session.walletAddress
         if (address.isNullOrBlank()) {
             Toast.makeText(this, "No wallet address to copy", Toast.LENGTH_SHORT).show()
             return
@@ -1122,7 +1125,7 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun renderSessionState() {
-        if (sdk.session.walletAddress == null) {
+        if (sdk.wallet.session.walletAddress == null) {
             renderSessionStateBox()
             expiredSessionEvent?.let {
                 renderExpiredSession(it)
@@ -1140,7 +1143,7 @@ class AuthDemoActivity : AppCompatActivity() {
         openExplorerButton.visibility = View.GONE
 
         authStatusView.text = "Restored persisted wallet session"
-        walletAddressView.text = addressLabel("Wallet address", sdk.session.walletAddress)
+        walletAddressView.text = addressLabel("Wallet address", sdk.wallet.session.walletAddress)
         authCard.visibility = View.GONE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
@@ -1242,7 +1245,7 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun renderSessionStateBox() {
-        val session = sdk.session
+        val session = sdk.wallet.session
         val expiredEvent = expiredSessionEvent
         sessionStateCard.visibility =
             if (session.walletAddress == null && expiredEvent == null) {

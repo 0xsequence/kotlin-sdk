@@ -125,7 +125,7 @@ showWallet(result.wallet)
 ```
 
 Pass `provider` and `providerLabel` to `signInWithOidcIdToken` for custom
-ID-token providers when you want those labels stored in `client.session.auth`.
+ID-token providers when you want those labels stored in `client.wallet.session.auth`.
 
 For OIDC authorization-code redirect flows, start the redirect, open the
 returned URL with your browser or Custom Tabs, then safely handle incoming app
@@ -134,7 +134,7 @@ links from `onCreate` / `onNewIntent`:
 ```kotlin
 val started = client.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
-    redirectUri = "yourapp://auth/callback",
+    omsRelayReturnUri = "yourapp://auth/callback",
 )
 
 // Open started.authorizationUrl.
@@ -147,18 +147,24 @@ when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toStrin
 }
 ```
 
-Use a redirect URI that matches a deep link registered by your app, such as
-`yourapp://auth/callback`. If your Google OAuth setup uses a custom web client
-ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
+Use an OMS relay return URI that matches a deep link registered by your app,
+such as `yourapp://auth/callback`. If your Google OAuth setup uses a custom web
+client ID, pass it with `OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
 `OidcProviders.google()` uses the SDK default Google client ID, `openid email
 profile` scopes, PKCE auth-code mode, and Google authorization parameters
 `access_type=offline` and `prompt=consent`. `OidcProviders.apple()` uses the SDK
 default Apple Services ID, `openid email` scopes, `response_mode=form_post`, and
-PKCE auth-code mode. When the provider relay URL is omitted,
-`startOidcRedirectAuth` derives the relay URL from the publishable-key Wallet API
-base for built-in Google and Apple providers. Apple `form_post` works through
-that derived relay; do not configure a direct app deep link as the Apple OAuth
-callback unless your provider flow supports it.
+PKCE auth-code mode. The Google and Apple helpers omit `providerRedirectUri` by
+default, so `startOidcRedirectAuth` derives the OMS relay URL from the
+publishable-key Wallet API base and stores `omsRelayReturnUri` in OIDC state.
+Apple `form_post` works through that derived relay; do not configure a direct
+app deep link as the Apple OAuth callback unless your provider flow supports it.
+If you pass `providerRedirectUri` to a Google or Apple helper and still use an
+intermediate relay, pass `omsRelayReturnUri` to store the final app callback in
+OIDC state. To bypass the relay, omit `omsRelayReturnUri`.
+For custom providers, set `providerRedirectUri` on `OidcProviderConfig` and do
+not pass `omsRelayReturnUri`; the SDK sends `providerRedirectUri` as the OAuth
+`redirect_uri` and expects the provider callback at that URL.
 Pass `loginHint` only when you want to prefill or select a specific Google
 account, such as during session-expiry reauth. When omitted, the SDK falls back
 to the previous active session email when one exists before redirect auth
@@ -224,7 +230,7 @@ with the pending redirect state:
 ```kotlin
 val started = client.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
-    redirectUri = "yourapp://auth/callback",
+    omsRelayReturnUri = "yourapp://auth/callback",
     walletSelection = WalletSelectionBehavior.Manual,
 )
 ```
@@ -253,9 +259,9 @@ when (
 Useful state checks:
 
 ```kotlin
-val walletAddress = client.session.walletAddress
-val expiresAt = client.session.expiresAt
-val auth = client.session.auth
+val walletAddress = client.wallet.session.walletAddress
+val expiresAt = client.wallet.session.expiresAt
+val auth = client.wallet.session.auth
 val authEmail = auth?.email
 ```
 
@@ -263,7 +269,7 @@ val authEmail = auth?.email
 sessions include issuer/provider metadata on `OMSWalletOidcSessionAuth`, so apps
 can display built-in Google and Apple sessions by provider label.
 
-`client.session` only reports completed wallet-session state. It does not
+`client.wallet.session` only reports completed wallet-session state. It does not
 include pending auth progress. Show OTP or redirect waiting UI from the method
 result that started the flow, not from session state. Always pass incoming app
 links to `handleOidcRedirectCallback`;

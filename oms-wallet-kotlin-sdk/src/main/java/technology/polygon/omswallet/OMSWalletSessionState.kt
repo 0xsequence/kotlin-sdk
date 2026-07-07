@@ -25,7 +25,7 @@ data class OMSWalletOidcSessionAuth(
 ) : OMSWalletSessionAuth
 
 /**
- * Current durable wallet-session state for an [OMSWallet].
+ * Current durable wallet-session state for a [WalletClient].
  *
  * This snapshot intentionally does not expose pending auth or signer
  * bookkeeping. Apps should pass incoming app links to
