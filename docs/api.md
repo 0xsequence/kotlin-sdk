@@ -25,7 +25,7 @@ documented here and do not need any separate service-client artifact.
 ## Entry Point
 
 ```kotlin
-OMSWallet(
+val omsWallet = OMSWallet(
     context: Context,
     publishableKey: String,
     okHttpClient: OkHttpClient = OkHttpClient(),
@@ -33,8 +33,8 @@ OMSWallet(
 ```
 
 ```kotlin
-val client.wallet: WalletClient
-val client.indexer: IndexerClient
+val wallet: WalletClient = omsWallet.wallet
+val indexer: IndexerClient = omsWallet.indexer
 ```
 
 The SDK derives required service configuration from the publishable key.
@@ -42,7 +42,7 @@ The SDK derives required service configuration from the publishable key.
 ## Auth and Session
 
 ```kotlin
-val client.wallet.session: OMSWalletSessionState
+val session: OMSWalletSessionState = omsWallet.wallet.session
 ```
 
 ```kotlin
@@ -87,7 +87,7 @@ data class OMSWalletOidcSessionAuth(
 ) : OMSWalletSessionAuth
 ```
 
-`client.wallet.session` only reports completed wallet-session state. Apps should show
+`omsWallet.wallet.session` only reports completed wallet-session state. Apps should show
 OTP or redirect waiting UI from the method result that started the flow, not
 from session state. Always pass incoming app-link URLs to
 `handleOidcRedirectCallback`; stale callbacks return `NoPendingAuth`, and the
@@ -119,11 +119,11 @@ expired session snapshot so apps can reuse `session.auth?.email` for email OTP
 reauth or as a Google `loginHint`, including after process recreation.
 
 ```kotlin
-fun client.wallet.signOut()
+fun omsWallet.wallet.signOut()
 ```
 
 ```kotlin
-fun client.wallet.onSessionExpired(
+fun omsWallet.wallet.onSessionExpired(
     listener: (OMSWalletSessionExpiredEvent) -> Unit,
 ): () -> Unit
 ```
@@ -134,13 +134,13 @@ it to each new listener until a new auth flow, new wallet session, or
 `signOut()` clears it. Listeners are delivered on the Android main thread.
 
 ```kotlin
-suspend fun client.wallet.startEmailAuth(
+suspend fun omsWallet.wallet.startEmailAuth(
     email: String,
 )
 ```
 
 ```kotlin
-suspend fun client.wallet.signInWithOidcIdToken(
+suspend fun omsWallet.wallet.signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
@@ -206,7 +206,7 @@ data class StartOidcRedirectAuthResult(
 ```
 
 ```kotlin
-suspend fun client.wallet.startOidcRedirectAuth(
+suspend fun omsWallet.wallet.startOidcRedirectAuth(
     provider: OidcProviderConfig,
     omsRelayReturnUri: String? = null,
     walletType: WalletType = WalletType.Ethereum,
@@ -230,7 +230,7 @@ sealed interface OidcRedirectAuthResult {
 ```
 
 ```kotlin
-suspend fun client.wallet.handleOidcRedirectCallback(
+suspend fun omsWallet.wallet.handleOidcRedirectCallback(
     callbackUrl: String?,
     walletSelection: WalletSelectionBehavior? = null,
     sessionLifetimeSeconds: Long? = null,
@@ -319,7 +319,7 @@ sealed interface CompleteAuthResult {
 ```
 
 ```kotlin
-suspend fun client.wallet.completeEmailAuth(
+suspend fun omsWallet.wallet.completeEmailAuth(
     code: String,
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
@@ -355,7 +355,7 @@ wallets for the same wallet type.
 ## Wallet
 
 ```kotlin
-val client.wallet.walletAddress: String?
+val walletAddress: String? = omsWallet.wallet.walletAddress
 ```
 
 ```kotlin
@@ -366,38 +366,38 @@ data class WalletSelectionResult(
 ```
 
 ```kotlin
-suspend fun client.wallet.listWallets(): List<Wallet>
+suspend fun omsWallet.wallet.listWallets(): List<Wallet>
 ```
 
 ```kotlin
-suspend fun client.wallet.useWallet(
+suspend fun omsWallet.wallet.useWallet(
     walletId: String,
 ): WalletSelectionResult
 ```
 
 ```kotlin
-suspend fun client.wallet.createWallet(
+suspend fun omsWallet.wallet.createWallet(
     walletType: WalletType = WalletType.Ethereum,
     reference: String? = null,
 ): WalletSelectionResult
 ```
 
 ```kotlin
-suspend fun client.wallet.signMessage(
+suspend fun omsWallet.wallet.signMessage(
     network: Network,
     message: String,
 ): String
 ```
 
 ```kotlin
-suspend fun client.wallet.signTypedData(
+suspend fun omsWallet.wallet.signTypedData(
     network: Network,
     typedData: JsonElement,
 ): String
 ```
 
 ```kotlin
-suspend fun client.wallet.isValidMessageSignature(
+suspend fun omsWallet.wallet.isValidMessageSignature(
     network: Network,
     message: String,
     signature: String,
@@ -405,7 +405,7 @@ suspend fun client.wallet.isValidMessageSignature(
 ```
 
 ```kotlin
-suspend fun client.wallet.isValidTypedDataSignature(
+suspend fun omsWallet.wallet.isValidTypedDataSignature(
     network: Network,
     typedData: JsonElement,
     signature: String,
@@ -413,7 +413,7 @@ suspend fun client.wallet.isValidTypedDataSignature(
 ```
 
 ```kotlin
-suspend fun client.wallet.sendTransaction(
+suspend fun omsWallet.wallet.sendTransaction(
     network: Network,
     to: String,
     value: BigInteger,
@@ -424,7 +424,7 @@ suspend fun client.wallet.sendTransaction(
 ```
 
 ```kotlin
-suspend fun client.wallet.sendTransaction(
+suspend fun omsWallet.wallet.sendTransaction(
     network: Network,
     request: SendTransactionRequest,
     waitForStatus: Boolean = true,
@@ -434,7 +434,7 @@ suspend fun client.wallet.sendTransaction(
 ```
 
 ```kotlin
-suspend fun client.wallet.callContract(
+suspend fun omsWallet.wallet.callContract(
     network: Network,
     contract: String,
     method: String,
@@ -447,39 +447,39 @@ suspend fun client.wallet.callContract(
 ```
 
 ```kotlin
-suspend fun client.wallet.getTransactionStatus(
+suspend fun omsWallet.wallet.getTransactionStatus(
     txnId: String,
 ): TransactionStatusResponse
 ```
 
 ```kotlin
-suspend fun client.wallet.listAccess(
+suspend fun omsWallet.wallet.listAccess(
     pageSize: UInt? = null,
 ): List<CredentialInfo>
 ```
 
 ```kotlin
-fun client.wallet.listAccessPages(
+fun omsWallet.wallet.listAccessPages(
     pageSize: UInt? = null,
 ): Flow<ListAccessResponse>
 ```
 
 ```kotlin
-suspend fun client.wallet.listAccessPage(
+suspend fun omsWallet.wallet.listAccessPage(
     pageSize: UInt? = null,
     cursor: String? = null,
 ): ListAccessResponse
 ```
 
 ```kotlin
-suspend fun client.wallet.getIdToken(
+suspend fun omsWallet.wallet.getIdToken(
     ttlSeconds: UInt? = null,
     customClaims: Map<String, JsonElement>? = null,
 ): String
 ```
 
 ```kotlin
-suspend fun client.wallet.revokeAccess(
+suspend fun omsWallet.wallet.revokeAccess(
     targetCredentialId: String,
 )
 ```
@@ -1020,10 +1020,10 @@ data class TransactionHistoryResult(
 ### Automatic Wallet Selection
 
 ```kotlin
-if (client.wallet.walletAddress == null) {
-    client.wallet.startEmailAuth("user@example.com")
+if (omsWallet.wallet.walletAddress == null) {
+    omsWallet.wallet.startEmailAuth("user@example.com")
     // A one-time code is sent to the user's email inbox.
-    val result = client.wallet.completeEmailAuth("123456")
+    val result = omsWallet.wallet.completeEmailAuth("123456")
     check(result is CompleteAuthResult.WalletSelected)
     showWallet(result.wallet)
 }
@@ -1033,7 +1033,7 @@ For OIDC ID-token flows:
 
 ```kotlin
 val result =
-    client.wallet.signInWithOidcIdToken(
+    omsWallet.wallet.signInWithOidcIdToken(
         idToken = googleIdToken,
         issuer = "https://accounts.google.com",
         audience = "YOUR_WEB_CLIENT_ID",
@@ -1046,14 +1046,14 @@ For OIDC redirect flows, start with the default Google provider unless the app
 has its own web client ID or provider configuration:
 
 ```kotlin
-val started = client.wallet.startOidcRedirectAuth(
+val started = omsWallet.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
     omsRelayReturnUri = "yourapp://auth/callback",
 )
 
 // Open started.authorizationUrl.
 
-when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
+when (val result = omsWallet.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
     is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
@@ -1073,7 +1073,7 @@ Use manual mode when the app needs to present wallet choices:
 
 ```kotlin
 val result =
-    client.wallet.completeEmailAuth(
+    omsWallet.wallet.completeEmailAuth(
         code = "123456",
         walletSelection = WalletSelectionBehavior.Manual,
     )
@@ -1115,7 +1115,7 @@ For OIDC redirect flows, pass the behavior when starting redirect auth to store
 it with pending redirect state:
 
 ```kotlin
-val started = client.wallet.startOidcRedirectAuth(
+val started = omsWallet.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
     omsRelayReturnUri = "yourapp://auth/callback",
     walletSelection = WalletSelectionBehavior.Manual,
@@ -1127,7 +1127,7 @@ You can also pass a callback value to override the pending redirect preference:
 ```kotlin
 when (
     val result =
-        client.wallet.handleOidcRedirectCallback(
+        omsWallet.wallet.handleOidcRedirectCallback(
             callbackUrl = intent.data?.toString(),
             walletSelection = WalletSelectionBehavior.Manual,
         )
@@ -1148,7 +1148,7 @@ For raw calldata or transaction parameters beyond `to` and `value`:
 ```kotlin
 val network = Network.AMOY
 
-val txResult = client.wallet.sendTransaction(
+val txResult = omsWallet.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
@@ -1162,7 +1162,7 @@ val txResult = client.wallet.sendTransaction(
 For method-signature contract calls:
 
 ```kotlin
-val txResult = client.wallet.callContract(
+val txResult = omsWallet.wallet.callContract(
     network = network,
     contract = "0xContractAddress",
     method = "transfer(address,uint256)",
@@ -1177,7 +1177,7 @@ val txResult = client.wallet.callContract(
 To choose a fee option before execution:
 
 ```kotlin
-val txResult = client.wallet.sendTransaction(
+val txResult = omsWallet.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",
@@ -1192,7 +1192,7 @@ val txResult = client.wallet.sendTransaction(
 Or use a custom picker:
 
 ```kotlin
-val txResult = client.wallet.sendTransaction(
+val txResult = omsWallet.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0xContractAddress",

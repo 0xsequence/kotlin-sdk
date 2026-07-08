@@ -6,52 +6,21 @@ instructions.
 
 ---
 
-## Behavioral Guidelines
+## Working Principles
 
-Behavioral guidelines to reduce common LLM coding mistakes. (Adapted from Andrej Karpathy's
-[CLAUDE.md](https://github.com/multica-ai/andrej-karpathy-skills/blob/main/CLAUDE.md).)
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-### 1. Think Before Coding
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them — don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-### 2. Simplicity First
-**Minimum code that solves the problem. Nothing speculative.**
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-### 3. Surgical Changes
-**Touch only what you must. Clean up only your own mess.**
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- Remove imports/variables YOUR changes made unused; leave pre-existing dead code unless asked.
-
-The test: every changed line should trace directly to the request.
-
-### 4. Goal-Driven Execution
-**Define success criteria. Loop until verified.**
-- "Add validation" → "Write tests for invalid inputs, then make them pass."
-- "Fix the bug" → "Write a test that reproduces it, then make it pass."
-
-For multi-step tasks, state a brief plan with a verify step for each item.
+- State assumptions when ambiguity affects implementation, public API, security, or release behavior.
+- Keep changes surgical and traceable to the request. Avoid speculative abstractions, broad refactors, and formatting churn.
+- Preserve user work in the tree and match the local style of the files you touch.
+- Define success criteria for non-trivial work and choose verification proportional to the risk.
 
 ---
 
 ## Third-Party Library Docs
 
-For **any third-party library**, use the **context7** MCP to fetch up-to-date documentation rather
-than relying on training data, which lags real library APIs. If the context7 MCP server is not
-available, set it up: https://context7.com/install
+For non-trivial or version-sensitive third-party library questions, prefer context7 or official
+documentation over training-data recall. If context7 is unavailable, use official docs or local
+package sources and note the fallback; do not block ordinary repo work just to install extra
+tooling.
 
 ---
 
@@ -77,7 +46,8 @@ unit tests, Android lint for both modules, and sample app assembly.
 - `oms-wallet-kotlin-sdk/src/androidTest/` - instrumented Android tests for
   Android Keystore credential behavior.
 - `app/` - Android sample app for auth, signing, transaction, and testbed flows.
-- `docs/` - public API notes and request-signing parity vectors.
+- `docs/` - public API notes, public error contracts, session-expiry notes, and
+  request-signing parity vectors.
 - `.github/workflows/android-ci.yml` - CI workflow for PRs and `master`.
 - `.github/workflows/claude-review.yml` - Claude review workflow. It runs once
   for non-Dependabot PRs when opened or marked ready for review, and can be
@@ -97,10 +67,11 @@ unit tests, Android lint for both modules, and sample app assembly.
   - Build the sample debug APK and verify the SDK integrates into the app.
 - To run the sample app on an emulator, prefer a reusable repo script or a
   short command that installs the debug APK and launches the manifest-declared
-  launcher activity. Do not hardcode activity class names; resolve the launcher
-  from the installed package or use an existing project run configuration.
-  Keep an already-running emulator open when possible instead of cold-booting
-  it for every run.
+  launcher activity. Existing project/local run commands that launch the known
+  sample activity are fine; do not invent new hardcoded activity names when the
+  manifest or a project run configuration can provide them. Keep an
+  already-running emulator open when possible instead of cold-booting it for
+  every run.
 - `./gradlew ktlintCheck`
   - Run local Kotlin style lint for both modules. New violations should fail
     this check.
@@ -121,7 +92,10 @@ Central, and the Gradle Plugin Portal.
 
 ## Verification Workflow
 
-Always run the smallest relevant checks before reporting completion:
+Choose the smallest relevant checks before reporting completion. For
+README/API/docs-only edits, use source-backed spot checks plus
+`git diff --check`; run Gradle checks only when the docs claim changed source
+behavior, public API shape, or runnable sample code.
 
 1. Kotlin style: `./gradlew ktlintCheck`.
 2. SDK logic: `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest`.
@@ -210,9 +184,10 @@ result.
 See **[TESTING.md](./TESTING.md)** for full testing conventions, unit vs. integration boundaries,
 and the execution command reference.
 
+- Use `TESTING.md` as the source of truth for test boundaries and public error
+  contract rules.
 - Unit tests live in `oms-wallet-kotlin-sdk/src/test/java/...` and use JUnit 4.
-- Network-facing client tests use MockWebServer where local HTTP behavior is
-  needed.
+- Network-facing client tests use MockWebServer where local HTTP behavior is needed.
 - Signing parity tests are documented in `docs/complete_auth_vectors.md`; keep
   request payload, preimage, digest, signature, and authorization header behavior
   deterministic.
@@ -224,8 +199,7 @@ and the execution command reference.
 
 ### Public Error Contract Tests
 
-- Follow the detailed rules in `TESTING.md` before adding or updating public
-  error contract tests.
+- Follow `TESTING.md` before adding or updating public error contract tests.
 - Use `docs/error-contracts.md` as the audit matrix for public SDK error
   surfaces, recovery semantics, `upstreamError` expectations, and owning tests.
 - Keep serialized public error shape assertions centralized in
@@ -243,9 +217,6 @@ and the execution command reference.
 - Android storage and Keystore signer internals belong in focused platform
   tests unless they are intentionally normalized through documented public SDK
   errors.
-- Serialized contract changes are not automatically regressions. First decide
-  whether the new error shape is intended, then update the assertion and related
-  docs or fix the implementation.
 
 ## Generated Files and External Artifacts
 
@@ -284,9 +255,8 @@ and the execution command reference.
 - Update tests and docs when behavior or public API changes.
 - Keep task specs durable: behavior, contracts, inputs/outputs, and acceptance
   criteria matter more than stale file or line references.
-- Mark work as human-in-the-loop when it requires product judgment, external
-  credentials, architecture decisions, manual Android device validation, or
-  unclear security trade-offs.
+- Ask before making product, architecture, or security trade-offs that are not
+  answered by the request or existing docs.
 - Run the relevant verification commands before reporting completion.
 
 ## PR / Commit Guidance

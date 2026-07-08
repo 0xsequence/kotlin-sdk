@@ -18,47 +18,70 @@ implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.0")
 - Android `compileSdk 34` or newer
 - Java 17 Android compile options
 - Kotlin/Android app using the Android library module
-- a valid `publishableKey`
 
 The SDK does not require consumer apps to enable core library desugaring.
+
+## Before You Start
+
+- Use an OMS publishable key for your project. Use sandbox/dev keys for local
+  development and testnet flows.
+- Register any OIDC return URI you use, such as `yourapp://auth/callback`, as an
+  Android app link or intent filter before testing redirect auth.
+- Start with sign-in, message signing, or balance reads. Transaction examples
+  below use Polygon Amoy; mainnet transactions can move real funds.
 
 ## Quick Start
 
 ```kotlin
-val client = OMSWallet(
-    context = context,
-    publishableKey = "YOUR_PUBLISHABLE_KEY",
-)
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import technology.polygon.omswallet.Network
+import technology.polygon.omswallet.OMSWallet
+import technology.polygon.omswallet.wallet.CompleteAuthResult
 
-client.wallet.startEmailAuth("user@example.com")
+lifecycleScope.launch {
+    val omsWallet = OMSWallet(
+        context = this@MainActivity,
+        publishableKey = "your-publishable-key",
+    )
 
-// Use the one-time code the user enters from their email inbox.
-val result = client.wallet.completeEmailAuth("123456")
-if (result is CompleteAuthResult.WalletSelected) {
-    val wallet = result.wallet
-    println("Wallet address: ${wallet.address}")
+    omsWallet.wallet.startEmailAuth("user@example.com")
 
-    val signature =
-        client.wallet.signMessage(
-            network = Network.AMOY,
-            message = "hello from OMS Wallet",
-        )
-    println("Signature: $signature")
+    // Use the one-time code the user enters from their email inbox.
+    val result = omsWallet.wallet.completeEmailAuth("123456")
+    if (result is CompleteAuthResult.WalletSelected) {
+        val wallet = result.wallet
+        println("Wallet address: ${wallet.address}")
 
-    // Read balances from the chains your app needs.
-    val balances =
-        client.indexer.getBalances(
-            walletAddress = wallet.address,
-            networks = listOf(Network.POLYGON, Network.BASE, Network.ARBITRUM),
-            includeMetadata = true,
-        )
-    println("Balances: $balances")
+        val signature =
+            omsWallet.wallet.signMessage(
+                network = Network.AMOY,
+                message = "hello from OMS Wallet",
+            )
+        println("Signature: $signature")
+
+        // Read balances from the chains your app needs.
+        val balances =
+            omsWallet.indexer.getBalances(
+                walletAddress = wallet.address,
+                networks = listOf(Network.POLYGON, Network.BASE, Network.ARBITRUM),
+                includeMetadata = true,
+            )
+        println("Balances: $balances")
+    }
 }
 ```
 
-The SDK derives wallet API and indexer routing from the publishable key. Start
-with sign-in, message signing, or balance reads. Transaction examples below use
-Polygon Amoy; mainnet transactions can move real funds.
+The SDK derives wallet API and indexer routing from the publishable key.
+
+## Overview
+
+`OMSWallet` exposes two sub-clients:
+
+| Property | Type | Description |
+|---|---|---|
+| `omsWallet.wallet` | `WalletClient` | Authentication, session, signing, access management, and transaction helpers. |
+| `omsWallet.indexer` | `IndexerClient` | Token balance and on-chain query helpers. |
 
 ## Capabilities
 
@@ -87,7 +110,7 @@ Expired sessions are made inactive before protected wallet operations and throw
 `OMSWalletSessionException` with `code = OMSWalletErrorCode.SessionExpired`. The SDK
 clears the active signer/session state, but keeps expired completed-session
 metadata in storage until the app starts a new auth flow or calls `signOut()`.
-Subscribe with `client.wallet.onSessionExpired { event -> ... }` to route users
+Subscribe with `omsWallet.wallet.onSessionExpired { event -> ... }` to route users
 back to sign-in while preserving the expired session snapshot for reauth.
 Listeners are delivered on the Android main thread.
 
@@ -112,25 +135,6 @@ value from 1 through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000`
 seconds, 30 days). Invalid lifetimes are reported as
 `OMSWalletErrorCode.ValidationError`.
 
-### OIDC ID-Token Auth
-
-For OIDC ID-token flows such as Google Sign-In with Credential Manager:
-
-```kotlin
-val result =
-    client.wallet.signInWithOidcIdToken(
-        idToken = googleIdToken,
-        issuer = "https://accounts.google.com",
-        audience = "YOUR_WEB_CLIENT_ID",
-    )
-if (result is CompleteAuthResult.WalletSelected) {
-    println("Wallet address: ${result.wallet.address}")
-}
-```
-
-Pass `provider` and `providerLabel` to `signInWithOidcIdToken` for custom
-ID-token providers when you want those labels stored in `client.wallet.session.auth`.
-
 ### OIDC Redirect Auth
 
 For OIDC authorization-code redirect flows, start the redirect, open the
@@ -138,14 +142,14 @@ returned URL with your browser or Custom Tabs, then safely handle incoming app
 links from `onCreate` / `onNewIntent`:
 
 ```kotlin
-val started = client.wallet.startOidcRedirectAuth(
+val started = omsWallet.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
     omsRelayReturnUri = "yourapp://auth/callback",
 )
 
 // Open started.authorizationUrl.
 
-when (val result = client.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
+when (val result = omsWallet.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
     is OidcRedirectAuthResult.Completed -> println("Wallet address: ${result.wallet.address}")
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
@@ -195,7 +199,7 @@ val acmeProvider =
         scopes = listOf("openid", "email"),
     )
 
-val started = client.wallet.startOidcRedirectAuth(provider = acmeProvider)
+val started = omsWallet.wallet.startOidcRedirectAuth(provider = acmeProvider)
 ```
 
 Pass `loginHint` only when you want to prefill or select a specific Google
@@ -214,6 +218,25 @@ With the default automatic behavior, a successful redirect callback returns
 `OidcRedirectAuthResult.Completed`; `WalletSelection` is only a successful branch
 when the callback is handled with manual wallet selection.
 
+### OIDC ID-Token Auth
+
+For OIDC ID-token flows such as Google Sign-In with Credential Manager:
+
+```kotlin
+val result =
+    omsWallet.wallet.signInWithOidcIdToken(
+        idToken = googleIdToken,
+        issuer = "https://accounts.google.com",
+        audience = "YOUR_WEB_CLIENT_ID",
+    )
+if (result is CompleteAuthResult.WalletSelected) {
+    println("Wallet address: ${result.wallet.address}")
+}
+```
+
+Pass `provider` and `providerLabel` to `signInWithOidcIdToken` for custom
+ID-token providers when you want those labels stored in `omsWallet.wallet.session.auth`.
+
 ### Manual Wallet Selection
 
 To use your own wallet-selection UI, pass
@@ -221,7 +244,7 @@ To use your own wallet-selection UI, pass
 
 ```kotlin
 val result =
-    client.wallet.completeEmailAuth(
+    omsWallet.wallet.completeEmailAuth(
         code = "123456",
         walletSelection = WalletSelectionBehavior.Manual,
     )
@@ -245,7 +268,7 @@ For OIDC redirect auth, pass the behavior when starting redirect auth to store i
 with the pending redirect state:
 
 ```kotlin
-val started = client.wallet.startOidcRedirectAuth(
+val started = omsWallet.wallet.startOidcRedirectAuth(
     provider = OidcProviders.google(),
     omsRelayReturnUri = "yourapp://auth/callback",
     walletSelection = WalletSelectionBehavior.Manual,
@@ -257,7 +280,7 @@ You can also pass a callback value to override the pending redirect preference:
 ```kotlin
 when (
     val result =
-        client.wallet.handleOidcRedirectCallback(
+        omsWallet.wallet.handleOidcRedirectCallback(
             callbackUrl = intent.data?.toString(),
             walletSelection = WalletSelectionBehavior.Manual,
         )
@@ -281,9 +304,9 @@ when (
 Useful state checks:
 
 ```kotlin
-val walletAddress = client.wallet.session.walletAddress
-val expiresAt = client.wallet.session.expiresAt
-val auth = client.wallet.session.auth
+val walletAddress = omsWallet.wallet.session.walletAddress
+val expiresAt = omsWallet.wallet.session.expiresAt
+val auth = omsWallet.wallet.session.auth
 val authEmail = auth?.email
 ```
 
@@ -291,22 +314,34 @@ val authEmail = auth?.email
 sessions include issuer/provider metadata on `OMSWalletOidcSessionAuth`, so apps
 can display built-in Google and Apple sessions by provider label.
 
-`client.wallet.session` only reports completed wallet-session state. It does not
-include pending auth progress. Show OTP or redirect waiting UI from the method
-result that started the flow, not from session state. Always pass incoming app
-links to `handleOidcRedirectCallback`;
-if it returns `NoPendingAuth`, show sign-in UI and let the user start again. A
-fresh SDK instance restores completed wallet sessions, including the session
-expiry and auth metadata returned by the wallet API, but not email OTP
-pending state. Completed auth requests ask the wallet API for a one-week session
-lifetime by default; pass `sessionLifetimeSeconds` to request a different
-value from 1 through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000`
-seconds, 30 days). For OIDC redirects, values passed to `startOidcRedirectAuth`
-are stored with the pending redirect state and used on callback completion unless
-`handleOidcRedirectCallback` overrides them. Auth completion loads all wallet
-pages before selecting or creating a wallet. If auth completes but wallet
-selection, wallet creation, or session persistence fails, the SDK clears the
-in-memory auth session instead of retaining unrecoverable transient state.
+`omsWallet.wallet.session` only reports completed wallet-session state. It does
+not include pending auth progress. Show OTP or redirect waiting UI from the
+method result that started the flow, not from session state.
+
+Always pass incoming app links to `handleOidcRedirectCallback`. If it returns
+`NoPendingAuth`, show sign-in UI and let the user start again.
+
+A fresh SDK instance restores completed wallet sessions, including the session
+expiry and auth metadata returned by the wallet API, but not email OTP pending
+state.
+
+Completed auth requests ask the wallet API for a one-week session lifetime by
+default; pass `sessionLifetimeSeconds` to request a different value from 1
+through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000` seconds, 30
+days). For OIDC redirects, values passed to `startOidcRedirectAuth` are stored
+with the pending redirect state and used on callback completion unless
+`handleOidcRedirectCallback` overrides them.
+
+Auth completion loads all wallet pages before selecting or creating a wallet. If
+auth completes but wallet selection, wallet creation, or session persistence
+fails, the SDK clears the in-memory auth session instead of retaining
+unrecoverable transient state.
+
+To end the session, call:
+
+```kotlin
+omsWallet.wallet.signOut()
+```
 
 ## Core Workflows
 
@@ -317,14 +352,14 @@ Use the selected wallet for signing.
 ```kotlin
 val network = Network.AMOY
 
-val signResult = client.wallet.signMessage(
+val signResult = omsWallet.wallet.signMessage(
     network = network,
-    message = "hello from android",
+    message = "hello from OMS Wallet",
 )
 
-val verifyResult = client.wallet.isValidMessageSignature(
+val verifyResult = omsWallet.wallet.isValidMessageSignature(
     network = network,
-    message = "hello from android",
+    message = "hello from OMS Wallet",
     signature = signResult,
 )
 ```
@@ -332,6 +367,11 @@ val verifyResult = client.wallet.isValidMessageSignature(
 ### Sign Typed Data
 
 ```kotlin
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
+
 val network = Network.AMOY
 val typedDataJson =
     buildJsonObject {
@@ -364,13 +404,19 @@ val typedDataJson =
             put("chainId", JsonPrimitive(network.id.toLong()))
         }
         putJsonObject("message") {
-            put("contents", "hello from android")
+            put("contents", "hello from OMS Wallet")
         }
     }
 
-val typedSignature = client.wallet.signTypedData(
+val typedSignature = omsWallet.wallet.signTypedData(
     network = network,
     typedData = typedDataJson,
+)
+
+val typedDataValid = omsWallet.wallet.isValidTypedDataSignature(
+    network = network,
+    typedData = typedDataJson,
+    signature = typedSignature,
 )
 ```
 
@@ -381,12 +427,14 @@ wallet from a faucet before sending and switch networks only when you are ready
 for production.
 
 ```kotlin
+import technology.polygon.omswallet.utils.parseUnits
+
 val network = Network.AMOY
 
-val txResult = client.wallet.sendTransaction(
+val txResult = omsWallet.wallet.sendTransaction(
     network = network,
     to = "0x1111111111111111111111111111111111111111",
-    value = parseUnits("0.01", 18),
+    value = parseUnits("0.001", 18),
 )
 ```
 
@@ -401,9 +449,9 @@ human-entered decimal values before sending. Import the helpers from
 ### Query Balances
 
 ```kotlin
-val walletAddress = requireNotNull(client.wallet.walletAddress)
+val walletAddress = requireNotNull(omsWallet.wallet.walletAddress)
 
-val tokenBalances = client.indexer.getBalances(
+val tokenBalances = omsWallet.indexer.getBalances(
     walletAddress = walletAddress,
     networks = listOf(Network.POLYGON, Network.BASE, Network.ARBITRUM),
     contractAddresses = listOf("0x3333333333333333333333333333333333333333"),
@@ -425,7 +473,7 @@ metadata from `balance.contractInfo` and `balance.tokenMetadata`.
 ### Query Transaction History
 
 ```kotlin
-val history = client.indexer.getTransactionHistory(
+val history = omsWallet.indexer.getTransactionHistory(
     walletAddress = walletAddress,
     networks = listOf(Network.POLYGON, Network.BASE, Network.ARBITRUM),
 )
@@ -438,7 +486,7 @@ For raw calldata or transaction parameters beyond `to` and `value`, use the requ
 ```kotlin
 val network = Network.AMOY
 
-val txResult = client.wallet.sendTransaction(
+val txResult = omsWallet.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0x3333333333333333333333333333333333333333",
@@ -452,7 +500,7 @@ val txResult = client.wallet.sendTransaction(
 For ABI-style contract calls, use `callContract`:
 
 ```kotlin
-val txResult = client.wallet.callContract(
+val txResult = omsWallet.wallet.callContract(
     network = network,
     contract = "0x3333333333333333333333333333333333333333",
     method = "transfer(address,uint256)",
@@ -468,7 +516,7 @@ To pick the first fee option the selected wallet can afford, pass the built-in
 selector:
 
 ```kotlin
-val txResult = client.wallet.sendTransaction(
+val txResult = omsWallet.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0x3333333333333333333333333333333333333333",
@@ -483,7 +531,7 @@ val txResult = client.wallet.sendTransaction(
 For a custom fee picker, return the selected option's `selection`:
 
 ```kotlin
-val txResult = client.wallet.sendTransaction(
+val txResult = omsWallet.wallet.sendTransaction(
     network = network,
     request = SendTransactionRequest(
         to = "0x3333333333333333333333333333333333333333",
@@ -499,7 +547,7 @@ val txResult = client.wallet.sendTransaction(
 The selector receives `FeeOptionWithBalance` values. `balance` is the selected
 wallet's raw indexer balance for that fee token when available. `available` is
 formatted with the token decimals, while `availableRaw` keeps the raw integer
-value. `decimals` is exposed as a regular `Int`. `selection` preserves the
+value. `decimals` is exposed as `Int?`. `selection` preserves the
 API-provided `tokenID` when present and falls back to the token symbol. Sponsored
 transactions skip fee selection; unsponsored transactions fail before execute
 when no fee option can be selected.
@@ -507,7 +555,7 @@ when no fee option can be selected.
 To refresh a transaction later:
 
 ```kotlin
-val status = client.wallet.getTransactionStatus(txnId = txResult.txnId)
+val status = omsWallet.wallet.getTransactionStatus(txnId = txResult.txnId)
 ```
 
 ## Reference
@@ -531,7 +579,7 @@ submitted but status polling failed, so retry status lookup with the returned
 
 ```kotlin
 try {
-    client.wallet.startEmailAuth("user@example.com")
+    omsWallet.wallet.startEmailAuth("user@example.com")
 } catch (error: OMSWalletException) {
     println("${error.code} ${error.operation?.id} ${error.upstreamError}")
 }
@@ -547,15 +595,23 @@ val displayAmount = formatUnits(rawAmount, 18)
 ### Wallet ID Tokens and Access
 
 ```kotlin
-val idToken = client.wallet.getIdToken(ttlSeconds = 300u)
-val credentials = client.wallet.listAccess(pageSize = 25u)
-client.wallet.listAccessPages(pageSize = 25u).collect { page ->
+import kotlinx.serialization.json.JsonPrimitive
+
+val idToken = omsWallet.wallet.getIdToken(ttlSeconds = 300u)
+val scopedIdToken =
+    omsWallet.wallet.getIdToken(
+        ttlSeconds = 3_600u,
+        customClaims = mapOf("role" to JsonPrimitive("member")),
+    )
+
+val credentials = omsWallet.wallet.listAccess(pageSize = 25u)
+omsWallet.wallet.listAccessPages(pageSize = 25u).collect { page ->
     println(page.credentials)
 }
 
 credentials
     .firstOrNull { !it.isCaller }
-    ?.let { client.wallet.revokeAccess(targetCredentialId = it.credentialId) }
+    ?.let { omsWallet.wallet.revokeAccess(targetCredentialId = it.credentialId) }
 ```
 
 ## API Reference
@@ -609,3 +665,7 @@ and is not wired into GitHub CI.
 
 See [publishing.md](publishing.md) for release PR and Maven Central publishing
 steps.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
