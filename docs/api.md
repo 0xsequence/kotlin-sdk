@@ -503,8 +503,8 @@ transaction remains pending when polling times out, the response contains the
 Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
 pagination cursors and returns all credentials, `listAccessPages` emits each
 page as a `Flow`, and `listAccessPage` exposes one page at a time for manual
-cursor pagination. Pass `pageSize` when fetching credentials that may span
-multiple pages so each request uses an explicit limit.
+cursor pagination. Pass `pageSize` for multi-page credential lists so each
+request uses an explicit limit.
 
 ## Networks
 
