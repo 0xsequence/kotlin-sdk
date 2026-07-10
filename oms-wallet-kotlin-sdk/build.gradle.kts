@@ -134,7 +134,7 @@ fun generatePublicApiDump(classesJar: File): String {
                 appendLine()
             }
         }
-    }
+    }.trimEnd() + "\n"
 }
 
 tasks.register("checkPublicApiDoesNotExposeGeneratedWaas") {

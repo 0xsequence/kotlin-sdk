@@ -27,6 +27,7 @@ public final class technology.polygon.omswallet.Network {
   public static final technology.polygon.omswallet.Network access$getKATANA$cp();
   public static final java.util.List access$getEntries$cp();
 }
+
 Compiled from "Network.kt"
 public final class technology.polygon.omswallet.Network$Companion {
   public final technology.polygon.omswallet.Network getMAINNET();
