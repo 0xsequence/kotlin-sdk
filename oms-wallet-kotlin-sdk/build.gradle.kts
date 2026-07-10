@@ -1,4 +1,5 @@
 import java.io.File
+import java.util.zip.ZipFile
 
 plugins {
     alias(libs.plugins.android.library)
@@ -27,9 +28,6 @@ val waasGeneratedJar =
     waasGeneratedProject.tasks
         .named<org.gradle.jvm.tasks.Jar>("jar")
         .flatMap { it.archiveFile }
-val waasGeneratedClassesJar =
-    files(waasGeneratedJar)
-        .builtBy(waasGeneratedProject.tasks.named("jar"))
 
 android {
     namespace = "technology.polygon.omswallet"
@@ -86,6 +84,58 @@ tasks.matching { it.name == "javaDocReleaseJar" }.configureEach {
 
 val releaseKotlinClasses =
     layout.buildDirectory.dir("intermediates/built_in_kotlinc/release/compileReleaseKotlin/classes")
+val packagedReleaseClassesJar =
+    layout.buildDirectory.file("intermediates/aar_main_jar/release/syncReleaseLibJars/classes.jar")
+val publicApiBaseline = layout.projectDirectory.file("api/public-api.txt")
+
+fun generatePublicApiDump(classesJar: File): String {
+    val javapExecutable =
+        File(System.getProperty("java.home"))
+            .resolve("bin")
+            .resolve(if (System.getProperty("os.name").startsWith("Windows", true)) "javap.exe" else "javap")
+    val classNames =
+        ZipFile(classesJar).use { zip ->
+            zip
+                .entries()
+                .asSequence()
+                .map { it.name }
+                .filter { it.endsWith(".class") && !it.endsWith("module-info.class") }
+                .map { it.removeSuffix(".class").replace('/', '.') }
+                .sorted()
+                .toList()
+        }
+
+    return buildString {
+        classNames.forEach { className ->
+            val process =
+                ProcessBuilder(
+                    javapExecutable.absolutePath,
+                    "-classpath",
+                    classesJar.absolutePath,
+                    "-public",
+                    className,
+                ).start()
+            val output = process.inputStream.bufferedReader().readText()
+            val errors = process.errorStream.bufferedReader().readText()
+            if (process.waitFor() != 0) {
+                throw GradleException("javap failed for $className: ${errors.trim()}")
+            }
+            val isPublic =
+                output.lineSequence().any { line ->
+                    val declaration = line.trim()
+                    declaration.startsWith("public class ") ||
+                        declaration.startsWith("public final class ") ||
+                        declaration.startsWith("public abstract class ") ||
+                        declaration.startsWith("public interface ") ||
+                        declaration.startsWith("public enum ")
+                }
+            if (isPublic) {
+                appendLine(output.trim())
+                appendLine()
+            }
+        }
+    }
+}
 
 tasks.register("checkPublicApiDoesNotExposeGeneratedWaas") {
     group = "verification"
@@ -176,12 +226,162 @@ tasks.register("checkPublicApiDoesNotExposeGeneratedWaas") {
     }
 }
 
+val releaseAar = layout.buildDirectory.file("outputs/aar/${project.name}-release.aar")
+
+tasks.register("checkReleaseArtifactBoundary") {
+    group = "verification"
+    description =
+        "Checks that the public AAR excludes generated WaaS bytecode and Java-callable implementation details."
+    dependsOn("assembleRelease", "checkPublicApiDoesNotExposeGeneratedWaas")
+    inputs.file(releaseAar)
+
+    doLast {
+        val aar = releaseAar.get().asFile
+        val embeddedAarEntries =
+            ZipFile(aar).use { zip ->
+                zip
+                    .entries()
+                    .asSequence()
+                    .map { it.name }
+                    .filter {
+                        it.startsWith("libs/") ||
+                            it.startsWith("technology/polygon/omswallet/internal/generated/waas/")
+                    }.toList()
+            }
+        if (embeddedAarEntries.isNotEmpty()) {
+            throw GradleException(
+                "Release AAR embeds generated WaaS implementation classes: " +
+                    embeddedAarEntries.joinToString(),
+            )
+        }
+
+        val classesJar = zipTree(aar).matching { include("classes.jar") }.singleFile
+        val mergedGeneratedClasses =
+            ZipFile(classesJar).use { zip ->
+                zip
+                    .entries()
+                    .asSequence()
+                    .map { it.name }
+                    .filter { it.startsWith("technology/polygon/omswallet/internal/generated/waas/") }
+                    .toList()
+            }
+        if (mergedGeneratedClasses.isNotEmpty()) {
+            throw GradleException(
+                "Release classes.jar contains generated WaaS implementation classes: " +
+                    mergedGeneratedClasses.joinToString(),
+            )
+        }
+
+        val javapExecutable =
+            File(System.getProperty("java.home"))
+                .resolve("bin")
+                .resolve(if (System.getProperty("os.name").startsWith("Windows", true)) "javap.exe" else "javap")
+        listOf(
+            "technology.polygon.omswallet.Network",
+            "technology.polygon.omswallet.wallet.WalletClient",
+            "technology.polygon.omswallet.indexer.IndexerClient",
+        ).forEach { className ->
+            val process =
+                ProcessBuilder(
+                    javapExecutable.absolutePath,
+                    "-classpath",
+                    classesJar.absolutePath,
+                    "-public",
+                    className,
+                ).start()
+            val output = process.inputStream.bufferedReader().readText()
+            val errors = process.errorStream.bufferedReader().readText()
+            if (process.waitFor() != 0) {
+                throw GradleException("javap failed for $className: ${errors.trim()}")
+            }
+            val simpleName = className.substringAfterLast('.')
+            val publicConstructors =
+                output.lineSequence().filter { line ->
+                    val signature = line.trim()
+                    (
+                        signature.startsWith("public $className(") ||
+                            signature.startsWith("public $simpleName(")
+                    ) &&
+                        "kotlin.jvm.internal.DefaultConstructorMarker" !in signature
+                }
+            if (publicConstructors.any()) {
+                throw GradleException("$className exposes a public implementation constructor")
+            }
+        }
+
+        listOf(
+            "technology.polygon.omswallet.wallet.OidcRedirectAuthStore",
+            "technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore",
+        ).forEach { className ->
+            val process =
+                ProcessBuilder(
+                    javapExecutable.absolutePath,
+                    "-classpath",
+                    classesJar.absolutePath,
+                    "-v",
+                    className,
+                ).start()
+            val output = process.inputStream.bufferedReader().readText()
+            val errors = process.errorStream.bufferedReader().readText()
+            if (process.waitFor() != 0) {
+                throw GradleException("javap failed for $className: ${errors.trim()}")
+            }
+            val getterSection =
+                output
+                    .lineSequence()
+                    .dropWhile { "getSynchronizationKey();" !in it }
+                    .take(3)
+                    .joinToString("\n")
+            if ("getSynchronizationKey();" !in getterSection || "ACC_SYNTHETIC" !in getterSection) {
+                throw GradleException("$className exposes synchronizationKey to Java source callers")
+            }
+        }
+    }
+}
+
+tasks.register("dumpPublicApi") {
+    group = "documentation"
+    description = "Writes the Java-visible API shipped in the release AAR."
+    dependsOn("syncReleaseLibJars")
+    inputs.file(packagedReleaseClassesJar)
+    outputs.file(publicApiBaseline)
+
+    doLast {
+        val baseline = publicApiBaseline.asFile
+        baseline.parentFile.mkdirs()
+        baseline.writeText(generatePublicApiDump(packagedReleaseClassesJar.get().asFile))
+    }
+}
+
+tasks.register("checkPublicApiBaseline") {
+    group = "verification"
+    description = "Fails when the packaged Java-visible API differs from the committed baseline."
+    dependsOn("syncReleaseLibJars")
+    mustRunAfter("dumpPublicApi")
+    inputs.file(packagedReleaseClassesJar)
+    inputs.file(publicApiBaseline)
+
+    doLast {
+        val baseline = publicApiBaseline.asFile
+        if (!baseline.isFile) {
+            throw GradleException("Missing public API baseline. Run :oms-wallet-kotlin-sdk:dumpPublicApi.")
+        }
+        val actual = generatePublicApiDump(packagedReleaseClassesJar.get().asFile)
+        if (baseline.readText() != actual) {
+            throw GradleException(
+                "Packaged public API changed. Review the change, then run " +
+                    ":oms-wallet-kotlin-sdk:dumpPublicApi to accept it.",
+            )
+        }
+    }
+}
+
 tasks.named("check") {
-    dependsOn("checkPublicApiDoesNotExposeGeneratedWaas")
+    dependsOn("checkReleaseArtifactBoundary", "checkPublicApiBaseline")
 }
 
 dependencies {
-    implementation(waasGeneratedClassesJar)
+    implementation(project(":oms-wallet-kotlin-sdk-waas-generated"))
     implementation(libs.androidx.core.ktx)
     api(libs.okhttp)
     api(libs.kotlinx.serialization.json)

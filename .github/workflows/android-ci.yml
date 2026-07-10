@@ -24,11 +24,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Kotlin style check
-        run: ./gradlew ktlintCheck
-
-      - name: Run Android CI checks
-        run: ./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug
+      - name: Verify release publication
+        run: ./gradlew --build-cache verifyReleasePublication
 
       - name: Publish SDK unit test report
         if: always()

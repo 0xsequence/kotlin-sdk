@@ -26,47 +26,17 @@ Prerequisites:
 3. Run the release checks:
 
    ```sh
-   ./gradlew ktlintCheck
-   ./gradlew --build-cache \
-     :oms-wallet-kotlin-sdk:checkPublicApiDoesNotExposeGeneratedWaas \
-     :oms-wallet-kotlin-sdk:testDebugUnitTest \
-     :oms-wallet-kotlin-sdk:lintDebug \
-     :app:lintDebug \
-     :app:assembleDebug
-   ./gradlew :oms-wallet-kotlin-sdk:publishToMavenLocal
-   ./gradlew nmcpZipAggregation
-   unzip -l build/nmcp/zip/aggregation.zip
+   ./gradlew --build-cache verifyReleasePublication
    ```
 
-   `publishToMavenLocal` verifies the Maven publication locally.
-   `nmcpZipAggregation` builds the Central Portal upload archive without
-   uploading it. Without signing properties this is only a structural preview;
-   for a final publish preview, provide `signingInMemoryKey` and
-   `signingInMemoryKeyPassword` and confirm the archive contains `.asc`
-   signature files.
+   This is the same task CI runs. It checks formatting, tests, Android lint,
+   both example apps, the public API baseline, release artifact boundaries,
+   release coordinates, Maven metadata, checksums, and the complete publication
+   graph. It writes the validated Central Portal archive to
+   `build/nmcp/zip/aggregation.zip` without uploading it. When signing
+   properties are present, it also requires signatures for every artifact.
 
-4. Inspect the local publication:
-
-   ```sh
-   RELEASE_DIR=~/.m2/repository/io/github/0xsequence/oms-wallet-kotlin-sdk/<version>
-
-   jar tf "$RELEASE_DIR/oms-wallet-kotlin-sdk-<version>.aar" | \
-     rg '^libs/oms-wallet-kotlin-sdk-waas-generated\.jar$'
-
-   rg "oms-wallet-kotlin-sdk-waas-generated|generated\\.waas" \
-     "$RELEASE_DIR"/*.pom "$RELEASE_DIR"/*.module
-
-   jar tf "$RELEASE_DIR/oms-wallet-kotlin-sdk-<version>-sources.jar" | \
-     rg "generated/waas|WaasWallet"
-
-   jar tf "$RELEASE_DIR/oms-wallet-kotlin-sdk-<version>-javadoc.jar" | \
-     rg "generated/waas|WaasWallet|waas"
-   ```
-
-   The AAR check should print the embedded generated WaaS jar. The POM, module,
-   sources jar, and javadoc jar checks should return no matches.
-
-5. Commit the release changes, push the branch, and open a PR against `master`.
+4. Commit the release changes, push the branch, and open a PR against `master`.
    Use a Conventional Commits title such as
    `chore(release): publish <version>`, and fill out the PR template with the
    checks you ran.
@@ -76,7 +46,7 @@ Prerequisites:
    gh pr create --base master --title "chore(release): publish <version>"
    ```
 
-6. After the PR is approved, merged, and `master` CI is green, publish from the
+5. After the PR is approved, merged, and `master` CI is green, publish from the
    merged commit. Do not commit Central Portal tokens, signing keys, passwords,
    `local.properties`, or local Gradle property files. Provide these as Gradle
    project properties from `~/.gradle/gradle.properties` or a secure
@@ -97,12 +67,15 @@ Prerequisites:
    [Central Portal](https://central.sonatype.com/), review the deployment named
    `oms-wallet-kotlin-sdk:<version>`, and publish it.
 
-7. After Maven Central propagation, verify the published POM is reachable and tag
+6. After Maven Central propagation, verify the published POM is reachable and tag
    the exact published commit:
 
    ```sh
    POM_PATH=io/github/0xsequence/oms-wallet-kotlin-sdk/<version>/oms-wallet-kotlin-sdk-<version>.pom
+   WAAS_RUNTIME_PATH=io/github/0xsequence/oms-wallet-kotlin-sdk-waas-generated/<version>
    curl -I "https://repo1.maven.org/maven2/$POM_PATH"
+   curl -I "https://repo1.maven.org/maven2/$WAAS_RUNTIME_PATH/oms-wallet-kotlin-sdk-waas-generated-<version>.pom"
+   curl -I "https://repo1.maven.org/maven2/$WAAS_RUNTIME_PATH/oms-wallet-kotlin-sdk-waas-generated-<version>.jar"
    git tag -s <version> -m <version>
    git push origin master <version>
    ```
@@ -127,7 +100,7 @@ snapshot repository is intentionally added to this repo. The current Gradle
 setup supports local snapshot artifacts through Maven Local:
 
 ```sh
-./gradlew -PPOM_VERSION_NAME=0.2.1-SNAPSHOT :oms-wallet-kotlin-sdk:publishToMavenLocal
+./gradlew -PPOM_VERSION_NAME=0.2.1-SNAPSHOT publishToMavenLocal
 ```
 
 Consumers on the same machine can test that local snapshot with `mavenLocal()`:
