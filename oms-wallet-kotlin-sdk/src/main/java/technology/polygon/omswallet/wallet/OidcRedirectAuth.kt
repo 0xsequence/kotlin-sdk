@@ -6,33 +6,37 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import technology.polygon.omswallet.internal.generated.waas.WebRpcJson
-import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.utils.OMSWalletBase64Url
 import java.net.URI
 import java.net.URLDecoder
 import java.security.SecureRandom
 
 /**
- * OIDC provider configuration for authorization-code redirect auth.
+ * Caller-owned OIDC provider configuration for authorization-code redirect auth.
  */
-data class OidcProviderConfig(
+data class CustomOidcProviderConfig(
     val issuer: String,
     val clientId: String,
     val authorizationUrl: String,
-    val providerRedirectUri: String?,
+    val providerRedirectUri: String,
     val provider: String? = null,
     val providerLabel: String? = null,
     val scopes: List<String> = emptyList(),
     val authorizeParams: Map<String, String> = emptyMap(),
     val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
-) {
-    internal var defaultRelayProvider: String? = null
-        private set
+)
 
-    internal fun withDefaultRelayProvider(provider: String): OidcProviderConfig =
-        also {
-            defaultRelayProvider = provider
-        }
+/** Opaque OIDC provider value whose OAuth callback is owned by the OMS relay. */
+sealed interface OmsRelayOidcProvider
+
+private data object GoogleOmsRelayOidcProvider : OmsRelayOidcProvider
+
+private data object AppleOmsRelayOidcProvider : OmsRelayOidcProvider
+
+/** SDK-owned OMS relay provider values. */
+object OmsRelayOidcProviders {
+    val google: OmsRelayOidcProvider = GoogleOmsRelayOidcProvider
+    val apple: OmsRelayOidcProvider = AppleOmsRelayOidcProvider
 }
 
 /**
@@ -58,8 +62,6 @@ internal val OidcRedirectAuthMode.usesPkce: Boolean
  */
 data class StartOidcRedirectAuthResult(
     val authorizationUrl: String,
-    val state: String,
-    val challenge: String,
 )
 
 /**
@@ -67,73 +69,12 @@ data class StartOidcRedirectAuthResult(
  */
 sealed interface OidcRedirectAuthResult {
     data class Completed(
-        val wallet: Wallet,
-    ) : OidcRedirectAuthResult
-
-    data class WalletSelection(
-        val pendingSelection: PendingWalletSelection,
+        val result: CompleteAuthResult,
     ) : OidcRedirectAuthResult
 
     data object NotOidcRedirectCallback : OidcRedirectAuthResult
 
     data object NoPendingAuth : OidcRedirectAuthResult
-
-    data class Failed(
-        val error: Throwable,
-    ) : OidcRedirectAuthResult
-}
-
-/**
- * Built-in OIDC provider configurations.
- */
-object OidcProviders {
-    const val defaultGoogleClientId: String =
-        "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com"
-    const val defaultAppleClientId: String =
-        "service.oms.polygon.technology"
-
-    fun google(
-        clientId: String = defaultGoogleClientId,
-        scopes: List<String> = listOf("openid", "email", "profile"),
-        authorizeParams: Map<String, String> = emptyMap(),
-        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
-    ): OidcProviderConfig =
-        OidcProviderConfig(
-            issuer = "https://accounts.google.com",
-            clientId = clientId,
-            authorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth",
-            providerRedirectUri = null,
-            provider = "google",
-            providerLabel = "Google",
-            scopes = scopes,
-            authorizeParams =
-                mapOf(
-                    "access_type" to "offline",
-                    "prompt" to "consent",
-                ) + authorizeParams,
-            authMode = authMode,
-        ).withDefaultRelayProvider("google")
-
-    fun apple(
-        clientId: String = defaultAppleClientId,
-        scopes: List<String> = listOf("openid", "email"),
-        authorizeParams: Map<String, String> = emptyMap(),
-        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
-    ): OidcProviderConfig =
-        OidcProviderConfig(
-            issuer = "https://appleid.apple.com",
-            clientId = clientId,
-            authorizationUrl = "https://appleid.apple.com/auth/authorize",
-            providerRedirectUri = null,
-            provider = "apple",
-            providerLabel = "Apple",
-            scopes = scopes,
-            authorizeParams =
-                mapOf(
-                    "response_mode" to "form_post",
-                ) + authorizeParams,
-            authMode = authMode,
-        ).withDefaultRelayProvider("apple")
 }
 
 @Serializable
@@ -152,9 +93,17 @@ internal data class PendingOidcRedirectAuth(
     val sessionLifetimeSeconds: Long?,
     val signerAddress: String,
     val signerKeyType: WalletSigningAlgorithm,
-)
+    val consumed: Boolean = false,
+) {
+    val flowIdentifier: String
+        get() = "$nonce:$verifier"
+}
 
 internal interface OidcRedirectAuthStore {
+    @get:JvmSynthetic
+    val synchronizationKey: Any
+        get() = this
+
     fun load(): PendingOidcRedirectAuth?
 
     fun save(pending: PendingOidcRedirectAuth)
@@ -204,7 +153,9 @@ internal object OidcRedirectAuth {
         )
 
     fun buildAuthorizationUrl(
-        provider: OidcProviderConfig,
+        authorizationUrl: String,
+        clientId: String,
+        scopes: List<String>,
         redirectUri: String,
         state: String,
         challenge: String,
@@ -212,7 +163,7 @@ internal object OidcRedirectAuth {
         loginHint: String?,
         authorizeParams: Map<String, String>,
     ): String {
-        val builder = provider.authorizationUrl.toHttpUrl().newBuilder()
+        val builder = authorizationUrl.toHttpUrl().newBuilder()
         authorizeParams.forEach { (key, value) ->
             builder.setQueryParameter(key, value)
         }
@@ -220,14 +171,14 @@ internal object OidcRedirectAuth {
             builder.setQueryParameter("login_hint", loginHint)
         }
         builder
-            .setQueryParameter("client_id", provider.clientId)
+            .setQueryParameter("client_id", clientId)
             .setQueryParameter("redirect_uri", redirectUri)
             .setQueryParameter("response_type", "code")
             .setQueryParameter("state", state)
-        if (provider.scopes.isEmpty()) {
+        if (scopes.isEmpty()) {
             builder.removeAllQueryParameters("scope")
         } else {
-            builder.setQueryParameter("scope", provider.scopes.joinToString(" "))
+            builder.setQueryParameter("scope", scopes.joinToString(" "))
         }
         if (usePkce) {
             builder

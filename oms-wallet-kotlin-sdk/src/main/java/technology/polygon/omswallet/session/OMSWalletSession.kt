@@ -95,17 +95,24 @@ internal class OMSWalletSession(
         }
     }
 
-    fun restore(snapshot: OMSWalletSessionSnapshot) {
+    fun restore(
+        snapshot: OMSWalletSessionSnapshot,
+        requiredRevision: Long? = null,
+    ): Long =
         synchronized(lock) {
+            requiredRevision?.let(::requireCurrentRevision)
             replaceState(snapshot.toSessionState())
+            revision
         }
-    }
 
-    fun clear() {
+    fun clear(requiredRevision: Long? = null): Boolean =
         synchronized(lock) {
+            if (requiredRevision != null && revision != requiredRevision) {
+                return@synchronized false
+            }
             replaceState(SessionState.NoSession)
+            true
         }
-    }
 
     fun replaceForPendingAuth(
         challenge: String,
@@ -113,7 +120,7 @@ internal class OMSWalletSession(
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
         requiredRevision: Long? = null,
-    ) {
+    ): Long =
         synchronized(lock) {
             requiredRevision?.let(::requireCurrentRevision)
             replaceState(
@@ -124,14 +131,14 @@ internal class OMSWalletSession(
                     signerKeyType = signerKeyType,
                 ),
             )
+            revision
         }
-    }
 
     fun markAuthVerified(
         expiresAt: String,
         auth: OMSWalletSessionAuth,
         requiredRevision: Long? = null,
-    ): Long {
+    ): Pair<Long, Long> {
         synchronized(lock) {
             requiredRevision?.let(::requireCurrentRevision)
             val current =
@@ -149,7 +156,7 @@ internal class OMSWalletSession(
                     pendingWalletSelectionId = pendingWalletSelectionId,
                 ),
             )
-            return pendingWalletSelectionId
+            return pendingWalletSelectionId to revision
         }
     }
 
@@ -157,7 +164,7 @@ internal class OMSWalletSession(
         walletId: String,
         walletAddress: String,
         requiredRevision: Long? = null,
-    ) {
+    ): Long =
         synchronized(lock) {
             requiredRevision?.let(::requireCurrentRevision)
             val selected =
@@ -185,8 +192,8 @@ internal class OMSWalletSession(
                     }
                 }
             replaceState(selected)
+            revision
         }
-    }
 
     fun selectWalletForPendingSelection(
         pendingWalletSelectionId: Long,
@@ -194,7 +201,7 @@ internal class OMSWalletSession(
         signerKeyType: WalletSigningAlgorithm?,
         walletId: String,
         walletAddress: String,
-    ) {
+    ): Long =
         synchronized(lock) {
             val current = currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
             replaceState(
@@ -207,11 +214,12 @@ internal class OMSWalletSession(
                     auth = current.auth,
                 ),
             )
+            revision
         }
-    }
 
-    fun requireSnapshot(): OMSWalletSessionSnapshot =
+    fun requireSnapshot(requiredRevision: Long? = null): OMSWalletSessionSnapshot =
         synchronized(lock) {
+            requiredRevision?.let(::requireCurrentRevision)
             state.snapshot()
                 ?: error("No active wallet session")
         }

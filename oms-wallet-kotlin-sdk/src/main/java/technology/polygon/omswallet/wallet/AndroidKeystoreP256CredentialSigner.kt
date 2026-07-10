@@ -3,9 +3,6 @@ package technology.polygon.omswallet.wallet
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import technology.polygon.omswallet.utils.OMSWalletHex
 import java.math.BigInteger
 import java.security.KeyPair
@@ -28,7 +25,6 @@ internal class AndroidKeystoreP256CredentialSigner(
     context: Context,
     private val alias: String = DEFAULT_KEY_ALIAS,
     nonceStoreName: String = DEFAULT_NONCE_STORE_NAME,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : CredentialSigner {
     override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
 
@@ -37,30 +33,35 @@ internal class AndroidKeystoreP256CredentialSigner(
     private val nonceLock = nonceLockFor(nonceStoreName, alias)
     private val keyStoreLock = keyStoreLockFor(alias)
 
-    override suspend fun credentialId(): String =
-        withContext(ioDispatcher) {
-            credentialId(getOrCreateKeyPair().public)
-        }
+    @Volatile
+    private var cachedCredentialId: String? = null
 
-    override suspend fun nextNonce(): String =
-        withContext(ioDispatcher) {
-            synchronized(nonceLock) {
-                val previous = noncePreferences.getString(alias, null)?.toLongOrNull() ?: 0L
-                val next = maxOf(System.currentTimeMillis(), previous + 1)
-                check(noncePreferences.edit().putString(alias, next.toString()).commit()) {
-                    "Unable to persist OMS Wallet credential nonce"
-                }
-                next.toString()
+    override fun credentialId(): String =
+        cachedCredentialId
+            ?: credentialId(getOrCreateKeyPair().public).also { cachedCredentialId = it }
+
+    override fun existingCredentialId(): String? =
+        cachedCredentialId
+            ?: synchronized(keyStoreLock) {
+                keyStore().getCertificate(alias)?.publicKey?.let(::credentialId)
+            }?.also { cachedCredentialId = it }
+
+    override fun nextNonce(): String =
+        synchronized(nonceLock) {
+            val previous = noncePreferences.getString(alias, null)?.toLongOrNull() ?: 0L
+            val next = maxOf(System.currentTimeMillis(), previous + 1)
+            check(noncePreferences.edit().putString(alias, next.toString()).commit()) {
+                "Unable to persist OMS Wallet credential nonce"
             }
+            next.toString()
         }
 
-    override suspend fun sign(preimage: String): String =
-        withContext(ioDispatcher) {
-            val signature = Signature.getInstance(SHA256_WITH_ECDSA)
-            signature.initSign(requirePrivateKey())
-            signature.update(preimage.toByteArray(Charsets.UTF_8))
-            OMSWalletHex.encode(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
-        }
+    override fun sign(preimage: String): String {
+        val signature = Signature.getInstance(SHA256_WITH_ECDSA)
+        signature.initSign(requirePrivateKey())
+        signature.update(preimage.toByteArray(Charsets.UTF_8))
+        return OMSWalletHex.encode(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
+    }
 
     override fun hasCredential(): Boolean =
         synchronized(keyStoreLock) {
@@ -73,9 +74,12 @@ internal class AndroidKeystoreP256CredentialSigner(
             if (store.containsAlias(alias)) {
                 store.deleteEntry(alias)
             }
+            cachedCredentialId = null
         }
         synchronized(nonceLock) {
-            noncePreferences.edit().remove(alias).apply()
+            check(noncePreferences.edit().remove(alias).commit()) {
+                "Unable to clear OMS Wallet credential nonce"
+            }
         }
     }
 

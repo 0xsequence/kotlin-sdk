@@ -22,15 +22,16 @@ import java.security.MessageDigest
  * Wallet auth, session lifecycle, signing, and transaction methods live on
  * [wallet]. Indexer methods live on [indexer].
  */
-class OMSWallet internal constructor(
+class OMSWallet private constructor(
     publishableKey: String,
-    projectId: String? = null,
-    environment: OMSWalletEnvironment? = null,
-    okHttpClient: OkHttpClient = OkHttpClient(),
-    walletSession: OMSWalletSession = OMSWalletSession(),
-    sessionStore: OMSWalletSessionMetadataStore? = null,
-    oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
-    credentialSigner: CredentialSigner? = null,
+    projectId: String?,
+    environment: OMSWalletEnvironment?,
+    okHttpClient: OkHttpClient,
+    walletSession: OMSWalletSession?,
+    sessionStore: OMSWalletSessionMetadataStore?,
+    oidcRedirectAuthStore: OidcRedirectAuthStore?,
+    credentialSigner: CredentialSigner?,
+    projectScopeKey: String?,
 ) {
     private val resolvedProjectId: String = projectId ?: parsePublishableKey(publishableKey).projectId
     private val resolvedEnvironment: OMSWalletEnvironment =
@@ -39,7 +40,7 @@ class OMSWallet internal constructor(
     private val transport = OMSWalletHttpClient(okHttpClient)
 
     val wallet: WalletClient =
-        WalletClient(
+        WalletClient.create(
             publishableKey = publishableKey,
             projectId = resolvedProjectId,
             environment = resolvedEnvironment,
@@ -48,10 +49,11 @@ class OMSWallet internal constructor(
             sessionStore = sessionStore,
             oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
+            projectScopeKey = projectScopeKey,
         )
 
     val indexer: IndexerClient =
-        IndexerClient(
+        IndexerClient.create(
             publishableKey = publishableKey,
             environment = resolvedEnvironment,
             transport = transport,
@@ -78,7 +80,7 @@ class OMSWallet internal constructor(
         projectId = projectIdFromPublishableKey(publishableKey),
         environment = environmentFromPublishableKey(publishableKey),
         okHttpClient = okHttpClient,
-        walletSession = OMSWalletSession(),
+        walletSession = null,
         sessionStore =
             AndroidSessionMetadataStore(
                 context = context.applicationContext,
@@ -95,9 +97,34 @@ class OMSWallet internal constructor(
                 alias = scopedCredentialKeyAlias(publishableKey),
                 nonceStoreName = scopedCredentialNonceStoreName(publishableKey),
             ),
+        projectScopeKey = scopedSessionSuffix(publishableKey),
     )
 
     companion object {
+        @JvmSynthetic
+        internal fun createForTesting(
+            publishableKey: String,
+            projectId: String? = null,
+            environment: OMSWalletEnvironment? = null,
+            okHttpClient: OkHttpClient = OkHttpClient(),
+            walletSession: OMSWalletSession = OMSWalletSession(),
+            sessionStore: OMSWalletSessionMetadataStore? = null,
+            oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
+            credentialSigner: CredentialSigner? = null,
+            projectScopeKey: String? = null,
+        ): OMSWallet =
+            OMSWallet(
+                publishableKey = publishableKey,
+                projectId = projectId,
+                environment = environment,
+                okHttpClient = okHttpClient,
+                walletSession = walletSession,
+                sessionStore = sessionStore,
+                oidcRedirectAuthStore = oidcRedirectAuthStore,
+                credentialSigner = credentialSigner,
+                projectScopeKey = projectScopeKey,
+            )
+
         private fun projectIdFromPublishableKey(publishableKey: String): String = parsePublishableKey(publishableKey).projectId
 
         private fun environmentFromPublishableKey(publishableKey: String): OMSWalletEnvironment =
@@ -114,6 +141,9 @@ class OMSWallet internal constructor(
 
         private fun scopedOidcRedirectAuthFileName(publishableKey: String): String =
             scopedOidcRedirectAuthFileName(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
+
+        private fun scopedSessionSuffix(publishableKey: String): String =
+            scopedSessionSuffix(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
 
         internal fun scopedSessionFileName(
             projectId: String,

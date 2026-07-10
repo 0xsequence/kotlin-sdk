@@ -86,7 +86,7 @@ class WalletAccessTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -195,7 +195,7 @@ class WalletAccessTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -260,7 +260,7 @@ class WalletAccessTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -317,7 +317,7 @@ class WalletAccessTest {
     fun revokeAccessRequiresActiveCredential() =
         runBlocking {
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =

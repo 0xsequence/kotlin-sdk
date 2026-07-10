@@ -1,6 +1,8 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
@@ -18,6 +20,7 @@ import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
 import technology.polygon.omswallet.internal.generated.waas.IdentityType
+import technology.polygon.omswallet.internal.generated.waas.Page
 import technology.polygon.omswallet.internal.generated.waas.UseWalletRequest
 import technology.polygon.omswallet.internal.generated.waas.WaasApi
 import technology.polygon.omswallet.network.OMSWalletEnvironment
@@ -80,7 +83,7 @@ class WalletOidcIdTokenAuthTest {
                 )
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -190,7 +193,7 @@ class WalletOidcIdTokenAuthTest {
 
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -256,7 +259,7 @@ class WalletOidcIdTokenAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -296,7 +299,7 @@ class WalletOidcIdTokenAuthTest {
     fun signInWithOidcIdTokenRejectsInvalidSessionLifetimeBeforeRequest() =
         runBlocking {
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -363,7 +366,7 @@ class WalletOidcIdTokenAuthTest {
                 )
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -433,7 +436,7 @@ class WalletOidcIdTokenAuthTest {
 
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -499,7 +502,7 @@ class WalletOidcIdTokenAuthTest {
             val activeSession = activeSessionSnapshot()
             val store = InMemorySessionStore(activeSession)
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -558,7 +561,7 @@ class WalletOidcIdTokenAuthTest {
                 )
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -605,7 +608,7 @@ class WalletOidcIdTokenAuthTest {
             val signer = TrackingCredentialSigner(nonceValue = "1710000111")
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =

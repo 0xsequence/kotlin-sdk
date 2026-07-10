@@ -6,13 +6,17 @@ package technology.polygon.omswallet
  * Use values from [OMSWalletNetworks.supportedNetworks] when calling wallet, utility,
  * or indexer APIs that need a network.
  */
-data class Network(
+class Network private constructor(
     val id: Int,
     val name: String,
     val nativeTokenSymbol: String,
     val explorerUrl: String,
     val displayName: String = name,
 ) {
+    override fun equals(other: Any?): Boolean = other is Network && id == other.id
+
+    override fun hashCode(): Int = id
+
     override fun toString(): String = name
 
     companion object {

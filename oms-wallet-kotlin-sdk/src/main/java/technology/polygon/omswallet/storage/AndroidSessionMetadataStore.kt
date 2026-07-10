@@ -2,6 +2,7 @@ package technology.polygon.omswallet.storage
 
 import android.content.Context
 import android.util.AtomicFile
+import org.json.JSONException
 import org.json.JSONObject
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
@@ -10,6 +11,7 @@ import technology.polygon.omswallet.OMSWalletSessionAuth
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 import java.io.File
+import java.io.IOException
 
 /**
  * Stores completed wallet-session metadata in an app-private no-backup file.
@@ -24,24 +26,30 @@ internal class AndroidSessionMetadataStore(
     private val sessionFile = File(context.noBackupFilesDir, fileName)
 
     override fun load(): OMSWalletSessionSnapshot? {
-        return runCatching {
-            if (!sessionFile.exists()) {
-                return null
+        if (!sessionFile.exists()) {
+            return null
+        }
+        val source = sessionFile.readText()
+        val persisted =
+            try {
+                PersistedSessionEnvelope.fromJson(source)
+            } catch (throwable: JSONException) {
+                throw InvalidSessionMetadataException(
+                    message = "Invalid OMS Wallet session metadata",
+                    cause = throwable,
+                )
             }
-
-            val persisted = PersistedSessionEnvelope.fromJson(sessionFile.readText())
-            if (!persisted.isRestorable()) {
-                return null
-            }
-            OMSWalletSessionSnapshot(
-                walletId = persisted.walletId,
-                walletAddress = persisted.walletAddress,
-                signerAddress = persisted.signerAddress,
-                signerKeyType = persisted.signerKeyType,
-                expiresAt = persisted.expiresAt,
-                auth = persisted.auth,
-            )
-        }.getOrNull()
+        if (!persisted.isRestorable()) {
+            throw InvalidSessionMetadataException("Invalid OMS Wallet session metadata")
+        }
+        return OMSWalletSessionSnapshot(
+            walletId = persisted.walletId,
+            walletAddress = persisted.walletAddress,
+            signerAddress = persisted.signerAddress,
+            signerKeyType = persisted.signerKeyType,
+            expiresAt = persisted.expiresAt,
+            auth = persisted.auth,
+        )
     }
 
     override fun save(snapshot: OMSWalletSessionSnapshot) {
@@ -65,8 +73,8 @@ internal class AndroidSessionMetadataStore(
     }
 
     override fun clear() {
-        if (sessionFile.exists()) {
-            sessionFile.delete()
+        if (sessionFile.exists() && !sessionFile.delete()) {
+            throw IOException("Unable to delete OMS Wallet session metadata")
         }
     }
 

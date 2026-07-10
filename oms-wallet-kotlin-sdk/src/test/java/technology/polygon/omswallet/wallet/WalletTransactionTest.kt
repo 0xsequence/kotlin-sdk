@@ -7,12 +7,14 @@ import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
+import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.internal.generated.waas.ExecuteRequest
 import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumContractCallRequest
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatusRequest
@@ -23,6 +25,7 @@ import technology.polygon.omswallet.models.SendTransactionRequest
 import technology.polygon.omswallet.models.TransactionMode
 import technology.polygon.omswallet.models.TransactionStatus
 import technology.polygon.omswallet.models.TransactionStatusPollingOptions
+import technology.polygon.omswallet.models.TransactionStatusResolution
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
@@ -49,7 +52,7 @@ class WalletTransactionTest {
     fun sendTransactionRejectsNegativeValue() =
         runBlocking {
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -201,7 +204,7 @@ class WalletTransactionTest {
                     indexerGatewayUrl = server.url("/indexer-gateway/").toString(),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -257,6 +260,7 @@ class WalletTransactionTest {
             assertEquals("txn-1", result.txnId)
             assertEquals("0xdeadbeef", result.txnHash)
             assertEquals(TransactionStatus.Executed, result.status)
+            assertEquals(TransactionStatusResolution.Resolved, result.statusResolution)
             assertEquals("/v1/Waas/PrepareEthereumTransaction", prepareRequest.target)
             assertEquals(
                 WaasApi.PrepareEthereumTransaction.encodeRequest(
@@ -344,6 +348,7 @@ class WalletTransactionTest {
 
             assertEquals("txn-token-id", result.txnId)
             assertEquals(TransactionStatus.Executed, result.status)
+            assertEquals(TransactionStatusResolution.NotRequested, result.statusResolution)
             assertEquals(
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
@@ -657,7 +662,7 @@ class WalletTransactionTest {
 
             val delays = mutableListOf<Long>()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -716,7 +721,7 @@ class WalletTransactionTest {
 
             val delays = mutableListOf<Long>()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -753,6 +758,7 @@ class WalletTransactionTest {
 
             assertEquals(TransactionStatus.Failed, result.status)
             assertEquals(null, result.txnHash)
+            assertEquals(TransactionStatusResolution.Resolved, result.statusResolution)
             assertEquals(emptyList<Long>(), delays)
             assertEquals(3, server.requestCount)
         }
@@ -807,7 +813,7 @@ class WalletTransactionTest {
 
             val delays = mutableListOf<Long>()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -844,7 +850,7 @@ class WalletTransactionTest {
                         TransactionStatusPollingOptions(
                             fastPollIntervalMillis = 1L,
                             fastPollCount = 3,
-                            pollIntervalMillis = 0L,
+                            pollIntervalMillis = 1L,
                             timeoutMillis = 1_000L,
                         ),
                 )
@@ -853,6 +859,103 @@ class WalletTransactionTest {
             assertEquals("0xdeadbeef", result.txnHash)
             assertEquals(listOf(1L, 1L), delays)
             assertEquals(5, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionReportsWhenStatusPollingTimesOut() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-timeout",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            enqueueJson("""{"status":"pending"}""")
+            enqueueJson("""{"status":"pending"}""")
+
+            val client = restoredWalletClient(nonceValue = "1710000121")
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    statusPolling =
+                        TransactionStatusPollingOptions(
+                            fastPollCount = 0,
+                            timeoutMillis = 0L,
+                        ),
+                )
+
+            assertEquals("txn-timeout", result.txnId)
+            assertEquals(TransactionStatus.Pending, result.status)
+            assertNull(result.txnHash)
+            assertEquals(TransactionStatusResolution.TimedOut, result.statusResolution)
+            assertEquals(3, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionKeepsUnknownStatusUnresolvedUntilTimeout() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-unknown-timeout",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            enqueueJson("""{"status":"pending"}""")
+            enqueueJson("""{"status":"future-status"}""")
+
+            val client = restoredWalletClient(nonceValue = "1710000122")
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    statusPolling = TransactionStatusPollingOptions(timeoutMillis = 0L),
+                )
+
+            assertEquals("txn-unknown-timeout", result.txnId)
+            assertEquals(TransactionStatus.UNKNOWN_DEFAULT, result.status)
+            assertNull(result.txnHash)
+            assertEquals(TransactionStatusResolution.TimedOut, result.statusResolution)
+            assertEquals(3, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionRejectsInvalidPollingOptionsBeforeExecute() =
+        runBlocking {
+            val invalidOptions =
+                listOf(
+                    TransactionStatusPollingOptions(fastPollIntervalMillis = 0L),
+                    TransactionStatusPollingOptions(fastPollCount = -1),
+                    TransactionStatusPollingOptions(pollIntervalMillis = 0L),
+                    TransactionStatusPollingOptions(timeoutMillis = -1L),
+                )
+
+            invalidOptions.forEachIndexed { index, options ->
+                enqueueJson(
+                    prepareResponse(
+                        txnId = "txn-invalid-polling-$index",
+                        feeOptions = "[]",
+                        sponsored = true,
+                    ),
+                )
+                val client = restoredWalletClient(nonceValue = "17100002$index")
+
+                val failure =
+                    runCatching {
+                        client.sendTransaction(
+                            network = Network.AMOY,
+                            request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                            statusPolling = options,
+                        )
+                    }.exceptionOrNull() as OMSWalletException
+
+                assertEquals(OMSWalletErrorCode.ValidationError, failure.code)
+                assertEquals(OMSWalletOperation.WalletSendTransaction, failure.operation)
+            }
+
+            assertEquals(invalidOptions.size, server.requestCount)
         }
 
     @Test
@@ -890,7 +993,7 @@ class WalletTransactionTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -968,7 +1071,7 @@ class WalletTransactionTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1025,7 +1128,7 @@ class WalletTransactionTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1077,7 +1180,7 @@ class WalletTransactionTest {
             ),
     ): WalletClient {
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = environment,

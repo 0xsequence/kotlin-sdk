@@ -12,6 +12,7 @@ import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import technology.polygon.omswallet.wallet.OidcRedirectAuthMode
 import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
+import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
 import technology.polygon.omswallet.wallet.TrackingCredentialSigner
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 
@@ -42,7 +43,7 @@ class OMSWalletTest {
 
     @Test
     fun constructorDerivesProjectIdFromPublishableKey() {
-        val sdk = OMSWallet(publishableKey = "pk_live_project_key")
+        val sdk = OMSWallet.createForTesting(publishableKey = "pk_live_project_key")
 
         assertNull(sdk.wallet.session.walletAddress)
     }
@@ -51,7 +52,7 @@ class OMSWalletTest {
     fun constructorRejectsUnsupportedPublishableKeyPrefix() {
         val error =
             runCatching {
-                OMSWallet(publishableKey = "pk_test_sdbx_project_key")
+                OMSWallet.createForTesting(publishableKey = "pk_test_sdbx_project_key")
             }.exceptionOrNull()
 
         assertTrue(error is OMSWalletValidationException)
@@ -64,13 +65,13 @@ class OMSWalletTest {
             OMSWalletSessionSnapshot(
                 walletId = "wallet-main",
                 walletAddress = "0xwallet",
-                signerAddress = "0xsigner",
+                signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2099-01-01T00:00:00Z",
                 auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
             )
         val sdk =
-            OMSWallet(
+            OMSWallet.createForTesting(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -88,7 +89,7 @@ class OMSWalletTest {
     @Test
     fun sessionStateOnlyReflectsCompletedWalletSession() {
         val sdk =
-            OMSWallet(
+            OMSWallet.createForTesting(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -106,7 +107,7 @@ class OMSWalletTest {
                             walletType = "ethereum",
                             walletSelection = null,
                             sessionLifetimeSeconds = null,
-                            signerAddress = "0xsigner",
+                            signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                         ),
                     ),
@@ -124,13 +125,13 @@ class OMSWalletTest {
                 OMSWalletSessionSnapshot(
                     walletId = "wallet-main",
                     walletAddress = "0xwallet",
-                    signerAddress = "0xsigner",
+                    signerAddress = TEST_CREDENTIAL_ID,
                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                     auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
                 ),
             )
         val sdk =
-            OMSWallet(
+            OMSWallet.createForTesting(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),

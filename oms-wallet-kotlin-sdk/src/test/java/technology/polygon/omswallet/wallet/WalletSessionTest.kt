@@ -11,7 +11,9 @@ import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import technology.polygon.omswallet.utils.OMSWalletIsoTimestamps
+import java.io.IOException
 
 class WalletSessionTest {
     @Test
@@ -26,7 +28,7 @@ class WalletSessionTest {
             )
         val store = InMemorySessionStore(snapshot)
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -60,7 +62,7 @@ class WalletSessionTest {
             )
         val store = InMemorySessionStore(snapshot)
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -89,7 +91,7 @@ class WalletSessionTest {
         val store = InMemorySessionStore(snapshot)
         val signer = TrackingCredentialSigner()
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -128,7 +130,7 @@ class WalletSessionTest {
                 auth = emailSessionAuth(),
             )
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -163,7 +165,7 @@ class WalletSessionTest {
             val store = InMemorySessionStore(snapshot)
             val signer = TrackingCredentialSigner()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = testEnvironment(),
@@ -211,7 +213,7 @@ class WalletSessionTest {
             )
         val store = InMemorySessionStore(snapshot)
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -251,7 +253,7 @@ class WalletSessionTest {
                 auth = googleRedirectSessionAuth(),
             )
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -297,7 +299,7 @@ class WalletSessionTest {
                 auth = emailSessionAuth(),
             )
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -333,7 +335,7 @@ class WalletSessionTest {
                 auth = emailSessionAuth(),
             )
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -363,7 +365,7 @@ class WalletSessionTest {
             )
         val scheduler = RecordingSessionExpiryScheduler()
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -391,7 +393,7 @@ class WalletSessionTest {
             )
         val store = InMemorySessionStore(snapshot)
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -409,7 +411,7 @@ class WalletSessionTest {
     @Test
     fun sessionStateOnlyReflectsCompletedWalletSession() {
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -444,7 +446,7 @@ class WalletSessionTest {
             )
         val store = InMemorySessionStore(snapshot)
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -465,7 +467,7 @@ class WalletSessionTest {
     @Test
     fun addressReturnsSelectedWallet() {
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -500,7 +502,7 @@ class WalletSessionTest {
                     ),
             )
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -519,7 +521,7 @@ class WalletSessionTest {
     @Test
     fun hasPendingSignInIsTrueForInMemoryPendingAuth() {
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),

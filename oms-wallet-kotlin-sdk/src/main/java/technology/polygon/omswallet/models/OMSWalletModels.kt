@@ -138,7 +138,14 @@ data class SendTransactionResponse(
     val txnId: String,
     val status: TransactionStatus,
     val txnHash: String?,
+    val statusResolution: TransactionStatusResolution,
 )
+
+enum class TransactionStatusResolution {
+    NotRequested,
+    Resolved,
+    TimedOut,
+}
 
 data class TransactionStatusPollingOptions(
     val fastPollIntervalMillis: Long = 400L,

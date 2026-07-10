@@ -36,11 +36,13 @@ internal object WalletSigningAlgorithmSerializer : KSerializer<WalletSigningAlgo
 internal interface CredentialSigner {
     val signingAlgorithm: WalletSigningAlgorithm
 
-    suspend fun credentialId(): String
+    fun credentialId(): String
 
-    suspend fun nextNonce(): String
+    fun existingCredentialId(): String?
 
-    suspend fun sign(preimage: String): String
+    fun nextNonce(): String
+
+    fun sign(preimage: String): String
 
     fun hasCredential(): Boolean
 
@@ -50,11 +52,13 @@ internal interface CredentialSigner {
 internal object MissingCredentialSigner : CredentialSigner {
     override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.UNKNOWN_DEFAULT
 
-    override suspend fun credentialId(): String = throw missingCredentialSigner()
+    override fun credentialId(): String = throw missingCredentialSigner()
 
-    override suspend fun nextNonce(): String = throw missingCredentialSigner()
+    override fun existingCredentialId(): String? = null
 
-    override suspend fun sign(preimage: String): String = throw missingCredentialSigner()
+    override fun nextNonce(): String = throw missingCredentialSigner()
+
+    override fun sign(preimage: String): String = throw missingCredentialSigner()
 
     override fun hasCredential(): Boolean = false
 

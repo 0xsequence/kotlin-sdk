@@ -56,7 +56,7 @@ class WalletSigningTest {
                         ),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -95,7 +95,7 @@ class WalletSigningTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =

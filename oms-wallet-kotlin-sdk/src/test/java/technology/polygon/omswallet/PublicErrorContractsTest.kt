@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import org.junit.After
@@ -24,12 +25,13 @@ import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.wallet.CompleteAuthResult
 import technology.polygon.omswallet.wallet.CredentialSigner
+import technology.polygon.omswallet.wallet.CustomOidcProviderConfig
 import technology.polygon.omswallet.wallet.InMemoryOidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.InMemorySessionStore
-import technology.polygon.omswallet.wallet.OidcProviderConfig
 import technology.polygon.omswallet.wallet.OidcRedirectAuthResult
 import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
+import technology.polygon.omswallet.wallet.StartOidcRedirectAuthResult
 import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
 import technology.polygon.omswallet.wallet.TrackingCredentialSigner
 import technology.polygon.omswallet.wallet.WalletClient
@@ -488,11 +490,13 @@ class PublicErrorContractsTest {
                     provider = testOidcProvider(),
                 )
             val providerFailure =
-                providerErrorClient.wallet.handleOidcRedirectCallback(
-                    callbackUrl =
-                        "omsclientkotlindemo://auth/callback" +
-                            "?error=access_denied&error_description=User%20cancelled&state=${providerErrorStart.state}",
-                )
+                publicError {
+                    providerErrorClient.wallet.handleOidcRedirectCallback(
+                        callbackUrl =
+                            "omsclientkotlindemo://auth/callback" +
+                                "?error=access_denied&error_description=User%20cancelled&state=${providerErrorStart.state}",
+                    )
+                }
 
             enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val invalidLifetimeStart =
@@ -500,10 +504,12 @@ class PublicErrorContractsTest {
                     provider = testOidcProvider(),
                 )
             val invalidLifetimeFailure =
-                invalidLifetimeClient.wallet.handleOidcRedirectCallback(
-                    callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${invalidLifetimeStart.state}",
-                    sessionLifetimeSeconds = 0L,
-                )
+                publicError {
+                    invalidLifetimeClient.wallet.handleOidcRedirectCallback(
+                        callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${invalidLifetimeStart.state}",
+                        sessionLifetimeSeconds = 0L,
+                    )
+                }
 
             enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val signerMismatchStart =
@@ -512,11 +518,13 @@ class PublicErrorContractsTest {
                 )
             signerMismatchSigner.credentialIdValue = "0x04" + "99".repeat(64)
             val signerMismatchFailure =
-                signerMismatchClient.wallet.handleOidcRedirectCallback(
-                    callbackUrl =
-                        "omsclientkotlindemo://auth/callback" +
-                            "?code=auth-code&state=${signerMismatchStart.state}",
-                )
+                publicError {
+                    signerMismatchClient.wallet.handleOidcRedirectCallback(
+                        callbackUrl =
+                            "omsclientkotlindemo://auth/callback" +
+                                "?code=auth-code&state=${signerMismatchStart.state}",
+                    )
+                }
 
             enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val storageFailure =
@@ -584,9 +592,9 @@ class PublicErrorContractsTest {
                         },
                     ),
                     labeled("wallet.startOidcRedirectAuth.redirectStorageWriteFailure", storageFailure),
-                    labeled("wallet.handleOidcRedirectCallback.providerError", oidcFailure(providerFailure)),
-                    labeled("wallet.handleOidcRedirectCallback.invalidLifetime", oidcFailure(invalidLifetimeFailure)),
-                    labeled("wallet.handleOidcRedirectCallback.signerMismatch", oidcFailure(signerMismatchFailure)),
+                    labeled("wallet.handleOidcRedirectCallback.providerError", providerFailure),
+                    labeled("wallet.handleOidcRedirectCallback.invalidLifetime", invalidLifetimeFailure),
+                    labeled("wallet.handleOidcRedirectCallback.signerMismatch", signerMismatchFailure),
                 ),
             )
         }
@@ -1123,7 +1131,7 @@ class PublicErrorContractsTest {
         oidcRedirectAuthStore: OidcRedirectAuthStore? = InMemoryOidcRedirectAuthStore(),
         credentialSigner: CredentialSigner = TrackingCredentialSigner(),
     ): OMSWallet =
-        OMSWallet(
+        OMSWallet.createForTesting(
             publishableKey = "test-publishable-key",
             projectId = "test-project-id",
             environment = testEnvironment(),
@@ -1140,7 +1148,7 @@ class PublicErrorContractsTest {
 
     private fun createRestoredWalletClient(okHttpClient: OkHttpClient = OkHttpClient()): WalletClient {
         val client =
-            WalletClient(
+            WalletClient.create(
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
@@ -1163,7 +1171,7 @@ class PublicErrorContractsTest {
     }
 
     private fun createIndexerClient(transport: OMSWalletHttpClient = OMSWalletHttpClient()): IndexerClient =
-        IndexerClient(
+        IndexerClient.create(
             publishableKey = "test-publishable-key",
             environment = testEnvironment(),
             transport = transport,
@@ -1175,8 +1183,8 @@ class PublicErrorContractsTest {
             indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
         )
 
-    private fun testOidcProvider(): OidcProviderConfig =
-        OidcProviderConfig(
+    private fun testOidcProvider(): CustomOidcProviderConfig =
+        CustomOidcProviderConfig(
             issuer = "https://issuer.example",
             clientId = "client-id",
             authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1249,11 +1257,8 @@ class PublicErrorContractsTest {
         error("Expected public API call to fail")
     }
 
-    private fun oidcFailure(result: OidcRedirectAuthResult): SerializedError =
-        when (result) {
-            is OidcRedirectAuthResult.Failed -> result.error.serializePublicFields()
-            else -> error("Expected OIDC redirect result to fail, got $result")
-        }
+    private val StartOidcRedirectAuthResult.state: String
+        get() = requireNotNull(authorizationUrl.toHttpUrl().queryParameter("state"))
 
     private fun missingSession(
         operation: String,
@@ -1343,11 +1348,13 @@ class PublicErrorContractsTest {
     ) : CredentialSigner {
         override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
 
-        override suspend fun credentialId(): String = credentialIdValue
+        override fun credentialId(): String = credentialIdValue
 
-        override suspend fun nextNonce(): String = "1710000999"
+        override fun existingCredentialId(): String? = credentialIdValue.takeIf { hasCredential() }
 
-        override suspend fun sign(preimage: String): String = "0x" + "22".repeat(64)
+        override fun nextNonce(): String = "1710000999"
+
+        override fun sign(preimage: String): String = "0x" + "22".repeat(64)
 
         override fun hasCredential(): Boolean = true
 

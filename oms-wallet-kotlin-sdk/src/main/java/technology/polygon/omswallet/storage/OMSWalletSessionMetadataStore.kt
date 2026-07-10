@@ -12,3 +12,8 @@ internal interface OMSWalletSessionMetadataStore {
 
     fun clear()
 }
+
+internal class InvalidSessionMetadataException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)

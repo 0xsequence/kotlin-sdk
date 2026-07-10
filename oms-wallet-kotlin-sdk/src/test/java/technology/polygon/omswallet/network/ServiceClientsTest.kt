@@ -60,7 +60,7 @@ class ServiceClientsTest {
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
-                OMSWallet(
+                OMSWallet.createForTesting(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -172,7 +172,7 @@ class ServiceClientsTest {
                     walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
-            val client = IndexerClient("test-publishable-key", environment, OMSWalletHttpClient())
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
 
             val response =
                 client.getBalances(
@@ -231,7 +231,7 @@ class ServiceClientsTest {
                     walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
-            val client = IndexerClient("test-publishable-key", environment, OMSWalletHttpClient())
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
 
             val response =
                 client.getBalances(
@@ -295,7 +295,7 @@ class ServiceClientsTest {
                     walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
-            val client = IndexerClient("test-publishable-key", environment, OMSWalletHttpClient())
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
 
             val response =
                 client.getTransactionHistory(
@@ -331,7 +331,7 @@ class ServiceClientsTest {
             )
 
             val client =
-                OMSWallet(
+                OMSWallet.createForTesting(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -382,7 +382,7 @@ class ServiceClientsTest {
             )
 
             val client =
-                OMSWallet(
+                OMSWallet.createForTesting(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =

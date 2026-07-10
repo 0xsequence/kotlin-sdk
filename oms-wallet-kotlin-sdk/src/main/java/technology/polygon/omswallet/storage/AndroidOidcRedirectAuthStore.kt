@@ -8,12 +8,17 @@ import technology.polygon.omswallet.internal.generated.waas.WebRpcJson
 import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
 import java.io.File
+import java.io.IOException
 
 internal class AndroidOidcRedirectAuthStore(
     context: Context,
     private val fileName: String = DEFAULT_FILE_NAME,
 ) : OidcRedirectAuthStore {
     private val pendingFile = File(context.noBackupFilesDir, fileName)
+
+    @get:JvmSynthetic
+    override val synchronizationKey: Any
+        get() = pendingFile.absolutePath
 
     override fun load(): PendingOidcRedirectAuth? =
         runCatching {
@@ -29,8 +34,8 @@ internal class AndroidOidcRedirectAuthStore(
     }
 
     override fun clear() {
-        if (pendingFile.exists()) {
-            pendingFile.delete()
+        if (pendingFile.exists() && !pendingFile.delete()) {
+            throw IOException("Unable to delete OMS Wallet OIDC redirect auth state")
         }
     }
 

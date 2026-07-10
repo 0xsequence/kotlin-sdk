@@ -54,6 +54,7 @@ enum class OMSWalletOperation(
     WalletSendTransaction("wallet.sendTransaction"),
     WalletSignInWithOidcIdToken("wallet.signInWithOidcIdToken"),
     WalletSignMessage("wallet.signMessage"),
+    WalletSignOut("wallet.signOut"),
     WalletSignTypedData("wallet.signTypedData"),
     WalletStartEmailAuth("wallet.startEmailAuth"),
     WalletStartOidcRedirectAuth("wallet.startOidcRedirectAuth"),
@@ -87,7 +88,7 @@ data class OMSWalletUpstreamError(
  * Base exception type thrown by public SDK APIs when a failure can be
  * categorized without exposing generated transport details.
  */
-open class OMSWalletException(
+sealed class OMSWalletException(
     val code: OMSWalletErrorCode,
     val operation: OMSWalletOperation? = null,
     val status: Int? = null,
@@ -108,7 +109,13 @@ class OMSWalletSessionException(
         operation = operation,
         message = message,
         cause = cause,
-    )
+    ) {
+    init {
+        require(code == OMSWalletErrorCode.SessionMissing || code == OMSWalletErrorCode.SessionExpired) {
+            "OMSWalletSessionException requires a session error code"
+        }
+    }
+}
 
 class OMSWalletRequestException(
     code: OMSWalletErrorCode = OMSWalletErrorCode.RequestFailed,
@@ -126,7 +133,17 @@ class OMSWalletRequestException(
         upstreamError = upstreamError,
         message = message,
         cause = cause,
-    )
+    ) {
+    init {
+        require(
+            code == OMSWalletErrorCode.RequestFailed ||
+                code == OMSWalletErrorCode.HttpError ||
+                code == OMSWalletErrorCode.AuthCommitmentConsumed,
+        ) {
+            "OMSWalletRequestException requires a request error code"
+        }
+    }
+}
 
 class OMSWalletResponseException(
     operation: OMSWalletOperation? = null,
@@ -161,7 +178,16 @@ class OMSWalletTransactionException(
         upstreamError = upstreamError,
         message = message,
         cause = cause,
-    )
+    ) {
+    init {
+        require(
+            code == OMSWalletErrorCode.TransactionExecutionUnconfirmed ||
+                code == OMSWalletErrorCode.TransactionStatusLookupFailed,
+        ) {
+            "OMSWalletTransactionException requires a transaction error code"
+        }
+    }
+}
 
 class OMSWalletSelectionException(
     code: OMSWalletErrorCode,
@@ -173,7 +199,17 @@ class OMSWalletSelectionException(
         operation = operation,
         message = message,
         cause = cause,
-    )
+    ) {
+    init {
+        require(
+            code == OMSWalletErrorCode.WalletSelectionStale ||
+                code == OMSWalletErrorCode.WalletSelectionUnavailable ||
+                code == OMSWalletErrorCode.WalletSelectionInFlight,
+        ) {
+            "OMSWalletSelectionException requires a wallet selection error code"
+        }
+    }
+}
 
 class OMSWalletValidationException(
     operation: OMSWalletOperation? = null,
@@ -405,19 +441,6 @@ private fun OMSWalletException.withOperation(operation: OMSWalletOperation): OMS
         is OMSWalletStorageException -> {
             OMSWalletStorageException(
                 operation = operation,
-                message = message ?: operation.id,
-                cause = this,
-            )
-        }
-
-        else -> {
-            OMSWalletException(
-                code = code,
-                operation = operation,
-                status = status,
-                txnId = txnId,
-                retryable = retryable,
-                upstreamError = upstreamError,
                 message = message ?: operation.id,
                 cause = this,
             )

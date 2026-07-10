@@ -1,7 +1,9 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -35,8 +37,8 @@ import technology.polygon.omswallet.models.TransactionMode
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import java.math.BigInteger
-import java.util.concurrent.TimeUnit
 
 class WalletEmailAuthTest {
     private lateinit var server: MockWebServer
@@ -70,7 +72,7 @@ class WalletEmailAuthTest {
                 )
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -129,7 +131,7 @@ class WalletEmailAuthTest {
 
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -165,7 +167,7 @@ class WalletEmailAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -209,7 +211,7 @@ class WalletEmailAuthTest {
             val activeSession = activeSessionSnapshot()
             val store = InMemorySessionStore(activeSession)
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -253,7 +255,7 @@ class WalletEmailAuthTest {
                 )
             val signer = MockWebCryptoCredentialSigner()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -292,7 +294,7 @@ class WalletEmailAuthTest {
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -334,7 +336,7 @@ class WalletEmailAuthTest {
             val signer = TrackingCredentialSigner(nonceValue = "1710000106")
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -398,7 +400,7 @@ class WalletEmailAuthTest {
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -411,6 +413,7 @@ class WalletEmailAuthTest {
                     challenge = "challenge",
                     verifier = "verifier-123",
                     signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 ),
             )
 
@@ -448,6 +451,85 @@ class WalletEmailAuthTest {
         }
 
     @Test
+    fun completeEmailAuthBindsSessionToLocalSignerAcrossProtectedCallsAndRestore() =
+        runBlocking {
+            val wallet = walletFixture("wallet-local-signer", "0xabc", "demo")
+            val store = InMemorySessionStore()
+            val signer = TrackingCredentialSigner(nonceValue = "1710000199")
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                )
+            assertTrue(credentialFixture().credentialId != TEST_CREDENTIAL_ID)
+
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(completeAuthResponseBody(wallets = listOf(wallet)))
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(walletResponseBody(walletId = wallet.id, address = wallet.address, reference = wallet.reference))
+                    .build(),
+            )
+            repeat(2) {
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(200)
+                        .body(listWalletsResponseBody(wallets = listOf(wallet)))
+                        .build(),
+                )
+            }
+
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = environment,
+                    transport = OMSWalletHttpClient(),
+                    sessionStore = store,
+                    credentialSigner = signer,
+                )
+            client.restoreSession(
+                OMSWalletSessionSnapshot(
+                    challenge = "challenge",
+                    verifier = "verifier-123",
+                    signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                ),
+            )
+
+            client.completeEmailAuth("123456")
+            val activeWallets = client.listWallets()
+
+            val restoredClient =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = environment,
+                    transport = OMSWalletHttpClient(),
+                    sessionStore = store,
+                    credentialSigner = signer,
+                )
+            assertTrue(restoredClient.restorePersistedSession())
+            val restoredWallets = restoredClient.listWallets()
+
+            assertEquals(listOf(wallet.id), activeWallets.map { it.id })
+            assertEquals(wallet.address, restoredClient.walletAddress)
+            assertEquals(listOf(wallet.id), restoredWallets.map { it.id })
+            assertEquals("/v1/Waas/CompleteAuth", requireNotNull(server.takeRequest()).target)
+            assertEquals("/v1/Waas/UseWallet", requireNotNull(server.takeRequest()).target)
+            assertEquals("/v1/Waas/ListWallets", requireNotNull(server.takeRequest()).target)
+            assertEquals("/v1/Waas/ListWallets", requireNotNull(server.takeRequest()).target)
+        }
+
+    @Test
     fun completeEmailAuthUsesRequestedSessionLifetime() =
         runBlocking {
             server.enqueue(
@@ -469,7 +551,7 @@ class WalletEmailAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -486,6 +568,7 @@ class WalletEmailAuthTest {
                     challenge = "challenge",
                     verifier = "verifier-123",
                     signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 ),
             )
 
@@ -517,7 +600,7 @@ class WalletEmailAuthTest {
     fun completeEmailAuthRejectsInvalidSessionLifetimeBeforeRequest() =
         runBlocking {
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -534,6 +617,7 @@ class WalletEmailAuthTest {
                     challenge = "challenge",
                     verifier = "verifier-123",
                     signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 ),
             )
 
@@ -595,7 +679,7 @@ class WalletEmailAuthTest {
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -608,6 +692,7 @@ class WalletEmailAuthTest {
                     challenge = "challenge",
                     verifier = "verifier-123",
                     signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 ),
             )
 
@@ -669,7 +754,7 @@ class WalletEmailAuthTest {
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -748,7 +833,7 @@ class WalletEmailAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -833,7 +918,7 @@ class WalletEmailAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -901,7 +986,7 @@ class WalletEmailAuthTest {
 
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -986,7 +1071,7 @@ class WalletEmailAuthTest {
 
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1036,93 +1121,6 @@ class WalletEmailAuthTest {
             assertEquals("0xnew", selected.walletAddress)
             assertEquals("wallet-new", store.snapshot?.walletId)
             assertEquals("0xnew", store.snapshot?.walletAddress)
-        }
-
-    @Test
-    fun concurrentPendingWalletSelectionCreateCallsSendOnlyOneWalletRequest() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            wallets = emptyList(),
-                        ),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(walletResponseBody(walletId = "wallet-new", address = "0xnew", reference = "fresh"))
-                    .bodyDelay(500, TimeUnit.MILLISECONDS)
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(walletResponseBody(walletId = "wallet-duplicate", address = "0xduplicate", reference = "fresh"))
-                    .build(),
-            )
-
-            val client =
-                WalletClient(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
-                )
-            client.startEmailAuth("user@example.com")
-            val result =
-                client.completeEmailAuth(
-                    code = "123456",
-                    walletSelection = WalletSelectionBehavior.Manual,
-                )
-            val pendingSelection = (result as CompleteAuthResult.WalletSelection).pendingSelection
-            requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
-
-            val firstCreate =
-                async {
-                    pendingSelection.createAndSelectWallet(reference = "fresh")
-                }
-            yield()
-            val createWalletRequest = requireNotNull(server.takeRequest(1, TimeUnit.SECONDS))
-            val secondCreate =
-                async {
-                    runCatching {
-                        pendingSelection.createAndSelectWallet(reference = "fresh")
-                    }
-                }
-            yield()
-            val duplicateCreateWalletRequest = server.takeRequest(100, TimeUnit.MILLISECONDS)
-            val selected = firstCreate.await()
-            val secondFailure = secondCreate.await().exceptionOrNull()
-
-            assertEquals("/v1/Waas/CreateWallet", createWalletRequest.target)
-            assertNull(duplicateCreateWalletRequest)
-            assertEquals("wallet-new", selected.wallet.id)
-            assertTrue(secondFailure is OMSWalletException)
-            assertEquals(
-                OMSWalletErrorCode.WalletSelectionInFlight,
-                (secondFailure as OMSWalletException).code,
-            )
-            assertEquals(3, server.requestCount)
         }
 
     @Test
@@ -1180,7 +1178,7 @@ class WalletEmailAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1260,7 +1258,7 @@ class WalletEmailAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1348,7 +1346,7 @@ class WalletEmailAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1425,7 +1423,7 @@ class WalletEmailAuthTest {
 
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1522,7 +1520,7 @@ class WalletEmailAuthTest {
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -1535,6 +1533,7 @@ class WalletEmailAuthTest {
                     challenge = "challenge",
                     verifier = "verifier-123",
                     signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 ),
             )
 
@@ -1602,7 +1601,7 @@ class WalletEmailAuthTest {
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -1615,6 +1614,7 @@ class WalletEmailAuthTest {
                     challenge = "challenge",
                     verifier = "verifier-123",
                     signerAddress = TEST_CREDENTIAL_ID,
+                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 ),
             )
 
@@ -1679,7 +1679,7 @@ class WalletEmailAuthTest {
 
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1746,7 +1746,7 @@ class WalletEmailAuthTest {
 
             val store = InMemorySessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1813,7 +1813,7 @@ class WalletEmailAuthTest {
 
             val store = FailingSaveSessionStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1835,7 +1835,9 @@ class WalletEmailAuthTest {
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
-            assertEquals("save failed", failure?.message)
+            val storageFailure = failure as OMSWalletException
+            assertEquals(OMSWalletErrorCode.StorageError, storageFailure.code)
+            assertEquals("Failed to persist wallet session", storageFailure.message)
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)

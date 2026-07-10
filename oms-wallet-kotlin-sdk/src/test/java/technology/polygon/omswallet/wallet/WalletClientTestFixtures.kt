@@ -223,14 +223,16 @@ internal open class TrackingCredentialSigner(
     var signCalls: Int = 0
         private set
 
-    override suspend fun credentialId(): String {
+    override fun credentialId(): String {
         available = true
         return credentialIdValue
     }
 
-    override suspend fun nextNonce(): String = nonceValue
+    override fun existingCredentialId(): String? = credentialIdValue.takeIf { available }
 
-    override suspend fun sign(preimage: String): String {
+    override fun nextNonce(): String = nonceValue
+
+    override fun sign(preimage: String): String {
         signCalls += 1
         assertTrue(preimage.contains("nonce: $nonceValue"))
         return signatureValue
@@ -297,14 +299,16 @@ internal class MockWebCryptoCredentialSigner(
     var signCalls: Int = 0
         private set
 
-    override suspend fun credentialId(): String {
+    override fun credentialId(): String {
         available = true
         return credentialIdValue
     }
 
-    override suspend fun nextNonce(): String = "42"
+    override fun existingCredentialId(): String? = credentialIdValue.takeIf { available }
 
-    override suspend fun sign(preimage: String): String {
+    override fun nextNonce(): String = "42"
+
+    override fun sign(preimage: String): String {
         signCalls += 1
         assertTrue(preimage.contains("nonce: 42"))
         return signatureValue

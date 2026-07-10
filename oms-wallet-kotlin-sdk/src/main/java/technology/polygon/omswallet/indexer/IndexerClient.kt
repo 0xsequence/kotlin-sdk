@@ -44,10 +44,10 @@ import technology.polygon.omswallet.network.objectOrNull
 import technology.polygon.omswallet.network.parseJsonObject
 import technology.polygon.omswallet.network.string
 
-class IndexerClient internal constructor(
+class IndexerClient private constructor(
     private val publishableKey: String,
     private val environment: OMSWalletEnvironment,
-    private val transport: OMSWalletHttpClient = OMSWalletHttpClient(),
+    private val transport: OMSWalletHttpClient,
 ) {
     /**
      * Gets token and native balances for [walletAddress] through IndexerGateway.
@@ -462,8 +462,15 @@ class IndexerClient internal constructor(
 
     private fun JsonObject.stringOrNumber(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull
 
-    private companion object {
-        const val indexerGatewayWebrpcHeaderValue: String =
+    companion object {
+        @JvmSynthetic
+        internal fun create(
+            publishableKey: String,
+            environment: OMSWalletEnvironment,
+            transport: OMSWalletHttpClient = OMSWalletHttpClient(),
+        ): IndexerClient = IndexerClient(publishableKey, environment, transport)
+
+        private const val indexerGatewayWebrpcHeaderValue: String =
             "webrpc@v0.31.2;gen-typescript@v0.23.1;sequence-indexer@v0.4.0"
     }
 }

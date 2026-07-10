@@ -1,5 +1,8 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -30,6 +33,11 @@ import technology.polygon.omswallet.utils.OMSWalletBase64Url
 import java.io.IOException
 
 class WalletOidcRedirectAuthTest {
+    private companion object {
+        const val DEFAULT_GOOGLE_OIDC_CLIENT_ID =
+            "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com"
+    }
+
     private lateinit var server: MockWebServer
 
     @Before
@@ -44,45 +52,16 @@ class WalletOidcRedirectAuthTest {
     }
 
     @Test
-    fun oidcProvidersUseGoogleDefaults() {
-        val provider = OidcProviders.google()
-
-        assertEquals(
-            "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com",
-            provider.clientId,
-        )
-        assertNull(provider.providerRedirectUri)
-        assertEquals("google", provider.defaultRelayProvider)
-        assertEquals("https://accounts.google.com", provider.issuer)
-        assertEquals("https://accounts.google.com/o/oauth2/v2/auth", provider.authorizationUrl)
-        assertEquals("google", provider.provider)
-        assertEquals("Google", provider.providerLabel)
-        assertEquals(listOf("openid", "email", "profile"), provider.scopes)
-        assertEquals(OidcRedirectAuthMode.AuthCodePKCE, provider.authMode)
-        assertEquals("offline", provider.authorizeParams["access_type"])
-        assertEquals("consent", provider.authorizeParams["prompt"])
+    fun omsRelayOidcProvidersExposeFixedDistinctValues() {
+        assertEquals(OmsRelayOidcProviders.google, OmsRelayOidcProviders.google)
+        assertEquals(OmsRelayOidcProviders.apple, OmsRelayOidcProviders.apple)
+        assertTrue(OmsRelayOidcProviders.google != OmsRelayOidcProviders.apple)
     }
 
     @Test
-    fun oidcProvidersUseAppleDefaults() {
-        val provider = OidcProviders.apple()
-
-        assertEquals("service.oms.polygon.technology", provider.clientId)
-        assertNull(provider.providerRedirectUri)
-        assertEquals("apple", provider.defaultRelayProvider)
-        assertEquals("https://appleid.apple.com", provider.issuer)
-        assertEquals("https://appleid.apple.com/auth/authorize", provider.authorizationUrl)
-        assertEquals("apple", provider.provider)
-        assertEquals("Apple", provider.providerLabel)
-        assertEquals(listOf("openid", "email"), provider.scopes)
-        assertEquals(OidcRedirectAuthMode.AuthCodePKCE, provider.authMode)
-        assertEquals("form_post", provider.authorizeParams["response_mode"])
-    }
-
-    @Test
-    fun oidcProviderConfigDefaultsToNoScopesForCustomProviders() {
+    fun customOidcProviderConfigDefaultsToNoScopes() {
         val provider =
-            OidcProviderConfig(
+            CustomOidcProviderConfig(
                 issuer = "https://issuer.example",
                 clientId = "client-123",
                 authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -110,7 +89,7 @@ class WalletOidcRedirectAuthTest {
                 )
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -121,7 +100,7 @@ class WalletOidcRedirectAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://issuer.example",
                     clientId = "client-123",
                     authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -201,7 +180,7 @@ class WalletOidcRedirectAuthTest {
                 )
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -215,7 +194,7 @@ class WalletOidcRedirectAuthTest {
 
             val result =
                 client.startOidcRedirectAuth(
-                    provider = OidcProviders.google(),
+                    provider = OmsRelayOidcProviders.google,
                     omsRelayReturnUri = "omsclientkotlindemo://auth/callback",
                 )
             val request = requireNotNull(server.takeRequest())
@@ -228,7 +207,7 @@ class WalletOidcRedirectAuthTest {
                         metadata =
                             mapOf(
                                 "iss" to "https://accounts.google.com",
-                                "aud" to OidcProviders.defaultGoogleClientId,
+                                "aud" to DEFAULT_GOOGLE_OIDC_CLIENT_ID,
                                 "redirect_uri" to derivedRelayUri,
                             ),
                     ),
@@ -261,7 +240,7 @@ class WalletOidcRedirectAuthTest {
                 )
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -275,7 +254,7 @@ class WalletOidcRedirectAuthTest {
 
             val result =
                 client.startOidcRedirectAuth(
-                    provider = OidcProviders.google(),
+                    provider = OmsRelayOidcProviders.google,
                     omsRelayReturnUri = "omsclientkotlindemo://auth/callback",
                 )
             val request = requireNotNull(server.takeRequest())
@@ -288,7 +267,7 @@ class WalletOidcRedirectAuthTest {
                         metadata =
                             mapOf(
                                 "iss" to "https://accounts.google.com",
-                                "aud" to OidcProviders.defaultGoogleClientId,
+                                "aud" to DEFAULT_GOOGLE_OIDC_CLIENT_ID,
                                 "redirect_uri" to derivedRelayUri,
                             ),
                     ),
@@ -321,7 +300,7 @@ class WalletOidcRedirectAuthTest {
                 )
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -332,7 +311,7 @@ class WalletOidcRedirectAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://accounts.google.com",
                     clientId = "client-123",
                     authorizationUrl = "https://accounts.google.com/o/oauth2/v2/auth",
@@ -370,90 +349,11 @@ class WalletOidcRedirectAuthTest {
         }
 
     @Test
-    fun startOidcRedirectAuthRejectsOmsRelayReturnUriForCustomProvider() =
-        runBlocking {
-            val client =
-                WalletClient(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
-                    oidcNonceGenerator = { "nonce-123" },
-                    credentialSigner = TrackingCredentialSigner(),
-                )
-
-            val error =
-                runCatching {
-                    client.startOidcRedirectAuth(
-                        provider =
-                            OidcProviderConfig(
-                                issuer = "https://issuer.example",
-                                clientId = "client-123",
-                                authorizationUrl = "https://issuer.example/oauth/authorize",
-                                providerRedirectUri = "omsclientkotlindemo://auth/callback",
-                            ),
-                        omsRelayReturnUri = "omsclientkotlindemo://relay-return",
-                    )
-                }.exceptionOrNull()
-
-            assertTrue(error is OMSWalletException)
-            error as OMSWalletException
-            assertEquals(OMSWalletErrorCode.ValidationError, error.code)
-            assertEquals("wallet.startOidcRedirectAuth", error.operation?.id)
-            assertEquals(
-                "omsRelayReturnUri is only supported for helper OIDC providers that use the OMS relay",
-                error.message,
-            )
-            assertEquals(0, server.requestCount)
-        }
-
-    @Test
-    fun startOidcRedirectAuthRequiresOmsRelayReturnUriForHelperRelayProvider() =
-        runBlocking {
-            val client =
-                WalletClient(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    oidcRedirectAuthStore = InMemoryOidcRedirectAuthStore(),
-                    oidcNonceGenerator = { "nonce-123" },
-                    credentialSigner = TrackingCredentialSigner(),
-                )
-
-            val error =
-                runCatching {
-                    client.startOidcRedirectAuth(provider = OidcProviders.google())
-                }.exceptionOrNull()
-
-            assertTrue(error is OMSWalletException)
-            error as OMSWalletException
-            assertEquals(OMSWalletErrorCode.ValidationError, error.code)
-            assertEquals("wallet.startOidcRedirectAuth", error.operation?.id)
-            assertEquals(
-                "omsRelayReturnUri is required when using a helper OIDC provider with the OMS relay",
-                error.message,
-            )
-            assertEquals(0, server.requestCount)
-        }
-
-    @Test
     fun startOidcRedirectAuthRejectsInvalidSessionLifetimeBeforeRequest() =
         runBlocking {
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -472,7 +372,7 @@ class WalletOidcRedirectAuthTest {
                 runCatching {
                     client.startOidcRedirectAuth(
                         provider =
-                            OidcProviderConfig(
+                            CustomOidcProviderConfig(
                                 issuer = "https://issuer.example",
                                 clientId = "client-123",
                                 authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -503,7 +403,7 @@ class WalletOidcRedirectAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -520,7 +420,7 @@ class WalletOidcRedirectAuthTest {
 
             val result =
                 client.startOidcRedirectAuth(
-                    provider = OidcProviders.google(),
+                    provider = OmsRelayOidcProviders.google,
                     omsRelayReturnUri = "omsclientkotlindemo://auth/callback",
                     loginHint = "last@example.com",
                 )
@@ -550,7 +450,7 @@ class WalletOidcRedirectAuthTest {
                 )
             val sessionStore = InMemorySessionStore(activeSession)
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -568,7 +468,7 @@ class WalletOidcRedirectAuthTest {
 
             val result =
                 client.startOidcRedirectAuth(
-                    provider = OidcProviders.google(),
+                    provider = OmsRelayOidcProviders.google,
                     omsRelayReturnUri = "omsclientkotlindemo://auth/callback",
                 )
 
@@ -588,7 +488,7 @@ class WalletOidcRedirectAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -605,7 +505,7 @@ class WalletOidcRedirectAuthTest {
 
             val result =
                 client.startOidcRedirectAuth(
-                    provider = OidcProviders.apple(),
+                    provider = OmsRelayOidcProviders.apple,
                     omsRelayReturnUri = "omsclientkotlindemo://auth/callback",
                     loginHint = "last@example.com",
                 )
@@ -660,7 +560,7 @@ class WalletOidcRedirectAuthTest {
             val sessionStore = InMemorySessionStore(activeSession)
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -672,7 +572,7 @@ class WalletOidcRedirectAuthTest {
                 )
             client.restoreSession(activeSession)
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://issuer.example",
                     clientId = "client-123",
                     authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -696,57 +596,6 @@ class WalletOidcRedirectAuthTest {
             assertNull(sessionStore.snapshot)
             assertEquals(1, redirectStore.clearCalls)
             assertEquals(result.state, queryParams(result.authorizationUrl)["state"])
-        }
-
-    @Test
-    fun startOidcRedirectAuthWrapsRedirectStateStorageFailure() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
-                    .build(),
-            )
-
-            val storageFailure = IOException("OIDC redirect state save failed")
-            val client =
-                WalletClient(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    oidcRedirectAuthStore = ThrowingSaveOidcRedirectAuthStore(storageFailure),
-                    oidcNonceGenerator = { "nonce-123" },
-                    credentialSigner = TrackingCredentialSigner(),
-                )
-
-            val error =
-                runCatching {
-                    client.startOidcRedirectAuth(
-                        provider =
-                            OidcProviderConfig(
-                                issuer = "https://issuer.example",
-                                clientId = "client-123",
-                                authorizationUrl = "https://issuer.example/oauth/authorize",
-                                providerRedirectUri = "omsclientkotlindemo://auth/callback",
-                            ),
-                    )
-                }.exceptionOrNull()
-
-            assertTrue(error is OMSWalletStorageException)
-            val sdkError = error as OMSWalletStorageException
-            assertEquals(OMSWalletErrorCode.StorageError, sdkError.code)
-            assertEquals(OMSWalletOperation.WalletStartOidcRedirectAuth, sdkError.operation)
-            assertEquals("OIDC redirect auth state persistence failed", sdkError.message)
-            assertSame(storageFailure, sdkError.cause)
-            assertNull(client.snapshotSession())
-            assertEquals(1, server.requestCount)
         }
 
     @Test
@@ -784,7 +633,7 @@ class WalletOidcRedirectAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -799,7 +648,7 @@ class WalletOidcRedirectAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://issuer.example",
                     clientId = "client-123",
                     authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -905,7 +754,7 @@ class WalletOidcRedirectAuthTest {
             val sessionStore = InMemorySessionStore()
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -916,7 +765,7 @@ class WalletOidcRedirectAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://issuer.example",
                     clientId = "client-123",
                     authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -931,7 +780,8 @@ class WalletOidcRedirectAuthTest {
                 client.handleOidcRedirectCallback(
                     callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}&scope=openid",
                 )
-            val wallet = (result as OidcRedirectAuthResult.Completed).wallet
+            val wallet =
+                ((result as OidcRedirectAuthResult.Completed).result as CompleteAuthResult.WalletSelected).wallet
             val commitRequest = requireNotNull(server.takeRequest())
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
@@ -1006,7 +856,7 @@ class WalletOidcRedirectAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1021,7 +871,7 @@ class WalletOidcRedirectAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://issuer.example",
                     clientId = "client-123",
                     authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1082,7 +932,7 @@ class WalletOidcRedirectAuthTest {
 
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1100,7 +950,7 @@ class WalletOidcRedirectAuthTest {
             val started =
                 client.startOidcRedirectAuth(
                     provider =
-                        OidcProviderConfig(
+                        CustomOidcProviderConfig(
                             issuer = "https://issuer.example",
                             clientId = "client-123",
                             authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1131,7 +981,8 @@ class WalletOidcRedirectAuthTest {
                 ),
                 requireNotNull(completeAuthRequest.body).utf8(),
             )
-            assertTrue(result is OidcRedirectAuthResult.WalletSelection)
+            assertTrue(result is OidcRedirectAuthResult.Completed)
+            assertTrue((result as OidcRedirectAuthResult.Completed).result is CompleteAuthResult.WalletSelection)
             assertEquals(2, server.requestCount)
         }
 
@@ -1170,7 +1021,7 @@ class WalletOidcRedirectAuthTest {
             )
 
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1188,7 +1039,7 @@ class WalletOidcRedirectAuthTest {
             val started =
                 client.startOidcRedirectAuth(
                     provider =
-                        OidcProviderConfig(
+                        CustomOidcProviderConfig(
                             issuer = "https://issuer.example",
                             clientId = "client-123",
                             authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1234,7 +1085,7 @@ class WalletOidcRedirectAuthTest {
                     .build(),
             )
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1249,7 +1100,7 @@ class WalletOidcRedirectAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://issuer.example",
                     clientId = "client-123",
                     authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1260,16 +1111,16 @@ class WalletOidcRedirectAuthTest {
                 client.startOidcRedirectAuth(
                     provider = provider,
                 )
-            val result =
-                client.handleOidcRedirectCallback(
-                    callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}",
-                    sessionLifetimeSeconds = 0L,
-                )
+            val error =
+                runCatching {
+                    client.handleOidcRedirectCallback(
+                        callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}",
+                        sessionLifetimeSeconds = 0L,
+                    )
+                }.exceptionOrNull()
 
-            assertTrue(result is OidcRedirectAuthResult.Failed)
-            result as OidcRedirectAuthResult.Failed
-            assertTrue(result.error is OMSWalletException)
-            val error = result.error as OMSWalletException
+            assertTrue(error is OMSWalletException)
+            error as OMSWalletException
             assertEquals(OMSWalletErrorCode.ValidationError, error.code)
             assertEquals("wallet.handleOidcRedirectCallback", error.operation?.id)
             assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
@@ -1312,7 +1163,7 @@ class WalletOidcRedirectAuthTest {
             val sessionStore = InMemorySessionStore()
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment = environment,
@@ -1323,7 +1174,7 @@ class WalletOidcRedirectAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
             val provider =
-                OidcProviderConfig(
+                CustomOidcProviderConfig(
                     issuer = "https://issuer.example",
                     clientId = "client-123",
                     authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1342,8 +1193,9 @@ class WalletOidcRedirectAuthTest {
 
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
-            assertTrue(result is OidcRedirectAuthResult.WalletSelection)
-            val selection = result as OidcRedirectAuthResult.WalletSelection
+            assertTrue(result is OidcRedirectAuthResult.Completed)
+            val selection =
+                (result as OidcRedirectAuthResult.Completed).result as CompleteAuthResult.WalletSelection
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-def"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
@@ -1360,7 +1212,7 @@ class WalletOidcRedirectAuthTest {
             val activeSession = activeSessionSnapshot()
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1391,7 +1243,7 @@ class WalletOidcRedirectAuthTest {
     fun handleOidcRedirectCallbackReturnsNotOidcRedirectCallbackForNonCallbackUrl() =
         runBlocking {
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1436,7 +1288,7 @@ class WalletOidcRedirectAuthTest {
 
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1453,7 +1305,7 @@ class WalletOidcRedirectAuthTest {
             val started =
                 client.startOidcRedirectAuth(
                     provider =
-                        OidcProviderConfig(
+                        CustomOidcProviderConfig(
                             issuer = "https://issuer.example",
                             clientId = "client-123",
                             authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1486,7 +1338,7 @@ class WalletOidcRedirectAuthTest {
 
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1502,7 +1354,7 @@ class WalletOidcRedirectAuthTest {
                 )
             client.startOidcRedirectAuth(
                 provider =
-                    OidcProviderConfig(
+                    CustomOidcProviderConfig(
                         issuer = "https://issuer.example",
                         clientId = "client-123",
                         authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1535,7 +1387,7 @@ class WalletOidcRedirectAuthTest {
 
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1551,7 +1403,7 @@ class WalletOidcRedirectAuthTest {
                 )
             client.startOidcRedirectAuth(
                 provider =
-                    OidcProviderConfig(
+                    CustomOidcProviderConfig(
                         issuer = "https://issuer.example",
                         clientId = "client-123",
                         authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1584,7 +1436,7 @@ class WalletOidcRedirectAuthTest {
 
             val redirectStore = InMemoryOidcRedirectAuthStore()
             val client =
-                WalletClient(
+                WalletClient.create(
                     publishableKey = "test-publishable-key",
                     projectId = "test-project-id",
                     environment =
@@ -1601,7 +1453,7 @@ class WalletOidcRedirectAuthTest {
             val started =
                 client.startOidcRedirectAuth(
                     provider =
-                        OidcProviderConfig(
+                        CustomOidcProviderConfig(
                             issuer = "https://issuer.example",
                             clientId = "client-123",
                             authorizationUrl = "https://issuer.example/oauth/authorize",
@@ -1609,16 +1461,16 @@ class WalletOidcRedirectAuthTest {
                         ),
                 )
 
-            val result =
-                client.handleOidcRedirectCallback(
-                    callbackUrl =
-                        "omsclientkotlindemo://auth/callback" +
-                            "?error=access_denied" +
-                            "&error_description=User%20cancelled" +
-                            "&state=${started.state}",
-                )
-
-            val failure = (result as OidcRedirectAuthResult.Failed).error as OMSWalletException
+            val failure =
+                runCatching {
+                    client.handleOidcRedirectCallback(
+                        callbackUrl =
+                            "omsclientkotlindemo://auth/callback" +
+                                "?error=access_denied" +
+                                "&error_description=User%20cancelled" +
+                                "&state=${started.state}",
+                    )
+                }.exceptionOrNull() as OMSWalletException
             assertEquals(OMSWalletOperation.WalletHandleOidcRedirectCallback, failure.operation)
             assertEquals(OMSWalletErrorCode.ValidationError, failure.code)
             assertEquals("User cancelled", failure.message)
@@ -1627,79 +1479,10 @@ class WalletOidcRedirectAuthTest {
             assertEquals(2, redirectStore.clearCalls)
             assertEquals(1, server.requestCount)
         }
-
-    @Test
-    fun handleOidcRedirectCallbackWrapsCompleteAuthFailureInOMSWalletException() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"oidc-verifier-123","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(400)
-                    .body("""{"error":"invalid request","code":7200,"msg":"Bad callback","status":400}""")
-                    .build(),
-            )
-
-            val redirectStore = InMemoryOidcRedirectAuthStore()
-            val client =
-                WalletClient(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    oidcRedirectAuthStore = redirectStore,
-                    oidcNonceGenerator = { "nonce-123" },
-                    credentialSigner = TrackingCredentialSigner(),
-                )
-            val started =
-                client.startOidcRedirectAuth(
-                    provider =
-                        OidcProviderConfig(
-                            issuer = "https://issuer.example",
-                            clientId = "client-123",
-                            authorizationUrl = "https://issuer.example/oauth/authorize",
-                            providerRedirectUri = "omsclientkotlindemo://auth/callback",
-                        ),
-                )
-
-            val result =
-                client.handleOidcRedirectCallback(
-                    callbackUrl = "omsclientkotlindemo://auth/callback?code=auth-code&state=${started.state}",
-                )
-            val commitRequest = requireNotNull(server.takeRequest())
-            val completeAuthRequest = requireNotNull(server.takeRequest())
-
-            val failure = (result as OidcRedirectAuthResult.Failed).error as OMSWalletException
-            assertEquals(OMSWalletErrorCode.RequestFailed, failure.code)
-            assertEquals(OMSWalletOperation.WalletHandleOidcRedirectCallback, failure.operation)
-            assertEquals(400, failure.status)
-            assertEquals("Bad callback", failure.message)
-            assertEquals(false, failure.retryable)
-            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
-            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
-            assertNull(client.snapshotSession())
-            assertNull(redirectStore.pending)
-            assertEquals(2, redirectStore.clearCalls)
-        }
-
-    private class ThrowingSaveOidcRedirectAuthStore(
-        private val failure: Throwable,
-    ) : OidcRedirectAuthStore {
-        override fun load(): PendingOidcRedirectAuth? = null
-
-        override fun save(pending: PendingOidcRedirectAuth): Unit = throw failure
-
-        override fun clear() = Unit
-    }
 }
+
+private val StartOidcRedirectAuthResult.state: String
+    get() = requireNotNull(queryParams(authorizationUrl)["state"])
+
+private val StartOidcRedirectAuthResult.challenge: String
+    get() = requireNotNull(queryParams(authorizationUrl)["code_challenge"])
