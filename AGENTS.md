@@ -55,8 +55,8 @@ unit tests, Android lint for both modules, and sample app assembly.
 
 ## Development Commands
 
-- `./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug`
-  - CI-equivalent check from `.github/workflows/android-ci.yml`.
+- `./gradlew --build-cache verify`
+  - Full SDK verification, matching `.github/workflows/android-ci.yml`.
 - `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest`
   - Run SDK JVM unit tests. Use for most library logic changes.
 - `./gradlew :oms-wallet-kotlin-sdk:lintDebug`

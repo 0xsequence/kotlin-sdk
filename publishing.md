@@ -23,10 +23,10 @@ Prerequisites:
 2. Update `POM_VERSION_NAME` in `gradle.properties`. Update `README.md` and
    `docs/api.md` too if the release changes public behavior or API docs.
 
-3. Run the release checks:
+3. Verify the SDK:
 
    ```sh
-   ./gradlew --build-cache verifyReleasePublication
+   ./gradlew --build-cache verify
    ```
 
    This is the same task CI runs. It checks formatting, tests, Android lint,

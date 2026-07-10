@@ -188,9 +188,9 @@ val checkReleasePublicationGraph =
         }
     }
 
-tasks.register("verifyReleasePublication") {
+tasks.register("verify") {
     group = "verification"
-    description = "Runs every check required before publishing the SDK to Maven Central."
+    description = "Runs the full SDK verification suite."
     dependsOn(
         ":app:ktlintCheck",
         ":app:lintDebug",

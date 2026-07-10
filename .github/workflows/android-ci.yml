@@ -24,8 +24,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Verify release publication
-        run: ./gradlew --build-cache verifyReleasePublication
+      - name: Verify
+        run: ./gradlew --build-cache verify
 
       - name: Publish SDK unit test report
         if: always()
