@@ -19,8 +19,9 @@ because the service endpoints require TLS 1.3. Updating `compileSdk` is separate
 from `targetSdk`; consumers do not need to opt into a newer Android runtime
 behavior just to consume the SDK.
 
-The published SDK is a single Maven artifact. Consumers should use the SDK APIs
-documented here and do not need any separate service-client artifact.
+Consumers add one direct Maven dependency: `oms-wallet-kotlin-sdk`. Its POM
+declares the generated WaaS runtime as a transitive dependency, so consumers do
+not add or call that internal runtime artifact directly.
 
 ## Entry Point
 
@@ -122,6 +123,11 @@ reauth or as a Google `loginHint`, including after process recreation.
 fun omsWallet.wallet.signOut()
 ```
 
+`signOut()` always clears the in-memory wallet session and attempts every
+persistent session, redirect-state, and signer cleanup. If any persistent
+cleanup fails, it throws `OMSWalletStorageException` after the in-memory session
+has been cleared.
+
 ```kotlin
 fun omsWallet.wallet.onSessionExpired(
     listener: (OMSWalletSessionExpiredEvent) -> Unit,
@@ -157,13 +163,15 @@ when the app needs to show its own wallet-selection UI before selecting or
 creating a wallet. Pass `provider` and `providerLabel` when you want custom
 session metadata for non-built-in identity providers. When omitted, Google and
 Apple are derived from the issuer and custom issuers leave those fields null.
+For native mobile sign-in, prefer this method when the provider SDK can supply
+an ID token.
 
 ```kotlin
-data class OidcProviderConfig(
+data class CustomOidcProviderConfig(
     val issuer: String,
     val clientId: String,
     val authorizationUrl: String,
-    val providerRedirectUri: String?,
+    val providerRedirectUri: String,
     val provider: String? = null,
     val providerLabel: String? = null,
     val scopes: List<String> = emptyList(),
@@ -180,35 +188,37 @@ enum class OidcRedirectAuthMode {
 ```
 
 ```kotlin
-object OidcProviders {
-    fun google(
-        clientId: String = OidcProviders.defaultGoogleClientId,
-        scopes: List<String> = listOf("openid", "email", "profile"),
-        authorizeParams: Map<String, String> = emptyMap(),
-        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
-    ): OidcProviderConfig
+object OmsRelayOidcProviders {
+    val google: OmsRelayOidcProvider
 
-    fun apple(
-        clientId: String = OidcProviders.defaultAppleClientId,
-        scopes: List<String> = listOf("openid", "email"),
-        authorizeParams: Map<String, String> = emptyMap(),
-        authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
-    ): OidcProviderConfig
+    val apple: OmsRelayOidcProvider
 }
+
+sealed interface OmsRelayOidcProvider
 ```
+
+`OmsRelayOidcProvider` is opaque. Its only exposed values are
+`OmsRelayOidcProviders.google` and `OmsRelayOidcProviders.apple`; relay provider
+configuration is not caller-editable.
 
 ```kotlin
 data class StartOidcRedirectAuthResult(
     val authorizationUrl: String,
-    val state: String,
-    val challenge: String,
 )
 ```
 
 ```kotlin
 suspend fun omsWallet.wallet.startOidcRedirectAuth(
-    provider: OidcProviderConfig,
-    omsRelayReturnUri: String? = null,
+    provider: OmsRelayOidcProvider,
+    omsRelayReturnUri: String,
+    walletType: WalletType = WalletType.Ethereum,
+    walletSelection: WalletSelectionBehavior? = null,
+    sessionLifetimeSeconds: Long? = null,
+    loginHint: String? = null,
+): StartOidcRedirectAuthResult
+
+suspend fun omsWallet.wallet.startOidcRedirectAuth(
+    provider: CustomOidcProviderConfig,
     walletType: WalletType = WalletType.Ethereum,
     walletSelection: WalletSelectionBehavior? = null,
     sessionLifetimeSeconds: Long? = null,
@@ -219,13 +229,9 @@ suspend fun omsWallet.wallet.startOidcRedirectAuth(
 
 ```kotlin
 sealed interface OidcRedirectAuthResult {
-    data class Completed(val wallet: Wallet) : OidcRedirectAuthResult
-    data class WalletSelection(
-        val pendingSelection: PendingWalletSelection,
-    ) : OidcRedirectAuthResult
+    data class Completed(val result: CompleteAuthResult) : OidcRedirectAuthResult
     data object NotOidcRedirectCallback : OidcRedirectAuthResult
     data object NoPendingAuth : OidcRedirectAuthResult
-    data class Failed(val error: Throwable) : OidcRedirectAuthResult
 }
 ```
 
@@ -243,11 +249,9 @@ completed wallet session so Android can resume after the browser redirect. Open
 Tabs, then pass incoming app-link URLs to `handleOidcRedirectCallback`. The
 handler is idempotent and safe to call from `onCreate` / `onNewIntent`: unrelated
 links return `NotOidcRedirectCallback`, stale links return `NoPendingAuth`, and
-provider or completion failures return `Failed` with an `OMSWalletException` when
-the SDK can classify the failure. With
-`WalletSelectionBehavior.Automatic`, successful callbacks return `Completed`.
-With `WalletSelectionBehavior.Manual`, successful callbacks return
-`WalletSelection`. Pass `walletSelection` or `sessionLifetimeSeconds` to
+provider or completion failures throw an `OMSWalletException`. Successful
+callbacks return `Completed`; its `result` is the same `CompleteAuthResult` used
+by email and ID-token auth. Pass `walletSelection` or `sessionLifetimeSeconds` to
 `startOidcRedirectAuth` to store completion preferences in the pending redirect
 state. Non-null values passed to `handleOidcRedirectCallback` override pending
 values; omitted callback values fall back to pending values and then SDK
@@ -256,26 +260,22 @@ defaults. Custom session lifetime values must be from 1 through
 Starting a new auth flow clears or replaces stale redirect state, and `signOut()`
 clears it.
 
-Provider configs are the source of truth for provider redirect URI, redirect
-scopes, auth mode, and optional provider display metadata. Plain/custom
-`OidcProviderConfig` values must provide `providerRedirectUri`; the SDK sends it
-as the OAuth `redirect_uri` and expects the provider callback at that URL. If
+`OmsRelayOidcProviders.google` and `OmsRelayOidcProviders.apple` are immutable
+OMS relay choices. Their client IDs, scopes, authorization parameters, and PKCE
+mode are SDK-owned. The relay-provider overload requires `omsRelayReturnUri`,
+derives the provider callback from the publishable-key Wallet API base as
+`{walletApiUrl}/auth/waas/callback/{google|apple}`, and stores the app return URI
+in OIDC state. Apple `form_post` is handled through that relay.
+
+`CustomOidcProviderConfig` is the caller-owned redirect configuration. Its
+`providerRedirectUri` is required; the custom-provider overload does not accept
+`omsRelayReturnUri`. The SDK sends `providerRedirectUri` as the OAuth
+`redirect_uri` and expects the provider callback at that URL. If
 `scopes` is omitted or empty, the authorization URL omits `scope`. PKCE
 `code_challenge` parameters are sent only when
-`authMode = OidcRedirectAuthMode.AuthCodePKCE`. `OidcProviders.google()` uses
-the SDK default Google client ID, `openid email profile` scopes, PKCE auth-code
-mode, and Google authorization parameters `access_type=offline` and
-`prompt=consent`. `OidcProviders.apple()` uses the SDK default Apple Services ID,
-`openid email` scopes, `response_mode=form_post`, and PKCE auth-code mode.
-Helper-created Google and Apple configs are the SDK default OMS-relayed
-providers: `startOidcRedirectAuth` requires `omsRelayReturnUri`, derives the OMS
-relay URL from the publishable-key Wallet API base as
-`{walletApiUrl}/auth/waas/callback/{google|apple}`, and stores
-`omsRelayReturnUri` in OIDC state. Apple `form_post` works through that derived
-relay; a direct app deep link should not be used as the Apple OAuth callback
-unless that provider flow supports it. To use Google or Apple without the SDK
-relay, configure that provider as a custom `OidcProviderConfig` with
-`providerRedirectUri`; custom providers do not use `omsRelayReturnUri`.
+`authMode = OidcRedirectAuthMode.AuthCodePKCE`. On mobile, prefer
+`signInWithOidcIdToken` over defining a custom Google or Apple redirect
+configuration when the native provider SDK can supply an ID token.
 
 Pass `loginHint` to `startOidcRedirectAuth` only when you want to prefill or
 select a specific Google account, such as during session-expiry reauth. The SDK
@@ -338,14 +338,14 @@ In `WalletSelectionBehavior.Automatic`, auth completion:
 
 Automatic email and OIDC ID-token auth return
 `CompleteAuthResult.WalletSelected` on success. Automatic OIDC redirect auth
-returns `OidcRedirectAuthResult.Completed` on success. Automatic mode does not
-fall back to `WalletSelection`; use manual mode when the user should choose
-between wallets.
+returns `OidcRedirectAuthResult.Completed` whose `result` is
+`CompleteAuthResult.WalletSelected`. Automatic mode does not fall back to
+`WalletSelection`; use manual mode when the user should choose between wallets.
 
 In `WalletSelectionBehavior.Manual`, auth completion returns
-`CompleteAuthResult.WalletSelection` or `OidcRedirectAuthResult.WalletSelection`
-with a `PendingWalletSelection`. No wallet is selected or created until the app
-calls `pendingSelection.selectWallet(...)` or
+`CompleteAuthResult.WalletSelection`. Redirect auth wraps that value in
+`OidcRedirectAuthResult.Completed`. No wallet is selected or created until the
+app calls `pendingSelection.selectWallet(...)` or
 `pendingSelection.createAndSelectWallet(...)`. `pendingSelection.wallets`
 contains existing wallets filtered to `walletType`.
 
@@ -498,8 +498,10 @@ After execution, `sendTransaction` and `callContract` poll transaction status
 briefly for an executed status or transaction hash. Pass
 `waitForStatus = false` to return immediately after execute, or pass
 `statusPolling` to tune the fast poll count, intervals, and timeout. If the
-transaction remains pending when polling times out, the response contains the
-`txnId`, `status = TransactionStatus.Pending`, and `txnHash = null`.
+transaction remains nonterminal when polling times out, the response contains
+the `txnId`, latest `status`, any available `txnHash`, and
+`statusResolution = TransactionStatusResolution.TimedOut`. Immediate responses
+use `NotRequested`; completed status polling uses `Resolved`.
 Use `getTransactionStatus` to refresh a transaction later. `listAccess` follows
 pagination cursors and returns all credentials, `listAccessPages` emits each
 page as a `Flow`, and `listAccessPage` exposes one page at a time for manual
@@ -517,13 +519,13 @@ object OMSWalletNetworks {
 ```
 
 ```kotlin
-data class Network(
-    val id: Int,
-    val name: String,
-    val nativeTokenSymbol: String,
-    val explorerUrl: String,
-    val displayName: String = name,
-)
+class Network private constructor {
+    val id: Int
+    val name: String
+    val nativeTokenSymbol: String
+    val explorerUrl: String
+    val displayName: String
+}
 
 Network.MAINNET
 Network.SEPOLIA
@@ -802,7 +804,16 @@ data class SendTransactionResponse(
     val txnId: String,
     val status: TransactionStatus,
     val txnHash: String?,
+    val statusResolution: TransactionStatusResolution,
 )
+```
+
+```kotlin
+enum class TransactionStatusResolution {
+    NotRequested,
+    Resolved,
+    TimedOut,
+}
 ```
 
 ```kotlin
@@ -816,8 +827,9 @@ data class TransactionStatusPollingOptions(
 
 `sendTransaction` and `callContract` use the fast poll interval for the first
 `fastPollCount` status attempts, then use `pollIntervalMillis` until
-`timeoutMillis`. Set `pollIntervalMillis <= 0` to disable slow polling after the
-fast polling phase.
+`timeoutMillis`. Both interval values must be greater than zero;
+`fastPollCount` and `timeoutMillis` must be nonnegative. A zero timeout performs
+one status lookup and returns a nonterminal result with `TimedOut`.
 
 ```kotlin
 data class TransactionStatusResponse(
@@ -1042,30 +1054,33 @@ check(result is CompleteAuthResult.WalletSelected)
 showWallet(result.wallet)
 ```
 
-For OIDC redirect flows, start with the default Google provider unless the app
-has its own web client ID or provider configuration:
+For OIDC redirect flows, choose a fixed OMS relay provider or construct a
+separate custom provider configuration:
 
 ```kotlin
 val started = omsWallet.wallet.startOidcRedirectAuth(
-    provider = OidcProviders.google(),
+    provider = OmsRelayOidcProviders.google,
     omsRelayReturnUri = "yourapp://auth/callback",
 )
 
 // Open started.authorizationUrl.
 
 when (val result = omsWallet.wallet.handleOidcRedirectCallback(intent.data?.toString())) {
-    is OidcRedirectAuthResult.Completed -> showWallet(result.wallet)
+    is OidcRedirectAuthResult.Completed -> when (val auth = result.result) {
+        is CompleteAuthResult.WalletSelected -> showWallet(auth.wallet)
+        is CompleteAuthResult.WalletSelection -> Unit
+    }
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
-    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
 }
 ```
 
 Use an OMS relay return URI that matches a deep link registered by your app,
-such as `yourapp://auth/callback`. For a custom Google web client ID, call
-`OidcProviders.google(clientId = "YOUR_WEB_CLIENT_ID")`.
-For Apple, use `OidcProviders.apple()` with the derived relay so the relay can
-receive Apple's `response_mode=form_post` callback.
+such as `yourapp://auth/callback`. `OmsRelayOidcProviders.google` and
+`OmsRelayOidcProviders.apple` are fixed SDK defaults. To use Google, Apple, or another
+provider with your own configuration, construct `CustomOidcProviderConfig` with
+`providerRedirectUri`. For Apple defaults, the derived relay receives the
+`response_mode=form_post` callback.
 
 ### Manual Wallet Selection
 
@@ -1116,7 +1131,7 @@ it with pending redirect state:
 
 ```kotlin
 val started = omsWallet.wallet.startOidcRedirectAuth(
-    provider = OidcProviders.google(),
+    provider = OmsRelayOidcProviders.google,
     omsRelayReturnUri = "yourapp://auth/callback",
     walletSelection = WalletSelectionBehavior.Manual,
 )
@@ -1132,14 +1147,15 @@ when (
             walletSelection = WalletSelectionBehavior.Manual,
         )
 ) {
-    is OidcRedirectAuthResult.WalletSelection -> {
-        val selected = selectOrCreateWallet(result.pendingSelection)
-        showWallet(selected.wallet)
+    is OidcRedirectAuthResult.Completed -> when (val auth = result.result) {
+        is CompleteAuthResult.WalletSelection -> {
+            val selected = selectOrCreateWallet(auth.pendingSelection)
+            showWallet(selected.wallet)
+        }
+        is CompleteAuthResult.WalletSelected -> error("Expected manual wallet selection")
     }
-    is OidcRedirectAuthResult.Completed -> error("Expected manual wallet selection")
     OidcRedirectAuthResult.NotOidcRedirectCallback -> Unit
     OidcRedirectAuthResult.NoPendingAuth -> Unit
-    is OidcRedirectAuthResult.Failed -> showRestartSignIn(result.error)
 }
 ```
 

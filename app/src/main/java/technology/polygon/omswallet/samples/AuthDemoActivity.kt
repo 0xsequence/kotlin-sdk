@@ -57,9 +57,9 @@ import technology.polygon.omswallet.models.FeeOptionWithBalance
 import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.utils.parseUnits
 import technology.polygon.omswallet.wallet.CompleteAuthResult
-import technology.polygon.omswallet.wallet.OidcProviderConfig
-import technology.polygon.omswallet.wallet.OidcProviders
 import technology.polygon.omswallet.wallet.OidcRedirectAuthResult
+import technology.polygon.omswallet.wallet.OmsRelayOidcProvider
+import technology.polygon.omswallet.wallet.OmsRelayOidcProviders
 import technology.polygon.omswallet.wallet.PendingWalletSelection
 import technology.polygon.omswallet.wallet.WalletClient
 import technology.polygon.omswallet.wallet.WalletSelectionBehavior
@@ -209,7 +209,7 @@ class AuthDemoActivity : AppCompatActivity() {
                         }
                     }
                 } catch (throwable: Throwable) {
-                    sdk.wallet.signOut()
+                    runCatching { sdk.wallet.signOut() }
                     throw throwable
                 }
             }
@@ -218,10 +218,7 @@ class AuthDemoActivity : AppCompatActivity() {
         startGoogleRedirectSignInButton.setOnClickListener {
             startOidcRedirectSignIn(
                 providerName = "Google",
-                provider =
-                    OidcProviders.google(
-                        clientId = DemoConfig.demoGoogleWebClientId,
-                    ),
+                provider = OmsRelayOidcProviders.google,
                 loginHint = expiredSessionEmail(),
             )
         }
@@ -229,7 +226,7 @@ class AuthDemoActivity : AppCompatActivity() {
         startAppleRedirectSignInButton.setOnClickListener {
             startOidcRedirectSignIn(
                 providerName = "Apple",
-                provider = OidcProviders.apple(),
+                provider = OmsRelayOidcProviders.apple,
             )
         }
 
@@ -253,7 +250,8 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         cancelCodeStepButton.setOnClickListener {
-            sdk.wallet.signOut()
+            runCatching { sdk.wallet.signOut() }
+                .onFailure { throwable -> appendLog("!! ${describeThrowable(throwable)}") }
             clearExpiredSessionState()
             codeInput.text?.clear()
             showEmailStep()
@@ -309,7 +307,8 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         logoutButton.setOnClickListener {
-            sdk.wallet.signOut()
+            runCatching { sdk.wallet.signOut() }
+                .onFailure { throwable -> appendLog("!! ${describeThrowable(throwable)}") }
             clearExpiredSessionState()
             lastSignedMessage = null
             lastSignedSignature = null
@@ -407,7 +406,7 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun startOidcRedirectSignIn(
         providerName: String,
-        provider: OidcProviderConfig,
+        provider: OmsRelayOidcProvider,
         loginHint: String? = null,
     ) {
         launchAction(
@@ -432,7 +431,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     sessionLifetimeSeconds = sessionLifetimeSeconds,
                     loginHint = loginHint,
                 )
-            appendLog("$providerName redirect auth started: state=${started.state}")
+            appendLog("$providerName redirect auth started")
             showOidcRedirectPendingStep("Waiting for OIDC redirect callback...")
             openInAppBrowser(started.authorizationUrl)
         }
@@ -466,6 +465,11 @@ class AuthDemoActivity : AppCompatActivity() {
             onStart = {
                 showOidcRedirectPendingStep("Completing OIDC redirect sign-in...")
             },
+            onFailure = { throwable ->
+                consumeIntentData()
+                showEmailStep()
+                authStatusView.text = "OIDC redirect sign-in failed: ${describeThrowable(throwable)}"
+            },
         ) {
             when (
                 val result =
@@ -473,23 +477,19 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 is OidcRedirectAuthResult.Completed -> {
                     consumeIntentData()
-                    renderSignedInWallet(result.wallet, "OIDC redirect login complete")
-                    appendLog("OIDC redirect sign-in complete: ${result.wallet.address}")
-                }
+                    when (val completion = result.result) {
+                        is CompleteAuthResult.WalletSelected -> {
+                            renderSignedInWallet(completion.wallet, "OIDC redirect login complete")
+                            appendLog("OIDC redirect sign-in complete: ${completion.wallet.address}")
+                        }
 
-                is OidcRedirectAuthResult.WalletSelection -> {
-                    consumeIntentData()
-                    completePendingWalletSelection(
-                        pendingSelection = result.pendingSelection,
-                        status = "OIDC redirect login complete",
-                    )
-                }
-
-                is OidcRedirectAuthResult.Failed -> {
-                    consumeIntentData()
-                    showEmailStep()
-                    authStatusView.text = "OIDC redirect completion failed: ${result.error.message ?: "Unknown error"}"
-                    appendLog("OIDC redirect completion error: ${describeThrowable(result.error)}")
+                        is CompleteAuthResult.WalletSelection -> {
+                            completePendingWalletSelection(
+                                pendingSelection = completion.pendingSelection,
+                                status = "OIDC redirect login complete",
+                            )
+                        }
+                    }
                 }
 
                 OidcRedirectAuthResult.NoPendingAuth -> {
@@ -802,7 +802,7 @@ class AuthDemoActivity : AppCompatActivity() {
             try {
                 requestWalletSelectionChoice(pendingSelection)
             } catch (throwable: Throwable) {
-                sdk.wallet.signOut()
+                runCatching { sdk.wallet.signOut() }
                 showEmailStep()
                 throw throwable
             }

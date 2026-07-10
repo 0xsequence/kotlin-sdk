@@ -48,6 +48,7 @@ import technology.polygon.omswallet.models.FeeOptionWithBalance
 import technology.polygon.omswallet.models.SendTransactionRequest
 import technology.polygon.omswallet.models.SendTransactionResponse
 import technology.polygon.omswallet.models.TransactionStatus
+import technology.polygon.omswallet.models.TransactionStatusResolution
 import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.trailsactions.generated.CommitIntentRequest
 import technology.polygon.omswallet.trailsactions.generated.CreateYieldActionRequest
@@ -76,9 +77,9 @@ import technology.polygon.omswallet.trailsactions.generated.YieldTransaction
 import technology.polygon.omswallet.utils.formatUnits
 import technology.polygon.omswallet.utils.parseUnits
 import technology.polygon.omswallet.wallet.CompleteAuthResult
-import technology.polygon.omswallet.wallet.OidcProviderConfig
-import technology.polygon.omswallet.wallet.OidcProviders
 import technology.polygon.omswallet.wallet.OidcRedirectAuthResult
+import technology.polygon.omswallet.wallet.OmsRelayOidcProvider
+import technology.polygon.omswallet.wallet.OmsRelayOidcProviders
 import technology.polygon.omswallet.wallet.PendingWalletSelection
 import technology.polygon.omswallet.wallet.WalletClient
 import technology.polygon.omswallet.wallet.WalletSelectionBehavior
@@ -400,13 +401,15 @@ class TrailsActionsActivity : AppCompatActivity() {
         startEmailSignInButton.setOnClickListener { startEmailSignIn() }
         confirmCodeButton.setOnClickListener { completeEmailSignIn() }
         cancelCodeStepButton.setOnClickListener {
-            sdk.wallet.signOut()
+            runCatching { sdk.wallet.signOut() }
+                .onFailure { throwable -> appendLog("! ${describe(throwable)}") }
             clearExpiredSessionState()
             codeInput.text?.clear()
             showEmailStep()
         }
         signOutButton.setOnClickListener {
-            sdk.wallet.signOut()
+            runCatching { sdk.wallet.signOut() }
+                .onFailure { throwable -> appendLog("! ${describe(throwable)}") }
             clearExpiredSessionState()
             clearPreparedState()
             resetLoadedData()
@@ -427,10 +430,7 @@ class TrailsActionsActivity : AppCompatActivity() {
     private fun startGoogleRedirectSignIn() {
         startOidcRedirectSignIn(
             providerName = "Google",
-            provider =
-                OidcProviders.google(
-                    clientId = DemoConfig.demoGoogleWebClientId,
-                ),
+            provider = OmsRelayOidcProviders.google,
             loginHint = expiredSessionEmail(),
         )
     }
@@ -438,13 +438,13 @@ class TrailsActionsActivity : AppCompatActivity() {
     private fun startAppleRedirectSignIn() {
         startOidcRedirectSignIn(
             providerName = "Apple",
-            provider = OidcProviders.apple(),
+            provider = OmsRelayOidcProviders.apple,
         )
     }
 
     private fun startOidcRedirectSignIn(
         providerName: String,
-        provider: OidcProviderConfig,
+        provider: OmsRelayOidcProvider,
         loginHint: String? = null,
     ) {
         launchAction(
@@ -467,7 +467,7 @@ class TrailsActionsActivity : AppCompatActivity() {
                     sessionLifetimeSeconds = sessionLifetimeSeconds,
                     loginHint = loginHint,
                 )
-            appendLog("$providerName redirect auth started: state=${started.state}")
+            appendLog("$providerName redirect auth started")
             showOidcRedirectPendingStep("Waiting for OIDC redirect callback...")
             openInAppBrowser(started.authorizationUrl)
         }
@@ -1043,6 +1043,7 @@ class TrailsActionsActivity : AppCompatActivity() {
                     txnId = response.txnId,
                     status = status.status,
                     txnHash = status.txnHash,
+                    statusResolution = TransactionStatusResolution.Resolved,
                 )
             if (!latest.txnHash.isNullOrBlank()) return latest
             if (latest.status == TransactionStatus.UNKNOWN_DEFAULT) {
@@ -1104,7 +1105,7 @@ class TrailsActionsActivity : AppCompatActivity() {
             try {
                 requestWalletSelectionChoice(pendingSelection)
             } catch (throwable: Throwable) {
-                sdk.wallet.signOut()
+                runCatching { sdk.wallet.signOut() }
                 showEmailStep()
                 throw throwable
             }
@@ -1214,25 +1215,27 @@ class TrailsActionsActivity : AppCompatActivity() {
         launchAction(
             label = "Handle OIDC redirect sign-in callback",
             onStart = { showOidcRedirectPendingStep("Completing OIDC redirect sign-in...") },
+            onFailure = { throwable ->
+                consumeIntentData()
+                showEmailStep()
+                authStatusView.text = "OIDC redirect sign-in failed: ${describe(throwable)}"
+            },
         ) {
             when (val result = handleOidcRedirectCallbackFromPendingAuth(callbackUrl)) {
                 is OidcRedirectAuthResult.Completed -> {
                     consumeIntentData()
-                    renderSignedInWallet(result.wallet, "OIDC redirect login complete")
-                }
+                    when (val completion = result.result) {
+                        is CompleteAuthResult.WalletSelected -> {
+                            renderSignedInWallet(completion.wallet, "OIDC redirect login complete")
+                        }
 
-                is OidcRedirectAuthResult.WalletSelection -> {
-                    consumeIntentData()
-                    completePendingWalletSelection(
-                        pendingSelection = result.pendingSelection,
-                        status = "OIDC redirect login complete",
-                    )
-                }
-
-                is OidcRedirectAuthResult.Failed -> {
-                    consumeIntentData()
-                    showEmailStep()
-                    authStatusView.text = "OIDC redirect completion failed: ${describe(result.error)}"
+                        is CompleteAuthResult.WalletSelection -> {
+                            completePendingWalletSelection(
+                                pendingSelection = completion.pendingSelection,
+                                status = "OIDC redirect login complete",
+                            )
+                        }
+                    }
                 }
 
                 OidcRedirectAuthResult.NoPendingAuth -> {
@@ -2186,6 +2189,5 @@ class TrailsActionsActivity : AppCompatActivity() {
 
 private object DemoConfig {
     const val demoPublishableKey: String = "pk_sdbx_01kqfw9zaykks_01kwetq606fv699qb9bhfmb45s"
-    const val demoGoogleWebClientId: String = "913882656162-7l4ofa0ou2hqo90umlkenhdop1f5inba.apps.googleusercontent.com"
     const val oidcRedirectUri: String = "omsclientkotlindemo://auth/callback"
 }
