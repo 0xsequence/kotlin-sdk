@@ -368,8 +368,31 @@ tasks.register("checkPublicApiBaseline") {
         }
         val actual = generatePublicApiDump(packagedReleaseClassesJar.get().asFile)
         if (baseline.readText() != actual) {
+            val actualFile =
+                layout.buildDirectory
+                    .file("reports/public-api/actual.txt")
+                    .get()
+                    .asFile
+            actualFile.parentFile.mkdirs()
+            actualFile.writeText(actual)
+            val process =
+                ProcessBuilder(
+                    "git",
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-index",
+                    "--no-color",
+                    "--unified=3",
+                    baseline.absolutePath,
+                    actualFile.absolutePath,
+                ).start()
+            val diff = process.inputStream.bufferedReader().readText()
+            val errors = process.errorStream.bufferedReader().readText()
+            if (process.waitFor() !in setOf(0, 1)) {
+                throw GradleException("Unable to generate public API diff: ${errors.trim()}")
+            }
             throw GradleException(
-                "Packaged public API changed. Review the change, then run " +
+                "Packaged public API changed:\n$diff\nReview the change, then run " +
                     ":oms-wallet-kotlin-sdk:dumpPublicApi to accept it.",
             )
         }
