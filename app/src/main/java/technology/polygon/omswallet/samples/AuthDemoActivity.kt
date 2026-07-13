@@ -1276,7 +1276,7 @@ class AuthDemoActivity : AppCompatActivity() {
         when (auth) {
             null -> "null"
             is OMSWalletEmailSessionAuth -> "Email"
-            is OMSWalletOidcSessionAuth -> auth.providerLabel ?: auth.provider ?: "OIDC"
+            is OMSWalletOidcSessionAuth -> "${auth.providerLabel ?: auth.provider ?: "OIDC"} (${auth.flow})"
         }
 
     private fun prefillExpiredSessionEmail() {
