@@ -96,11 +96,13 @@ app can show sign-in UI and let the user start again. Persisted session restore
 revives completed wallet sessions, including the session expiry and auth
 metadata returned by the wallet API, but not pending email OTP state. OIDC
 sessions include the flow (`Redirect` or `IdToken`), issuer, provider key,
-provider label, and email when available. Completed auth
-requests use a one-week wallet API session lifetime by default
-(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds); pass
-`sessionLifetimeSeconds` to auth completion methods or `startOidcRedirectAuth`
-to request a different value from 1 through
+provider label, and email when available. Completed auth requests use a
+one-week wallet API session lifetime by default
+(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds). For email
+auth, `startEmailAuth` validates and stores `sessionLifetimeSeconds` with the
+pending OTP attempt; `completeEmailAuth` uses the stored value. Pass
+`sessionLifetimeSeconds` to `signInWithOidcIdToken`, `startOidcRedirectAuth`, or
+`handleOidcRedirectCallback` to request a different value from 1 through
 `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000` seconds, 30 days). For
 OIDC redirects, start-time values are stored with pending redirect state and used
 on callback completion unless the callback provides an override. Invalid values
@@ -142,6 +144,7 @@ it to each new listener until a new auth flow, new wallet session, or
 ```kotlin
 suspend fun omsWallet.wallet.startEmailAuth(
     email: String,
+    sessionLifetimeSeconds: Long = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
 )
 ```
 
@@ -323,12 +326,12 @@ suspend fun omsWallet.wallet.completeEmailAuth(
     code: String,
     walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
-    sessionLifetimeSeconds: Long = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
 ): CompleteAuthResult
 ```
 
 Auth completion loads all wallet pages before selecting or creating a wallet.
-`walletType` defines which wallet type is eligible.
+`walletType` defines which wallet type is eligible. The session lifetime is the
+value stored by the matching `startEmailAuth` call.
 
 In `WalletSelectionBehavior.Automatic`, auth completion:
 

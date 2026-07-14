@@ -205,37 +205,36 @@ class PublicErrorContractsTest {
             val client = createOmsClient()
 
             assertEquals(
-                listOf(
-                    labeled(
-                        "wallet.completeEmailAuth.noPendingAuth",
-                        error(
-                            name = "OMSWalletSessionException",
-                            code = "OMS_SESSION_MISSING",
-                            operation = "wallet.completeEmailAuth",
-                            message = "No pending email auth attempt",
-                        ),
-                    ),
-                    labeled(
-                        "wallet.completeEmailAuth.invalidLifetime",
-                        error(
-                            name = "OMSWalletValidationException",
-                            code = "OMS_VALIDATION_ERROR",
-                            operation = "wallet.completeEmailAuth",
-                            message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
-                        ),
-                    ),
+                error(
+                    name = "OMSWalletSessionException",
+                    code = "OMS_SESSION_MISSING",
+                    operation = "wallet.completeEmailAuth",
+                    message = "No pending email auth attempt",
                 ),
-                publicErrors(
-                    "wallet.completeEmailAuth.noPendingAuth" to {
-                        client.wallet.completeEmailAuth("123456")
-                    },
-                    "wallet.completeEmailAuth.invalidLifetime" to {
-                        client.wallet.completeEmailAuth(
-                            code = "123456",
-                            sessionLifetimeSeconds = 0L,
-                        )
-                    },
+                publicError {
+                    client.wallet.completeEmailAuth("123456")
+                },
+            )
+        }
+
+    @Test
+    fun snapshotsEmailAuthStartLocalValidationErrors() =
+        runBlocking {
+            val client = createOmsClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletValidationException",
+                    code = "OMS_VALIDATION_ERROR",
+                    operation = "wallet.startEmailAuth",
+                    message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
                 ),
+                publicError {
+                    client.wallet.startEmailAuth(
+                        email = "user@example.com",
+                        sessionLifetimeSeconds = 0L,
+                    )
+                },
             )
         }
 

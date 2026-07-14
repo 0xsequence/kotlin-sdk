@@ -97,6 +97,11 @@ import technology.polygon.omswallet.internal.generated.waas.WalletType as WaasWa
 import technology.polygon.omswallet.models.SendTransactionRequest as ClientSendTransactionRequest
 import technology.polygon.omswallet.models.SendTransactionResponse as ClientSendTransactionResponse
 
+private class PendingEmailAuth(
+    val sessionRevision: Long,
+    val sessionLifetimeSeconds: UInt,
+)
+
 private class WalletScopeRuntime(
     val walletSession: OMSWalletSession,
     val sessionStore: OMSWalletSessionMetadataStore?,
@@ -113,6 +118,7 @@ private class WalletScopeRuntime(
     var latestSessionExpiredEvent: OMSWalletSessionExpiredEvent? = null
     var latestSessionExpiredRevision: Long? = null
     var sessionExpiryTask: SessionExpiryTask? = null
+    var pendingEmailAuth: PendingEmailAuth? = null
 }
 
 private object WalletScopeRuntimeRegistry {
@@ -426,6 +432,7 @@ class WalletClient private constructor(
         if (!walletSession.clear(requiredSessionRevision)) {
             return null
         }
+        runtime.pendingEmailAuth = null
         val clearedRevision = walletSession.revision()
         clearSessionExpiryTaskLocked()
 
@@ -552,8 +559,13 @@ class WalletClient private constructor(
         }
     }
 
-    suspend fun startEmailAuth(email: String): Unit =
+    suspend fun startEmailAuth(
+        email: String,
+        sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
+    ): Unit =
         runOMSWalletOperation(OMSWalletOperation.WalletStartEmailAuth) {
+            val validatedSessionLifetimeSeconds =
+                requireWaasSessionLifetimeSeconds(sessionLifetimeSeconds)
             var ownedSessionRevision =
                 checkNotNull(clearSession(clearOidcRedirectAuth = true)) {
                     "Unable to start wallet auth"
@@ -564,13 +576,20 @@ class WalletClient private constructor(
                 ownedSessionRevision =
                     synchronized(runtime.lifecycleLock) {
                         walletSession.requireRevision(ownedSessionRevision)
-                        walletSession.replaceForPendingAuth(
-                            challenge = response.challenge,
-                            verifier = response.verifier,
-                            signerAddress = checkNotNull(signer.existingCredentialId()),
-                            signerKeyType = signer.signingAlgorithm,
-                            requiredRevision = ownedSessionRevision,
-                        )
+                        val pendingSessionRevision =
+                            walletSession.replaceForPendingAuth(
+                                challenge = response.challenge,
+                                verifier = response.verifier,
+                                signerAddress = checkNotNull(signer.existingCredentialId()),
+                                signerKeyType = signer.signingAlgorithm,
+                                requiredRevision = ownedSessionRevision,
+                            )
+                        runtime.pendingEmailAuth =
+                            PendingEmailAuth(
+                                sessionRevision = pendingSessionRevision,
+                                sessionLifetimeSeconds = validatedSessionLifetimeSeconds,
+                            )
+                        pendingSessionRevision
                     }
             } catch (throwable: CancellationException) {
                 clearSessionAfterFailure(requiredSessionRevision = ownedSessionRevision)
@@ -1054,29 +1073,41 @@ class WalletClient private constructor(
         code: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = environment.defaultWalletType,
-        sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
     ): CompleteAuthResult =
         runOMSWalletOperation(OMSWalletOperation.WalletCompleteEmailAuth) {
             val requiredSessionRevision =
                 synchronized(runtime.lifecycleLock) {
                     walletSession.revision()
                 }
+            val pendingEmailAuth =
+                synchronized(runtime.lifecycleLock) {
+                    runtime.pendingEmailAuth
+                        ?.takeIf { it.sessionRevision == requiredSessionRevision }
+                        ?: throw OMSWalletSessionException(
+                            operation = OMSWalletOperation.WalletCompleteEmailAuth,
+                            message = "No pending email auth attempt",
+                        )
+                }
             val auth =
                 completeEmailSignIn(
                     code = code,
-                    sessionLifetimeSeconds =
-                        requireWaasSessionLifetimeSeconds(
-                            sessionLifetimeSeconds,
-                        ),
+                    sessionLifetimeSeconds = pendingEmailAuth.sessionLifetimeSeconds,
                     requiredSessionRevision = requiredSessionRevision,
                 )
-            completeWalletAuth(
-                completeAuth = auth,
-                walletType = walletType,
-                walletSelection = walletSelection,
-                sessionAuth = OMSWalletEmailSessionAuth(email = auth.email),
-                requiredSessionRevision = requiredSessionRevision,
-            )
+            val result =
+                completeWalletAuth(
+                    completeAuth = auth,
+                    walletType = walletType,
+                    walletSelection = walletSelection,
+                    sessionAuth = OMSWalletEmailSessionAuth(email = auth.email),
+                    requiredSessionRevision = requiredSessionRevision,
+                )
+            synchronized(runtime.lifecycleLock) {
+                if (runtime.pendingEmailAuth === pendingEmailAuth) {
+                    runtime.pendingEmailAuth = null
+                }
+            }
+            result
         }
 
     /**

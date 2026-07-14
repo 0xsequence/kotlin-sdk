@@ -237,7 +237,16 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { authStatusView.text = "Email sign-in failed: ${it.message ?: "Unknown error"}" },
             ) {
                 val email = requireEmailForSignIn()
-                sdk.wallet.startEmailAuth(email)
+                val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
+                persistAuthPreferences()
+                if (sessionLifetimeSeconds == null) {
+                    sdk.wallet.startEmailAuth(email)
+                } else {
+                    sdk.wallet.startEmailAuth(
+                        email = email,
+                        sessionLifetimeSeconds = sessionLifetimeSeconds,
+                    )
+                }
                 authStatusView.text =
                     buildString {
                         append("Code requested for ")
@@ -268,7 +277,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 if (manualWalletSelectionCheckbox.isChecked) {
                     when (
                         val result =
-                            completeEmailAuthWithConfiguredLifetime(
+                            completePendingEmailAuth(
                                 code = code,
                                 walletSelection = WalletSelectionBehavior.Manual,
                             )
@@ -287,7 +296,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 } else {
                     when (
                         val result =
-                            completeEmailAuthWithConfiguredLifetime(
+                            completePendingEmailAuth(
                                 code = code,
                             )
                     ) {
@@ -715,25 +724,14 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun completeEmailAuthWithConfiguredLifetime(
+    private suspend fun completePendingEmailAuth(
         code: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-    ): CompleteAuthResult {
-        val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
-        persistAuthPreferences()
-        return if (sessionLifetimeSeconds == null) {
-            sdk.wallet.completeEmailAuth(
-                code = code,
-                walletSelection = walletSelection,
-            )
-        } else {
-            sdk.wallet.completeEmailAuth(
-                code = code,
-                walletSelection = walletSelection,
-                sessionLifetimeSeconds = sessionLifetimeSeconds,
-            )
-        }
-    }
+    ): CompleteAuthResult =
+        sdk.wallet.completeEmailAuth(
+            code = code,
+            walletSelection = walletSelection,
+        )
 
     private suspend fun handleOidcRedirectCallbackFromPendingAuth(callbackUrl: String): OidcRedirectAuthResult =
         sdk.wallet.handleOidcRedirectCallback(callbackUrl = callbackUrl)

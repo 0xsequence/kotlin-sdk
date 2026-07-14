@@ -480,9 +480,17 @@ class TrailsActionsActivity : AppCompatActivity() {
             onFailure = { authStatusView.text = "Email sign-in failed: ${describe(it)}" },
         ) {
             val email = requireEmailForSignIn()
+            val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
             persistAuthPreferences()
             clearExpiredSessionState()
-            sdk.wallet.startEmailAuth(email)
+            if (sessionLifetimeSeconds == null) {
+                sdk.wallet.startEmailAuth(email)
+            } else {
+                sdk.wallet.startEmailAuth(
+                    email = email,
+                    sessionLifetimeSeconds = sessionLifetimeSeconds,
+                )
+            }
             authStatusView.text = "Code requested for $email."
             showPendingCodeStep()
             emailInput.text?.clear()
@@ -498,7 +506,11 @@ class TrailsActionsActivity : AppCompatActivity() {
         ) {
             val code = requireInput(codeInput, "Verification code")
             codeInput.text?.clear()
-            val result = completeEmailAuthWithConfiguredLifetime(code)
+            val result =
+                sdk.wallet.completeEmailAuth(
+                    code = code,
+                    walletSelection = currentWalletSelectionBehavior(),
+                )
             when (result) {
                 is CompleteAuthResult.WalletSelected -> {
                     renderSignedInWallet(result.wallet, "Email login complete")
@@ -1495,23 +1507,6 @@ class TrailsActionsActivity : AppCompatActivity() {
 
     private fun clearExpiredSessionState() {
         expiredSessionEvent = null
-    }
-
-    private suspend fun completeEmailAuthWithConfiguredLifetime(code: String): CompleteAuthResult {
-        val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
-        persistAuthPreferences()
-        return if (sessionLifetimeSeconds == null) {
-            sdk.wallet.completeEmailAuth(
-                code = code,
-                walletSelection = currentWalletSelectionBehavior(),
-            )
-        } else {
-            sdk.wallet.completeEmailAuth(
-                code = code,
-                walletSelection = currentWalletSelectionBehavior(),
-                sessionLifetimeSeconds = sessionLifetimeSeconds,
-            )
-        }
     }
 
     private suspend fun handleOidcRedirectCallbackFromPendingAuth(callbackUrl: String): OidcRedirectAuthResult =

@@ -369,6 +369,7 @@ class WalletEmailAuthTest {
     @Test
     fun completeEmailAuthUsesStoredSessionAndParsesWallets() =
         runBlocking {
+            enqueueEmailAuthStart()
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -408,14 +409,8 @@ class WalletEmailAuthTest {
                     sessionStore = InMemorySessionStore(),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000101"),
                 )
-            client.restoreSession(
-                OMSWalletSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = TEST_CREDENTIAL_ID,
-                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                ),
-            )
+            client.startEmailAuth("user@example.com")
+            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
 
             val response = client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected
             val request = requireNotNull(server.takeRequest())
@@ -463,6 +458,7 @@ class WalletEmailAuthTest {
                 )
             assertTrue(credentialFixture().credentialId != TEST_CREDENTIAL_ID)
 
+            enqueueEmailAuthStart()
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -496,14 +492,8 @@ class WalletEmailAuthTest {
                     sessionStore = store,
                     credentialSigner = signer,
                 )
-            client.restoreSession(
-                OMSWalletSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = TEST_CREDENTIAL_ID,
-                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                ),
-            )
+            client.startEmailAuth("user@example.com")
+            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
 
             client.completeEmailAuth("123456")
             val activeWallets = client.listWallets()
@@ -530,8 +520,15 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun completeEmailAuthUsesRequestedSessionLifetime() =
+    fun startEmailAuthPersistsRequestedSessionLifetimeForCompletion() =
         runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                    .build(),
+            )
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -563,19 +560,13 @@ class WalletEmailAuthTest {
                     sessionStore = InMemorySessionStore(),
                     credentialSigner = TrackingCredentialSigner(),
                 )
-            client.restoreSession(
-                OMSWalletSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = TEST_CREDENTIAL_ID,
-                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                ),
-            )
 
-            client.completeEmailAuth(
-                code = "123456",
+            client.startEmailAuth(
+                email = "user@example.com",
                 sessionLifetimeSeconds = 120L,
             )
+            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
+            client.completeEmailAuth(code = "123456")
             val request = requireNotNull(server.takeRequest())
 
             assertEquals(
@@ -597,7 +588,7 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun completeEmailAuthRejectsInvalidSessionLifetimeBeforeRequest() =
+    fun startEmailAuthRejectsInvalidSessionLifetimeBeforeSendingCode() =
         runBlocking {
             val client =
                 WalletClient.create(
@@ -612,19 +603,10 @@ class WalletEmailAuthTest {
                     sessionStore = InMemorySessionStore(),
                     credentialSigner = TrackingCredentialSigner(),
                 )
-            client.restoreSession(
-                OMSWalletSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = TEST_CREDENTIAL_ID,
-                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                ),
-            )
-
             val error =
                 runCatching {
-                    client.completeEmailAuth(
-                        code = "123456",
+                    client.startEmailAuth(
+                        email = "user@example.com",
                         sessionLifetimeSeconds = 0L,
                     )
                 }.exceptionOrNull()
@@ -632,14 +614,16 @@ class WalletEmailAuthTest {
             assertTrue(error is OMSWalletException)
             error as OMSWalletException
             assertEquals(OMSWalletErrorCode.ValidationError, error.code)
-            assertEquals("wallet.completeEmailAuth", error.operation?.id)
+            assertEquals("wallet.startEmailAuth", error.operation?.id)
             assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
             assertEquals(0, server.requestCount)
+            assertNull(client.snapshotSession())
         }
 
     @Test
     fun completeEmailAuthUsesReturnedWalletIndexWhenSelectingExistingWallet() =
         runBlocking {
+            enqueueEmailAuthStart()
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -687,14 +671,8 @@ class WalletEmailAuthTest {
                     sessionStore = InMemorySessionStore(),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000102"),
                 )
-            client.restoreSession(
-                OMSWalletSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = TEST_CREDENTIAL_ID,
-                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                ),
-            )
+            client.startEmailAuth("user@example.com")
+            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
 
             val resolved = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
             server.takeRequest()
@@ -1485,6 +1463,7 @@ class WalletEmailAuthTest {
     @Test
     fun completeEmailAuthSelectsFirstMatchingWalletWhenMultipleWalletsExist() =
         runBlocking {
+            enqueueEmailAuthStart()
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -1528,14 +1507,8 @@ class WalletEmailAuthTest {
                     sessionStore = InMemorySessionStore(),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000111"),
                 )
-            client.restoreSession(
-                OMSWalletSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = TEST_CREDENTIAL_ID,
-                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                ),
-            )
+            client.startEmailAuth("user@example.com")
+            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
 
             val result = client.completeEmailAuth("123456")
             val completeAuthRequest = requireNotNull(server.takeRequest())
@@ -1566,6 +1539,7 @@ class WalletEmailAuthTest {
     @Test
     fun pendingWalletSelectionUsesSelectedWallet() =
         runBlocking {
+            enqueueEmailAuthStart()
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -1609,14 +1583,8 @@ class WalletEmailAuthTest {
                     sessionStore = InMemorySessionStore(),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
                 )
-            client.restoreSession(
-                OMSWalletSessionSnapshot(
-                    challenge = "challenge",
-                    verifier = "verifier-123",
-                    signerAddress = TEST_CREDENTIAL_ID,
-                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                ),
-            )
+            client.startEmailAuth("user@example.com")
+            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
 
             val result =
                 client.completeEmailAuth(
@@ -1844,4 +1812,14 @@ class WalletEmailAuthTest {
             assertNull(client.walletAddress)
             assertTrue(store.clearCalls > 0)
         }
+
+    private fun enqueueEmailAuthStart() {
+        server.enqueue(
+            MockResponse
+                .Builder()
+                .code(200)
+                .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                .build(),
+        )
+    }
 }
