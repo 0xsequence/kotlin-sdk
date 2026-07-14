@@ -98,6 +98,7 @@ import technology.polygon.omswallet.models.SendTransactionRequest as ClientSendT
 import technology.polygon.omswallet.models.SendTransactionResponse as ClientSendTransactionResponse
 
 private class PendingEmailAuth(
+    val email: String,
     val sessionRevision: Long,
     val sessionLifetimeSeconds: UInt,
 )
@@ -586,6 +587,7 @@ class WalletClient private constructor(
                             )
                         runtime.pendingEmailAuth =
                             PendingEmailAuth(
+                                email = email,
                                 sessionRevision = pendingSessionRevision,
                                 sessionLifetimeSeconds = validatedSessionLifetimeSeconds,
                             )
@@ -1099,7 +1101,7 @@ class WalletClient private constructor(
                     completeAuth = auth,
                     walletType = walletType,
                     walletSelection = walletSelection,
-                    sessionAuth = OMSWalletEmailSessionAuth(email = auth.email),
+                    sessionAuth = OMSWalletEmailSessionAuth(email = auth.email ?: pendingEmailAuth.email),
                     requiredSessionRevision = requiredSessionRevision,
                 )
             synchronized(runtime.lifecycleLock) {
@@ -2175,17 +2177,6 @@ class WalletClient private constructor(
             contractAddresses.associateWith { contractAddress ->
                 balances?.balances?.firstOrNull { balance ->
                     balance.contractAddress.normalizeAddress() == contractAddress
-                } ?: balances?.let {
-                    TokenBalance(
-                        contractType = "ERC20",
-                        contractAddress = contractAddress,
-                        accountAddress = walletAddress,
-                        tokenId = null,
-                        balance = "0",
-                        blockHash = null,
-                        blockNumber = null,
-                        chainId = network.id.toLong(),
-                    )
                 }
             }
 

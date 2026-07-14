@@ -382,7 +382,7 @@ class WalletEmailAuthTest {
                                     iss = "issuer-123",
                                     sub = "sub-123",
                                 ),
-                            email = "user@example.com",
+                            email = null,
                             wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
                         ),
                     ).build(),

@@ -368,6 +368,47 @@ public final class technology.polygon.omswallet.models.AbiArg {
 }
 
 Compiled from "OMSWalletModels.kt"
+public final class technology.polygon.omswallet.models.ContractTokenBalance implements technology.polygon.omswallet.models.TokenBalance {
+  public technology.polygon.omswallet.models.ContractTokenBalance(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata);
+  public technology.polygon.omswallet.models.ContractTokenBalance(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public java.lang.String getContractType();
+  public final java.lang.String getContractAddress();
+  public java.lang.String getAccountAddress();
+  public final java.lang.String getTokenId();
+  public java.lang.String getBalance();
+  public final java.lang.String getBlockHash();
+  public final long getBlockNumber();
+  public long getChainId();
+  public java.lang.String getBalanceUSD();
+  public java.lang.String getPriceUSD();
+  public java.lang.String getPriceUpdatedAt();
+  public final java.lang.String getUniqueCollectibles();
+  public final java.lang.Boolean isSummary();
+  public final technology.polygon.omswallet.models.TokenContractInfo getContractInfo();
+  public final technology.polygon.omswallet.models.TokenMetadata getTokenMetadata();
+  public final java.lang.String component1();
+  public final java.lang.String component2();
+  public final java.lang.String component3();
+  public final java.lang.String component4();
+  public final java.lang.String component5();
+  public final java.lang.String component6();
+  public final long component7();
+  public final long component8();
+  public final java.lang.String component9();
+  public final java.lang.String component10();
+  public final java.lang.String component11();
+  public final java.lang.String component12();
+  public final java.lang.Boolean component13();
+  public final technology.polygon.omswallet.models.TokenContractInfo component14();
+  public final technology.polygon.omswallet.models.TokenMetadata component15();
+  public final technology.polygon.omswallet.models.ContractTokenBalance copy(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata);
+  public static technology.polygon.omswallet.models.ContractTokenBalance copy$default(technology.polygon.omswallet.models.ContractTokenBalance, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata, int, java.lang.Object);
+  public java.lang.String toString();
+  public int hashCode();
+  public boolean equals(java.lang.Object);
+}
+
+Compiled from "OMSWalletModels.kt"
 public final class technology.polygon.omswallet.models.ContractVerificationStatus extends java.lang.Enum<technology.polygon.omswallet.models.ContractVerificationStatus> {
   public static final technology.polygon.omswallet.models.ContractVerificationStatus VERIFIED;
   public static final technology.polygon.omswallet.models.ContractVerificationStatus UNVERIFIED;
@@ -527,6 +568,34 @@ public final class technology.polygon.omswallet.models.MetadataOptions {
 }
 
 Compiled from "OMSWalletModels.kt"
+public final class technology.polygon.omswallet.models.NativeTokenBalance implements technology.polygon.omswallet.models.TokenBalance {
+  public technology.polygon.omswallet.models.NativeTokenBalance(java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, java.lang.String, java.lang.String, java.lang.String);
+  public technology.polygon.omswallet.models.NativeTokenBalance(java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, java.lang.String, java.lang.String, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public java.lang.String getAccountAddress();
+  public final java.lang.String getName();
+  public final java.lang.String getSymbol();
+  public java.lang.String getBalance();
+  public long getChainId();
+  public java.lang.String getBalanceUSD();
+  public java.lang.String getPriceUSD();
+  public java.lang.String getPriceUpdatedAt();
+  public java.lang.String getContractType();
+  public final java.lang.String component1();
+  public final java.lang.String component2();
+  public final java.lang.String component3();
+  public final java.lang.String component4();
+  public final long component5();
+  public final java.lang.String component6();
+  public final java.lang.String component7();
+  public final java.lang.String component8();
+  public final technology.polygon.omswallet.models.NativeTokenBalance copy(java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, java.lang.String, java.lang.String, java.lang.String);
+  public static technology.polygon.omswallet.models.NativeTokenBalance copy$default(technology.polygon.omswallet.models.NativeTokenBalance, java.lang.String, java.lang.String, java.lang.String, java.lang.String, long, java.lang.String, java.lang.String, java.lang.String, int, java.lang.Object);
+  public java.lang.String toString();
+  public int hashCode();
+  public boolean equals(java.lang.Object);
+}
+
+Compiled from "OMSWalletModels.kt"
 public final class technology.polygon.omswallet.models.OMSWalletModelsKt {
   public static final java.lang.String access$selectionToken(technology.polygon.omswallet.models.FeeOption);
   public static final boolean access$hasEnoughBalance(technology.polygon.omswallet.models.FeeOptionWithBalance);
@@ -585,48 +654,14 @@ public final class technology.polygon.omswallet.models.SendTransactionResponse {
 }
 
 Compiled from "OMSWalletModels.kt"
-public final class technology.polygon.omswallet.models.TokenBalance {
-  public technology.polygon.omswallet.models.TokenBalance(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Long, java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata);
-  public technology.polygon.omswallet.models.TokenBalance(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Long, java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata, int, kotlin.jvm.internal.DefaultConstructorMarker);
-  public final java.lang.String getContractType();
-  public final java.lang.String getContractAddress();
-  public final java.lang.String getAccountAddress();
-  public final java.lang.String getTokenId();
-  public final java.lang.String getBalance();
-  public final java.lang.String getBlockHash();
-  public final java.lang.Long getBlockNumber();
-  public final java.lang.Long getChainId();
-  public final java.lang.String getName();
-  public final java.lang.String getSymbol();
-  public final java.lang.String getBalanceUSD();
-  public final java.lang.String getPriceUSD();
-  public final java.lang.String getPriceUpdatedAt();
-  public final java.lang.String getUniqueCollectibles();
-  public final java.lang.Boolean isSummary();
-  public final technology.polygon.omswallet.models.TokenContractInfo getContractInfo();
-  public final technology.polygon.omswallet.models.TokenMetadata getTokenMetadata();
-  public final java.lang.String component1();
-  public final java.lang.String component2();
-  public final java.lang.String component3();
-  public final java.lang.String component4();
-  public final java.lang.String component5();
-  public final java.lang.String component6();
-  public final java.lang.Long component7();
-  public final java.lang.Long component8();
-  public final java.lang.String component9();
-  public final java.lang.String component10();
-  public final java.lang.String component11();
-  public final java.lang.String component12();
-  public final java.lang.String component13();
-  public final java.lang.String component14();
-  public final java.lang.Boolean component15();
-  public final technology.polygon.omswallet.models.TokenContractInfo component16();
-  public final technology.polygon.omswallet.models.TokenMetadata component17();
-  public final technology.polygon.omswallet.models.TokenBalance copy(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Long, java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata);
-  public static technology.polygon.omswallet.models.TokenBalance copy$default(technology.polygon.omswallet.models.TokenBalance, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Long, java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Boolean, technology.polygon.omswallet.models.TokenContractInfo, technology.polygon.omswallet.models.TokenMetadata, int, java.lang.Object);
-  public java.lang.String toString();
-  public int hashCode();
-  public boolean equals(java.lang.Object);
+public interface technology.polygon.omswallet.models.TokenBalance {
+  public abstract java.lang.String getContractType();
+  public abstract java.lang.String getAccountAddress();
+  public abstract java.lang.String getBalance();
+  public abstract long getChainId();
+  public abstract java.lang.String getBalanceUSD();
+  public abstract java.lang.String getPriceUSD();
+  public abstract java.lang.String getPriceUpdatedAt();
 }
 
 Compiled from "OMSWalletModels.kt"
@@ -663,17 +698,17 @@ public final class technology.polygon.omswallet.models.TokenBalancesPageRequest 
 
 Compiled from "OMSWalletModels.kt"
 public final class technology.polygon.omswallet.models.TokenBalancesResult {
-  public technology.polygon.omswallet.models.TokenBalancesResult(int, technology.polygon.omswallet.models.TokenBalancesPage, java.util.List<technology.polygon.omswallet.models.TokenBalance>, java.util.List<technology.polygon.omswallet.models.TokenBalance>);
+  public technology.polygon.omswallet.models.TokenBalancesResult(int, technology.polygon.omswallet.models.TokenBalancesPage, java.util.List<technology.polygon.omswallet.models.ContractTokenBalance>, java.util.List<technology.polygon.omswallet.models.NativeTokenBalance>);
   public technology.polygon.omswallet.models.TokenBalancesResult(int, technology.polygon.omswallet.models.TokenBalancesPage, java.util.List, java.util.List, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public final int getStatus();
   public final technology.polygon.omswallet.models.TokenBalancesPage getPage();
-  public final java.util.List<technology.polygon.omswallet.models.TokenBalance> getBalances();
-  public final java.util.List<technology.polygon.omswallet.models.TokenBalance> getNativeBalances();
+  public final java.util.List<technology.polygon.omswallet.models.ContractTokenBalance> getBalances();
+  public final java.util.List<technology.polygon.omswallet.models.NativeTokenBalance> getNativeBalances();
   public final int component1();
   public final technology.polygon.omswallet.models.TokenBalancesPage component2();
-  public final java.util.List<technology.polygon.omswallet.models.TokenBalance> component3();
-  public final java.util.List<technology.polygon.omswallet.models.TokenBalance> component4();
-  public final technology.polygon.omswallet.models.TokenBalancesResult copy(int, technology.polygon.omswallet.models.TokenBalancesPage, java.util.List<technology.polygon.omswallet.models.TokenBalance>, java.util.List<technology.polygon.omswallet.models.TokenBalance>);
+  public final java.util.List<technology.polygon.omswallet.models.ContractTokenBalance> component3();
+  public final java.util.List<technology.polygon.omswallet.models.NativeTokenBalance> component4();
+  public final technology.polygon.omswallet.models.TokenBalancesResult copy(int, technology.polygon.omswallet.models.TokenBalancesPage, java.util.List<technology.polygon.omswallet.models.ContractTokenBalance>, java.util.List<technology.polygon.omswallet.models.NativeTokenBalance>);
   public static technology.polygon.omswallet.models.TokenBalancesResult copy$default(technology.polygon.omswallet.models.TokenBalancesResult, int, technology.polygon.omswallet.models.TokenBalancesPage, java.util.List, java.util.List, int, java.lang.Object);
   public java.lang.String toString();
   public int hashCode();
@@ -682,9 +717,9 @@ public final class technology.polygon.omswallet.models.TokenBalancesResult {
 
 Compiled from "OMSWalletModels.kt"
 public final class technology.polygon.omswallet.models.TokenContractInfo {
-  public technology.polygon.omswallet.models.TokenContractInfo(java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, java.lang.Boolean, java.lang.String, java.util.Map<java.lang.String, ? extends kotlinx.serialization.json.JsonElement>, java.lang.String, java.lang.String, java.lang.String);
-  public technology.polygon.omswallet.models.TokenContractInfo(java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, java.lang.Boolean, java.lang.String, java.util.Map, java.lang.String, java.lang.String, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
-  public final java.lang.Long getChainId();
+  public technology.polygon.omswallet.models.TokenContractInfo(long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, boolean, java.lang.String, java.util.Map<java.lang.String, ? extends kotlinx.serialization.json.JsonElement>, java.lang.String, java.lang.String, java.lang.String);
+  public technology.polygon.omswallet.models.TokenContractInfo(long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, boolean, java.lang.String, java.util.Map, java.lang.String, java.lang.String, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public final long getChainId();
   public final java.lang.String getAddress();
   public final java.lang.String getSource();
   public final java.lang.String getName();
@@ -692,13 +727,13 @@ public final class technology.polygon.omswallet.models.TokenContractInfo {
   public final java.lang.String getSymbol();
   public final java.lang.Integer getDecimals();
   public final java.lang.String getLogoURI();
-  public final java.lang.Boolean getDeployed();
+  public final boolean getDeployed();
   public final java.lang.String getBytecodeHash();
   public final java.util.Map<java.lang.String, kotlinx.serialization.json.JsonElement> getExtensions();
   public final java.lang.String getUpdatedAt();
   public final java.lang.String getQueuedAt();
   public final java.lang.String getStatus();
-  public final java.lang.Long component1();
+  public final long component1();
   public final java.lang.String component2();
   public final java.lang.String component3();
   public final java.lang.String component4();
@@ -706,18 +741,17 @@ public final class technology.polygon.omswallet.models.TokenContractInfo {
   public final java.lang.String component6();
   public final java.lang.Integer component7();
   public final java.lang.String component8();
-  public final java.lang.Boolean component9();
+  public final boolean component9();
   public final java.lang.String component10();
   public final java.util.Map<java.lang.String, kotlinx.serialization.json.JsonElement> component11();
   public final java.lang.String component12();
   public final java.lang.String component13();
   public final java.lang.String component14();
-  public final technology.polygon.omswallet.models.TokenContractInfo copy(java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, java.lang.Boolean, java.lang.String, java.util.Map<java.lang.String, ? extends kotlinx.serialization.json.JsonElement>, java.lang.String, java.lang.String, java.lang.String);
-  public static technology.polygon.omswallet.models.TokenContractInfo copy$default(technology.polygon.omswallet.models.TokenContractInfo, java.lang.Long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, java.lang.Boolean, java.lang.String, java.util.Map, java.lang.String, java.lang.String, java.lang.String, int, java.lang.Object);
+  public final technology.polygon.omswallet.models.TokenContractInfo copy(long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, boolean, java.lang.String, java.util.Map<java.lang.String, ? extends kotlinx.serialization.json.JsonElement>, java.lang.String, java.lang.String, java.lang.String);
+  public static technology.polygon.omswallet.models.TokenContractInfo copy$default(technology.polygon.omswallet.models.TokenContractInfo, long, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.Integer, java.lang.String, boolean, java.lang.String, java.util.Map, java.lang.String, java.lang.String, java.lang.String, int, java.lang.Object);
   public java.lang.String toString();
   public int hashCode();
   public boolean equals(java.lang.Object);
-  public technology.polygon.omswallet.models.TokenContractInfo();
 }
 
 Compiled from "OMSWalletModels.kt"
@@ -771,7 +805,6 @@ public final class technology.polygon.omswallet.models.TokenMetadata {
   public java.lang.String toString();
   public int hashCode();
   public boolean equals(java.lang.Object);
-  public technology.polygon.omswallet.models.TokenMetadata();
 }
 
 Compiled from "OMSWalletModels.kt"
@@ -810,24 +843,24 @@ public final class technology.polygon.omswallet.models.TokenMetadataAsset {
 
 Compiled from "OMSWalletModels.kt"
 public final class technology.polygon.omswallet.models.Transaction {
-  public technology.polygon.omswallet.models.Transaction(java.lang.String, java.lang.Long, java.lang.String, java.lang.Long, java.lang.String, java.util.List<technology.polygon.omswallet.models.TransactionTransfer>, java.lang.String);
-  public technology.polygon.omswallet.models.Transaction(java.lang.String, java.lang.Long, java.lang.String, java.lang.Long, java.lang.String, java.util.List, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public technology.polygon.omswallet.models.Transaction(java.lang.String, long, java.lang.String, long, java.lang.String, java.util.List<technology.polygon.omswallet.models.TransactionTransfer>, java.lang.String);
+  public technology.polygon.omswallet.models.Transaction(java.lang.String, long, java.lang.String, long, java.lang.String, java.util.List, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public final java.lang.String getTxnHash();
-  public final java.lang.Long getBlockNumber();
+  public final long getBlockNumber();
   public final java.lang.String getBlockHash();
-  public final java.lang.Long getChainId();
+  public final long getChainId();
   public final java.lang.String getMetaTxnId();
   public final java.util.List<technology.polygon.omswallet.models.TransactionTransfer> getTransfers();
   public final java.lang.String getTimestamp();
   public final java.lang.String component1();
-  public final java.lang.Long component2();
+  public final long component2();
   public final java.lang.String component3();
-  public final java.lang.Long component4();
+  public final long component4();
   public final java.lang.String component5();
   public final java.util.List<technology.polygon.omswallet.models.TransactionTransfer> component6();
   public final java.lang.String component7();
-  public final technology.polygon.omswallet.models.Transaction copy(java.lang.String, java.lang.Long, java.lang.String, java.lang.Long, java.lang.String, java.util.List<technology.polygon.omswallet.models.TransactionTransfer>, java.lang.String);
-  public static technology.polygon.omswallet.models.Transaction copy$default(technology.polygon.omswallet.models.Transaction, java.lang.String, java.lang.Long, java.lang.String, java.lang.Long, java.lang.String, java.util.List, java.lang.String, int, java.lang.Object);
+  public final technology.polygon.omswallet.models.Transaction copy(java.lang.String, long, java.lang.String, long, java.lang.String, java.util.List<technology.polygon.omswallet.models.TransactionTransfer>, java.lang.String);
+  public static technology.polygon.omswallet.models.Transaction copy$default(technology.polygon.omswallet.models.Transaction, java.lang.String, long, java.lang.String, long, java.lang.String, java.util.List, java.lang.String, int, java.lang.Object);
   public java.lang.String toString();
   public int hashCode();
   public boolean equals(java.lang.Object);
@@ -920,8 +953,8 @@ public final class technology.polygon.omswallet.models.TransactionStatusResponse
 
 Compiled from "OMSWalletModels.kt"
 public final class technology.polygon.omswallet.models.TransactionTransfer {
-  public technology.polygon.omswallet.models.TransactionTransfer(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List<java.lang.String>, java.util.List<java.lang.String>, java.lang.Long, java.util.List<java.lang.String>, java.util.List<java.lang.String>, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map<java.lang.String, technology.polygon.omswallet.models.TokenMetadata>);
-  public technology.polygon.omswallet.models.TransactionTransfer(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List, java.lang.Long, java.util.List, java.util.List, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public technology.polygon.omswallet.models.TransactionTransfer(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List<java.lang.String>, java.util.List<java.lang.String>, long, java.util.List<java.lang.String>, java.util.List<java.lang.String>, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map<java.lang.String, technology.polygon.omswallet.models.TokenMetadata>);
+  public technology.polygon.omswallet.models.TransactionTransfer(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List, long, java.util.List, java.util.List, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map, int, kotlin.jvm.internal.DefaultConstructorMarker);
   public final java.lang.String getTransferType();
   public final java.lang.String getContractAddress();
   public final java.lang.String getContractType();
@@ -929,7 +962,7 @@ public final class technology.polygon.omswallet.models.TransactionTransfer {
   public final java.lang.String getTo();
   public final java.util.List<java.lang.String> getTokenIds();
   public final java.util.List<java.lang.String> getAmounts();
-  public final java.lang.Long getLogIndex();
+  public final long getLogIndex();
   public final java.util.List<java.lang.String> getAmountsUSD();
   public final java.util.List<java.lang.String> getPricesUSD();
   public final technology.polygon.omswallet.models.TokenContractInfo getContractInfo();
@@ -941,17 +974,16 @@ public final class technology.polygon.omswallet.models.TransactionTransfer {
   public final java.lang.String component5();
   public final java.util.List<java.lang.String> component6();
   public final java.util.List<java.lang.String> component7();
-  public final java.lang.Long component8();
+  public final long component8();
   public final java.util.List<java.lang.String> component9();
   public final java.util.List<java.lang.String> component10();
   public final technology.polygon.omswallet.models.TokenContractInfo component11();
   public final java.util.Map<java.lang.String, technology.polygon.omswallet.models.TokenMetadata> component12();
-  public final technology.polygon.omswallet.models.TransactionTransfer copy(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List<java.lang.String>, java.util.List<java.lang.String>, java.lang.Long, java.util.List<java.lang.String>, java.util.List<java.lang.String>, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map<java.lang.String, technology.polygon.omswallet.models.TokenMetadata>);
-  public static technology.polygon.omswallet.models.TransactionTransfer copy$default(technology.polygon.omswallet.models.TransactionTransfer, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List, java.lang.Long, java.util.List, java.util.List, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map, int, java.lang.Object);
+  public final technology.polygon.omswallet.models.TransactionTransfer copy(java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List<java.lang.String>, java.util.List<java.lang.String>, long, java.util.List<java.lang.String>, java.util.List<java.lang.String>, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map<java.lang.String, technology.polygon.omswallet.models.TokenMetadata>);
+  public static technology.polygon.omswallet.models.TransactionTransfer copy$default(technology.polygon.omswallet.models.TransactionTransfer, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.lang.String, java.util.List, java.util.List, long, java.util.List, java.util.List, technology.polygon.omswallet.models.TokenContractInfo, java.util.Map, int, java.lang.Object);
   public java.lang.String toString();
   public int hashCode();
   public boolean equals(java.lang.Object);
-  public technology.polygon.omswallet.models.TransactionTransfer();
 }
 
 Compiled from "OMSWalletModels.kt"

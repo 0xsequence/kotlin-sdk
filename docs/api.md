@@ -71,7 +71,7 @@ sealed interface OMSWalletSessionAuth {
 }
 
 data class OMSWalletEmailSessionAuth(
-    override val email: String?,
+    override val email: String,
 ) : OMSWalletSessionAuth
 
 enum class OMSWalletOidcSessionAuthFlow {
@@ -906,43 +906,62 @@ data class MetadataOptions(
 ```
 
 ```kotlin
-data class TokenBalance(
-    val contractType: String?,
-    val contractAddress: String?,
-    val accountAddress: String?,
-    val tokenId: String?,
-    val balance: String?,
-    val blockHash: String?,
-    val blockNumber: Long?,
-    val chainId: Long?,
-    val name: String? = null,
-    val symbol: String? = null,
-    val balanceUSD: String? = null,
-    val priceUSD: String? = null,
-    val priceUpdatedAt: String? = null,
+sealed interface TokenBalance {
+    val contractType: String
+    val accountAddress: String
+    val balance: String
+    val chainId: Long
+    val balanceUSD: String?
+    val priceUSD: String?
+    val priceUpdatedAt: String?
+}
+
+data class NativeTokenBalance(
+    override val accountAddress: String,
+    val name: String,
+    val symbol: String,
+    override val balance: String,
+    override val chainId: Long,
+    override val balanceUSD: String? = null,
+    override val priceUSD: String? = null,
+    override val priceUpdatedAt: String? = null,
+) : TokenBalance
+
+data class ContractTokenBalance(
+    override val contractType: String,
+    val contractAddress: String,
+    override val accountAddress: String,
+    val tokenId: String,
+    override val balance: String,
+    val blockHash: String,
+    val blockNumber: Long,
+    override val chainId: Long,
+    override val balanceUSD: String? = null,
+    override val priceUSD: String? = null,
+    override val priceUpdatedAt: String? = null,
     val uniqueCollectibles: String? = null,
     val isSummary: Boolean? = null,
     val contractInfo: TokenContractInfo? = null,
     val tokenMetadata: TokenMetadata? = null,
-)
+) : TokenBalance
 ```
 
 ```kotlin
 data class TokenContractInfo(
-    val chainId: Long? = null,
-    val address: String? = null,
-    val source: String? = null,
-    val name: String? = null,
-    val type: String? = null,
-    val symbol: String? = null,
+    val chainId: Long,
+    val address: String,
+    val source: String,
+    val name: String,
+    val type: String,
+    val symbol: String,
     val decimals: Int? = null,
     val logoURI: String? = null,
-    val deployed: Boolean? = null,
-    val bytecodeHash: String? = null,
-    val extensions: Map<String, JsonElement>? = null,
-    val updatedAt: String? = null,
+    val deployed: Boolean,
+    val bytecodeHash: String,
+    val extensions: Map<String, JsonElement>,
+    val updatedAt: String,
     val queuedAt: String? = null,
-    val status: String? = null,
+    val status: String,
 )
 ```
 
@@ -950,15 +969,15 @@ data class TokenContractInfo(
 data class TokenMetadata(
     val chainId: Long? = null,
     val contractAddress: String? = null,
-    val tokenId: String? = null,
-    val source: String? = null,
-    val name: String? = null,
+    val tokenId: String,
+    val source: String,
+    val name: String,
     val description: String? = null,
     val image: String? = null,
     val video: String? = null,
     val audio: String? = null,
     val properties: Map<String, JsonElement>? = null,
-    val attributes: List<Map<String, JsonElement>>? = null,
+    val attributes: List<Map<String, JsonElement>>,
     val imageData: String? = null,
     val externalUrl: String? = null,
     val backgroundColor: String? = null,
@@ -966,7 +985,7 @@ data class TokenMetadata(
     val decimals: Int? = null,
     val updatedAt: String? = null,
     val assets: List<TokenMetadataAsset>? = null,
-    val status: String? = null,
+    val status: String,
     val queuedAt: String? = null,
     val lastFetched: String? = null,
 )
@@ -992,21 +1011,21 @@ data class TokenMetadataAsset(
 data class TokenBalancesResult(
     val status: Int,
     val page: TokenBalancesPage?,
-    val balances: List<TokenBalance>,
-    val nativeBalances: List<TokenBalance> = emptyList(),
+    val balances: List<ContractTokenBalance>,
+    val nativeBalances: List<NativeTokenBalance> = emptyList(),
 )
 ```
 
 ```kotlin
 data class TransactionTransfer(
-    val transferType: String? = null,
-    val contractAddress: String? = null,
-    val contractType: String? = null,
-    val from: String? = null,
-    val to: String? = null,
+    val transferType: String,
+    val contractAddress: String,
+    val contractType: String,
+    val from: String,
+    val to: String,
     val tokenIds: List<String>? = null,
-    val amounts: List<String>? = null,
-    val logIndex: Long? = null,
+    val amounts: List<String>,
+    val logIndex: Long,
     val amountsUSD: List<String>? = null,
     val pricesUSD: List<String>? = null,
     val contractInfo: TokenContractInfo? = null,
@@ -1014,13 +1033,13 @@ data class TransactionTransfer(
 )
 
 data class Transaction(
-    val txnHash: String?,
-    val blockNumber: Long?,
-    val blockHash: String?,
-    val chainId: Long?,
+    val txnHash: String,
+    val blockNumber: Long,
+    val blockHash: String,
+    val chainId: Long,
     val metaTxnId: String? = null,
-    val transfers: List<TransactionTransfer>? = null,
-    val timestamp: String? = null,
+    val transfers: List<TransactionTransfer> = emptyList(),
+    val timestamp: String,
 )
 
 data class TransactionHistoryResult(

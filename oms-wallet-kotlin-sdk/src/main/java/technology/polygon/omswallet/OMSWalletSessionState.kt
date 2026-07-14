@@ -8,7 +8,7 @@ sealed interface OMSWalletSessionAuth {
 }
 
 data class OMSWalletEmailSessionAuth(
-    override val email: String?,
+    override val email: String,
 ) : OMSWalletSessionAuth
 
 enum class OMSWalletOidcSessionAuthFlow {

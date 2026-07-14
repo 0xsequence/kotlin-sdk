@@ -152,6 +152,7 @@ class WalletTransactionTest {
                                 {
                                   "accountAddress": "0xwallet",
                                   "chainId": 80002,
+                                  "name": "Polygon",
                                   "symbol": "POL",
                                   "balance": "100"
                                 }
@@ -166,7 +167,10 @@ class WalletTransactionTest {
                                   "contractType": "ERC20",
                                   "contractAddress": "0xUSDC",
                                   "accountAddress": "0xwallet",
+                                  "tokenID": "0",
                                   "balance": "2000",
+                                  "blockHash": "0xblock",
+                                  "blockNumber": 1,
                                   "chainId": 80002
                                 }
                               ]
@@ -1248,7 +1252,10 @@ class WalletTransactionTest {
                   "contractType": "ERC20",
                   "contractAddress": "$contractAddress",
                   "accountAddress": "0xwallet",
+                  "tokenID": "0",
                   "balance": "$balance",
+                  "blockHash": "0xblock",
+                  "blockNumber": 1,
                   "chainId": 80002
                 }
                 """.trimIndent()

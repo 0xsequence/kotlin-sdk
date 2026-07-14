@@ -166,7 +166,7 @@ private fun OMSWalletSessionAuth.toJson(): JSONObject =
 private fun JSONObject.toSessionAuth(): OMSWalletSessionAuth? =
     when (optionalString("type")) {
         "email" -> {
-            OMSWalletEmailSessionAuth(email = optionalString("email"))
+            optionalString("email")?.let(::OMSWalletEmailSessionAuth)
         }
 
         "oidc" -> {

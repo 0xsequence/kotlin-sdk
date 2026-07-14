@@ -3,6 +3,7 @@ package technology.polygon.omswallet.network
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -29,6 +30,14 @@ internal fun JsonObject.long(name: String): Long? = (this[name] as? JsonPrimitiv
 
 internal fun JsonObject.boolean(name: String): Boolean? = (this[name] as? JsonPrimitive)?.booleanOrNull
 
-internal fun JsonObject.objectOrNull(name: String): JsonObject? = this[name] as? JsonObject
+internal fun JsonObject.objectOrNull(name: String): JsonObject? {
+    val value = this[name] ?: return null
+    if (value === JsonNull) return null
+    return value as? JsonObject ?: throw IllegalArgumentException("Invalid $name")
+}
 
-internal fun JsonObject.arrayOrEmpty(name: String): List<JsonElement> = (this[name] as? JsonArray)?.toList() ?: emptyList()
+internal fun JsonObject.arrayOrEmpty(name: String): List<JsonElement> {
+    val value = this[name] ?: return emptyList()
+    if (value === JsonNull) return emptyList()
+    return (value as? JsonArray)?.toList() ?: throw IllegalArgumentException("Invalid $name")
+}

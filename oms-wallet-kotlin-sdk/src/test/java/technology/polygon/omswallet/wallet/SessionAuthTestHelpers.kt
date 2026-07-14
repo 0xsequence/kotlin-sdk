@@ -7,7 +7,7 @@ import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
 import technology.polygon.omswallet.OMSWalletSessionAuth
 
-internal fun emailSessionAuth(email: String? = "user@example.com"): OMSWalletEmailSessionAuth = OMSWalletEmailSessionAuth(email = email)
+internal fun emailSessionAuth(email: String = "user@example.com"): OMSWalletEmailSessionAuth = OMSWalletEmailSessionAuth(email = email)
 
 internal fun googleRedirectSessionAuth(email: String? = "user@example.com"): OMSWalletOidcSessionAuth =
     OMSWalletOidcSessionAuth(

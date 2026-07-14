@@ -454,7 +454,7 @@ val tokenBalances = omsWallet.indexer.getBalances(
 )
 
 tokenBalances.nativeBalances.forEach { balance ->
-    println("${balance.symbol.orEmpty()} ${balance.balance.orEmpty()}")
+    println("${balance.symbol} ${balance.balance}")
 }
 
 tokenBalances.balances.forEach { balance ->

@@ -152,11 +152,22 @@ class ServiceClientsTest {
                                   "balance": "141799",
                                   "balanceUSD": "0.141799",
                                   "priceUSD": "1",
+                                  "blockHash": "0xblock",
+                                  "blockNumber": 123,
                                   "chainId": 137,
                                   "contractInfo": {
+                                    "chainId": 137,
+                                    "address": "0xcontract",
+                                    "source": "metadata",
                                     "name": "USDC",
+                                    "type": "ERC20",
                                     "symbol": "USDC",
-                                    "decimals": 6
+                                    "decimals": 6,
+                                    "deployed": true,
+                                    "bytecodeHash": "0xbytecode",
+                                    "extensions": {},
+                                    "updatedAt": "2026-01-01T00:00:00Z",
+                                    "status": "available"
                                   }
                                 }
                               ]
@@ -248,6 +259,147 @@ class ServiceClientsTest {
         }
 
     @Test
+    fun getBalancesRejectsMissingRequiredContractBalanceFields() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"page":{"page":0,"pageSize":40,"more":false},"nativeBalances":[],"balances":[{"chainId":137,"results":[{"contractType":"ERC20","contractAddress":"0xtoken","accountAddress":"0xwallet","tokenID":"0","balance":"1","blockNumber":1,"chainId":137}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error =
+                runCatching { client.getBalances(walletAddress = "0xwallet") }
+                    .exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetBalances, error.operation)
+        }
+
+    @Test
+    fun getBalancesRejectsWrongJsonTypeForRequiredString() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"page":{"page":0,"pageSize":40,"more":false},"nativeBalances":[],"balances":[{"chainId":137,"results":[{"contractType":"ERC20","contractAddress":"0xtoken","accountAddress":123,"tokenID":"0","balance":"1","blockHash":"0xblock","blockNumber":1,"chainId":137}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getBalances(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetBalances, error.operation)
+        }
+
+    @Test
+    fun getTransactionHistoryRejectsMissingTransfers() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"transactions":[{"chainId":137,"results":[{"txnHash":"0xtxn","blockNumber":1,"blockHash":"0xblock","chainId":137,"timestamp":"2026-01-01T00:00:00Z"}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getTransactionHistory(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetTransactionHistory, error.operation)
+        }
+
+    @Test
+    fun getTransactionHistoryRejectsWrongTopLevelContainerType() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"transactions":{}}""")
+                    .build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getTransactionHistory(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetTransactionHistory, error.operation)
+        }
+
+    @Test
+    fun getTransactionHistoryRejectsWrongOptionalArrayType() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"transactions":[{"chainId":137,"results":[{"txnHash":"0xtxn","blockNumber":1,"blockHash":"0xblock","chainId":137,"timestamp":"2026-01-01T00:00:00Z","transfers":[{"transferType":"SEND","contractAddress":"0xtoken","contractType":"ERC20","from":"0xwallet","to":"0xrecipient","amounts":["1"],"pricesUSD":{},"logIndex":0}]}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getTransactionHistory(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetTransactionHistory, error.operation)
+        }
+
+    @Test
     fun getTransactionHistoryRequestsIndexerGatewayAndMapsWireFields() =
         runBlocking {
             server.enqueue(
@@ -316,7 +468,7 @@ class ServiceClientsTest {
             val transaction = response.transactions.single()
             assertEquals("0xabc", transaction.txnHash)
             assertEquals("meta-1", transaction.metaTxnId)
-            assertEquals(listOf("0"), transaction.transfers?.single()?.tokenIds)
+            assertEquals(listOf("0"), transaction.transfers.single().tokenIds)
         }
 
     @Test

@@ -3,12 +3,16 @@ package technology.polygon.omswallet.indexer
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -19,9 +23,11 @@ import technology.polygon.omswallet.OMSWalletRequestException
 import technology.polygon.omswallet.OMSWalletResponseException
 import technology.polygon.omswallet.OMSWalletUpstreamError
 import technology.polygon.omswallet.OMSWalletUpstreamService
+import technology.polygon.omswallet.models.ContractTokenBalance
 import technology.polygon.omswallet.models.ContractVerificationStatus
 import technology.polygon.omswallet.models.IndexerNetworkType
 import technology.polygon.omswallet.models.MetadataOptions
+import technology.polygon.omswallet.models.NativeTokenBalance
 import technology.polygon.omswallet.models.TokenBalance
 import technology.polygon.omswallet.models.TokenBalancesPage
 import technology.polygon.omswallet.models.TokenBalancesPageRequest
@@ -36,7 +42,6 @@ import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.network.OMSWalletHttpResponse
 import technology.polygon.omswallet.network.OMSWalletJson
-import technology.polygon.omswallet.network.arrayOrEmpty
 import technology.polygon.omswallet.network.boolean
 import technology.polygon.omswallet.network.int
 import technology.polygon.omswallet.network.long
@@ -95,13 +100,14 @@ class IndexerClient private constructor(
                     }.toString(),
             )
 
-        val root = parseIndexerJsonObject(response, operation)
-        return TokenBalancesResult(
-            status = response.statusCode,
-            page = root.objectOrNull("page")?.toTokenBalancesPage(),
-            balances = flattenGatewayResults(root.arrayOrEmpty("balances")).map { it.toTokenBalance() },
-            nativeBalances = flattenGatewayResults(root.arrayOrEmpty("nativeBalances")).map { it.toNativeTokenBalance() },
-        )
+        return decodeIndexerResponse(response, operation) { root ->
+            TokenBalancesResult(
+                status = response.statusCode,
+                page = root.objectOrNull("page")?.toTokenBalancesPage(),
+                balances = flattenGatewayResults(root.requiredObjectArray("balances")).map { it.toTokenBalance() },
+                nativeBalances = flattenGatewayResults(root.requiredObjectArray("nativeBalances")).map { it.toNativeTokenBalance() },
+            )
+        }
     }
 
     /**
@@ -163,12 +169,13 @@ class IndexerClient private constructor(
                     }.toString(),
             )
 
-        val root = parseIndexerJsonObject(response, operation)
-        return TransactionHistoryResult(
-            status = response.statusCode,
-            page = root.objectOrNull("page")?.toTokenBalancesPage(),
-            transactions = flattenGatewayResults(root.arrayOrEmpty("transactions")).map { it.toTransaction() },
-        )
+        return decodeIndexerResponse(response, operation) { root ->
+            TransactionHistoryResult(
+                status = response.statusCode,
+                page = root.objectOrNull("page")?.toTokenBalancesPage(),
+                transactions = flattenGatewayResults(root.requiredObjectArray("transactions")).map { it.toTransaction() },
+            )
+        }
     }
 
     private suspend fun postIndexerGatewayJson(
@@ -237,6 +244,33 @@ class IndexerClient private constructor(
             )
         }
 
+    private fun <T> decodeIndexerResponse(
+        response: OMSWalletHttpResponse,
+        operation: OMSWalletOperation,
+        decode: (JsonObject) -> T,
+    ): T =
+        try {
+            decode(parseIndexerJsonObject(response, operation))
+        } catch (throwable: CancellationException) {
+            throw throwable
+        } catch (throwable: OMSWalletResponseException) {
+            throw throwable
+        } catch (throwable: Throwable) {
+            val message = "Invalid response from ${operation.id}"
+            throw OMSWalletResponseException(
+                operation = operation,
+                status = response.statusCode,
+                upstreamError =
+                    OMSWalletUpstreamError(
+                        service = OMSWalletUpstreamService.Indexer,
+                        message = message,
+                        status = response.statusCode,
+                    ),
+                message = message,
+                cause = throwable,
+            )
+        }
+
     private fun defaultGatewayHeaders(): Map<String, String> =
         mapOf(
             "Api-Key" to publishableKey,
@@ -246,73 +280,63 @@ class IndexerClient private constructor(
 
     private fun JsonObject.toTokenBalancesPage(): TokenBalancesPage =
         TokenBalancesPage(
-            page = long("page")?.toInt() ?: 0,
-            pageSize = long("pageSize")?.toInt() ?: 0,
-            more = boolean("more") == true,
+            page = requiredInt("page"),
+            pageSize = requiredInt("pageSize"),
+            more = requiredBoolean("more"),
         )
 
-    private fun JsonObject.toNativeTokenBalance(): TokenBalance =
-        TokenBalance(
-            contractType = "NATIVE",
-            contractAddress = null,
-            accountAddress = string("accountAddress"),
-            tokenId = null,
-            name = string("name"),
-            symbol = string("symbol"),
-            balance = string("balance") ?: string("balanceWei"),
-            balanceUSD = string("balanceUSD"),
-            priceUSD = string("priceUSD"),
-            priceUpdatedAt = string("priceUpdatedAt"),
-            blockHash = null,
-            blockNumber = null,
-            chainId = long("chainId"),
+    private fun JsonObject.toNativeTokenBalance(): NativeTokenBalance =
+        NativeTokenBalance(
+            accountAddress = requiredString("accountAddress"),
+            name = requiredString("name"),
+            symbol = requiredString("symbol"),
+            balance = optionalString("balance") ?: requiredString("balanceWei"),
+            balanceUSD = optionalString("balanceUSD"),
+            priceUSD = optionalString("priceUSD"),
+            priceUpdatedAt = optionalString("priceUpdatedAt"),
+            chainId = requiredLong("chainId"),
         )
 
-    private fun JsonObject.toTokenBalance(): TokenBalance =
-        TokenBalance(
-            contractType = string("contractType"),
-            contractAddress = string("contractAddress"),
-            accountAddress = string("accountAddress"),
-            tokenId = string("tokenId") ?: string("tokenID"),
-            name = string("name"),
-            symbol = string("symbol"),
-            balance = string("balance"),
-            balanceUSD = string("balanceUSD"),
-            priceUSD = string("priceUSD"),
-            priceUpdatedAt = string("priceUpdatedAt"),
-            blockHash = string("blockHash"),
-            blockNumber = long("blockNumber"),
-            chainId = long("chainId"),
-            uniqueCollectibles = string("uniqueCollectibles"),
-            isSummary = boolean("isSummary"),
+    private fun JsonObject.toTokenBalance(): ContractTokenBalance =
+        ContractTokenBalance(
+            contractType = requiredString("contractType"),
+            contractAddress = requiredString("contractAddress"),
+            accountAddress = requiredString("accountAddress"),
+            tokenId = optionalString("tokenId") ?: requiredString("tokenID"),
+            balance = requiredString("balance"),
+            balanceUSD = optionalString("balanceUSD"),
+            priceUSD = optionalString("priceUSD"),
+            priceUpdatedAt = optionalString("priceUpdatedAt"),
+            blockHash = requiredString("blockHash"),
+            blockNumber = requiredLong("blockNumber"),
+            chainId = requiredLong("chainId"),
+            uniqueCollectibles = optionalString("uniqueCollectibles"),
+            isSummary = optionalBoolean("isSummary"),
             contractInfo = objectOrNull("contractInfo")?.toTokenContractInfo(),
             tokenMetadata = objectOrNull("tokenMetadata")?.toTokenMetadata(),
         )
 
     private fun JsonObject.toTransaction(): Transaction =
         Transaction(
-            txnHash = string("txnHash"),
-            blockNumber = long("blockNumber"),
-            blockHash = string("blockHash"),
-            chainId = long("chainId"),
-            metaTxnId = string("metaTxnId") ?: string("metaTxnID"),
-            transfers =
-                (this["transfers"] as? JsonArray)
-                    ?.mapNotNull { it as? JsonObject }
-                    ?.map { it.toTransactionTransfer() },
-            timestamp = string("timestamp"),
+            txnHash = requiredString("txnHash"),
+            blockNumber = requiredLong("blockNumber"),
+            blockHash = requiredString("blockHash"),
+            chainId = requiredLong("chainId"),
+            metaTxnId = optionalString("metaTxnId") ?: optionalString("metaTxnID"),
+            transfers = requiredObjectArray("transfers").map { it.toTransactionTransfer() },
+            timestamp = requiredString("timestamp"),
         )
 
     private fun JsonObject.toTransactionTransfer(): TransactionTransfer =
         TransactionTransfer(
-            transferType = string("transferType"),
-            contractAddress = string("contractAddress"),
-            contractType = string("contractType"),
-            from = string("from"),
-            to = string("to"),
+            transferType = requiredString("transferType"),
+            contractAddress = requiredString("contractAddress"),
+            contractType = requiredString("contractType"),
+            from = requiredString("from"),
+            to = requiredString("to"),
             tokenIds = stringArrayOrNull("tokenIds") ?: stringArrayOrNull("tokenIDs"),
-            amounts = stringArrayOrNull("amounts"),
-            logIndex = long("logIndex"),
+            amounts = requiredStringArray("amounts"),
+            logIndex = requiredLong("logIndex"),
             amountsUSD = stringArrayOrNull("amountsUSD"),
             pricesUSD = stringArrayOrNull("pricesUSD"),
             contractInfo = objectOrNull("contractInfo")?.toTokenContractInfo(),
@@ -321,87 +345,165 @@ class IndexerClient private constructor(
 
     private fun JsonObject.toTokenContractInfo(): TokenContractInfo =
         TokenContractInfo(
-            chainId = long("chainId"),
-            address = string("address"),
-            source = string("source"),
-            name = string("name"),
-            type = string("type"),
-            symbol = string("symbol"),
-            decimals = int("decimals"),
-            logoURI = string("logoURI"),
-            deployed = boolean("deployed"),
-            bytecodeHash = string("bytecodeHash"),
-            extensions = objectOrNull("extensions")?.toMap(),
-            updatedAt = string("updatedAt"),
-            queuedAt = string("queuedAt"),
-            status = string("status"),
+            chainId = requiredLong("chainId"),
+            address = requiredString("address"),
+            source = requiredString("source"),
+            name = requiredString("name"),
+            type = requiredString("type"),
+            symbol = requiredString("symbol"),
+            decimals = optionalInt("decimals"),
+            logoURI = optionalString("logoURI"),
+            deployed = requiredBoolean("deployed"),
+            bytecodeHash = requiredString("bytecodeHash"),
+            extensions = requiredObject("extensions").toMap(),
+            updatedAt = requiredString("updatedAt"),
+            queuedAt = optionalString("queuedAt"),
+            status = requiredString("status"),
         )
 
     private fun JsonObject.toTokenMetadata(): TokenMetadata =
         TokenMetadata(
-            chainId = long("chainId"),
-            contractAddress = string("contractAddress"),
-            tokenId = string("tokenId") ?: string("tokenID"),
-            source = string("source"),
-            name = string("name"),
-            description = string("description"),
-            image = string("image"),
-            video = string("video"),
-            audio = string("audio"),
+            chainId = optionalLong("chainId"),
+            contractAddress = optionalString("contractAddress"),
+            tokenId = optionalString("tokenId") ?: requiredString("tokenID"),
+            source = requiredString("source"),
+            name = requiredString("name"),
+            description = optionalString("description"),
+            image = optionalString("image"),
+            video = optionalString("video"),
+            audio = optionalString("audio"),
             properties = objectOrNull("properties")?.toMap(),
             attributes =
                 (this["attributes"] as? JsonArray)
-                    ?.mapNotNull { it as? JsonObject }
-                    ?.map { it.toMap() },
-            imageData = string("image_data"),
-            externalUrl = string("external_url"),
-            backgroundColor = string("background_color"),
-            animationUrl = string("animation_url"),
-            decimals = int("decimals"),
-            updatedAt = string("updatedAt"),
-            assets =
-                (this["assets"] as? JsonArray)
-                    ?.mapNotNull { it as? JsonObject }
-                    ?.map { it.toTokenMetadataAsset() },
-            status = string("status"),
-            queuedAt = string("queuedAt"),
-            lastFetched = string("lastFetched"),
+                    ?.map { attribute ->
+                        (attribute as? JsonObject)?.toMap()
+                            ?: throw IllegalArgumentException("Invalid token metadata attribute")
+                    }
+                    ?: throw IllegalArgumentException("Missing or invalid attributes"),
+            imageData = optionalString("image_data"),
+            externalUrl = optionalString("external_url"),
+            backgroundColor = optionalString("background_color"),
+            animationUrl = optionalString("animation_url"),
+            decimals = optionalInt("decimals"),
+            updatedAt = optionalString("updatedAt"),
+            assets = optionalObjectArray("assets")?.map { it.toTokenMetadataAsset() },
+            status = requiredString("status"),
+            queuedAt = optionalString("queuedAt"),
+            lastFetched = optionalString("lastFetched"),
         )
 
     private fun JsonObject.toTokenMetadataAsset(): TokenMetadataAsset =
         TokenMetadataAsset(
-            id = long("id"),
-            collectionId = long("collectionId"),
-            tokenId = string("tokenId") ?: string("tokenID"),
-            url = string("url"),
-            metadataField = string("metadataField"),
-            name = string("name"),
-            filesize = long("filesize"),
-            mimeType = string("mimeType"),
-            width = int("width"),
-            height = int("height"),
-            updatedAt = string("updatedAt"),
+            id = optionalLong("id"),
+            collectionId = optionalLong("collectionId"),
+            tokenId = optionalString("tokenId") ?: optionalString("tokenID"),
+            url = optionalString("url"),
+            metadataField = optionalString("metadataField"),
+            name = optionalString("name"),
+            filesize = optionalLong("filesize"),
+            mimeType = optionalString("mimeType"),
+            width = optionalInt("width"),
+            height = optionalInt("height"),
+            updatedAt = optionalString("updatedAt"),
         )
 
     private fun JsonObject.toMap(): Map<String, JsonElement> = entries.associate { it.key to it.value }
 
     private fun JsonObject.toTokenMetadataRecord(): Map<String, TokenMetadata> =
         entries
-            .mapNotNull { (tokenId, metadata) ->
-                val metadataObject = metadata as? JsonObject ?: return@mapNotNull null
+            .associate { (tokenId, metadata) ->
+                val metadataObject =
+                    metadata as? JsonObject
+                        ?: throw IllegalArgumentException("Invalid token metadata for $tokenId")
                 tokenId to metadataObject.toTokenMetadata()
             }.toMap()
 
-    private fun JsonObject.stringArrayOrNull(name: String): List<String>? =
-        (this[name] as? JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+    private fun JsonObject.stringArrayOrNull(name: String): List<String>? {
+        val value = this[name] ?: return null
+        if (value === JsonNull) return null
+        val values = value as? JsonArray ?: throw IllegalArgumentException("Invalid $name")
+        return values.map { item ->
+            (item as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+                ?: throw IllegalArgumentException("Invalid $name entry")
+        }
+    }
 
-    private fun flattenGatewayResults(groups: List<JsonElement>): List<JsonObject> =
+    private fun JsonObject.requiredString(name: String): String =
+        optionalString(name) ?: throw IllegalArgumentException("Missing or invalid $name")
+
+    private fun JsonObject.optionalString(name: String): String? {
+        val value = this[name] ?: return null
+        if (value === JsonNull) return null
+        val primitive = value as? JsonPrimitive ?: throw IllegalArgumentException("Invalid $name")
+        if (!primitive.isString) {
+            throw IllegalArgumentException("Invalid $name")
+        }
+        return primitive.contentOrNull
+    }
+
+    private fun JsonObject.requiredLong(name: String): Long =
+        optionalLong(name) ?: throw IllegalArgumentException("Missing or invalid $name")
+
+    private fun JsonObject.optionalLong(name: String): Long? {
+        val value = this[name] ?: return null
+        if (value === JsonNull) return null
+        val primitive = value as? JsonPrimitive ?: throw IllegalArgumentException("Invalid $name")
+        if (primitive.isString) {
+            throw IllegalArgumentException("Invalid $name")
+        }
+        return primitive.longOrNull ?: throw IllegalArgumentException("Invalid $name")
+    }
+
+    private fun JsonObject.requiredInt(name: String): Int = optionalInt(name) ?: throw IllegalArgumentException("Missing or invalid $name")
+
+    private fun JsonObject.optionalInt(name: String): Int? {
+        val value = this[name] ?: return null
+        if (value === JsonNull) return null
+        val primitive = value as? JsonPrimitive ?: throw IllegalArgumentException("Invalid $name")
+        if (primitive.isString) {
+            throw IllegalArgumentException("Invalid $name")
+        }
+        return primitive.intOrNull ?: throw IllegalArgumentException("Invalid $name")
+    }
+
+    private fun JsonObject.requiredBoolean(name: String): Boolean =
+        optionalBoolean(name) ?: throw IllegalArgumentException("Missing or invalid $name")
+
+    private fun JsonObject.optionalBoolean(name: String): Boolean? {
+        val value = this[name] ?: return null
+        if (value === JsonNull) return null
+        val primitive = value as? JsonPrimitive ?: throw IllegalArgumentException("Invalid $name")
+        if (primitive.isString) {
+            throw IllegalArgumentException("Invalid $name")
+        }
+        return primitive.booleanOrNull ?: throw IllegalArgumentException("Invalid $name")
+    }
+
+    private fun JsonObject.requiredObject(name: String): JsonObject =
+        objectOrNull(name) ?: throw IllegalArgumentException("Missing or invalid $name")
+
+    private fun JsonObject.requiredObjectArray(name: String): List<JsonObject> {
+        val values = this[name] as? JsonArray ?: throw IllegalArgumentException("Missing or invalid $name")
+        return values.map { value ->
+            value as? JsonObject ?: throw IllegalArgumentException("Invalid $name entry")
+        }
+    }
+
+    private fun JsonObject.optionalObjectArray(name: String): List<JsonObject>? {
+        val value = this[name] ?: return null
+        if (value === JsonNull) return null
+        val values = value as? JsonArray ?: throw IllegalArgumentException("Invalid $name")
+        return values.map { item ->
+            item as? JsonObject ?: throw IllegalArgumentException("Invalid $name entry")
+        }
+    }
+
+    private fun JsonObject.requiredStringArray(name: String): List<String> =
+        stringArrayOrNull(name) ?: throw IllegalArgumentException("Missing or invalid $name")
+
+    private fun flattenGatewayResults(groups: List<JsonObject>): List<JsonObject> =
         groups.flatMap { group ->
-            (group as? JsonObject)
-                ?.arrayOrEmpty("results")
-                ?.mapNotNull { it as? JsonObject }
-                ?: emptyList()
+            group.requiredObjectArray("results")
         }
 
     private fun JsonObjectBuilder.putStringArrayIfNotEmpty(
