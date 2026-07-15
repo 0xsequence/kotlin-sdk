@@ -607,7 +607,7 @@ class WalletClient private constructor(
         issuer: String,
         audience: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-        walletType: WalletType = environment.defaultWalletType,
+        walletType: WalletType = WalletType.Ethereum,
         sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
         provider: String? = null,
         providerLabel: String? = null,
@@ -695,7 +695,7 @@ class WalletClient private constructor(
     suspend fun startOidcRedirectAuth(
         provider: OmsRelayOidcProvider,
         omsRelayReturnUri: String,
-        walletType: WalletType = environment.defaultWalletType,
+        walletType: WalletType = WalletType.Ethereum,
         walletSelection: WalletSelectionBehavior? = null,
         sessionLifetimeSeconds: Long? = null,
         loginHint: String? = null,
@@ -758,7 +758,7 @@ class WalletClient private constructor(
 
     suspend fun startOidcRedirectAuth(
         provider: CustomOidcProviderConfig,
-        walletType: WalletType = environment.defaultWalletType,
+        walletType: WalletType = WalletType.Ethereum,
         walletSelection: WalletSelectionBehavior? = null,
         sessionLifetimeSeconds: Long? = null,
         authorizeParams: Map<String, String> = emptyMap(),
@@ -1074,7 +1074,7 @@ class WalletClient private constructor(
     suspend fun completeEmailAuth(
         code: String,
         walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-        walletType: WalletType = environment.defaultWalletType,
+        walletType: WalletType = WalletType.Ethereum,
     ): CompleteAuthResult =
         runOMSWalletOperation(OMSWalletOperation.WalletCompleteEmailAuth) {
             val requiredSessionRevision =
@@ -1144,7 +1144,7 @@ class WalletClient private constructor(
      * Creates and selects a new wallet for the authenticated user.
      */
     suspend fun createWallet(
-        walletType: WalletType = environment.defaultWalletType,
+        walletType: WalletType = WalletType.Ethereum,
         reference: String? = null,
     ): WalletSelectionResult =
         runOMSWalletOperation(OMSWalletOperation.WalletCreateWallet) {
@@ -1554,8 +1554,9 @@ class WalletClient private constructor(
         }
 
     /**
-     * Sends a native-value transaction from the currently selected wallet on
-     * [network].
+     * Sends a transaction from the currently selected wallet on [network].
+     *
+     * This overload sends [value] to [to] without calldata.
      */
     suspend fun sendTransaction(
         network: Network,

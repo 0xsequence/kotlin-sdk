@@ -4,6 +4,8 @@ Build non-custodial OMS Wallet experiences on Android and Kotlin with email and
 OIDC auth, secure session restore, message signing, transactions, and indexer
 reads through a single `OMSWallet` root object.
 
+[API reference](https://docs.polygon.technology/wallets/sdk/kotlin/api-reference)
+
 ## Installation
 
 Maven Central:

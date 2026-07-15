@@ -55,7 +55,7 @@ class IndexerClient private constructor(
     private val transport: OMSWalletHttpClient,
 ) {
     /**
-     * Gets token and native balances for [walletAddress] through IndexerGateway.
+     * Gets token and native balances for [walletAddress].
      */
     suspend fun getBalances(
         walletAddress: String,
@@ -111,7 +111,7 @@ class IndexerClient private constructor(
     }
 
     /**
-     * Gets transaction history for [walletAddress] through IndexerGateway.
+     * Gets transaction history for [walletAddress].
      */
     suspend fun getTransactionHistory(
         walletAddress: String,

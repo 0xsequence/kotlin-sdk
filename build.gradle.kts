@@ -8,6 +8,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 
 plugins {
+    alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.ktlint) apply false
@@ -69,12 +70,11 @@ val checkReleasePublicationGraph =
             if (!Regex("""\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?""").matches(version)) {
                 throw GradleException("POM_VERSION_NAME must be an exact SemVer version; found $version")
             }
-            listOf(file("README.md"), file("docs/api.md")).forEach { documentation ->
-                if (installSnippet !in documentation.readText()) {
-                    throw GradleException(
-                        "${documentation.path} must contain the release coordinate $installSnippet",
-                    )
-                }
+            val readme = file("README.md")
+            if (installSnippet !in readme.readText()) {
+                throw GradleException(
+                    "${readme.path} must contain the release coordinate $installSnippet",
+                )
             }
 
             val groupPath = groupId.replace('.', '/')
@@ -203,7 +203,21 @@ tasks.register("verify") {
         ":oms-wallet-kotlin-sdk:lintDebug",
         ":oms-wallet-kotlin-sdk:checkReleaseArtifactBoundary",
         ":oms-wallet-kotlin-sdk:checkPublicApiBaseline",
+        ":api-docs-generator:ktlintCheck",
+        ":api-docs-generator:checkApiDocs",
         ":oms-wallet-kotlin-sdk-waas-generated:ktlintCheck",
         checkReleasePublicationGraph,
     )
+}
+
+tasks.register("generateApiDocs") {
+    group = "documentation"
+    description = "Generates docs/api.md from Kotlin PSI and presentation config."
+    dependsOn(":api-docs-generator:generateApiDocs")
+}
+
+tasks.register("checkApiDocs") {
+    group = "verification"
+    description = "Checks Kotlin API docs drift and complete public-symbol grouping."
+    dependsOn(":api-docs-generator:checkApiDocs")
 }

@@ -1,6 +1,5 @@
 package technology.polygon.omswallet.network
 
-import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.parsePublishableKey
 import java.net.URI
 
@@ -8,8 +7,6 @@ internal class OMSWalletEnvironment(
     val walletApiUrl: String,
     val indexerGatewayUrl: String,
 ) {
-    internal val defaultWalletType: WalletType = WalletType.Ethereum
-
     internal fun walletApiBaseUrl(): String {
         val uri = URI(walletApiUrl)
         return "${uri.scheme}://${uri.rawAuthority}"

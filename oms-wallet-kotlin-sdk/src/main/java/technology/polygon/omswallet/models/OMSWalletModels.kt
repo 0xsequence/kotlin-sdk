@@ -92,7 +92,7 @@ fun interface FeeOptionSelector {
          * Selects the first fee option whose available raw balance covers the
          * quoted fee value. Returns null when no option has sufficient balance.
          */
-        val firstAvailable =
+        val firstAvailable: FeeOptionSelector =
             FeeOptionSelector { feeOptions ->
                 feeOptions.firstOrNull { it.hasEnoughBalance() }?.selection
             }

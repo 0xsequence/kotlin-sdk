@@ -1024,7 +1024,6 @@ public final class technology.polygon.omswallet.network.OMSWalletEnvironment {
   public technology.polygon.omswallet.network.OMSWalletEnvironment(java.lang.String, java.lang.String);
   public final java.lang.String getWalletApiUrl();
   public final java.lang.String getIndexerGatewayUrl();
-  public final technology.polygon.omswallet.models.WalletType getDefaultWalletType$oms_wallet_kotlin_sdk();
   public final java.lang.String walletApiBaseUrl$oms_wallet_kotlin_sdk();
   public boolean equals(java.lang.Object);
   public int hashCode();

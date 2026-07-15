@@ -85,8 +85,7 @@ data class OMSWalletUpstreamError(
 )
 
 /**
- * Base exception type thrown by public SDK APIs when a failure can be
- * categorized without exposing generated transport details.
+ * Base exception type thrown by public OMS Wallet SDK APIs.
  */
 sealed class OMSWalletException(
     val code: OMSWalletErrorCode,
