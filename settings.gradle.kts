@@ -37,7 +37,7 @@ nmcpSettings {
         username = centralPortalUsername
         password = centralPortalPassword
         publishingType = "USER_MANAGED"
-        publicationName = "oms-client-kotlin-sdk:${providers.gradleProperty("POM_VERSION_NAME").get()}"
+        publicationName = "oms-wallet-kotlin-sdk:${providers.gradleProperty("POM_VERSION_NAME").get()}"
         validationTimeout = java.time.Duration.ofMinutes(30)
         publishingTimeout = java.time.Duration.ZERO
     }
@@ -54,5 +54,7 @@ dependencyResolutionManagement {
 rootProject.name = "kotlin-sdk"
 include(":app")
 include(":trails-actions")
-include(":oms-client-kotlin-sdk")
-include(":oms-client-kotlin-sdk-waas-generated")
+include(":oms-wallet-kotlin-sdk")
+include(":oms-wallet-kotlin-sdk-waas-generated")
+include(":api-docs-generator")
+project(":api-docs-generator").projectDir = file("tools/api-docs-generator")

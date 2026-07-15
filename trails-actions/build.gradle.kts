@@ -15,11 +15,11 @@ ktlint {
 }
 
 android {
-    namespace = "com.omsclient.kotlin_sdk_trails_actions"
+    namespace = "technology.polygon.omswallet.trailsactions"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.omsclient.kotlin_sdk_trails_actions"
+        applicationId = "technology.polygon.omswallet.trailsactions"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -44,7 +44,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":oms-client-kotlin-sdk"))
+    implementation(project(":oms-wallet-kotlin-sdk"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.browser)

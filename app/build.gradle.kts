@@ -13,11 +13,11 @@ ktlint {
 }
 
 android {
-    namespace = "com.omsclient.kotlin_sdk_samples"
+    namespace = "technology.polygon.omswallet.samples"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.omsclient.kotlin_sdk_samples"
+        applicationId = "technology.polygon.omswallet.samples"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -42,7 +42,7 @@ android {
 }
 
 dependencies {
-    implementation(project(":oms-client-kotlin-sdk"))
+    implementation(project(":oms-wallet-kotlin-sdk"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.credentials)

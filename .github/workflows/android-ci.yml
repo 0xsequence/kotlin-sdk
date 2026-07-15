@@ -24,16 +24,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Kotlin style check
-        run: ./gradlew ktlintCheck
-
-      - name: Run Android CI checks
-        run: ./gradlew --build-cache :oms-client-kotlin-sdk:testDebugUnitTest :oms-client-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug
+      - name: Verify
+        run: ./gradlew --build-cache verify
 
       - name: Publish SDK unit test report
         if: always()
         uses: mikepenz/action-junit-report@v6
         with:
-          report_paths: oms-client-kotlin-sdk/build/test-results/testDebugUnitTest/TEST-*.xml
+          report_paths: oms-wallet-kotlin-sdk/build/test-results/testDebugUnitTest/TEST-*.xml
           detailed_summary: true
           fail_on_failure: true

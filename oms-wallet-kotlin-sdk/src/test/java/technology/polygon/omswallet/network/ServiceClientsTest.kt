@@ -1,0 +1,575 @@
+package technology.polygon.omswallet.network
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import technology.polygon.omswallet.Network
+import technology.polygon.omswallet.OMSWallet
+import technology.polygon.omswallet.OMSWalletEmailSessionAuth
+import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletException
+import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletUpstreamService
+import technology.polygon.omswallet.indexer.IndexerClient
+import technology.polygon.omswallet.models.TokenBalancesPageRequest
+import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+
+class ServiceClientsTest {
+    private lateinit var server: MockWebServer
+
+    @Before
+    fun setUp() {
+        server = MockWebServer()
+        server.start()
+    }
+
+    @After
+    fun tearDown() {
+        server.close()
+    }
+
+    @Test
+    fun walletSignatureValidationUsesGeneratedPublicClient() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"isValid":true}""")
+                    .build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"isValid":false}""")
+                    .build(),
+            )
+
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                )
+            val client =
+                OMSWallet.createForTesting(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = environment,
+                )
+            client.wallet.restoreSession(
+                OMSWalletSessionSnapshot(
+                    walletId = "wallet-id",
+                    walletAddress = "0xwallet",
+                    auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
+                ),
+            )
+
+            val messageIsValid =
+                client.wallet.isValidMessageSignature(
+                    network = Network.AMOY,
+                    message = "hello",
+                    signature = "0xmessage",
+                )
+            val messageRequest = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/WaasPublic/IsValidMessageSignature", messageRequest.target)
+            assertEquals("test-publishable-key", messageRequest.headers[OMSWalletEnvironment.accessKeyHeaderName])
+            assertEquals(null, messageRequest.headers["Authorization"])
+            assertEquals(null, messageRequest.headers[OMSWalletEnvironment.walletSignatureHeaderName])
+            assertEquals(
+                """{"network":"80002","walletId":"wallet-id","message":"hello","signature":"0xmessage"}""",
+                requireNotNull(messageRequest.body).utf8(),
+            )
+            assertEquals(true, messageIsValid)
+
+            val typedDataIsValid =
+                client.wallet.isValidTypedDataSignature(
+                    network = Network.AMOY,
+                    typedData =
+                        buildJsonObject {
+                            put("contents", "hello")
+                        },
+                    signature = "0xtyped",
+                )
+            val typedDataRequest = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/WaasPublic/IsValidTypedDataSignature", typedDataRequest.target)
+            assertEquals("test-publishable-key", typedDataRequest.headers[OMSWalletEnvironment.accessKeyHeaderName])
+            assertEquals(null, typedDataRequest.headers["Authorization"])
+            assertEquals(null, typedDataRequest.headers[OMSWalletEnvironment.walletSignatureHeaderName])
+            assertEquals(
+                """{"network":"80002","walletId":"wallet-id","typedData":{"contents":"hello"},"signature":"0xtyped"}""",
+                requireNotNull(typedDataRequest.body).utf8(),
+            )
+            assertEquals(false, typedDataIsValid)
+        }
+
+    @Test
+    fun getBalancesRequestsIndexerGatewayAndFlattensGroupedResults() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """
+                        {
+                          "page": {"page": 1, "pageSize": 25, "more": false},
+                          "nativeBalances": [
+                            {
+                              "chainId": 137,
+                              "results": [
+                                {
+                                  "accountAddress": "0xwallet",
+                                  "chainId": 137,
+                                  "name": "Polygon",
+                                  "symbol": "POL",
+                                  "balance": "1000000000000000000",
+                                  "balanceUSD": "0.20",
+                                  "priceUSD": "0.20"
+                                }
+                              ]
+                            }
+                          ],
+                          "balances": [
+                            {
+                              "chainId": 137,
+                              "results": [
+                                {
+                                  "contractType": "ERC20",
+                                  "contractAddress": "0xcontract",
+                                  "accountAddress": "0xwallet",
+                                  "tokenID": "0",
+                                  "balance": "141799",
+                                  "balanceUSD": "0.141799",
+                                  "priceUSD": "1",
+                                  "blockHash": "0xblock",
+                                  "blockNumber": 123,
+                                  "chainId": 137,
+                                  "contractInfo": {
+                                    "chainId": 137,
+                                    "address": "0xcontract",
+                                    "source": "metadata",
+                                    "name": "USDC",
+                                    "type": "ERC20",
+                                    "symbol": "USDC",
+                                    "decimals": 6,
+                                    "deployed": true,
+                                    "bytecodeHash": "0xbytecode",
+                                    "extensions": {},
+                                    "updatedAt": "2026-01-01T00:00:00Z",
+                                    "status": "available"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                        """.trimIndent(),
+                    ).build(),
+            )
+
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                )
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
+
+            val response =
+                client.getBalances(
+                    networks = listOf(Network.POLYGON),
+                    contractAddresses = listOf("0xcontract"),
+                    walletAddress = "0xwallet",
+                    includeMetadata = true,
+                    page = TokenBalancesPageRequest(page = 1, pageSize = 25),
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/IndexerGateway/GetTokenBalancesDetails", request.target)
+            assertEquals("test-publishable-key", request.headers["Api-Key"])
+            assertEquals("application/json", request.headers["Accept"])
+            assertEquals(null, request.headers["Origin"])
+            assertEquals(
+                "webrpc@v0.31.2;gen-typescript@v0.23.1;sequence-indexer@v0.4.0",
+                request.headers["Webrpc"],
+            )
+            assertEquals(null, request.headers["X-Access-Key"])
+            assertEquals(
+                "{\"chainIds\":[137],\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"contractWhitelist\":[\"0xcontract\"],\"omitNativeBalances\":false},\"omitMetadata\":false,\"page\":{\"page\":1,\"pageSize\":25}}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals(1, response.page?.page)
+            assertEquals(25, response.page?.pageSize)
+            assertEquals(false, response.page?.more)
+            assertEquals(1, response.nativeBalances.size)
+            val nativeBalance = response.nativeBalances.single()
+            assertEquals("NATIVE", nativeBalance.contractType)
+            assertEquals("Polygon", nativeBalance.name)
+            assertEquals("POL", nativeBalance.symbol)
+            assertEquals("1000000000000000000", nativeBalance.balance)
+            assertEquals("0.20", nativeBalance.balanceUSD)
+            assertEquals(1, response.balances.size)
+            val balance = response.balances.single()
+            assertEquals("0", balance.tokenId)
+            assertEquals("141799", balance.balance)
+            assertEquals("USDC", balance.contractInfo?.symbol)
+            assertEquals(6, balance.contractInfo?.decimals)
+        }
+
+    @Test
+    fun getBalancesDefaultsToMainnetsWhenNetworksAreOmitted() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"page":{"page":0,"pageSize":40,"more":false},"nativeBalances":[],"balances":[]}""")
+                    .build(),
+            )
+
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                )
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
+
+            val response =
+                client.getBalances(
+                    walletAddress = "0xwallet",
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals(
+                "{\"networkType\":\"MAINNETS\",\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"omitNativeBalances\":false},\"omitMetadata\":false,\"page\":{\"page\":0,\"pageSize\":40}}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertTrue(response.nativeBalances.isEmpty())
+            assertTrue(response.balances.isEmpty())
+        }
+
+    @Test
+    fun getBalancesRejectsMissingRequiredContractBalanceFields() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"page":{"page":0,"pageSize":40,"more":false},"nativeBalances":[],"balances":[{"chainId":137,"results":[{"contractType":"ERC20","contractAddress":"0xtoken","accountAddress":"0xwallet","tokenID":"0","balance":"1","blockNumber":1,"chainId":137}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error =
+                runCatching { client.getBalances(walletAddress = "0xwallet") }
+                    .exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetBalances, error.operation)
+        }
+
+    @Test
+    fun getBalancesRejectsWrongJsonTypeForRequiredString() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"page":{"page":0,"pageSize":40,"more":false},"nativeBalances":[],"balances":[{"chainId":137,"results":[{"contractType":"ERC20","contractAddress":"0xtoken","accountAddress":123,"tokenID":"0","balance":"1","blockHash":"0xblock","blockNumber":1,"chainId":137}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getBalances(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetBalances, error.operation)
+        }
+
+    @Test
+    fun getTransactionHistoryRejectsMissingTransfers() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"transactions":[{"chainId":137,"results":[{"txnHash":"0xtxn","blockNumber":1,"blockHash":"0xblock","chainId":137,"timestamp":"2026-01-01T00:00:00Z"}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getTransactionHistory(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetTransactionHistory, error.operation)
+        }
+
+    @Test
+    fun getTransactionHistoryRejectsWrongTopLevelContainerType() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"transactions":{}}""")
+                    .build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getTransactionHistory(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetTransactionHistory, error.operation)
+        }
+
+    @Test
+    fun getTransactionHistoryRejectsWrongOptionalArrayType() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"transactions":[{"chainId":137,"results":[{"txnHash":"0xtxn","blockNumber":1,"blockHash":"0xblock","chainId":137,"timestamp":"2026-01-01T00:00:00Z","transfers":[{"transferType":"SEND","contractAddress":"0xtoken","contractType":"ERC20","from":"0xwallet","to":"0xrecipient","amounts":["1"],"pricesUSD":{},"logIndex":0}]}]}]}""",
+                    ).build(),
+            )
+            val client =
+                IndexerClient.create(
+                    "test-publishable-key",
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                    OMSWalletHttpClient(),
+                )
+
+            val error = runCatching { client.getTransactionHistory(walletAddress = "0xwallet") }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, (error as OMSWalletException).code)
+            assertEquals(OMSWalletOperation.IndexerGetTransactionHistory, error.operation)
+        }
+
+    @Test
+    fun getTransactionHistoryRequestsIndexerGatewayAndMapsWireFields() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """
+                        {
+                          "page": {"page": 0, "pageSize": 1, "more": true},
+                          "transactions": [
+                            {
+                              "chainId": 1,
+                              "results": [
+                                {
+                                  "txnHash": "0xabc",
+                                  "blockNumber": 123,
+                                  "blockHash": "0xdef",
+                                  "chainId": 1,
+                                  "metaTxnID": "meta-1",
+                                  "transfers": [
+                                    {
+                                      "transferType": "RECEIVE",
+                                      "contractAddress": "0x0000000000000000000000000000000000000000",
+                                      "contractType": "NATIVE",
+                                      "from": "0xfrom",
+                                      "to": "0xwallet",
+                                      "tokenIDs": ["0"],
+                                      "amounts": ["1"],
+                                      "logIndex": 0
+                                    }
+                                  ],
+                                  "timestamp": "2026-06-17T00:00:00Z"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                        """.trimIndent(),
+                    ).build(),
+            )
+
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                )
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
+
+            val response =
+                client.getTransactionHistory(
+                    networks = listOf(Network.MAINNET),
+                    walletAddress = "0xwallet",
+                    includeMetadata = true,
+                    page = TokenBalancesPageRequest(page = 0, pageSize = 1),
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/IndexerGateway/GetTransactionHistory", request.target)
+            assertEquals(
+                "{\"chainIds\":[1],\"filter\":{\"accountAddresses\":[\"0xwallet\"]},\"includeMetadata\":true,\"page\":{\"page\":0,\"pageSize\":1}}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals(0, response.page?.page)
+            assertEquals(true, response.page?.more)
+            val transaction = response.transactions.single()
+            assertEquals("0xabc", transaction.txnHash)
+            assertEquals("meta-1", transaction.metaTxnId)
+            assertEquals(listOf("0"), transaction.transfers.single().tokenIds)
+        }
+
+    @Test
+    fun generatedWalletPublicErrorMessageDoesNotIncludeRawBody() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body("""{"detail":"sensitive backend context"}""")
+                    .build(),
+            )
+
+            val client =
+                OMSWallet.createForTesting(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                        ),
+                )
+            client.wallet.restoreSession(
+                OMSWalletSessionSnapshot(
+                    walletId = "wallet-id",
+                    walletAddress = "0xwallet",
+                    auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
+                ),
+            )
+
+            val failure =
+                runCatching {
+                    client.wallet.isValidMessageSignature(
+                        network = Network.AMOY,
+                        message = "hello",
+                        signature = "0xsig",
+                    )
+                }.exceptionOrNull() as? OMSWalletException
+
+            requireNotNull(failure)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, failure.code)
+            assertEquals(OMSWalletOperation.WalletIsValidMessageSignature, failure.operation)
+            assertEquals("endpoint error", failure.message)
+            assertEquals(400, failure.status)
+            assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
+            assertEquals(OMSWalletUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals("WebrpcEndpoint", failure.upstreamError?.name)
+            assertEquals("-999", failure.upstreamError?.code)
+            assertEquals("endpoint error", failure.upstreamError?.message)
+            assertEquals(400, failure.upstreamError?.status)
+        }
+
+    @Test
+    fun generatedWalletPublicUnknownBackendErrorCodeIsRequestFailed() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(409)
+                    .body("""{"error":"NewBackendError","code":7999,"msg":"Backend rollout error","status":409}""")
+                    .build(),
+            )
+
+            val client =
+                OMSWallet.createForTesting(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                        ),
+                )
+            client.wallet.restoreSession(
+                OMSWalletSessionSnapshot(
+                    walletId = "wallet-id",
+                    walletAddress = "0xwallet",
+                    auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
+                ),
+            )
+
+            val failure =
+                runCatching {
+                    client.wallet.isValidMessageSignature(
+                        network = Network.AMOY,
+                        message = "hello",
+                        signature = "0xsig",
+                    )
+                }.exceptionOrNull() as? OMSWalletException
+
+            requireNotNull(failure)
+            assertEquals(OMSWalletErrorCode.RequestFailed, failure.code)
+            assertEquals(OMSWalletOperation.WalletIsValidMessageSignature, failure.operation)
+            assertEquals("Backend rollout error", failure.message)
+            assertEquals(409, failure.status)
+            assertEquals(false, failure.retryable)
+            assertEquals(OMSWalletUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals("NewBackendError", failure.upstreamError?.name)
+            assertEquals("7999", failure.upstreamError?.code)
+            assertEquals("Backend rollout error", failure.upstreamError?.message)
+            assertEquals(409, failure.upstreamError?.status)
+        }
+}

@@ -61,7 +61,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="OMSClientSessionState"
+                    android:text="OMSWalletSessionState"
                     android:textColor="@color/slate_900"
                     android:textSize="18sp"
                     android:textStyle="bold" />
@@ -162,8 +162,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
-                        android:text="Continue with Google"
-                        android:visibility="gone" />
+                        android:text="Continue with Google ID token" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/startGoogleRedirectSignInButton"
@@ -171,7 +170,15 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="16dp"
-                        android:text="Continue with Google" />
+                        android:text="Continue with Google redirect" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/startAppleRedirectSignInButton"
+                        style="@style/Widget.Kotlinsdk.Button"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:text="Continue with Apple" />
 
                     <TextView
                         android:layout_width="match_parent"

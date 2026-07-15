@@ -22,10 +22,10 @@ wrapper — no extra configuration needed.
 
 ```bash
 # Full CI-equivalent check
-./gradlew --build-cache :oms-client-kotlin-sdk:testDebugUnitTest :oms-client-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug
+./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug
 
 # SDK unit tests only
-./gradlew :oms-client-kotlin-sdk:testDebugUnitTest
+./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest
 
 # Kotlin style check
 ./gradlew ktlintCheck

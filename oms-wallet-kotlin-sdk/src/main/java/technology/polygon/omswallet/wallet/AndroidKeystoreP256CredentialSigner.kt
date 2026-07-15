@@ -1,0 +1,164 @@
+package technology.polygon.omswallet.wallet
+
+import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import technology.polygon.omswallet.utils.OMSWalletHex
+import java.math.BigInteger
+import java.security.KeyPair
+import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.PublicKey
+import java.security.Signature
+import java.security.interfaces.ECPublicKey
+import java.security.spec.ECGenParameterSpec
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Owns the Android Keystore P-256 credential used to authorize wallet requests.
+ *
+ * The private key is generated inside Android Keystore and is not exported to
+ * SDK session storage. This class persists only the per-credential nonce.
+ */
+internal class AndroidKeystoreP256CredentialSigner(
+    context: Context,
+    private val alias: String = DEFAULT_KEY_ALIAS,
+    nonceStoreName: String = DEFAULT_NONCE_STORE_NAME,
+) : CredentialSigner {
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
+
+    private val appContext = context.applicationContext
+    private val noncePreferences = appContext.getSharedPreferences(nonceStoreName, Context.MODE_PRIVATE)
+    private val nonceLock = nonceLockFor(nonceStoreName, alias)
+    private val keyStoreLock = keyStoreLockFor(alias)
+
+    @Volatile
+    private var cachedCredentialId: String? = null
+
+    override fun credentialId(): String =
+        cachedCredentialId
+            ?: credentialId(getOrCreateKeyPair().public).also { cachedCredentialId = it }
+
+    override fun existingCredentialId(): String? =
+        cachedCredentialId
+            ?: synchronized(keyStoreLock) {
+                keyStore().getCertificate(alias)?.publicKey?.let(::credentialId)
+            }?.also { cachedCredentialId = it }
+
+    override fun nextNonce(): String =
+        synchronized(nonceLock) {
+            val previous = noncePreferences.getString(alias, null)?.toLongOrNull() ?: 0L
+            val next = maxOf(System.currentTimeMillis(), previous + 1)
+            check(noncePreferences.edit().putString(alias, next.toString()).commit()) {
+                "Unable to persist OMS Wallet credential nonce"
+            }
+            next.toString()
+        }
+
+    override fun sign(preimage: String): String {
+        val signature = Signature.getInstance(SHA256_WITH_ECDSA)
+        signature.initSign(requirePrivateKey())
+        signature.update(preimage.toByteArray(Charsets.UTF_8))
+        return OMSWalletHex.encode(P256EcdsaSignatureEncoding.derToRaw(signature.sign()))
+    }
+
+    override fun hasCredential(): Boolean =
+        synchronized(keyStoreLock) {
+            keyStore().containsAlias(alias)
+        }
+
+    override fun clear() {
+        synchronized(keyStoreLock) {
+            val store = keyStore()
+            if (store.containsAlias(alias)) {
+                store.deleteEntry(alias)
+            }
+            cachedCredentialId = null
+        }
+        synchronized(nonceLock) {
+            check(noncePreferences.edit().remove(alias).commit()) {
+                "Unable to clear OMS Wallet credential nonce"
+            }
+        }
+    }
+
+    private fun requirePrivateKey(): PrivateKey =
+        synchronized(keyStoreLock) {
+            requireNotNull(keyStore().getKey(alias, null) as? PrivateKey) {
+                "No active OMS Wallet signing credential"
+            }
+        }
+
+    private fun getOrCreateKeyPair(): KeyPair =
+        synchronized(keyStoreLock) {
+            val store = keyStore()
+            val privateKey = store.getKey(alias, null) as? PrivateKey
+            val publicKey = store.getCertificate(alias)?.publicKey
+            if (privateKey != null && publicKey != null) {
+                return KeyPair(publicKey, privateKey)
+            }
+
+            val keyPairGenerator =
+                KeyPairGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_EC,
+                    ANDROID_KEYSTORE,
+                )
+            val spec =
+                KeyGenParameterSpec
+                    .Builder(
+                        alias,
+                        KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY,
+                    ).setAlgorithmParameterSpec(ECGenParameterSpec(SECP256R1))
+                    .setDigests(KeyProperties.DIGEST_SHA256)
+                    .build()
+            keyPairGenerator.initialize(spec)
+            keyPairGenerator.generateKeyPair()
+        }
+
+    private fun credentialId(publicKey: PublicKey): String {
+        val ecPublicKey = publicKey as ECPublicKey
+        val point = ecPublicKey.w
+        return "0x04" +
+            point.affineX.toFixedHex(P256_FIELD_SIZE_BYTES) +
+            point.affineY.toFixedHex(P256_FIELD_SIZE_BYTES)
+    }
+
+    private fun BigInteger.toFixedHex(size: Int): String {
+        val raw = toByteArray()
+        val unsigned =
+            if (raw.size > 1 && raw[0] == 0.toByte()) {
+                raw.copyOfRange(1, raw.size)
+            } else {
+                raw
+            }
+        require(unsigned.size <= size) { "Invalid P-256 public key coordinate" }
+        return OMSWalletHex.encodeNoPrefix(ByteArray(size - unsigned.size) + unsigned)
+    }
+
+    private fun keyStore(): KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+
+    companion object {
+        private data class NonceLockKey(
+            val storeName: String,
+            val alias: String,
+        )
+
+        private val nonceLocks = ConcurrentHashMap<NonceLockKey, Any>()
+        private val keyStoreLocks = ConcurrentHashMap<String, Any>()
+
+        private fun nonceLockFor(
+            storeName: String,
+            alias: String,
+        ): Any = nonceLocks.computeIfAbsent(NonceLockKey(storeName, alias)) { Any() }
+
+        private fun keyStoreLockFor(alias: String): Any = keyStoreLocks.computeIfAbsent(alias) { Any() }
+
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val SECP256R1 = "secp256r1"
+        private const val SHA256_WITH_ECDSA = "SHA256withECDSA"
+        private const val P256_FIELD_SIZE_BYTES = 32
+        private const val DEFAULT_KEY_ALIAS = "oms-wallet-webcrypto-p256"
+        private const val DEFAULT_NONCE_STORE_NAME = "oms-wallet-credential-nonces"
+    }
+}

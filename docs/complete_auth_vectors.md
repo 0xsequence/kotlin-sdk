@@ -5,8 +5,8 @@ the canonical wallet request-signing vectors.
 
 The Kotlin test coverage lives in:
 
-- `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/WalletRequestSignerVectorTest.kt`
-- `oms-client-kotlin-sdk/src/test/java/com/omsclient/kotlin_sdk/wallet/WalletPayloadBuilderTest.kt`
+- `oms-wallet-kotlin-sdk/src/test/java/technology/polygon/omswallet/wallet/WalletRequestSignerVectorTest.kt`
+- `oms-wallet-kotlin-sdk/src/test/java/technology/polygon/omswallet/wallet/WalletPayloadBuilderTest.kt`
 
 Kotlin parity coverage:
 
