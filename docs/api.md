@@ -730,15 +730,15 @@ suspend fun sendTransaction(
     waitForStatus: Boolean = true,
     statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
-): ClientSendTransactionResponse
+): SendTransactionResponse
 
 suspend fun sendTransaction(
     network: Network,
-    request: ClientSendTransactionRequest,
+    request: SendTransactionRequest,
     waitForStatus: Boolean = true,
     statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
-): ClientSendTransactionResponse
+): SendTransactionResponse
 ```
 
 ### `WalletClient.callContract`
@@ -756,7 +756,7 @@ suspend fun callContract(
     waitForStatus: Boolean = true,
     statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
-): ClientSendTransactionResponse
+): SendTransactionResponse
 ```
 
 ### `WalletClient.getTransactionStatus`
