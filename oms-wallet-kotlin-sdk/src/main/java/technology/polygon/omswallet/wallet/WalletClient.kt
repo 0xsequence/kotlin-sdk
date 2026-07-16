@@ -60,6 +60,8 @@ import technology.polygon.omswallet.models.FeeOptionWithBalance
 import technology.polygon.omswallet.models.FeeToken
 import technology.polygon.omswallet.models.ListAccessResponse
 import technology.polygon.omswallet.models.Page
+import technology.polygon.omswallet.models.SendTransactionRequest
+import technology.polygon.omswallet.models.SendTransactionResponse
 import technology.polygon.omswallet.models.TokenBalance
 import technology.polygon.omswallet.models.TransactionMode
 import technology.polygon.omswallet.models.TransactionStatus
@@ -94,8 +96,6 @@ import technology.polygon.omswallet.internal.generated.waas.TransactionStatus as
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatusResponse as WaasTransactionStatusResponse
 import technology.polygon.omswallet.internal.generated.waas.Wallet as WaasWallet
 import technology.polygon.omswallet.internal.generated.waas.WalletType as WaasWalletType
-import technology.polygon.omswallet.models.SendTransactionRequest as ClientSendTransactionRequest
-import technology.polygon.omswallet.models.SendTransactionResponse as ClientSendTransactionResponse
 
 private class PendingEmailAuth(
     val email: String,
@@ -1565,11 +1565,11 @@ class WalletClient private constructor(
         waitForStatus: Boolean = true,
         statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
-    ): ClientSendTransactionResponse =
+    ): SendTransactionResponse =
         sendTransaction(
             network = network,
             request =
-                ClientSendTransactionRequest(
+                SendTransactionRequest(
                     to = to,
                     value = value,
                 ),
@@ -1587,11 +1587,11 @@ class WalletClient private constructor(
      */
     suspend fun sendTransaction(
         network: Network,
-        request: ClientSendTransactionRequest,
+        request: SendTransactionRequest,
         waitForStatus: Boolean = true,
         statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
-    ): ClientSendTransactionResponse =
+    ): SendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletSendTransaction) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSendTransaction)
             require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
@@ -1626,7 +1626,7 @@ class WalletClient private constructor(
         waitForStatus: Boolean = true,
         statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
-    ): ClientSendTransactionResponse =
+    ): SendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletCallContract) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletCallContract)
             val prepared =
@@ -2063,7 +2063,7 @@ class WalletClient private constructor(
         selectFeeOption: FeeOptionSelector?,
         waitForStatus: Boolean,
         statusPolling: TransactionStatusPollingOptions?,
-    ): ClientSendTransactionResponse {
+    ): SendTransactionResponse {
         if (waitForStatus) {
             requireValidTransactionStatusPollingOptions(
                 statusPolling ?: defaultTransactionStatusPollingOptions(),
@@ -2116,7 +2116,7 @@ class WalletClient private constructor(
                 )
             }
         if (!waitForStatus) {
-            return ClientSendTransactionResponse(
+            return SendTransactionResponse(
                 txnId = prepared.txnId,
                 status = executed.status,
                 txnHash = null,
@@ -2130,7 +2130,7 @@ class WalletClient private constructor(
                 options = statusPolling ?: defaultTransactionStatusPollingOptions(),
                 requiredSessionRevision = requiredSessionRevision,
             )
-        return ClientSendTransactionResponse(
+        return SendTransactionResponse(
             txnId = prepared.txnId,
             status = status.response.status,
             txnHash = status.response.txnHash,
@@ -2602,7 +2602,7 @@ private class WaasWalletGateway(
     suspend fun prepareEthereumTransaction(
         walletId: String,
         network: Network,
-        request: ClientSendTransactionRequest,
+        request: SendTransactionRequest,
         requiredSessionRevision: Long,
     ): PreparedWalletTransaction =
         signedClient(requiredSessionRevision)
