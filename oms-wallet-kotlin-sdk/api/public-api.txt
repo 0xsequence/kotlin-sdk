@@ -1268,8 +1268,8 @@ public final class technology.polygon.omswallet.storage.AndroidSessionMetadataSt
 Compiled from "AndroidSessionMetadataStore.kt"
 public final class technology.polygon.omswallet.storage.AndroidSessionMetadataStoreKt {
   public static final void access$writeTextAtomically(java.io.File, java.lang.String);
-  public static final technology.polygon.omswallet.OMSWalletSessionAuth access$toSessionAuth(org.json.JSONObject);
   public static final org.json.JSONObject access$toJson(technology.polygon.omswallet.OMSWalletSessionAuth);
+  public static final technology.polygon.omswallet.OMSWalletSessionAuth access$toSessionAuth(org.json.JSONObject);
 }
 
 Compiled from "AndroidSessionMetadataStore.kt"
@@ -1823,12 +1823,12 @@ public final class technology.polygon.omswallet.wallet.WalletClient$startOidcRed
 
 Compiled from "WalletClient.kt"
 public final class technology.polygon.omswallet.wallet.WalletClientKt {
+  public static final technology.polygon.omswallet.OMSWalletSessionState access$toSessionState(technology.polygon.omswallet.session.OMSWalletSessionSnapshot);
+  public static final boolean access$isExpired(technology.polygon.omswallet.session.OMSWalletSessionSnapshot, long);
   public static final java.lang.String access$relayPathComponent(technology.polygon.omswallet.wallet.OmsRelayOidcProvider);
   public static final technology.polygon.omswallet.models.WalletType access$toWalletType(java.lang.String);
   public static final java.lang.Long access$expiresAtEpochMillis(technology.polygon.omswallet.session.OMSWalletSessionSnapshot);
   public static final technology.polygon.omswallet.OMSWalletSessionExpiredEvent access$toSessionExpiredEvent(technology.polygon.omswallet.session.OMSWalletSessionSnapshot);
-  public static final technology.polygon.omswallet.OMSWalletSessionState access$toSessionState(technology.polygon.omswallet.session.OMSWalletSessionSnapshot);
-  public static final boolean access$isExpired(technology.polygon.omswallet.session.OMSWalletSessionSnapshot, long);
 }
 
 Compiled from "WalletRequestSigner.kt"
