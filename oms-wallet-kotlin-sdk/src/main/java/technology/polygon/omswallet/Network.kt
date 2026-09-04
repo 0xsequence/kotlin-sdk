@@ -1,5 +1,17 @@
 package technology.polygon.omswallet
 
+enum class SolanaNetwork(
+    val wireValue: String,
+) {
+    Devnet("solana:devnet"),
+    Mainnet("solana:mainnet"),
+}
+
+object SolanaNetworks {
+    val DEVNET: SolanaNetwork = SolanaNetwork.Devnet
+    val MAINNET: SolanaNetwork = SolanaNetwork.Mainnet
+}
+
 /**
  * A network supported by the OMS Wallet SDK.
  *

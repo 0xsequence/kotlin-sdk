@@ -22,6 +22,7 @@ class OMSWallet {
         context: Context,
         publishableKey: String,
         okHttpClient: OkHttpClient = OkHttpClient(),
+        walletImport: WalletImportConfiguration? = null,
     )
 }
 ```
@@ -103,6 +104,7 @@ enum class WalletType(
     val wireValue: String,
 ) {
     Ethereum("ethereum"),
+    Solana("solana"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 ```
@@ -115,7 +117,22 @@ data class Wallet(
     val type: WalletType,
     val address: String,
     val reference: String? = null,
+    val keyOrigin: WalletKeyOrigin,
 )
+```
+
+### `WalletKeyOrigin`
+
+Whether a wallet key was created in WaaS custody or imported by its owner.
+
+```kotlin
+enum class WalletKeyOrigin(
+    val wireValue: String,
+) {
+    Enclave("enclave"),
+    Imported("imported"),
+    UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
+}
 ```
 
 ### `Page`
@@ -127,22 +144,253 @@ data class Page(
 )
 ```
 
-### `CredentialInfo`
+### `WalletImportConfiguration`
+
+Trust policy used to verify attested wallet-import responses.
 
 ```kotlin
-data class CredentialInfo(
+class WalletImportConfiguration(
+    trustedPcr0s: Collection<String>,
+)
+```
+
+### `WalletImportCipherSuite`
+
+HPKE cipher suites accepted by the wallet-import transport.
+
+```kotlin
+enum class WalletImportCipherSuite(
+    val wireValue: String,
+) {
+    X25519Sha256Aes256Gcm("x25519-sha256-aes256gcm"),
+    X25519Sha256ChaCha20Poly1305("x25519-sha256-chacha20poly1305"),
+    P256Sha256Aes256Gcm("p256-sha256-aes256gcm"),
+    P256Sha256ChaCha20Poly1305("p256-sha256-chacha20poly1305"),
+}
+```
+
+### `WalletImportPrivateKey`
+
+Plaintext private-key input for high-level wallet import.
+
+```kotlin
+sealed interface WalletImportPrivateKey {
+    val walletType: WalletType
+}
+```
+
+### `WalletImportPrivateKey.Ethereum`
+
+Ethereum private key supplied as hexadecimal text.
+
+```kotlin
+data class Ethereum(
+    val value: String,
+) : WalletImportPrivateKey {
+    override val walletType: WalletType
+}
+```
+
+### `WalletImportPrivateKey.EthereumBytes`
+
+Ethereum private key supplied as 32 raw bytes.
+
+```kotlin
+class EthereumBytes(
+    val value: ByteArray,
+) : WalletImportPrivateKey {
+    override val walletType: WalletType
+}
+```
+
+### `WalletImportPrivateKey.Solana`
+
+Solana seed or keypair supplied as base58 text.
+
+```kotlin
+data class Solana(
+    val value: String,
+) : WalletImportPrivateKey {
+    override val walletType: WalletType
+}
+```
+
+### `WalletImportPrivateKey.SolanaBytes`
+
+Solana seed or keypair supplied as 32 or 64 raw bytes.
+
+```kotlin
+class SolanaBytes(
+    val value: ByteArray,
+) : WalletImportPrivateKey {
+    override val walletType: WalletType
+}
+```
+
+### `WalletImportRecipientKey`
+
+Attested public key returned for an advanced wallet-import encryption flow.
+
+```kotlin
+data class WalletImportRecipientKey(
+    val keyId: String,
+    val cipherSuite: WalletImportCipherSuite,
+    val publicKey: String,
+)
+```
+
+### `EncryptedWalletImportKeyMaterial`
+
+Caller-encrypted private-key material accepted by advanced wallet import.
+
+```kotlin
+data class EncryptedWalletImportKeyMaterial(
+    val keyId: String,
+    val cipherSuite: WalletImportCipherSuite,
+    val encapsulatedKey: String,
+    val ciphertext: String,
+)
+```
+
+### `WalletCredential`
+
+A credential currently authorized to use the selected wallet.
+
+```kotlin
+data class WalletCredential(
     val credentialId: String,
     val expiresAt: String,
     val isCaller: Boolean,
 )
 ```
 
-### `ListAccessResponse`
+### `RemoteCredentialMetadata`
+
+Display metadata supplied by a remote application credential.
 
 ```kotlin
-data class ListAccessResponse(
-    val credentials: List<CredentialInfo>,
+data class RemoteCredentialMetadata(
+    val appUrl: String,
+    val appName: String,
+    val appLogoUrl: String,
+    val custom: Map<String, String>,
+)
+```
+
+### `SmartSessionGrant`
+
+Owner-approved EVM operation allowed during a bounded smart session.
+
+```kotlin
+sealed interface SmartSessionGrant
+```
+
+### `SmartSessionGrant.NativeTransfer`
+
+```kotlin
+data class NativeTransfer(
+    val to: String,
+    val limit: BigInteger,
+) : SmartSessionGrant
+```
+
+### `SmartSessionGrant.Erc20Transfer`
+
+```kotlin
+data class Erc20Transfer(
+    val token: String,
+    val to: String? = null,
+    val limit: BigInteger,
+    val cumulative: Boolean? = null,
+) : SmartSessionGrant
+```
+
+### `AccessGrantType`
+
+Filter for direct or remotely authorized wallet access.
+
+```kotlin
+enum class AccessGrantType {
+    Direct,
+    Remote,
+}
+```
+
+### `AccessGrant`
+
+Direct or remote credential access associated with a wallet.
+
+```kotlin
+sealed interface AccessGrant {
+    val credential: WalletCredential
+}
+```
+
+### `AccessGrant.Direct`
+
+```kotlin
+data class Direct(
+    override val credential: WalletCredential,
+) : AccessGrant
+```
+
+### `AccessGrant.Remote`
+
+```kotlin
+data class Remote(
+    override val credential: WalletCredential,
+    val sessionId: String,
+    val metadata: RemoteCredentialMetadata,
+    val grants: List<SmartSessionGrant>,
+) : AccessGrant
+```
+
+### `AccessGrantPage`
+
+One page of wallet access grants and its continuation cursor.
+
+```kotlin
+data class AccessGrantPage(
+    val grants: List<AccessGrant>,
     val page: Page? = null,
+)
+```
+
+### `AuthorizedRemoteAccess`
+
+Identifiers returned after an owner authorizes a remote smart session.
+
+```kotlin
+data class AuthorizedRemoteAccess(
+    val walletId: String,
+    val sessionId: String,
+    val expiresAt: String,
+)
+```
+
+### `RemoteAccessSession`
+
+Owner-visible details for one authorized smart session.
+
+```kotlin
+data class RemoteAccessSession(
+    val sessionId: String,
+    val walletId: String,
+    val signerAddress: String,
+    val grants: List<SmartSessionGrant>,
+    val chainId: Int,
+    val expiresAt: String,
+)
+```
+
+### `SmartSessionGrantUsage`
+
+Current usage for one bounded smart-session grant.
+
+```kotlin
+data class SmartSessionGrantUsage(
+    val grant: SmartSessionGrant,
+    val used: BigInteger? = null,
 )
 ```
 
@@ -278,7 +526,7 @@ class PendingWalletSelection {
 
     val wallets: List<Wallet>
 
-    val credential: CredentialInfo
+    val credential: WalletCredential
 
     /**
      * Selects one of `wallets` and persists it as the active wallet session.
@@ -309,7 +557,7 @@ data class WalletSelected(
     val walletAddress: String,
     val wallet: Wallet,
     val wallets: List<Wallet>,
-    val credential: CredentialInfo,
+    val credential: WalletCredential,
 ) : CompleteAuthResult
 ```
 
@@ -458,6 +706,37 @@ suspend fun createWallet(
 ): WalletSelectionResult
 ```
 
+### `WalletClient.importWallet`
+
+Imports and activates an Ethereum or Solana private key through the attested import transport.
+
+```kotlin
+suspend fun importWallet(
+    privateKey: WalletImportPrivateKey,
+    reference: String? = null,
+): WalletSelectionResult
+```
+
+### `WalletClient.getWalletImportRecipientKey`
+
+Fetches an attested recipient key for caller-managed wallet-import encryption.
+
+```kotlin
+suspend fun getWalletImportRecipientKey(cipherSuite: WalletImportCipherSuite): WalletImportRecipientKey
+```
+
+### `WalletClient.importEncryptedWallet`
+
+Imports and activates caller-encrypted private-key material.
+
+```kotlin
+suspend fun importEncryptedWallet(
+    walletType: WalletType,
+    keyMaterial: EncryptedWalletImportKeyMaterial,
+    reference: String? = null,
+): WalletSelectionResult
+```
+
 ### `WalletClient.listWallets`
 
 Lists all wallets available to the authenticated credential.
@@ -466,12 +745,37 @@ Lists all wallets available to the authenticated credential.
 suspend fun listWallets(): List<Wallet>
 ```
 
-### `WalletClient.listAccess`
+### `WalletClient.inspectRemoteCredential`
 
-Returns all credentials that currently have access to the selected wallet.
+Returns display metadata for a remote credential before the owner approves access.
 
 ```kotlin
-suspend fun listAccess(pageSize: UInt? = null): List<CredentialInfo>
+suspend fun inspectRemoteCredential(credentialId: String): RemoteCredentialMetadata
+```
+
+### `WalletClient.authorizeRemoteAccess`
+
+Authorizes owner-approved EVM smart-session grants for a remote credential.
+
+```kotlin
+suspend fun authorizeRemoteAccess(
+    credentialId: String,
+    network: Network,
+    grants: List<SmartSessionGrant>,
+    expiresAt: String,
+    sessionId: String? = null,
+): AuthorizedRemoteAccess
+```
+
+### `WalletClient.listAccess`
+
+Returns all access grants, following WaaS cursors with the requested `pageSize`.
+
+```kotlin
+suspend fun listAccess(
+    pageSize: UInt? = null,
+    type: AccessGrantType? = null,
+): List<AccessGrant>
 ```
 
 ### `WalletClient.listAccessPages`
@@ -480,7 +784,10 @@ Emits credential-access pages for the selected wallet until WaaS stops
 returning a cursor.
 
 ```kotlin
-fun listAccessPages(pageSize: UInt? = null): Flow<ListAccessResponse>
+fun listAccessPages(
+    pageSize: UInt? = null,
+    type: AccessGrantType? = null,
+): Flow<AccessGrantPage>
 ```
 
 ### `WalletClient.listAccessPage`
@@ -491,7 +798,27 @@ Returns one credential-access page for the selected wallet.
 suspend fun listAccessPage(
     pageSize: UInt? = null,
     cursor: String? = null,
-): ListAccessResponse
+    type: AccessGrantType? = null,
+): AccessGrantPage
+```
+
+### `WalletClient.getRemoteAccessSession`
+
+Returns one owner-visible smart-session and checks that it belongs to the active wallet.
+
+```kotlin
+suspend fun getRemoteAccessSession(sessionId: String): RemoteAccessSession
+```
+
+### `WalletClient.getRemoteAccessSessionUsage`
+
+Returns grant usage for an owner-visible smart session on `network`.
+
+```kotlin
+suspend fun getRemoteAccessSessionUsage(
+    sessionId: String,
+    network: Network,
+): List<SmartSessionGrantUsage>
 ```
 
 ### `WalletClient.getIdToken`
@@ -510,7 +837,10 @@ suspend fun getIdToken(
 Revokes a credential's access to the selected wallet.
 
 ```kotlin
-suspend fun revokeAccess(targetCredentialId: String): Unit
+suspend fun revokeAccess(
+    credentialId: String,
+    sessionId: String? = null,
+): Unit
 ```
 
 ## Transactions and signing
@@ -571,8 +901,9 @@ data class FeeOption(
 ```kotlin
 data class FeeOptionSelection(
     val token: String,
+    val index: UInt? = null,
 ) {
-    constructor(feeOption: FeeOption)
+    constructor(feeOption: FeeOption, index: UInt? = null)
 }
 ```
 
@@ -615,13 +946,12 @@ fun interface FeeOptionSelector {
 ```kotlin
 data class FeeOptionWithBalance(
     val feeOption: FeeOption,
-    val balance: TokenBalance?,
-    val available: String?,
-    val availableRaw: String?,
-    val decimals: Int?,
-) {
-    val selection: FeeOptionSelection
-}
+    val selection: FeeOptionSelection = FeeOptionSelection(feeOption),
+    val balance: TokenBalance? = null,
+    val available: String? = null,
+    val availableRaw: String? = null,
+    val decimals: Int? = null,
+)
 ```
 
 ### `SendTransactionRequest`
@@ -683,6 +1013,14 @@ suspend fun signMessage(
 ): String
 ```
 
+### `WalletClient.signSolanaMessage`
+
+Signs `message` with the currently selected Solana wallet.
+
+```kotlin
+suspend fun signSolanaMessage(message: String): String
+```
+
 ### `WalletClient.signTypedData`
 
 Signs EIP-712 `typedData` with the currently selected wallet on `network`.
@@ -701,6 +1039,17 @@ Validates `signature` for `message` through the WaaS public wallet RPC.
 ```kotlin
 suspend fun isValidMessageSignature(
     network: Network,
+    message: String,
+    signature: String,
+): Boolean
+```
+
+### `WalletClient.isValidSolanaMessageSignature`
+
+Validates `signature` for a Solana `message` through the WaaS public wallet RPC.
+
+```kotlin
+suspend fun isValidSolanaMessageSignature(
     message: String,
     signature: String,
 ): Boolean
@@ -735,6 +1084,23 @@ suspend fun sendTransaction(
 suspend fun sendTransaction(
     network: Network,
     request: SendTransactionRequest,
+    waitForStatus: Boolean = true,
+    statusPolling: TransactionStatusPollingOptions? = null,
+    selectFeeOption: FeeOptionSelector? = null,
+): SendTransactionResponse
+```
+
+### `WalletClient.sendSolanaTransfer`
+
+Sends a native SOL or SPL token transfer from the selected Solana wallet.
+
+```kotlin
+suspend fun sendSolanaTransfer(
+    network: SolanaNetwork,
+    asset: String,
+    to: String,
+    amount: BigInteger,
+    mode: TransactionMode = TransactionMode.Relayer,
     waitForStatus: Boolean = true,
     statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
@@ -814,6 +1180,159 @@ suspend fun getTransactionHistory(
     metadataOptions: MetadataOptions? = null,
     page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
 ): TransactionHistoryResult
+```
+
+### `IndexerClient.getSolanaBalances`
+
+Gets native SOL and fungible-token balances for `walletAddress`.
+
+```kotlin
+suspend fun getSolanaBalances(
+    walletAddress: String,
+    networks: List<SolanaNetwork> = listOf(SolanaNetwork.Mainnet, SolanaNetwork.Devnet),
+    includeMetadata: Boolean = true,
+    omitNativeBalances: Boolean? = null,
+    mintAddresses: List<String> = emptyList(),
+    excludedMintAddresses: List<String> = emptyList(),
+): SolanaBalancesResult
+```
+
+### `SolanaVerificationStatus`
+
+Verification state assigned to Solana asset metadata.
+
+```kotlin
+enum class SolanaVerificationStatus {
+    Verified,
+    Unverified,
+    Unknown,
+}
+```
+
+### `SolanaVerificationSource`
+
+Source used to verify Solana asset metadata.
+
+```kotlin
+enum class SolanaVerificationSource {
+    Jupiter,
+    SolflareUtl,
+    None,
+}
+```
+
+### `SolanaTokenProgram`
+
+Token program owning a Solana mint.
+
+```kotlin
+enum class SolanaTokenProgram {
+    SplToken,
+    Token2022,
+}
+```
+
+### `SolanaBalance`
+
+Common public fields returned for a Solana balance.
+
+```kotlin
+sealed interface SolanaBalance {
+    val network: SolanaNetwork
+
+    val accountAddress: String
+
+    val name: String
+
+    val symbol: String
+
+    val decimals: Int
+
+    val balance: String
+
+    val formattedBalance: String
+
+    val imageUrl: String?
+
+    val metadataUri: String?
+
+    val verificationStatus: SolanaVerificationStatus
+
+    val verificationSource: SolanaVerificationSource
+
+    val priceUSD: String?
+
+    val balanceUSD: String?
+}
+```
+
+### `SolanaBalance.Native`
+
+Native SOL balance.
+
+```kotlin
+data class Native(
+    override val network: SolanaNetwork,
+    override val accountAddress: String,
+    override val name: String,
+    override val symbol: String,
+    override val decimals: Int,
+    override val balance: String,
+    override val formattedBalance: String,
+    override val imageUrl: String?,
+    override val metadataUri: String?,
+    override val verificationStatus: SolanaVerificationStatus,
+    override val verificationSource: SolanaVerificationSource,
+    override val priceUSD: String?,
+    override val balanceUSD: String?,
+) : SolanaBalance
+```
+
+### `SolanaBalance.FungibleToken`
+
+SPL Token or Token-2022 balance.
+
+```kotlin
+data class FungibleToken(
+    override val network: SolanaNetwork,
+    override val accountAddress: String,
+    val tokenProgram: SolanaTokenProgram,
+    val mintAddress: String,
+    override val name: String,
+    override val symbol: String,
+    override val decimals: Int,
+    override val balance: String,
+    override val formattedBalance: String,
+    override val imageUrl: String?,
+    override val metadataUri: String?,
+    override val verificationStatus: SolanaVerificationStatus,
+    override val verificationSource: SolanaVerificationSource,
+    override val priceUSD: String?,
+    override val balanceUSD: String?,
+) : SolanaBalance
+```
+
+### `SolanaNetworkError`
+
+Per-network failure returned alongside partial Solana balance results.
+
+```kotlin
+data class SolanaNetworkError(
+    val network: SolanaNetwork,
+    val reason: String,
+)
+```
+
+### `SolanaBalancesResult`
+
+Solana balances and partial network errors returned by the gateway.
+
+```kotlin
+data class SolanaBalancesResult(
+    val status: Int,
+    val balances: List<SolanaBalance>,
+    val errors: List<SolanaNetworkError>,
+)
 ```
 
 ### `TokenBalancesPageRequest`
@@ -1134,6 +1653,27 @@ object OMSWalletNetworks {
 }
 ```
 
+### `SolanaNetwork`
+
+```kotlin
+enum class SolanaNetwork(
+    val wireValue: String,
+) {
+    Devnet("solana:devnet"),
+    Mainnet("solana:mainnet"),
+}
+```
+
+### `SolanaNetworks`
+
+```kotlin
+object SolanaNetworks {
+    val DEVNET: SolanaNetwork
+
+    val MAINNET: SolanaNetwork
+}
+```
+
 ### `OMSWalletErrorCode`
 
 Stable SDK-level error categories for app-facing error handling.
@@ -1155,6 +1695,7 @@ enum class OMSWalletErrorCode(
     TransactionStatusLookupFailed("OMS_TRANSACTION_STATUS_LOOKUP_FAILED"),
     ValidationError("OMS_VALIDATION_ERROR"),
     StorageError("OMS_STORAGE_ERROR"),
+    AttestationVerificationFailed("OMS_ATTESTATION_VERIFICATION_FAILED"),
 }
 ```
 
@@ -1170,24 +1711,35 @@ enum class OMSWalletOperation(
     PendingWalletSelectionCreateAndSelectWallet("wallet.pendingWalletSelection.createAndSelectWallet"),
     PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
     IndexerGetBalances("indexer.getBalances"),
+    IndexerGetSolanaBalances("indexer.getSolanaBalances"),
     IndexerGetTransactionHistory("indexer.getTransactionHistory"),
     WalletCallContract("wallet.callContract"),
+    WalletAuthorizeRemoteAccess("wallet.authorizeRemoteAccess"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),
+    WalletImportWallet("wallet.importWallet"),
+    WalletGetImportRecipientKey("wallet.getWalletImportRecipientKey"),
+    WalletImportEncryptedWallet("wallet.importEncryptedWallet"),
     WalletExecute("wallet.execute"),
     WalletGetIdToken("wallet.getIdToken"),
+    WalletGetRemoteAccessSession("wallet.getRemoteAccessSession"),
+    WalletGetRemoteAccessSessionUsage("wallet.getRemoteAccessSessionUsage"),
     WalletHandleOidcRedirectCallback("wallet.handleOidcRedirectCallback"),
     WalletGetTransactionStatus("wallet.getTransactionStatus"),
     WalletIsValidMessageSignature("wallet.isValidMessageSignature"),
+    WalletIsValidSolanaMessageSignature("wallet.isValidSolanaMessageSignature"),
     WalletIsValidTypedDataSignature("wallet.isValidTypedDataSignature"),
+    WalletInspectRemoteCredential("wallet.inspectRemoteCredential"),
     WalletListAccess("wallet.listAccess"),
     WalletListAccessPage("wallet.listAccessPage"),
     WalletListAccessPages("wallet.listAccessPages"),
     WalletListWallets("wallet.listWallets"),
     WalletRevokeAccess("wallet.revokeAccess"),
     WalletSendTransaction("wallet.sendTransaction"),
+    WalletSendSolanaTransfer("wallet.sendSolanaTransfer"),
     WalletSignInWithOidcIdToken("wallet.signInWithOidcIdToken"),
     WalletSignMessage("wallet.signMessage"),
+    WalletSignSolanaMessage("wallet.signSolanaMessage"),
     WalletSignOut("wallet.signOut"),
     WalletSignTypedData("wallet.signTypedData"),
     WalletStartEmailAuth("wallet.startEmailAuth"),
@@ -1316,6 +1868,18 @@ class OMSWalletValidationException(
 
 ```kotlin
 class OMSWalletStorageException(
+    operation: OMSWalletOperation? = null,
+    message: String,
+    cause: Throwable? = null,
+) : OMSWalletException
+```
+
+### `OMSWalletAttestationException`
+
+Thrown when a wallet-import response cannot be authenticated as an approved enclave.
+
+```kotlin
+class OMSWalletAttestationException(
     operation: OMSWalletOperation? = null,
     message: String,
     cause: Throwable? = null,

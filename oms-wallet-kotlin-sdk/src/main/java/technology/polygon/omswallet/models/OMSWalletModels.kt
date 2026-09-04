@@ -7,6 +7,16 @@ enum class WalletType(
     val wireValue: String,
 ) {
     Ethereum("ethereum"),
+    Solana("solana"),
+    UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
+}
+
+/** Whether a wallet key was created in WaaS custody or imported by its owner. */
+enum class WalletKeyOrigin(
+    val wireValue: String,
+) {
+    Enclave("enclave"),
+    Imported("imported"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 
@@ -33,6 +43,7 @@ data class Wallet(
     val type: WalletType,
     val address: String,
     val reference: String? = null,
+    val keyOrigin: WalletKeyOrigin,
 )
 
 data class FeeToken(
@@ -54,8 +65,12 @@ data class FeeOption(
 
 data class FeeOptionSelection(
     val token: String,
+    val index: UInt? = null,
 ) {
-    constructor(feeOption: FeeOption) : this(token = feeOption.selectionToken())
+    constructor(feeOption: FeeOption, index: UInt? = null) : this(
+        token = feeOption.selectionToken(),
+        index = index,
+    )
 }
 
 data class Page(
@@ -68,15 +83,85 @@ data class AbiArg(
     val value: JsonElement,
 )
 
-data class CredentialInfo(
+/** A credential currently authorized to use the selected wallet. */
+data class WalletCredential(
     val credentialId: String,
     val expiresAt: String,
     val isCaller: Boolean,
 )
 
-data class ListAccessResponse(
-    val credentials: List<CredentialInfo>,
+/** Display metadata supplied by a remote application credential. */
+data class RemoteCredentialMetadata(
+    val appUrl: String,
+    val appName: String,
+    val appLogoUrl: String,
+    val custom: Map<String, String>,
+)
+
+/** Owner-approved EVM operation allowed during a bounded smart session. */
+sealed interface SmartSessionGrant {
+    data class NativeTransfer(
+        val to: String,
+        val limit: BigInteger,
+    ) : SmartSessionGrant
+
+    data class Erc20Transfer(
+        val token: String,
+        val to: String? = null,
+        val limit: BigInteger,
+        val cumulative: Boolean? = null,
+    ) : SmartSessionGrant
+}
+
+/** Filter for direct or remotely authorized wallet access. */
+enum class AccessGrantType {
+    Direct,
+    Remote,
+}
+
+/** Direct or remote credential access associated with a wallet. */
+sealed interface AccessGrant {
+    val credential: WalletCredential
+
+    data class Direct(
+        override val credential: WalletCredential,
+    ) : AccessGrant
+
+    data class Remote(
+        override val credential: WalletCredential,
+        val sessionId: String,
+        val metadata: RemoteCredentialMetadata,
+        val grants: List<SmartSessionGrant>,
+    ) : AccessGrant
+}
+
+/** One page of wallet access grants and its continuation cursor. */
+data class AccessGrantPage(
+    val grants: List<AccessGrant>,
     val page: Page? = null,
+)
+
+/** Identifiers returned after an owner authorizes a remote smart session. */
+data class AuthorizedRemoteAccess(
+    val walletId: String,
+    val sessionId: String,
+    val expiresAt: String,
+)
+
+/** Owner-visible details for one authorized smart session. */
+data class RemoteAccessSession(
+    val sessionId: String,
+    val walletId: String,
+    val signerAddress: String,
+    val grants: List<SmartSessionGrant>,
+    val chainId: Int,
+    val expiresAt: String,
+)
+
+/** Current usage for one bounded smart-session grant. */
+data class SmartSessionGrantUsage(
+    val grant: SmartSessionGrant,
+    val used: BigInteger? = null,
 )
 
 data class TransactionStatusResponse(
@@ -101,14 +186,12 @@ fun interface FeeOptionSelector {
 
 data class FeeOptionWithBalance(
     val feeOption: FeeOption,
-    val balance: TokenBalance?,
-    val available: String?,
-    val availableRaw: String?,
-    val decimals: Int?,
-) {
-    val selection: FeeOptionSelection
-        get() = FeeOptionSelection(feeOption)
-}
+    val selection: FeeOptionSelection = FeeOptionSelection(feeOption),
+    val balance: TokenBalance? = null,
+    val available: String? = null,
+    val availableRaw: String? = null,
+    val decimals: Int? = null,
+)
 
 private fun FeeOptionWithBalance.hasEnoughBalance(): Boolean {
     val balance = availableRaw?.toBigIntegerOrNull() ?: return false

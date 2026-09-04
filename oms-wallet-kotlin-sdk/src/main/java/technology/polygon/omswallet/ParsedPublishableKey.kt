@@ -7,6 +7,7 @@ internal data class ParsedPublishableKey(
     val projectId: String,
     val walletApiUrl: String,
     val indexerGatewayUrl: String,
+    val solanaIndexerGatewayUrl: String = "${walletApiUrl.trimEnd('/')}/v1/SolanaIndexerGateway/",
 )
 
 /**
@@ -27,6 +28,7 @@ internal fun parsePublishableKey(publishableKey: String): ParsedPublishableKey {
         projectId = "prj_${keyParts[0]}",
         walletApiUrl = route.apiUrl,
         indexerGatewayUrl = "${route.apiUrl}/v1/IndexerGateway/",
+        solanaIndexerGatewayUrl = "${route.apiUrl}/v1/SolanaIndexerGateway/",
     )
 }
 

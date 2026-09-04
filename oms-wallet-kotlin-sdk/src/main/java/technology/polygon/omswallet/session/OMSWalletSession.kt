@@ -12,6 +12,8 @@ internal data class OMSWalletSessionSnapshot(
     val signerKeyType: WalletSigningAlgorithm? = null,
     val expiresAt: String? = null,
     val auth: OMSWalletSessionAuth? = null,
+    val pendingWalletSelectionId: Long? = null,
+    val pendingWalletType: technology.polygon.omswallet.models.WalletType? = null,
 )
 
 internal data class OMSWalletPendingAuthSnapshot(
@@ -50,6 +52,7 @@ internal class OMSWalletSession(
             val expiresAt: String,
             val auth: OMSWalletSessionAuth,
             val pendingWalletSelectionId: Long?,
+            val walletType: technology.polygon.omswallet.models.WalletType?,
         ) : SessionState {
             override fun snapshot(): OMSWalletSessionSnapshot =
                 OMSWalletSessionSnapshot(
@@ -57,6 +60,8 @@ internal class OMSWalletSession(
                     signerKeyType = signerKeyType,
                     expiresAt = expiresAt,
                     auth = auth,
+                    pendingWalletSelectionId = pendingWalletSelectionId,
+                    pendingWalletType = walletType,
                 )
         }
 
@@ -137,6 +142,7 @@ internal class OMSWalletSession(
     fun markAuthVerified(
         expiresAt: String,
         auth: OMSWalletSessionAuth,
+        walletType: technology.polygon.omswallet.models.WalletType,
         requiredRevision: Long? = null,
     ): Pair<Long, Long> {
         synchronized(lock) {
@@ -154,6 +160,7 @@ internal class OMSWalletSession(
                     expiresAt = expiresAt,
                     auth = auth,
                     pendingWalletSelectionId = pendingWalletSelectionId,
+                    walletType = walletType,
                 ),
             )
             return pendingWalletSelectionId to revision
@@ -313,6 +320,7 @@ internal class OMSWalletSession(
                     expiresAt = snapshot.expiresAt.orEmpty(),
                     auth = auth,
                     pendingWalletSelectionId = null,
+                    walletType = snapshot.pendingWalletType,
                 )
             }
 
