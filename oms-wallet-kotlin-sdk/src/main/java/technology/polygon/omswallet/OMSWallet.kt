@@ -32,6 +32,7 @@ class OMSWallet private constructor(
     oidcRedirectAuthStore: OidcRedirectAuthStore?,
     credentialSigner: CredentialSigner?,
     projectScopeKey: String?,
+    walletImport: WalletImportConfiguration?,
 ) {
     private val resolvedProjectId: String = projectId ?: parsePublishableKey(publishableKey).projectId
     private val resolvedEnvironment: OMSWalletEnvironment =
@@ -50,6 +51,7 @@ class OMSWallet private constructor(
             oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
             projectScopeKey = projectScopeKey,
+            walletImport = walletImport,
         )
 
     val indexer: IndexerClient =
@@ -75,6 +77,7 @@ class OMSWallet private constructor(
         context: Context,
         publishableKey: String,
         okHttpClient: OkHttpClient = OkHttpClient(),
+        walletImport: WalletImportConfiguration? = null,
     ) : this(
         publishableKey = publishableKey,
         projectId = projectIdFromPublishableKey(publishableKey),
@@ -98,6 +101,7 @@ class OMSWallet private constructor(
                 nonceStoreName = scopedCredentialNonceStoreName(publishableKey),
             ),
         projectScopeKey = scopedSessionSuffix(publishableKey),
+        walletImport = walletImport,
     )
 
     companion object {
@@ -112,6 +116,7 @@ class OMSWallet private constructor(
             oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
             credentialSigner: CredentialSigner? = null,
             projectScopeKey: String? = null,
+            walletImport: WalletImportConfiguration? = null,
         ): OMSWallet =
             OMSWallet(
                 publishableKey = publishableKey,
@@ -123,6 +128,7 @@ class OMSWallet private constructor(
                 oidcRedirectAuthStore = oidcRedirectAuthStore,
                 credentialSigner = credentialSigner,
                 projectScopeKey = projectScopeKey,
+                walletImport = walletImport,
             )
 
         private fun projectIdFromPublishableKey(publishableKey: String): String = parsePublishableKey(publishableKey).projectId

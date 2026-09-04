@@ -24,6 +24,7 @@ enum class OMSWalletErrorCode(
     TransactionStatusLookupFailed("OMS_TRANSACTION_STATUS_LOOKUP_FAILED"),
     ValidationError("OMS_VALIDATION_ERROR"),
     StorageError("OMS_STORAGE_ERROR"),
+    AttestationVerificationFailed("OMS_ATTESTATION_VERIFICATION_FAILED"),
 }
 
 /**
@@ -36,24 +37,35 @@ enum class OMSWalletOperation(
     PendingWalletSelectionCreateAndSelectWallet("wallet.pendingWalletSelection.createAndSelectWallet"),
     PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
     IndexerGetBalances("indexer.getBalances"),
+    IndexerGetSolanaBalances("indexer.getSolanaBalances"),
     IndexerGetTransactionHistory("indexer.getTransactionHistory"),
     WalletCallContract("wallet.callContract"),
+    WalletAuthorizeRemoteAccess("wallet.authorizeRemoteAccess"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),
+    WalletImportWallet("wallet.importWallet"),
+    WalletGetImportRecipientKey("wallet.getWalletImportRecipientKey"),
+    WalletImportEncryptedWallet("wallet.importEncryptedWallet"),
     WalletExecute("wallet.execute"),
     WalletGetIdToken("wallet.getIdToken"),
+    WalletGetRemoteAccessSession("wallet.getRemoteAccessSession"),
+    WalletGetRemoteAccessSessionUsage("wallet.getRemoteAccessSessionUsage"),
     WalletHandleOidcRedirectCallback("wallet.handleOidcRedirectCallback"),
     WalletGetTransactionStatus("wallet.getTransactionStatus"),
     WalletIsValidMessageSignature("wallet.isValidMessageSignature"),
+    WalletIsValidSolanaMessageSignature("wallet.isValidSolanaMessageSignature"),
     WalletIsValidTypedDataSignature("wallet.isValidTypedDataSignature"),
+    WalletInspectRemoteCredential("wallet.inspectRemoteCredential"),
     WalletListAccess("wallet.listAccess"),
     WalletListAccessPage("wallet.listAccessPage"),
     WalletListAccessPages("wallet.listAccessPages"),
     WalletListWallets("wallet.listWallets"),
     WalletRevokeAccess("wallet.revokeAccess"),
     WalletSendTransaction("wallet.sendTransaction"),
+    WalletSendSolanaTransfer("wallet.sendSolanaTransfer"),
     WalletSignInWithOidcIdToken("wallet.signInWithOidcIdToken"),
     WalletSignMessage("wallet.signMessage"),
+    WalletSignSolanaMessage("wallet.signSolanaMessage"),
     WalletSignOut("wallet.signOut"),
     WalletSignTypedData("wallet.signTypedData"),
     WalletStartEmailAuth("wallet.startEmailAuth"),
@@ -155,6 +167,19 @@ class OMSWalletResponseException(
         operation = operation,
         status = status,
         upstreamError = upstreamError,
+        message = message,
+        cause = cause,
+    )
+
+/** Thrown when a wallet-import response cannot be authenticated as an approved enclave. */
+class OMSWalletAttestationException(
+    operation: OMSWalletOperation? = null,
+    message: String,
+    cause: Throwable? = null,
+) : OMSWalletException(
+        code = OMSWalletErrorCode.AttestationVerificationFailed,
+        operation = operation,
+        retryable = false,
         message = message,
         cause = cause,
     )
@@ -439,6 +464,14 @@ private fun OMSWalletException.withOperation(operation: OMSWalletOperation): OMS
 
         is OMSWalletStorageException -> {
             OMSWalletStorageException(
+                operation = operation,
+                message = message ?: operation.id,
+                cause = this,
+            )
+        }
+
+        is OMSWalletAttestationException -> {
+            OMSWalletAttestationException(
                 operation = operation,
                 message = message ?: operation.id,
                 cause = this,

@@ -15,6 +15,7 @@ import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
 import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletResponseException
 import technology.polygon.omswallet.OMSWalletSelectionException
 import technology.polygon.omswallet.OMSWalletSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionException
@@ -23,28 +24,47 @@ import technology.polygon.omswallet.OMSWalletSessionState
 import technology.polygon.omswallet.OMSWalletStorageException
 import technology.polygon.omswallet.OMSWalletTransactionException
 import technology.polygon.omswallet.OMSWalletValidationException
+import technology.polygon.omswallet.SolanaNetwork
+import technology.polygon.omswallet.WalletImportConfiguration
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
+import technology.polygon.omswallet.internal.generated.waas.AuthorizeRemoteAccessRequest
+import technology.polygon.omswallet.internal.generated.waas.Ciphersuite
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthResponse
 import technology.polygon.omswallet.internal.generated.waas.CreateWalletRequest
+import technology.polygon.omswallet.internal.generated.waas.ERC20TransferGrant
 import technology.polygon.omswallet.internal.generated.waas.ExecuteRequest
 import technology.polygon.omswallet.internal.generated.waas.GetIDTokenRequest
+import technology.polygon.omswallet.internal.generated.waas.GetRecipientKeyRequest
+import technology.polygon.omswallet.internal.generated.waas.GetSessionRequest
+import technology.polygon.omswallet.internal.generated.waas.GetSessionUsageRequest
+import technology.polygon.omswallet.internal.generated.waas.Grant
+import technology.polygon.omswallet.internal.generated.waas.GrantKind
+import technology.polygon.omswallet.internal.generated.waas.Grants
+import technology.polygon.omswallet.internal.generated.waas.HPKEPayload
 import technology.polygon.omswallet.internal.generated.waas.Identity
 import technology.polygon.omswallet.internal.generated.waas.IdentityType
+import technology.polygon.omswallet.internal.generated.waas.ImportWalletRequest
+import technology.polygon.omswallet.internal.generated.waas.InspectCredentialRequest
 import technology.polygon.omswallet.internal.generated.waas.IsValidMessageSignatureRequest
 import technology.polygon.omswallet.internal.generated.waas.IsValidTypedDataSignatureRequest
+import technology.polygon.omswallet.internal.generated.waas.KeyFormat
 import technology.polygon.omswallet.internal.generated.waas.LambdaWebRpcTransport
 import technology.polygon.omswallet.internal.generated.waas.ListAccessRequest
 import technology.polygon.omswallet.internal.generated.waas.ListWalletsRequest
+import technology.polygon.omswallet.internal.generated.waas.NativeTransferGrant
 import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumContractCallRequest
 import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumTransactionRequest
 import technology.polygon.omswallet.internal.generated.waas.PrepareResponse
+import technology.polygon.omswallet.internal.generated.waas.PrepareSolanaTransferRequest
 import technology.polygon.omswallet.internal.generated.waas.RevokeAccessRequest
 import technology.polygon.omswallet.internal.generated.waas.SignMessageRequest
 import technology.polygon.omswallet.internal.generated.waas.SignTypedDataRequest
+import technology.polygon.omswallet.internal.generated.waas.SolanaRecipient
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatusRequest
+import technology.polygon.omswallet.internal.generated.waas.TransportPurpose
 import technology.polygon.omswallet.internal.generated.waas.UseWalletRequest
 import technology.polygon.omswallet.internal.generated.waas.WEBRPC_SCHEMA_VERSION
 import technology.polygon.omswallet.internal.generated.waas.WaasApi
@@ -52,16 +72,23 @@ import technology.polygon.omswallet.internal.generated.waas.WaasClient
 import technology.polygon.omswallet.internal.generated.waas.WaasPublicClient
 import technology.polygon.omswallet.internal.generated.waas.WebRpcHttpResponse
 import technology.polygon.omswallet.models.AbiArg
-import technology.polygon.omswallet.models.CredentialInfo
+import technology.polygon.omswallet.models.AccessGrant
+import technology.polygon.omswallet.models.AccessGrantPage
+import technology.polygon.omswallet.models.AccessGrantType
+import technology.polygon.omswallet.models.AuthorizedRemoteAccess
+import technology.polygon.omswallet.models.EncryptedWalletImportKeyMaterial
 import technology.polygon.omswallet.models.FeeOption
 import technology.polygon.omswallet.models.FeeOptionSelection
 import technology.polygon.omswallet.models.FeeOptionSelector
 import technology.polygon.omswallet.models.FeeOptionWithBalance
 import technology.polygon.omswallet.models.FeeToken
-import technology.polygon.omswallet.models.ListAccessResponse
 import technology.polygon.omswallet.models.Page
+import technology.polygon.omswallet.models.RemoteAccessSession
+import technology.polygon.omswallet.models.RemoteCredentialMetadata
 import technology.polygon.omswallet.models.SendTransactionRequest
 import technology.polygon.omswallet.models.SendTransactionResponse
+import technology.polygon.omswallet.models.SmartSessionGrant
+import technology.polygon.omswallet.models.SmartSessionGrantUsage
 import technology.polygon.omswallet.models.TokenBalance
 import technology.polygon.omswallet.models.TransactionMode
 import technology.polygon.omswallet.models.TransactionStatus
@@ -69,6 +96,11 @@ import technology.polygon.omswallet.models.TransactionStatusPollingOptions
 import technology.polygon.omswallet.models.TransactionStatusResolution
 import technology.polygon.omswallet.models.TransactionStatusResponse
 import technology.polygon.omswallet.models.Wallet
+import technology.polygon.omswallet.models.WalletCredential
+import technology.polygon.omswallet.models.WalletImportCipherSuite
+import technology.polygon.omswallet.models.WalletImportPrivateKey
+import technology.polygon.omswallet.models.WalletImportRecipientKey
+import technology.polygon.omswallet.models.WalletKeyOrigin
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
@@ -82,15 +114,22 @@ import technology.polygon.omswallet.utils.OMSWalletIsoTimestamps
 import technology.polygon.omswallet.utils.OMSWalletTimestamps
 import technology.polygon.omswallet.utils.formatUnits
 import java.math.BigInteger
+import java.security.SecureRandom
 import java.util.Timer
 import java.util.TimerTask
 import technology.polygon.omswallet.internal.generated.waas.AbiArg as WaasAbiArg
 import technology.polygon.omswallet.internal.generated.waas.CredentialInfo as WaasCredentialInfo
+import technology.polygon.omswallet.internal.generated.waas.CredentialMetadata as WaasCredentialMetadata
+import technology.polygon.omswallet.internal.generated.waas.CredentialType as WaasCredentialType
 import technology.polygon.omswallet.internal.generated.waas.FeeOption as WaasFeeOption
 import technology.polygon.omswallet.internal.generated.waas.FeeOptionSelection as WaasFeeOptionSelection
 import technology.polygon.omswallet.internal.generated.waas.FeeToken as WaasFeeToken
+import technology.polygon.omswallet.internal.generated.waas.GrantUsage as WaasGrantUsage
+import technology.polygon.omswallet.internal.generated.waas.KeyOrigin as WaasKeyOrigin
 import technology.polygon.omswallet.internal.generated.waas.ListAccessResponse as WaasListAccessResponse
+import technology.polygon.omswallet.internal.generated.waas.NetworkFamily as WaasNetworkFamily
 import technology.polygon.omswallet.internal.generated.waas.Page as WaasPage
+import technology.polygon.omswallet.internal.generated.waas.SessionInfo as WaasSessionInfo
 import technology.polygon.omswallet.internal.generated.waas.TransactionMode as WaasTransactionMode
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatus as WaasTransactionStatus
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatusResponse as WaasTransactionStatusResponse
@@ -158,6 +197,7 @@ class WalletClient private constructor(
     private val transactionStatusPollIntervalMillis: Long,
     private val transactionStatusPollTimeoutMillis: Long,
     private val transactionStatusDelay: suspend (Long) -> Unit,
+    private val walletImport: WalletImportConfiguration?,
 ) {
     companion object {
         /**
@@ -190,6 +230,7 @@ class WalletClient private constructor(
             sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
             now: () -> Long = OMSWalletTimestamps::nowMilliseconds,
             projectScopeKey: String? = null,
+            walletImport: WalletImportConfiguration? = null,
         ): WalletClient {
             val createRuntime = {
                 WalletScopeRuntime(
@@ -218,6 +259,7 @@ class WalletClient private constructor(
                 transactionStatusPollIntervalMillis = transactionStatusPollIntervalMillis,
                 transactionStatusPollTimeoutMillis = transactionStatusPollTimeoutMillis,
                 transactionStatusDelay = transactionStatusDelay,
+                walletImport = walletImport,
             )
         }
     }
@@ -232,6 +274,7 @@ class WalletClient private constructor(
             environment = environment,
             transport = transport,
             authorizeSignedRequest = ::authorizeSignedRequest,
+            walletImport = walletImport,
         )
     private val indexerClient: IndexerClient =
         IndexerClient.create(
@@ -1155,6 +1198,118 @@ class WalletClient private constructor(
             )
         }
 
+    /** Imports and activates an Ethereum or Solana private key through the attested import transport. */
+    suspend fun importWallet(
+        privateKey: WalletImportPrivateKey,
+        reference: String? = null,
+    ): WalletSelectionResult =
+        runOMSWalletOperation(OMSWalletOperation.WalletImportWallet) {
+            val context = walletImportActivationContext(privateKey.walletType)
+            WalletImportCrypto.validateReference(reference)
+            val plaintext = WalletImportCrypto.plaintext(privateKey)
+            try {
+                val recipient =
+                    gateway.getWalletImportRecipientKey(
+                        WalletImportCipherSuite.P256Sha256Aes256Gcm,
+                        context.revision,
+                    )
+                val sealed =
+                    WalletImportCrypto.sealP256Aes256Gcm(
+                        WalletImportBase64.decodeCanonical(recipient.publicKey, "recipient publicKey"),
+                        plaintext,
+                    )
+                val wallet =
+                    gateway.importWallet(
+                        walletType = privateKey.walletType,
+                        keyMaterial =
+                            EncryptedWalletImportKeyMaterial(
+                                keyId = recipient.keyId,
+                                cipherSuite = recipient.cipherSuite,
+                                encapsulatedKey = WalletImportBase64.encode(sealed.first),
+                                ciphertext = WalletImportBase64.encode(sealed.second),
+                            ),
+                        reference = reference,
+                        requiredSessionRevision = context.revision,
+                    )
+                activateImportedWallet(wallet, context)
+            } finally {
+                plaintext.fill(0)
+            }
+        }
+
+    /** Fetches an attested recipient key for caller-managed wallet-import encryption. */
+    suspend fun getWalletImportRecipientKey(cipherSuite: WalletImportCipherSuite): WalletImportRecipientKey =
+        runOMSWalletOperation(OMSWalletOperation.WalletGetImportRecipientKey) {
+            val revision = requireWalletSelectionOrActiveSession()
+            gateway.getWalletImportRecipientKey(cipherSuite, revision).also {
+                requireWalletSelectionOrActiveSession(revision)
+            }
+        }
+
+    /** Imports and activates caller-encrypted private-key material. */
+    suspend fun importEncryptedWallet(
+        walletType: WalletType,
+        keyMaterial: EncryptedWalletImportKeyMaterial,
+        reference: String? = null,
+    ): WalletSelectionResult =
+        runOMSWalletOperation(OMSWalletOperation.WalletImportEncryptedWallet) {
+            val context = walletImportActivationContext(walletType)
+            WalletImportCrypto.validateReference(reference)
+            val wallet = gateway.importWallet(walletType, keyMaterial, reference, context.revision)
+            activateImportedWallet(wallet, context)
+        }
+
+    private fun walletImportActivationContext(walletType: WalletType): WalletImportActivationContext =
+        synchronized(runtime.lifecycleLock) {
+            val revision = requireWalletSelectionOrActiveSession()
+            val snapshot = walletSession.requireSnapshot(revision)
+            val pendingId = snapshot.pendingWalletSelectionId
+            if (pendingId != null) {
+                require(snapshot.pendingWalletType == walletType) {
+                    "Pending wallet selection requires a ${snapshot.pendingWalletType?.wireValue} wallet"
+                }
+                WalletImportActivationContext.Pending(
+                    id = pendingId,
+                    signerAddress = requireNotNull(snapshot.signerAddress),
+                    signerKeyType = snapshot.signerKeyType,
+                    revision = revision,
+                )
+            } else {
+                WalletImportActivationContext.Active(
+                    walletId =
+                        snapshot.walletId?.takeIf(String::isNotBlank)
+                            ?: throw OMSWalletSessionException(message = "No wallet selected"),
+                    revision = revision,
+                )
+            }
+        }
+
+    private fun activateImportedWallet(
+        wallet: Wallet,
+        context: WalletImportActivationContext,
+    ): WalletSelectionResult =
+        synchronized(runtime.lifecycleLock) {
+            walletSession.requireRevision(context.revision)
+            val selectedRevision =
+                when (context) {
+                    is WalletImportActivationContext.Active -> {
+                        check(walletSession.requireSnapshot().walletId == context.walletId) { "Active wallet session changed" }
+                        walletSession.selectWallet(wallet.id, wallet.address, context.revision)
+                    }
+
+                    is WalletImportActivationContext.Pending -> {
+                        walletSession.selectWalletForPendingSelection(
+                            pendingWalletSelectionId = context.id,
+                            signerAddress = context.signerAddress,
+                            signerKeyType = context.signerKeyType,
+                            walletId = wallet.id,
+                            walletAddress = wallet.address,
+                        )
+                    }
+                }
+            persistSelectedWallet(wallet, selectedRevision)
+        }
+
     private suspend fun createWalletForCurrentSession(
         walletType: WalletType,
         reference: String?,
@@ -1337,6 +1492,7 @@ class WalletClient private constructor(
                     .markAuthVerified(
                         expiresAt = completeAuth.credential.expiresAt,
                         auth = sessionAuth,
+                        walletType = walletType,
                         requiredRevision = requiredSessionRevision,
                     ).also { (_, revision) -> onSessionRevisionChanged?.invoke(revision) }
             }
@@ -1484,9 +1640,26 @@ class WalletClient private constructor(
     ): String =
         runOMSWalletOperation(OMSWalletOperation.WalletSignMessage) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignMessage)
+            require(activeSession.walletAddress.isEthereumAddress()) {
+                "An active Ethereum wallet is required"
+            }
             gateway.signMessage(
                 walletId = activeSession.walletId,
                 network = network,
+                message = message,
+                requiredSessionRevision = activeSession.revision,
+            )
+        }
+
+    /** Signs [message] with the currently selected Solana wallet. */
+    suspend fun signSolanaMessage(message: String): String =
+        runOMSWalletOperation(OMSWalletOperation.WalletSignSolanaMessage) {
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignSolanaMessage)
+            require(!activeSession.walletAddress.isEthereumAddress()) {
+                "An active Solana wallet is required"
+            }
+            gateway.signSolanaMessage(
+                walletId = activeSession.walletId,
                 message = message,
                 requiredSessionRevision = activeSession.revision,
             )
@@ -1501,6 +1674,9 @@ class WalletClient private constructor(
     ): String =
         runOMSWalletOperation(OMSWalletOperation.WalletSignTypedData) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignTypedData)
+            require(activeSession.walletAddress.isEthereumAddress()) {
+                "An active Ethereum wallet is required"
+            }
             gateway.signTypedData(
                 walletId = activeSession.walletId,
                 network = network,
@@ -1526,6 +1702,24 @@ class WalletClient private constructor(
             gateway.isValidMessageSignature(
                 walletId = activeSession.walletId,
                 network = network,
+                message = message,
+                signature = signature,
+            )
+        }
+
+    /** Validates [signature] for a Solana [message] through the WaaS public wallet RPC. */
+    suspend fun isValidSolanaMessageSignature(
+        message: String,
+        signature: String,
+    ): Boolean =
+        runOMSWalletOperation(OMSWalletOperation.WalletIsValidSolanaMessageSignature) {
+            val activeSession =
+                requireActiveWalletSession(
+                    OMSWalletOperation.WalletIsValidSolanaMessageSignature,
+                    requireCredential = false,
+                )
+            gateway.isValidSolanaMessageSignature(
+                walletId = activeSession.walletId,
                 message = message,
                 signature = signature,
             )
@@ -1594,6 +1788,9 @@ class WalletClient private constructor(
     ): SendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletSendTransaction) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSendTransaction)
+            require(activeSession.walletAddress.isEthereumAddress()) {
+                "An active Ethereum wallet is required"
+            }
             require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
             val prepared =
                 gateway.prepareEthereumTransaction(
@@ -1605,6 +1802,44 @@ class WalletClient private constructor(
             executePreparedTransaction(
                 network = network,
                 walletAddress = activeSession.walletAddress,
+                prepared = prepared,
+                requiredSessionRevision = activeSession.revision,
+                selectFeeOption = selectFeeOption,
+                waitForStatus = waitForStatus,
+                statusPolling = statusPolling,
+            )
+        }
+
+    /** Sends a native SOL or SPL token transfer from the selected Solana wallet. */
+    suspend fun sendSolanaTransfer(
+        network: SolanaNetwork,
+        asset: String,
+        to: String,
+        amount: BigInteger,
+        mode: TransactionMode = TransactionMode.Relayer,
+        waitForStatus: Boolean = true,
+        statusPolling: TransactionStatusPollingOptions? = null,
+        selectFeeOption: FeeOptionSelector? = null,
+    ): SendTransactionResponse =
+        runOMSWalletOperation(OMSWalletOperation.WalletSendSolanaTransfer) {
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSendSolanaTransfer)
+            require(!activeSession.walletAddress.isEthereumAddress()) {
+                "An active Solana wallet is required"
+            }
+            require(amount.signum() >= 0) { "Transfer amount must be non-negative" }
+            val prepared =
+                gateway.prepareSolanaTransfer(
+                    walletId = activeSession.walletId,
+                    network = network,
+                    asset = asset,
+                    to = to,
+                    amount = amount,
+                    mode = mode,
+                    requiredSessionRevision = activeSession.revision,
+                )
+            executePreparedTransaction(
+                network = null,
+                walletAddress = null,
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -1629,6 +1864,9 @@ class WalletClient private constructor(
     ): SendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletCallContract) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletCallContract)
+            require(activeSession.walletAddress.isEthereumAddress()) {
+                "An active Ethereum wallet is required"
+            }
             val prepared =
                 gateway.prepareEthereumContractCall(
                     walletId = activeSession.walletId,
@@ -1660,26 +1898,65 @@ class WalletClient private constructor(
             gateway.transactionStatus(txnId, activeSession.revision)
         }
 
-    /**
-     * Returns all credentials that currently have access to the selected wallet.
-     *
-     * When [pageSize] is provided, the SDK follows WaaS cursors using that page
-     * size and returns the combined credential list.
-     */
-    suspend fun listAccess(pageSize: UInt? = null): List<CredentialInfo> =
-        runOMSWalletOperation(OMSWalletOperation.WalletListAccess) {
-            val credentials = mutableListOf<CredentialInfo>()
-            listAccessPages(pageSize = pageSize).collect { response ->
-                credentials += response.credentials
+    /** Returns display metadata for a remote credential before the owner approves access. */
+    suspend fun inspectRemoteCredential(credentialId: String): RemoteCredentialMetadata =
+        runOMSWalletOperation(OMSWalletOperation.WalletInspectRemoteCredential) {
+            require(credentialId.isNotBlank()) { "credentialId is required" }
+            gateway.inspectRemoteCredential(projectId, credentialId)
+        }
+
+    /** Authorizes owner-approved EVM smart-session grants for a remote credential. */
+    suspend fun authorizeRemoteAccess(
+        credentialId: String,
+        network: Network,
+        grants: List<SmartSessionGrant>,
+        expiresAt: String,
+        sessionId: String? = null,
+    ): AuthorizedRemoteAccess =
+        runOMSWalletOperation(OMSWalletOperation.WalletAuthorizeRemoteAccess) {
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletAuthorizeRemoteAccess)
+            require(activeSession.walletAddress.isEthereumAddress()) {
+                "An active Ethereum wallet is required"
             }
-            credentials
+            require(grants.isNotEmpty()) { "At least one grant is required" }
+            val result =
+                gateway.authorizeRemoteAccess(
+                    walletId = activeSession.walletId,
+                    credentialId = credentialId,
+                    network = network,
+                    grants = grants,
+                    expiresAt = expiresAt,
+                    sessionId = sessionId,
+                    requiredSessionRevision = activeSession.revision,
+                )
+            val current = requireActiveWalletSession(OMSWalletOperation.WalletAuthorizeRemoteAccess)
+            check(current.walletId == activeSession.walletId && current.revision == activeSession.revision) {
+                "Active wallet session changed"
+            }
+            result
+        }
+
+    /** Returns all access grants, following WaaS cursors with the requested [pageSize]. */
+    suspend fun listAccess(
+        pageSize: UInt? = null,
+        type: AccessGrantType? = null,
+    ): List<AccessGrant> =
+        runOMSWalletOperation(OMSWalletOperation.WalletListAccess) {
+            val grants = mutableListOf<AccessGrant>()
+            listAccessPages(pageSize = pageSize, type = type).collect { response ->
+                grants += response.grants
+            }
+            grants
         }
 
     /**
      * Emits credential-access pages for the selected wallet until WaaS stops
      * returning a cursor.
      */
-    fun listAccessPages(pageSize: UInt? = null): Flow<ListAccessResponse> =
+    fun listAccessPages(
+        pageSize: UInt? = null,
+        type: AccessGrantType? = null,
+    ): Flow<AccessGrantPage> =
         flow {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletListAccessPages)
             var cursor: String? = null
@@ -1689,6 +1966,7 @@ class WalletClient private constructor(
                         requestListAccessPage(
                             pageSize = pageSize,
                             cursor = cursor,
+                            type = type,
                             activeSession = activeSession,
                         )
                     }
@@ -1703,11 +1981,13 @@ class WalletClient private constructor(
     suspend fun listAccessPage(
         pageSize: UInt? = null,
         cursor: String? = null,
-    ): ListAccessResponse =
+        type: AccessGrantType? = null,
+    ): AccessGrantPage =
         runOMSWalletOperation(OMSWalletOperation.WalletListAccessPage) {
             requestListAccessPage(
                 pageSize,
                 cursor,
+                type,
                 requireActiveWalletSession(OMSWalletOperation.WalletListAccessPage),
             )
         }
@@ -1715,13 +1995,42 @@ class WalletClient private constructor(
     private suspend fun requestListAccessPage(
         pageSize: UInt?,
         cursor: String?,
+        type: AccessGrantType?,
         activeSession: ActiveWalletSession,
-    ): ListAccessResponse =
+    ): AccessGrantPage =
         gateway.listAccessPage(
             walletId = activeSession.walletId,
             page = accessPage(pageSize, cursor),
+            type = type,
             requiredSessionRevision = activeSession.revision,
         )
+
+    /** Returns one owner-visible smart-session and checks that it belongs to the active wallet. */
+    suspend fun getRemoteAccessSession(sessionId: String): RemoteAccessSession =
+        runOMSWalletOperation(OMSWalletOperation.WalletGetRemoteAccessSession) {
+            require(sessionId.isNotBlank()) { "sessionId is required" }
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletGetRemoteAccessSession)
+            val session = gateway.getRemoteAccessSession(sessionId, activeSession.revision)
+            require(session.walletId == activeSession.walletId) {
+                "Session does not belong to the active wallet"
+            }
+            session
+        }
+
+    /** Returns grant usage for an owner-visible smart session on [network]. */
+    suspend fun getRemoteAccessSessionUsage(
+        sessionId: String,
+        network: Network,
+    ): List<SmartSessionGrantUsage> =
+        runOMSWalletOperation(OMSWalletOperation.WalletGetRemoteAccessSessionUsage) {
+            require(sessionId.isNotBlank()) { "sessionId is required" }
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletGetRemoteAccessSessionUsage)
+            gateway.getRemoteAccessSessionUsage(
+                sessionId = sessionId,
+                network = network,
+                requiredSessionRevision = activeSession.revision,
+            )
+        }
 
     /**
      * Returns an ID token for the currently selected wallet.
@@ -1745,12 +2054,16 @@ class WalletClient private constructor(
      *
      * Use [listAccess] or [listAccessPage] to find credential IDs.
      */
-    suspend fun revokeAccess(targetCredentialId: String): Unit =
+    suspend fun revokeAccess(
+        credentialId: String,
+        sessionId: String? = null,
+    ): Unit =
         runOMSWalletOperation(OMSWalletOperation.WalletRevokeAccess) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletRevokeAccess)
             gateway.revokeAccess(
                 walletId = activeSession.walletId,
-                targetCredentialId = targetCredentialId,
+                targetCredentialId = credentialId,
+                sessionId = sessionId,
                 requiredSessionRevision = activeSession.revision,
             )
         }
@@ -2056,8 +2369,8 @@ class WalletClient private constructor(
         }
 
     private suspend fun executePreparedTransaction(
-        network: Network,
-        walletAddress: String,
+        network: Network?,
+        walletAddress: String?,
         prepared: PreparedWalletTransaction,
         requiredSessionRevision: Long,
         selectFeeOption: FeeOptionSelector?,
@@ -2086,13 +2399,22 @@ class WalletClient private constructor(
                 }
 
                 else -> {
-                    selectFeeOption.select(
-                        enrichFeeOptionsWithBalances(
-                            network = network,
-                            walletAddress = walletAddress,
-                            feeOptions = prepared.feeOptions,
-                        ),
-                    ) ?: throw IllegalArgumentException(
+                    val options =
+                        if (network != null && walletAddress != null) {
+                            enrichFeeOptionsWithBalances(
+                                network = network,
+                                walletAddress = walletAddress,
+                                feeOptions = prepared.feeOptions,
+                            )
+                        } else {
+                            prepared.feeOptions.mapIndexed { index, feeOption ->
+                                FeeOptionWithBalance(
+                                    feeOption = feeOption,
+                                    selection = FeeOptionSelection(feeOption, index.toUInt()),
+                                )
+                            }
+                        }
+                    selectFeeOption.select(options) ?: throw IllegalArgumentException(
                         "No fee option selected for unsponsored transaction",
                     )
                 }
@@ -2181,7 +2503,7 @@ class WalletClient private constructor(
                 }
             }
 
-        return feeOptions.map { feeOption ->
+        return feeOptions.mapIndexed { index, feeOption ->
             val balance =
                 if (feeOption.token.isNativeToken()) {
                     nativeBalance
@@ -2193,6 +2515,7 @@ class WalletClient private constructor(
             val decimals = feeOption.token.balanceDecimals()
             FeeOptionWithBalance(
                 feeOption = feeOption,
+                selection = FeeOptionSelection(feeOption, index.toUInt()),
                 balance = balance,
                 available = balance?.balance?.formatTokenAmount(decimals),
                 availableRaw = balance?.balance,
@@ -2218,7 +2541,9 @@ class WalletClient private constructor(
             runCatching { formatUnits(BigInteger(this), scale) }.getOrDefault(this)
         } ?: this
 
-    private fun List<FeeOption>.defaultSelection(): FeeOptionSelection = FeeOptionSelection(first())
+    private fun List<FeeOption>.defaultSelection(): FeeOptionSelection = FeeOptionSelection(first(), 0u)
+
+    private fun String.isEthereumAddress(): Boolean = startsWith("0x")
 
     private suspend fun waitForTransactionStatus(
         txnId: String,
@@ -2315,7 +2640,7 @@ private data class WalletAuthCompletion(
     val nextWalletsCursor: String?,
     val email: String?,
     val identity: Identity,
-    val credential: CredentialInfo,
+    val credential: WalletCredential,
 )
 
 private data class WalletsPage(
@@ -2334,6 +2659,22 @@ private data class ActiveWalletSession(
     val walletAddress: String,
     val revision: Long,
 )
+
+private sealed interface WalletImportActivationContext {
+    val revision: Long
+
+    data class Active(
+        val walletId: String,
+        override val revision: Long,
+    ) : WalletImportActivationContext
+
+    data class Pending(
+        val id: Long,
+        val signerAddress: String,
+        val signerKeyType: WalletSigningAlgorithm?,
+        override val revision: Long,
+    ) : WalletImportActivationContext
+}
 
 private data class ExpiryNotification(
     val event: OMSWalletSessionExpiredEvent,
@@ -2361,6 +2702,7 @@ private class WaasWalletGateway(
         endpoint: String,
         body: String,
     ) -> String,
+    private val walletImport: WalletImportConfiguration?,
 ) {
     private val publicClient: WaasPublicClient =
         WaasPublicClient(
@@ -2507,6 +2849,57 @@ private class WaasWalletGateway(
             ).wallet
             .toModel()
 
+    suspend fun getWalletImportRecipientKey(
+        cipherSuite: WalletImportCipherSuite,
+        requiredSessionRevision: Long,
+    ): WalletImportRecipientKey {
+        val response =
+            walletImportClient(requiredSessionRevision).getRecipientKey(
+                GetRecipientKeyRequest(
+                    purpose = TransportPurpose.WalletImport,
+                    suite = cipherSuite.toWaas(),
+                ),
+            )
+        if (response.keyId.isBlank() || response.publicKey.isBlank()) {
+            throw OMSWalletResponseException(message = "Wallet import recipient-key response is incomplete")
+        }
+        WalletImportBase64.decodeCanonical(response.publicKey, "recipient publicKey")
+        return WalletImportRecipientKey(response.keyId, cipherSuite, response.publicKey)
+    }
+
+    suspend fun importWallet(
+        walletType: WalletType,
+        keyMaterial: EncryptedWalletImportKeyMaterial,
+        reference: String?,
+        requiredSessionRevision: Long,
+    ): Wallet {
+        require(keyMaterial.keyId.isNotBlank()) { "keyMaterial.keyId is required" }
+        WalletImportCrypto.validateReference(reference)
+        WalletImportBase64.decodeCanonical(keyMaterial.encapsulatedKey, "keyMaterial.encapsulatedKey")
+        WalletImportBase64.decodeCanonical(keyMaterial.ciphertext, "keyMaterial.ciphertext")
+        val wallet =
+            walletImportClient(requiredSessionRevision)
+                .importWallet(
+                    ImportWalletRequest(
+                        networkFamily = walletType.toNetworkFamily(),
+                        format = KeyFormat.PrivateKey,
+                        keyMaterial =
+                            HPKEPayload(
+                                keyId = keyMaterial.keyId,
+                                suite = keyMaterial.cipherSuite.toWaas(),
+                                encapsulatedKey = keyMaterial.encapsulatedKey,
+                                ciphertext = keyMaterial.ciphertext,
+                            ),
+                        reference = reference,
+                    ),
+                ).wallet
+                .toModel()
+        if (wallet.type != walletType) {
+            throw OMSWalletResponseException(message = "Imported wallet network family does not match the request")
+        }
+        return wallet
+    }
+
     suspend fun createWallet(
         walletType: WalletType,
         reference: String?,
@@ -2515,7 +2908,7 @@ private class WaasWalletGateway(
         signedClient(requiredSessionRevision)
             .createWallet(
                 CreateWalletRequest(
-                    type = walletType.toWaas(),
+                    networkFamily = walletType.toNetworkFamily(),
                     reference = reference,
                 ),
             ).wallet
@@ -2552,6 +2945,20 @@ private class WaasWalletGateway(
                 ),
             ).signature
 
+    suspend fun signSolanaMessage(
+        walletId: String,
+        message: String,
+        requiredSessionRevision: Long,
+    ): String =
+        signedClient(requiredSessionRevision)
+            .signMessage(
+                SignMessageRequest(
+                    walletId = walletId,
+                    network = "",
+                    message = message,
+                ),
+            ).signature
+
     suspend fun signTypedData(
         walletId: String,
         network: Network,
@@ -2577,6 +2984,22 @@ private class WaasWalletGateway(
             .isValidMessageSignature(
                 IsValidMessageSignatureRequest(
                     network = network.id.toString(),
+                    networkFamily = WaasNetworkFamily.EVM,
+                    walletId = walletId,
+                    message = message,
+                    signature = signature,
+                ),
+            ).isValid
+
+    suspend fun isValidSolanaMessageSignature(
+        walletId: String,
+        message: String,
+        signature: String,
+    ): Boolean =
+        publicClient
+            .isValidMessageSignature(
+                IsValidMessageSignatureRequest(
+                    networkFamily = WaasNetworkFamily.Solana,
                     walletId = walletId,
                     message = message,
                     signature = signature,
@@ -2638,6 +3061,27 @@ private class WaasWalletGateway(
                 ),
             ).toPreparedWalletTransaction()
 
+    suspend fun prepareSolanaTransfer(
+        walletId: String,
+        network: SolanaNetwork,
+        asset: String,
+        to: String,
+        amount: BigInteger,
+        mode: TransactionMode,
+        requiredSessionRevision: Long,
+    ): PreparedWalletTransaction =
+        signedClient(requiredSessionRevision)
+            .prepareSolanaTransfer(
+                PrepareSolanaTransferRequest(
+                    walletId = walletId,
+                    network = network.wireValue,
+                    asset = asset,
+                    recipient = SolanaRecipient(address = to),
+                    amount = amount.toString(),
+                    mode = mode.toWaas(),
+                ),
+            ).toPreparedWalletTransaction()
+
     suspend fun execute(
         txnId: String,
         feeOption: FeeOptionSelection?,
@@ -2663,18 +3107,84 @@ private class WaasWalletGateway(
             .transactionStatus(TransactionStatusRequest(txnId = txnId))
             .toModel()
 
+    suspend fun inspectRemoteCredential(
+        scope: String,
+        credentialId: String,
+    ): RemoteCredentialMetadata =
+        publicClient
+            .inspectCredential(
+                InspectCredentialRequest(
+                    scope = scope,
+                    credentialId = credentialId,
+                ),
+            ).metadata
+            .toModel()
+
+    suspend fun authorizeRemoteAccess(
+        walletId: String,
+        credentialId: String,
+        network: Network,
+        grants: List<SmartSessionGrant>,
+        expiresAt: String,
+        sessionId: String?,
+        requiredSessionRevision: Long,
+    ): AuthorizedRemoteAccess {
+        val response =
+            signedClient(requiredSessionRevision)
+                .authorizeRemoteAccess(
+                    AuthorizeRemoteAccessRequest(
+                        credentialId = credentialId,
+                        walletId = walletId,
+                        grants = Grants(entries = grants.map { it.toWaas() }),
+                        expiry = expiresAt,
+                        chainId = network.id.toString(),
+                        sessionId = sessionId,
+                    ),
+                )
+        return AuthorizedRemoteAccess(
+            walletId = walletId,
+            sessionId = response.sessionId,
+            expiresAt = response.expiry,
+        )
+    }
+
     suspend fun listAccessPage(
         walletId: String,
         page: Page?,
+        type: AccessGrantType?,
         requiredSessionRevision: Long,
-    ): ListAccessResponse =
+    ): AccessGrantPage =
         signedClient(requiredSessionRevision)
             .listAccess(
                 ListAccessRequest(
                     walletId = walletId,
                     page = page?.toWaas(),
+                    type = type?.toWaas(),
                 ),
             ).toModel()
+
+    suspend fun getRemoteAccessSession(
+        sessionId: String,
+        requiredSessionRevision: Long,
+    ): RemoteAccessSession =
+        signedClient(requiredSessionRevision)
+            .getSession(GetSessionRequest(sessionId = sessionId))
+            .session
+            .toModel()
+
+    suspend fun getRemoteAccessSessionUsage(
+        sessionId: String,
+        network: Network,
+        requiredSessionRevision: Long,
+    ): List<SmartSessionGrantUsage> =
+        signedClient(requiredSessionRevision)
+            .getSessionUsage(
+                GetSessionUsageRequest(
+                    sessionId = sessionId,
+                    network = network.id.toString(),
+                ),
+            ).entries
+            .map { it.toModel() }
 
     suspend fun getIdToken(
         walletId: String,
@@ -2694,12 +3204,14 @@ private class WaasWalletGateway(
     suspend fun revokeAccess(
         walletId: String,
         targetCredentialId: String,
+        sessionId: String?,
         requiredSessionRevision: Long,
     ) {
         signedClient(requiredSessionRevision).revokeAccess(
             RevokeAccessRequest(
                 targetCredentialId = targetCredentialId,
                 walletId = walletId,
+                sessionId = sessionId,
             ),
         )
     }
@@ -2712,6 +3224,55 @@ private class WaasWalletGateway(
             baseUrl = environment.walletApiBaseUrl(),
             transport = signedTransport(requiredSessionRevision, allowCredentialCreation),
         )
+
+    private fun walletImportClient(requiredSessionRevision: Long): WaasClient {
+        require(walletImport != null) { "Wallet import requires walletImport.trustedPcr0s configuration" }
+        return WaasClient(
+            baseUrl = environment.walletApiBaseUrl(),
+            transport = attestedSignedTransport(requiredSessionRevision, walletImport),
+        )
+    }
+
+    private fun attestedSignedTransport(
+        requiredSessionRevision: Long,
+        configuration: WalletImportConfiguration,
+    ): LambdaWebRpcTransport =
+        LambdaWebRpcTransport { baseUrl, path, body, headers ->
+            val endpoint = resolveEndpoint(path)
+            val requestPath = WaasApi.basePath + endpoint
+            val walletSignatureHeader =
+                withContext(Dispatchers.IO) {
+                    authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
+                }
+            val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
+            val nonce = WalletImportBase64.encode(nonceBytes)
+            val requestHeaders =
+                defaultSignedHeaders(headers, walletSignatureHeader).toMutableMap().apply {
+                    put("X-Attestation-Nonce", nonce)
+                }
+            val response =
+                transport.postJsonWithStatus(
+                    baseUrl = baseUrl,
+                    path = requestPath,
+                    body = body,
+                    headers = requestHeaders,
+                )
+            val document =
+                response.headers["x-attestation-document"]
+                    ?: throw technology.polygon.omswallet.OMSWalletAttestationException(
+                        message = "WaaS response is missing its attestation document",
+                    )
+            AttestationVerifier.verify(
+                encodedDocument = document,
+                method = "POST",
+                path = requestPath,
+                requestBody = body,
+                responseBody = response.body,
+                nonce = nonce,
+                trustedPcr0s = configuration.trustedPcr0s,
+            )
+            WebRpcHttpResponse(response.statusCode, response.body)
+        }
 
     private fun signedTransport(
         requiredSessionRevision: Long,
@@ -2782,19 +3343,58 @@ private class WaasWalletGateway(
             nextWalletsCursor = page?.cursor?.takeIf { it.isNotBlank() },
             email = email,
             identity = identity,
-            credential = credential.toModel(),
+            credential = credential.toWalletCredential(),
         )
 
     private fun WalletType.toWaas(): WaasWalletType =
         when (this) {
             WalletType.Ethereum -> WaasWalletType.Ethereum
+            WalletType.Solana -> WaasWalletType.Solana
             WalletType.UNKNOWN_DEFAULT -> WaasWalletType.UNKNOWN_DEFAULT
+        }
+
+    private fun WalletType.toNetworkFamily(): WaasNetworkFamily =
+        when (this) {
+            WalletType.Ethereum -> WaasNetworkFamily.EVM
+            WalletType.Solana -> WaasNetworkFamily.Solana
+            WalletType.UNKNOWN_DEFAULT -> WaasNetworkFamily.UNKNOWN_DEFAULT
+        }
+
+    private fun WalletImportCipherSuite.toWaas(): Ciphersuite =
+        when (this) {
+            WalletImportCipherSuite.X25519Sha256Aes256Gcm -> Ciphersuite.X25519_SHA256_AES_256_GCM
+            WalletImportCipherSuite.X25519Sha256ChaCha20Poly1305 -> Ciphersuite.X25519_SHA256_ChaCha20_Poly1305
+            WalletImportCipherSuite.P256Sha256Aes256Gcm -> Ciphersuite.P256_SHA256_AES_256_GCM
+            WalletImportCipherSuite.P256Sha256ChaCha20Poly1305 -> Ciphersuite.P256_SHA256_ChaCha20_Poly1305
         }
 
     private fun WaasWalletType.toModel(): WalletType =
         when (this) {
             WaasWalletType.Ethereum -> WalletType.Ethereum
+            WaasWalletType.Solana -> WalletType.Solana
             WaasWalletType.UNKNOWN_DEFAULT -> WalletType.UNKNOWN_DEFAULT
+        }
+
+    private fun WaasNetworkFamily.toWalletType(): WalletType =
+        when (this) {
+            WaasNetworkFamily.EVM -> WalletType.Ethereum
+
+            WaasNetworkFamily.Solana -> WalletType.Solana
+
+            WaasNetworkFamily.UNKNOWN_DEFAULT -> throw OMSWalletResponseException(
+                message = "Wallet response has an invalid networkFamily",
+            )
+        }
+
+    private fun WaasKeyOrigin.toModel(): WalletKeyOrigin =
+        when (this) {
+            WaasKeyOrigin.Enclave -> WalletKeyOrigin.Enclave
+
+            WaasKeyOrigin.Imported -> WalletKeyOrigin.Imported
+
+            WaasKeyOrigin.UNKNOWN_DEFAULT -> throw OMSWalletResponseException(
+                message = "Wallet response has an invalid keyOrigin",
+            )
         }
 
     private fun TransactionMode.toWaas(): WaasTransactionMode =
@@ -2816,9 +3416,16 @@ private class WaasWalletGateway(
     private fun WaasWallet.toModel(): Wallet =
         Wallet(
             id = id,
-            type = type.toModel(),
+            type =
+                networkFamily?.toWalletType() ?: throw OMSWalletResponseException(
+                    message = "Wallet response is missing networkFamily",
+                ),
             address = address,
             reference = reference,
+            keyOrigin =
+                keyOrigin?.toModel() ?: throw OMSWalletResponseException(
+                    message = "Wallet response is missing keyOrigin",
+                ),
         )
 
     private fun WaasFeeToken.toModel(): FeeToken =
@@ -2840,7 +3447,11 @@ private class WaasWalletGateway(
             displayValue = displayValue,
         )
 
-    private fun FeeOptionSelection.toWaas(): WaasFeeOptionSelection = WaasFeeOptionSelection(token = token)
+    private fun FeeOptionSelection.toWaas(): WaasFeeOptionSelection =
+        WaasFeeOptionSelection(
+            token = token,
+            index = index,
+        )
 
     private fun Page.toWaas(): WaasPage =
         WaasPage(
@@ -2854,16 +3465,42 @@ private class WaasWalletGateway(
             value = value,
         )
 
-    private fun WaasCredentialInfo.toModel(): CredentialInfo =
-        CredentialInfo(
+    private fun WaasCredentialInfo.toWalletCredential(): WalletCredential =
+        WalletCredential(
             credentialId = credentialId,
             expiresAt = expiresAt,
             isCaller = isCaller,
         )
 
-    private fun WaasListAccessResponse.toModel(): ListAccessResponse =
-        ListAccessResponse(
-            credentials = credentials.map { it.toModel() },
+    private fun WaasCredentialInfo.toModel(): AccessGrant =
+        when (type) {
+            WaasCredentialType.Direct -> {
+                AccessGrant.Direct(toWalletCredential())
+            }
+
+            WaasCredentialType.Remote -> {
+                AccessGrant.Remote(
+                    credential = toWalletCredential(),
+                    sessionId =
+                        sessionId?.takeIf(String::isNotBlank)
+                            ?: throw OMSWalletResponseException(message = "Remote access credential is missing sessionId"),
+                    metadata =
+                        metadata?.toModel()
+                            ?: throw OMSWalletResponseException(message = "Remote access credential is missing metadata"),
+                    grants =
+                        grants?.entries?.map { it.toModel() }
+                            ?: throw OMSWalletResponseException(message = "Remote access credential is missing grants"),
+                )
+            }
+
+            WaasCredentialType.UNKNOWN_DEFAULT -> {
+                throw OMSWalletResponseException(message = "Access response has an invalid credential type")
+            }
+        }
+
+    private fun WaasListAccessResponse.toModel(): AccessGrantPage =
+        AccessGrantPage(
+            grants = credentials.map { it.toModel() },
             page =
                 page?.let {
                     Page(
@@ -2872,6 +3509,125 @@ private class WaasWalletGateway(
                     )
                 },
         )
+
+    private fun AccessGrantType.toWaas(): WaasCredentialType =
+        when (this) {
+            AccessGrantType.Direct -> WaasCredentialType.Direct
+            AccessGrantType.Remote -> WaasCredentialType.Remote
+        }
+
+    private fun WaasCredentialMetadata.toModel(): RemoteCredentialMetadata =
+        RemoteCredentialMetadata(
+            appUrl = appUrl,
+            appName = appName,
+            appLogoUrl = appLogoUrl,
+            custom = custom,
+        )
+
+    private fun SmartSessionGrant.toWaas(): Grant =
+        when (this) {
+            is SmartSessionGrant.NativeTransfer -> {
+                require(to.isEthereumAddressValue()) { "Invalid native transfer recipient" }
+                require(limit.signum() >= 0) { "Native transfer limit must be non-negative" }
+                Grant(
+                    kind = GrantKind.NativeTransfer,
+                    nativeTransfer = NativeTransferGrant(to = to, limit = limit.toString()),
+                )
+            }
+
+            is SmartSessionGrant.Erc20Transfer -> {
+                require(token.isEthereumAddressValue()) { "Invalid ERC-20 token address" }
+                require(to?.isEthereumAddressValue() != false) { "Invalid ERC-20 recipient" }
+                require(limit.signum() >= 0) { "ERC-20 transfer limit must be non-negative" }
+                Grant(
+                    kind = GrantKind.ERC20Transfer,
+                    erc20transfer =
+                        ERC20TransferGrant(
+                            token = token,
+                            to = to,
+                            limit = limit.toString(),
+                            cumulative = cumulative,
+                        ),
+                )
+            }
+        }
+
+    private fun Grant.toModel(): SmartSessionGrant =
+        when (kind) {
+            GrantKind.NativeTransfer -> {
+                val entry =
+                    nativeTransfer
+                        ?: throw OMSWalletResponseException(message = "Session contains an invalid native transfer grant")
+                requireResponseAddress(entry.to, "native transfer recipient")
+                SmartSessionGrant.NativeTransfer(
+                    to = entry.to,
+                    limit = entry.limit.toUnsignedBigInteger("native transfer limit"),
+                )
+            }
+
+            GrantKind.ERC20Transfer -> {
+                val entry =
+                    erc20transfer
+                        ?: throw OMSWalletResponseException(message = "Session contains an invalid ERC-20 transfer grant")
+                requireResponseAddress(entry.token, "ERC-20 token")
+                entry.to?.let { requireResponseAddress(it, "ERC-20 recipient") }
+                SmartSessionGrant.Erc20Transfer(
+                    token = entry.token,
+                    to = entry.to,
+                    limit = entry.limit.toUnsignedBigInteger("ERC-20 transfer limit"),
+                    cumulative = entry.cumulative,
+                )
+            }
+
+            GrantKind.UNKNOWN_DEFAULT -> {
+                throw OMSWalletResponseException(message = "Session contains an invalid grant")
+            }
+        }
+
+    private fun WaasSessionInfo.toModel(): RemoteAccessSession {
+        val parsedChainId = chainId.toIntOrNull()
+        if (parsedChainId == null || parsedChainId <= 0 || parsedChainId.toString() != chainId) {
+            throw OMSWalletResponseException(message = "Session contains an invalid chain ID")
+        }
+        requireResponseAddress(signerAddress, "signer address")
+        if (sessionId.isBlank() || walletId.isBlank() || expiresAt.isBlank()) {
+            throw OMSWalletResponseException(message = "Session response is missing required fields")
+        }
+        return RemoteAccessSession(
+            sessionId = sessionId,
+            walletId = walletId,
+            signerAddress = signerAddress,
+            grants = grants.entries.map { it.toModel() },
+            chainId = parsedChainId,
+            expiresAt = expiresAt,
+        )
+    }
+
+    private fun WaasGrantUsage.toModel(): SmartSessionGrantUsage =
+        SmartSessionGrantUsage(
+            grant = grant.toModel(),
+            used = used?.toUnsignedBigInteger("grant usage"),
+        )
+
+    private fun String.toUnsignedBigInteger(field: String): BigInteger {
+        val parsed = toBigIntegerOrNull()
+        if (parsed == null || parsed.signum() < 0 || parsed.toString() != this) {
+            throw OMSWalletResponseException(message = "Session contains an invalid $field")
+        }
+        return parsed
+    }
+
+    private fun requireResponseAddress(
+        value: String,
+        field: String,
+    ) {
+        if (!value.isEthereumAddressValue()) {
+            throw OMSWalletResponseException(message = "Session contains an invalid $field")
+        }
+    }
+
+    private fun String.isEthereumAddressValue(): Boolean =
+        length == 42 && startsWith("0x") && drop(2).all { it.digitToIntOrNull(16) != null }
 
     private fun WaasTransactionStatusResponse.toModel(): TransactionStatusResponse =
         TransactionStatusResponse(
@@ -2895,6 +3651,7 @@ private class WaasWalletGateway(
 private fun String.toWalletType(): WalletType =
     when (this) {
         WalletType.Ethereum.wireValue -> WalletType.Ethereum
+        WalletType.Solana.wireValue -> WalletType.Solana
         else -> WalletType.UNKNOWN_DEFAULT
     }
 

@@ -15,6 +15,7 @@ import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.internal.generated.waas.ExecuteRequest
 import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumContractCallRequest
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatusRequest
@@ -290,7 +291,7 @@ class WalletTransactionTest {
                 WaasApi.Execute.encodeRequest(
                     technology.polygon.omswallet.internal.generated.waas.ExecuteRequest(
                         txnId = "txn-1",
-                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                        feeOption = WaasFeeOptionSelection(token = "usdc", index = 1u),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -357,7 +358,7 @@ class WalletTransactionTest {
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-token-id",
-                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                        feeOption = WaasFeeOptionSelection(token = "usdc", index = 0u),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -565,7 +566,7 @@ class WalletTransactionTest {
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-first-available",
-                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                        feeOption = WaasFeeOptionSelection(token = "usdc", index = 1u),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -1165,6 +1166,48 @@ class WalletTransactionTest {
             assertEquals(null, unknown.txnHash)
         }
 
+    @Test
+    fun solanaOperationsUseSolanaRequestShapes() =
+        runBlocking {
+            enqueueJson("""{"signature":"solana-signature"}""")
+            enqueueJson("""{"isValid":true}""")
+            enqueueJson(
+                """{"txnId":"solana-txn","status":"quoted","feeOptions":[],"sponsored":true,"expiresAt":"2099-01-01T00:00:00Z"}""",
+            )
+            enqueueJson("""{"status":"executed"}""")
+            val client =
+                restoredWalletClient(
+                    nonceValue = "1710000120",
+                    walletAddress = "3gFktQX6vki5M2DzN8Y1ESPUJ4fJ8o6hVQWf8vYvPypD",
+                )
+
+            val signature = client.signSolanaMessage("hello")
+            val valid = client.isValidSolanaMessageSignature("hello", signature)
+            val transaction =
+                client.sendSolanaTransfer(
+                    network = SolanaNetwork.Devnet,
+                    asset = "SOL",
+                    to = "recipient",
+                    amount = BigInteger("1000000"),
+                    waitForStatus = false,
+                )
+            val sign = requireNotNull(server.takeRequest())
+            val verify = requireNotNull(server.takeRequest())
+            val prepare = requireNotNull(server.takeRequest())
+            val execute = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/Waas/SignMessage", sign.target)
+            assertTrue(requireNotNull(sign.body).utf8().contains("\"network\":\"\""))
+            assertEquals("/v1/WaasPublic/IsValidMessageSignature", verify.target)
+            assertTrue(requireNotNull(verify.body).utf8().contains("\"networkFamily\":\"solana\""))
+            assertTrue(valid)
+            assertEquals("/v1/Waas/PrepareSolanaTransfer", prepare.target)
+            assertTrue(requireNotNull(prepare.body).utf8().contains("\"network\":\"solana:devnet\""))
+            assertEquals("/v1/Waas/Execute", execute.target)
+            assertEquals("solana-txn", transaction.txnId)
+            assertEquals(TransactionStatusResolution.NotRequested, transaction.statusResolution)
+        }
+
     private fun enqueueJson(body: String) {
         server.enqueue(
             MockResponse
@@ -1177,6 +1220,7 @@ class WalletTransactionTest {
 
     private fun restoredWalletClient(
         nonceValue: String,
+        walletAddress: String = "0xwallet",
         environment: OMSWalletEnvironment =
             OMSWalletEnvironment(
                 walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -1194,7 +1238,7 @@ class WalletTransactionTest {
                         snapshot =
                             OMSWalletSessionSnapshot(
                                 walletId = "wallet-main",
-                                walletAddress = "0xwallet",
+                                walletAddress = walletAddress,
                                 signerAddress = TEST_CREDENTIAL_ID,
                                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 auth = emailSessionAuth(),

@@ -301,8 +301,9 @@ class PublicErrorContractsTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body("""{"wallet":{"id":"wallet-created","type":"ethereum","address":"0x4444444444444444444444444444444444444444"}}""")
-                    .bodyDelay(300, TimeUnit.MILLISECONDS)
+                    .body(
+                        """{"wallet":{"id":"wallet-created","type":"ethereum","networkFamily":"evm","keyOrigin":"enclave","address":"0x4444444444444444444444444444444444444444"}}""",
+                    ).bodyDelay(300, TimeUnit.MILLISECONDS)
                     .build(),
             )
             val inFlightClient = createOmsClient()

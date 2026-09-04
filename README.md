@@ -337,6 +337,35 @@ omsWallet.wallet.signOut()
 Keystore cleanup fails. Handle `OMSWalletStorageException` to report or retry a
 persistent cleanup failure.
 
+### Import a Wallet
+
+Configure wallet import with audited AWS Nitro Enclave PCR0 measurements. The SDK rejects all-zero
+debug measurements, verifies the attestation and request/response binding, and encrypts plaintext
+keys locally before import.
+
+```kotlin
+val omsWallet =
+    OMSWallet(
+        context = context,
+        publishableKey = "your-publishable-key",
+        walletImport = WalletImportConfiguration(
+            trustedPcr0s = listOf("your-audited-48-byte-pcr0-hex"),
+        ),
+    )
+
+val imported =
+    omsWallet.wallet.importWallet(
+        privateKey = WalletImportPrivateKey.Ethereum("0x..."),
+        reference = "Imported wallet",
+    )
+println(imported.wallet.keyOrigin == WalletKeyOrigin.Imported)
+```
+
+Ethereum imports accept 32 raw bytes or hexadecimal text. Solana imports accept a 32-byte seed,
+64-byte keypair, or base58 text. The SDK does not persist plaintext imported keys. For
+caller-managed HPKE, use `getWalletImportRecipientKey` followed by `importEncryptedWallet`; both
+responses remain attestation verified.
+
 ## Core Workflows
 
 ### Sign and Verify Messages
@@ -355,6 +384,17 @@ val verifyResult = omsWallet.wallet.isValidMessageSignature(
     network = network,
     message = "hello from OMS Wallet",
     signature = signResult,
+)
+```
+
+For a selected Solana wallet, off-chain messages use the Solana-specific methods and do not require
+a cluster:
+
+```kotlin
+val signature = omsWallet.wallet.signSolanaMessage("hello from Solana")
+val valid = omsWallet.wallet.isValidSolanaMessageSignature(
+    message = "hello from Solana",
+    signature = signature,
 )
 ```
 
@@ -464,6 +504,17 @@ tokenBalances.balances.forEach { balance ->
 }
 ```
 
+Query native SOL and fungible token balances through the Solana indexer gateway:
+
+```kotlin
+val result =
+    omsWallet.indexer.getSolanaBalances(
+        walletAddress = "solana-wallet-address",
+        networks = listOf(SolanaNetwork.Mainnet, SolanaNetwork.Devnet),
+    )
+result.balances.forEach(::println)
+```
+
 Pass `includeMetadata = true` when you need token contract details or NFT/token
 metadata from `balance.contractInfo` and `balance.tokenMetadata`.
 
@@ -555,6 +606,19 @@ To refresh a transaction later:
 val status = omsWallet.wallet.getTransactionStatus(txnId = txResult.txnId)
 ```
 
+For a selected Solana wallet, amounts are smallest units (lamports for SOL and base units for SPL
+tokens):
+
+```kotlin
+val result =
+    omsWallet.wallet.sendSolanaTransfer(
+        network = SolanaNetwork.Devnet,
+        asset = "SOL",
+        to = "solana-recipient-address",
+        amount = BigInteger("1000000"),
+    )
+```
+
 ## Reference
 
 ### Errors
@@ -603,12 +667,40 @@ val scopedIdToken =
 
 val credentials = omsWallet.wallet.listAccess(pageSize = 25u)
 omsWallet.wallet.listAccessPages(pageSize = 25u).collect { page ->
-    println(page.credentials)
+    println(page.grants)
 }
 
 credentials
-    .firstOrNull { !it.isCaller }
-    ?.let { omsWallet.wallet.revokeAccess(targetCredentialId = it.credentialId) }
+    .firstOrNull { !it.credential.isCaller }
+    ?.let { omsWallet.wallet.revokeAccess(credentialId = it.credential.credentialId) }
+```
+
+For an owner-approved smart session, inspect the remote credential before showing consent, then
+authorize bounded EVM transfer grants. Backend credential registration and execution stay outside
+this SDK surface.
+
+```kotlin
+val credentialId = "remote-credential-id"
+val metadata = omsWallet.wallet.inspectRemoteCredential(credentialId)
+showConsentScreen(metadata)
+
+val session =
+    omsWallet.wallet.authorizeRemoteAccess(
+        credentialId = credentialId,
+        network = Network.POLYGON,
+        grants =
+            listOf(
+                SmartSessionGrant.NativeTransfer(
+                    to = "0x1111111111111111111111111111111111111111",
+                    limit = BigInteger("1000000000000000"),
+                ),
+            ),
+        expiresAt = "2099-01-01T00:00:00Z",
+    )
+
+val details = omsWallet.wallet.getRemoteAccessSession(session.sessionId)
+val usage = omsWallet.wallet.getRemoteAccessSessionUsage(session.sessionId, Network.POLYGON)
+omsWallet.wallet.revokeAccess(credentialId, session.sessionId)
 ```
 
 ## API Reference

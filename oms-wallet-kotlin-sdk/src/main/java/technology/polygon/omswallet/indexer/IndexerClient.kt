@@ -23,11 +23,18 @@ import technology.polygon.omswallet.OMSWalletRequestException
 import technology.polygon.omswallet.OMSWalletResponseException
 import technology.polygon.omswallet.OMSWalletUpstreamError
 import technology.polygon.omswallet.OMSWalletUpstreamService
+import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.models.ContractTokenBalance
 import technology.polygon.omswallet.models.ContractVerificationStatus
 import technology.polygon.omswallet.models.IndexerNetworkType
 import technology.polygon.omswallet.models.MetadataOptions
 import technology.polygon.omswallet.models.NativeTokenBalance
+import technology.polygon.omswallet.models.SolanaBalance
+import technology.polygon.omswallet.models.SolanaBalancesResult
+import technology.polygon.omswallet.models.SolanaNetworkError
+import technology.polygon.omswallet.models.SolanaTokenProgram
+import technology.polygon.omswallet.models.SolanaVerificationSource
+import technology.polygon.omswallet.models.SolanaVerificationStatus
 import technology.polygon.omswallet.models.TokenBalance
 import technology.polygon.omswallet.models.TokenBalancesPage
 import technology.polygon.omswallet.models.TokenBalancesPageRequest
@@ -178,18 +185,57 @@ class IndexerClient private constructor(
         }
     }
 
+    /** Gets native SOL and fungible-token balances for [walletAddress]. */
+    suspend fun getSolanaBalances(
+        walletAddress: String,
+        networks: List<SolanaNetwork> = listOf(SolanaNetwork.Mainnet, SolanaNetwork.Devnet),
+        includeMetadata: Boolean = true,
+        omitNativeBalances: Boolean? = null,
+        mintAddresses: List<String> = emptyList(),
+        excludedMintAddresses: List<String> = emptyList(),
+    ): SolanaBalancesResult {
+        val operation = OMSWalletOperation.IndexerGetSolanaBalances
+        val response =
+            postIndexerGatewayJson(
+                operation = operation,
+                baseUrl = environment.solanaIndexerGatewayUrl,
+                webRpcHeaderValue = solanaIndexerGatewayWebrpcHeaderValue,
+                path = "/GetTokenBalancesDetails",
+                body =
+                    buildJsonObject {
+                        putJsonArray("networks") { networks.forEach { add(it.wireValue) } }
+                        putJsonObject("filter") {
+                            putJsonArray("accountAddresses") { add(walletAddress) }
+                            omitNativeBalances?.let { put("omitNativeBalances", it) }
+                            putStringArrayIfNotEmpty("contractWhitelist", mintAddresses)
+                            putStringArrayIfNotEmpty("contractBlacklist", excludedMintAddresses)
+                        }
+                        put("omitMetadata", includeMetadata == false)
+                    }.toString(),
+            )
+        return decodeIndexerResponse(response, operation) { root ->
+            SolanaBalancesResult(
+                status = response.statusCode,
+                balances = root.requiredObjectArray("balances").map { it.toSolanaBalance() },
+                errors = root.requiredObjectArray("errors").map { it.toSolanaNetworkError() },
+            )
+        }
+    }
+
     private suspend fun postIndexerGatewayJson(
         operation: OMSWalletOperation,
+        baseUrl: String = environment.indexerGatewayUrl,
+        webRpcHeaderValue: String = indexerGatewayWebrpcHeaderValue,
         path: String,
         body: String,
     ): OMSWalletHttpResponse {
         val response =
             try {
                 transport.postJsonWithStatus(
-                    baseUrl = environment.indexerGatewayUrl,
+                    baseUrl = baseUrl,
                     path = path,
                     body = body,
-                    headers = defaultGatewayHeaders(),
+                    headers = defaultGatewayHeaders(webRpcHeaderValue),
                 )
             } catch (throwable: CancellationException) {
                 throw throwable
@@ -271,12 +317,108 @@ class IndexerClient private constructor(
             )
         }
 
-    private fun defaultGatewayHeaders(): Map<String, String> =
+    private fun defaultGatewayHeaders(webRpcHeaderValue: String): Map<String, String> =
         mapOf(
             "Api-Key" to publishableKey,
             "Accept" to "application/json",
-            "Webrpc" to indexerGatewayWebrpcHeaderValue,
+            "Webrpc" to webRpcHeaderValue,
         )
+
+    private fun JsonObject.toSolanaBalance(): SolanaBalance {
+        val network = requiredSolanaNetwork("network")
+        val accountAddress = requiredString("accountAddress")
+        val name = requiredString("name")
+        val symbol = requiredString("symbol")
+        val decimals = requiredInt("decimals")
+        val balance = requiredString("balance")
+        val formattedBalance = requiredString("formattedBalance")
+        val imageUrl = optionalNonEmptyString("imageUrl")
+        val metadataUri = optionalNonEmptyString("metadataUri")
+        val verificationStatus = requiredVerificationStatus("verificationStatus")
+        val verificationSource = requiredVerificationSource("verificationSource")
+        val priceUSD = optionalString("priceUSD")
+        val balanceUSD = optionalString("balanceUSD")
+        return when (requiredString("assetType")) {
+            "native" -> {
+                require(this["tokenProgram"] == null || this["tokenProgram"] === JsonNull)
+                require(this["mintAddress"] == null || this["mintAddress"] === JsonNull)
+                SolanaBalance.Native(
+                    network,
+                    accountAddress,
+                    name,
+                    symbol,
+                    decimals,
+                    balance,
+                    formattedBalance,
+                    imageUrl,
+                    metadataUri,
+                    verificationStatus,
+                    verificationSource,
+                    priceUSD,
+                    balanceUSD,
+                )
+            }
+
+            "fungible-token" -> {
+                SolanaBalance.FungibleToken(
+                    network,
+                    accountAddress,
+                    requiredTokenProgram("tokenProgram"),
+                    requiredString("mintAddress"),
+                    name,
+                    symbol,
+                    decimals,
+                    balance,
+                    formattedBalance,
+                    imageUrl,
+                    metadataUri,
+                    verificationStatus,
+                    verificationSource,
+                    priceUSD,
+                    balanceUSD,
+                )
+            }
+
+            else -> {
+                throw IllegalArgumentException("Invalid assetType")
+            }
+        }
+    }
+
+    private fun JsonObject.toSolanaNetworkError(): SolanaNetworkError =
+        SolanaNetworkError(requiredSolanaNetwork("network"), requiredString("reason"))
+
+    private fun JsonObject.requiredSolanaNetwork(name: String): SolanaNetwork =
+        when (requiredString(name)) {
+            SolanaNetwork.Mainnet.wireValue -> SolanaNetwork.Mainnet
+            SolanaNetwork.Devnet.wireValue -> SolanaNetwork.Devnet
+            else -> throw IllegalArgumentException("Invalid $name")
+        }
+
+    private fun JsonObject.requiredTokenProgram(name: String): SolanaTokenProgram =
+        when (requiredString(name)) {
+            "spl-token" -> SolanaTokenProgram.SplToken
+            "token-2022" -> SolanaTokenProgram.Token2022
+            else -> throw IllegalArgumentException("Invalid $name")
+        }
+
+    private fun JsonObject.requiredVerificationStatus(name: String): SolanaVerificationStatus =
+        when (requiredString(name)) {
+            "verified" -> SolanaVerificationStatus.Verified
+            "unverified" -> SolanaVerificationStatus.Unverified
+            "unknown" -> SolanaVerificationStatus.Unknown
+            else -> throw IllegalArgumentException("Invalid $name")
+        }
+
+    private fun JsonObject.requiredVerificationSource(name: String): SolanaVerificationSource =
+        when (requiredString(name)) {
+            "jupiter" -> SolanaVerificationSource.Jupiter
+            "solflare-utl" -> SolanaVerificationSource.SolflareUtl
+            "none" -> SolanaVerificationSource.None
+            else -> throw IllegalArgumentException("Invalid $name")
+        }
+
+    private fun JsonObject.optionalNonEmptyString(name: String): String? = optionalString(name)?.takeIf(String::isNotEmpty)
 
     private fun JsonObject.toTokenBalancesPage(): TokenBalancesPage =
         TokenBalancesPage(
@@ -574,5 +716,7 @@ class IndexerClient private constructor(
 
         private const val indexerGatewayWebrpcHeaderValue: String =
             "webrpc@v0.31.2;gen-typescript@v0.23.1;sequence-indexer@v0.4.0"
+        private const val solanaIndexerGatewayWebrpcHeaderValue: String =
+            "webrpc@v0.31.2;gen-kotlin@v0.3.2;solana-indexer-gateway@v1"
     }
 }
