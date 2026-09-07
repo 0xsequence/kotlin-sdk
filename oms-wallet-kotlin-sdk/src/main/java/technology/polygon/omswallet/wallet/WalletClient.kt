@@ -2385,6 +2385,7 @@ class WalletClient private constructor(
         val feeOption =
             when {
                 prepared.sponsored -> {
+                    selectFeeOption?.select(emptyList())
                     null
                 }
 

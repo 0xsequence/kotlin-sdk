@@ -927,6 +927,9 @@ data class TransactionStatusResponse(
 
 ### `FeeOptionSelector`
 
+Selects a fee option before execution. Sponsored transactions pass an empty list;
+returning null acknowledges the free fee, while throwing stops execution.
+
 ```kotlin
 fun interface FeeOptionSelector {
     suspend fun select(feeOptions: List<FeeOptionWithBalance>): FeeOptionSelection?

@@ -1,5 +1,6 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import mockwebserver3.MockResponse
@@ -367,7 +368,7 @@ class WalletTransactionTest {
         }
 
     @Test
-    fun sendTransactionSponsoredSkipsCustomFeeSelector() =
+    fun sendTransactionSponsoredInvokesCustomFeeSelectorWithEmptyOptions() =
         runBlocking {
             enqueueJson(
                 prepareResponse(
@@ -410,7 +411,7 @@ class WalletTransactionTest {
 
             assertEquals("txn-sponsored", result.txnId)
             assertEquals(TransactionStatus.Executed, result.status)
-            assertEquals(false, selectorCalled)
+            assertEquals(true, selectorCalled)
             assertEquals(
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(txnId = "txn-sponsored"),
@@ -418,6 +419,67 @@ class WalletTransactionTest {
                 requireNotNull(executeRequest.body).utf8(),
             )
             assertEquals(2, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionSponsoredContinuesWithFirstAvailable() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-sponsored-first-available",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            enqueueJson("""{"status":"executed"}""")
+            val client = restoredWalletClient(nonceValue = "1710000117")
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    waitForStatus = false,
+                    selectFeeOption = FeeOptionSelector.firstAvailable,
+                )
+
+            requireNotNull(server.takeRequest())
+            val executeRequest = requireNotNull(server.takeRequest())
+            assertEquals("txn-sponsored-first-available", result.txnId)
+            assertEquals(
+                WaasApi.Execute.encodeRequest(
+                    ExecuteRequest(txnId = "txn-sponsored-first-available"),
+                ),
+                requireNotNull(executeRequest.body).utf8(),
+            )
+        }
+
+    @Test
+    fun sendTransactionSponsoredDoesNotExecuteWhenAcknowledgementThrows() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-sponsored-cancelled",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            val client = restoredWalletClient(nonceValue = "1710000118")
+
+            val error =
+                runCatching {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                        selectFeeOption =
+                            FeeOptionSelector { feeOptions ->
+                                assertTrue(feeOptions.isEmpty())
+                                throw CancellationException("Transaction cancelled")
+                            },
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is CancellationException)
+            assertEquals(1, server.requestCount)
         }
 
     @Test

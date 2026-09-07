@@ -588,7 +588,12 @@ val txResult = omsWallet.wallet.sendTransaction(
         mode = TransactionMode.Native,
     ),
 ) { feeOptions ->
-    feeOptions.first().selection
+    if (feeOptions.isEmpty()) {
+        // Present the sponsored transaction for confirmation here.
+        null
+    } else {
+        feeOptions.first().selection
+    }
 }
 ```
 
@@ -597,8 +602,10 @@ wallet's raw indexer balance for that fee token when available. `available` is
 formatted with the token decimals, while `availableRaw` keeps the raw integer
 value. `decimals` is exposed as `Int?`. `selection` preserves the
 API-provided `tokenID` when present and falls back to the token symbol. Sponsored
-transactions skip fee selection; unsponsored transactions fail before execute
-when no fee option can be selected.
+transactions invoke the selector with an empty list; return `null` after acknowledging
+the free fee, or throw to stop execution. `FeeOptionSelector.firstAvailable` returns
+`null` for that empty list and continues execution as before. Unsponsored transactions
+fail before execute when no fee option can be selected.
 
 To refresh a transaction later:
 
