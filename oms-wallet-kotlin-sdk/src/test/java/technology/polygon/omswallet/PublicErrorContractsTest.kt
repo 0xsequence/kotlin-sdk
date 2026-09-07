@@ -20,6 +20,7 @@ import org.junit.Test
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.models.AbiArg
 import technology.polygon.omswallet.models.SendTransactionRequest
+import technology.polygon.omswallet.models.WalletImportCipherSuite
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
@@ -81,6 +82,35 @@ class PublicErrorContractsTest {
                 ),
                 publicError {
                     client.wallet.startEmailAuth("user@example.com")
+                },
+            )
+        }
+
+    @Test
+    fun preservesWalletImportAttestationFailuresAcrossWebRpc() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("{}")
+                    .build(),
+            )
+            val client =
+                createOmsClientWithSession(
+                    walletImport = WalletImportConfiguration(listOf("a".repeat(96))),
+                )
+
+            assertEquals(
+                error(
+                    name = "OMSWalletAttestationException",
+                    code = "OMS_ATTESTATION_VERIFICATION_FAILED",
+                    operation = "wallet.getWalletImportRecipientKey",
+                    message = "WaaS response is missing its attestation document",
+                    retryable = false,
+                ),
+                publicError {
+                    client.wallet.getWalletImportRecipientKey(WalletImportCipherSuite.P256Sha256Aes256Gcm)
                 },
             )
         }
@@ -1130,6 +1160,7 @@ class PublicErrorContractsTest {
         okHttpClient: OkHttpClient = OkHttpClient(),
         oidcRedirectAuthStore: OidcRedirectAuthStore? = InMemoryOidcRedirectAuthStore(),
         credentialSigner: CredentialSigner = TrackingCredentialSigner(),
+        walletImport: WalletImportConfiguration? = null,
     ): OMSWallet =
         OMSWallet.createForTesting(
             publishableKey = "test-publishable-key",
@@ -1139,10 +1170,14 @@ class PublicErrorContractsTest {
             sessionStore = InMemorySessionStore(),
             oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
+            walletImport = walletImport,
         )
 
-    private fun createOmsClientWithSession(okHttpClient: OkHttpClient = OkHttpClient()): OMSWallet =
-        createOmsClient(okHttpClient = okHttpClient).also { client ->
+    private fun createOmsClientWithSession(
+        okHttpClient: OkHttpClient = OkHttpClient(),
+        walletImport: WalletImportConfiguration? = null,
+    ): OMSWallet =
+        createOmsClient(okHttpClient = okHttpClient, walletImport = walletImport).also { client ->
             client.wallet.restoreSession(activeSessionSnapshot())
         }
 

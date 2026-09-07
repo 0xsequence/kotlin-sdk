@@ -273,6 +273,10 @@ internal suspend fun <T> runOMSWalletOperation(
     } catch (throwable: WebRpcError) {
         throw throwable.toOMSWalletException(operation)
     } catch (throwable: WebRpcTransportException) {
+        val attestationFailure = throwable.attestationFailure(operation)
+        if (attestationFailure != null) {
+            throw attestationFailure
+        }
         throw OMSWalletRequestException(
             operation = operation,
             upstreamError = throwable.toWaasUpstreamError(),
@@ -366,12 +370,13 @@ internal fun Throwable.toOMSWalletException(operation: OMSWalletOperation): OMSW
         }
 
         is WebRpcTransportException -> {
-            OMSWalletRequestException(
-                operation = operation,
-                upstreamError = toWaasUpstreamError(),
-                message = message ?: "WebRPC transport failed",
-                cause = this,
-            )
+            attestationFailure(operation)
+                ?: OMSWalletRequestException(
+                    operation = operation,
+                    upstreamError = toWaasUpstreamError(),
+                    message = message ?: "WebRPC transport failed",
+                    cause = this,
+                )
         }
 
         is IllegalArgumentException -> {
@@ -477,6 +482,11 @@ private fun OMSWalletException.withOperation(operation: OMSWalletOperation): OMS
                 cause = this,
             )
         }
+    }
+
+private fun WebRpcTransportException.attestationFailure(operation: OMSWalletOperation): OMSWalletException? =
+    (cause as? OMSWalletAttestationException)?.let { failure ->
+        if (failure.operation == operation) failure else failure.withOperation(operation)
     }
 
 private fun WebRpcError.normalizedStatus(): Int? {
