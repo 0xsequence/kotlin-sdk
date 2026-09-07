@@ -597,10 +597,12 @@ val txResult = omsWallet.wallet.sendTransaction(
 }
 ```
 
-The selector receives `FeeOptionWithBalance` values. `balance` is the selected
-wallet's raw indexer balance for that fee token when available. `available` is
-formatted with the token decimals, while `availableRaw` keeps the raw integer
-value. `decimals` is exposed as `Int?`. `selection` preserves the
+The selector receives `FeeOptionWithBalance` values. For Ethereum fees, `balance`
+contains the matching `TokenBalance` when available. For both Ethereum and Solana
+fees, `available` is formatted with the token decimals, while `availableRaw` keeps
+the raw integer value. `decimals` is exposed as `Int?`, allowing
+`FeeOptionSelector.firstAvailable` to select the first affordable option on either
+network family. `selection` preserves the
 API-provided `tokenID` when present and falls back to the token symbol. Sponsored
 transactions invoke the selector with an empty list; return `null` after acknowledging
 the free fee, or throw to stop execution. `FeeOptionSelector.firstAvailable` returns

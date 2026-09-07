@@ -89,6 +89,7 @@ import technology.polygon.omswallet.models.SendTransactionRequest
 import technology.polygon.omswallet.models.SendTransactionResponse
 import technology.polygon.omswallet.models.SmartSessionGrant
 import technology.polygon.omswallet.models.SmartSessionGrantUsage
+import technology.polygon.omswallet.models.SolanaBalance
 import technology.polygon.omswallet.models.TokenBalance
 import technology.polygon.omswallet.models.TransactionMode
 import technology.polygon.omswallet.models.TransactionStatus
@@ -1801,6 +1802,7 @@ class WalletClient private constructor(
                 )
             executePreparedTransaction(
                 network = network,
+                solanaNetwork = null,
                 walletAddress = activeSession.walletAddress,
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
@@ -1839,7 +1841,8 @@ class WalletClient private constructor(
                 )
             executePreparedTransaction(
                 network = null,
-                walletAddress = null,
+                solanaNetwork = network,
+                walletAddress = activeSession.walletAddress,
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -1879,6 +1882,7 @@ class WalletClient private constructor(
                 )
             executePreparedTransaction(
                 network = network,
+                solanaNetwork = null,
                 walletAddress = activeSession.walletAddress,
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
@@ -2370,6 +2374,7 @@ class WalletClient private constructor(
 
     private suspend fun executePreparedTransaction(
         network: Network?,
+        solanaNetwork: SolanaNetwork?,
         walletAddress: String?,
         prepared: PreparedWalletTransaction,
         requiredSessionRevision: Long,
@@ -2404,6 +2409,12 @@ class WalletClient private constructor(
                         if (network != null && walletAddress != null) {
                             enrichFeeOptionsWithBalances(
                                 network = network,
+                                walletAddress = walletAddress,
+                                feeOptions = prepared.feeOptions,
+                            )
+                        } else if (solanaNetwork != null && walletAddress != null) {
+                            enrichSolanaFeeOptionsWithBalances(
+                                network = solanaNetwork,
                                 walletAddress = walletAddress,
                                 feeOptions = prepared.feeOptions,
                             )
@@ -2525,11 +2536,69 @@ class WalletClient private constructor(
         }
     }
 
+    private suspend fun enrichSolanaFeeOptionsWithBalances(
+        network: SolanaNetwork,
+        walletAddress: String,
+        feeOptions: List<FeeOption>,
+    ): List<FeeOptionWithBalance> {
+        val mintAddresses =
+            feeOptions
+                .filterNot { it.token.isNativeToken() }
+                .mapNotNull { it.token.contractAddress.normalizeSolanaAddress() }
+                .distinct()
+        val includesNative = feeOptions.any { it.token.isNativeToken() }
+        val balances =
+            runCatching {
+                indexerClient.getSolanaBalances(
+                    walletAddress = walletAddress,
+                    networks = listOf(network),
+                    includeMetadata = false,
+                    omitNativeBalances = !includesNative,
+                    mintAddresses = mintAddresses,
+                )
+            }.getOrNull()
+        val nativeBalance =
+            balances?.balances?.firstOrNull { balance ->
+                balance is SolanaBalance.Native && balance.network == network
+            }
+        val balancesByMint =
+            balances
+                ?.balances
+                ?.filterIsInstance<SolanaBalance.FungibleToken>()
+                ?.filter { it.network == network }
+                ?.associateBy { it.mintAddress }
+                .orEmpty()
+
+        return feeOptions.mapIndexed { index, feeOption ->
+            val balance =
+                if (feeOption.token.isNativeToken()) {
+                    nativeBalance
+                } else {
+                    feeOption.token.contractAddress
+                        .normalizeSolanaAddress()
+                        ?.let { balancesByMint[it] }
+                }
+            val decimals = balance?.decimals ?: feeOption.token.decimals?.toInt()
+            FeeOptionWithBalance(
+                feeOption = feeOption,
+                selection = FeeOptionSelection(feeOption, index.toUInt()),
+                available = balance?.balance?.formatTokenAmount(decimals),
+                availableRaw = balance?.balance,
+                decimals = decimals,
+            )
+        }
+    }
+
     private fun String?.normalizeAddress(): String? =
         this
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
             ?.lowercase()
+
+    private fun String?.normalizeSolanaAddress(): String? =
+        this
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
 
     private fun FeeToken.isNativeToken(): Boolean =
         type.equals("native", ignoreCase = true) ||

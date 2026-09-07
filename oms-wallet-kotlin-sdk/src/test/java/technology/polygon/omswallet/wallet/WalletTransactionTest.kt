@@ -1270,6 +1270,120 @@ class WalletTransactionTest {
             assertEquals(TransactionStatusResolution.NotRequested, transaction.statusResolution)
         }
 
+    @Test
+    fun solanaFirstAvailableUsesIndexerBalances() =
+        runBlocking {
+            val walletAddress = "4Nd1mYQbqjVU2aR7cJNPyqW9XjHnBYvWQd7ZxYxvT6uP"
+            val usdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+            enqueueJson(
+                """
+                {
+                  "txnId": "solana-first-available",
+                  "status": "quoted",
+                  "feeOptions": [
+                    {
+                      "token": {
+                        "network": "solana:devnet",
+                        "name": "SOL",
+                        "symbol": "SOL",
+                        "type": "native"
+                      },
+                      "value": "5000",
+                      "displayValue": "0.000005"
+                    },
+                    {
+                      "token": {
+                        "network": "solana:devnet",
+                        "name": "USD Coin",
+                        "symbol": "USDC",
+                        "type": "spl",
+                        "contractAddress": "$usdcMint"
+                      },
+                      "value": "10000",
+                      "displayValue": "0.01"
+                    }
+                  ],
+                  "sponsored": false,
+                  "expiresAt": "2099-01-01T00:00:00Z"
+                }
+                """.trimIndent(),
+            )
+            enqueueJson(
+                """
+                {
+                  "balances": [
+                    {
+                      "network": "solana:devnet",
+                      "accountAddress": "$walletAddress",
+                      "assetType": "native",
+                      "name": "Solana",
+                      "symbol": "SOL",
+                      "decimals": 9,
+                      "balance": "1000",
+                      "formattedBalance": "0.000001",
+                      "verificationStatus": "unknown",
+                      "verificationSource": "none"
+                    },
+                    {
+                      "network": "solana:devnet",
+                      "accountAddress": "$walletAddress",
+                      "assetType": "fungible-token",
+                      "tokenProgram": "spl-token",
+                      "mintAddress": "$usdcMint",
+                      "name": "USD Coin",
+                      "symbol": "USDC",
+                      "decimals": 6,
+                      "balance": "20000",
+                      "formattedBalance": "0.02",
+                      "verificationStatus": "verified",
+                      "verificationSource": "jupiter"
+                    }
+                  ],
+                  "errors": []
+                }
+                """.trimIndent(),
+            )
+            enqueueJson("""{"status":"pending"}""")
+            val client =
+                restoredWalletClient(
+                    nonceValue = "1710000121",
+                    walletAddress = walletAddress,
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                            solanaIndexerGatewayUrl = server.url("/v1/SolanaIndexerGateway/").toString(),
+                        ),
+                )
+
+            val result =
+                client.sendSolanaTransfer(
+                    network = SolanaNetwork.Devnet,
+                    asset = "SOL",
+                    to = "recipient",
+                    amount = BigInteger("1000000"),
+                    selectFeeOption = FeeOptionSelector.firstAvailable,
+                    waitForStatus = false,
+                )
+            val prepare = requireNotNull(server.takeRequest())
+            val balances = requireNotNull(server.takeRequest())
+            val execute = requireNotNull(server.takeRequest())
+
+            assertEquals("solana-first-available", result.txnId)
+            assertEquals("/v1/Waas/PrepareSolanaTransfer", prepare.target)
+            assertEquals("/v1/SolanaIndexerGateway/GetTokenBalancesDetails", balances.target)
+            assertTrue(requireNotNull(balances.body).utf8().contains("\"contractWhitelist\":[\"$usdcMint\"]"))
+            assertEquals(
+                WaasApi.Execute.encodeRequest(
+                    ExecuteRequest(
+                        txnId = "solana-first-available",
+                        feeOption = WaasFeeOptionSelection(token = "USDC", index = 1u),
+                    ),
+                ),
+                requireNotNull(execute.body).utf8(),
+            )
+        }
+
     private fun enqueueJson(body: String) {
         server.enqueue(
             MockResponse
