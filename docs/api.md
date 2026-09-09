@@ -22,7 +22,6 @@ class OMSWallet {
         context: Context,
         publishableKey: String,
         okHttpClient: OkHttpClient = OkHttpClient(),
-        walletImport: WalletImportConfiguration? = null,
     )
 }
 ```
@@ -141,16 +140,6 @@ enum class WalletKeyOrigin(
 data class Page(
     val limit: UInt? = null,
     val cursor: String? = null,
-)
-```
-
-### `WalletImportConfiguration`
-
-Trust policy used to verify attested wallet-import responses.
-
-```kotlin
-class WalletImportConfiguration(
-    trustedPcr0s: Collection<String>,
 )
 ```
 

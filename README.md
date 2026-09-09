@@ -339,18 +339,16 @@ persistent cleanup failure.
 
 ### Import a Wallet
 
-Configure wallet import with audited AWS Nitro Enclave PCR0 measurements. The SDK rejects all-zero
-debug measurements, verifies the attestation and request/response binding, and encrypts plaintext
-keys locally before import.
+Wallet import verifies AWS Nitro enclave attestations against measurements managed by each OMS
+environment. Development uses Nitro debug mode, whose all-zero PCR0 does not identify a specific
+enclave image; use only disposable test keys there. Staging and Production accept only the release
+measurements shipped by the SDK.
 
 ```kotlin
 val omsWallet =
     OMSWallet(
         context = context,
         publishableKey = "your-publishable-key",
-        walletImport = WalletImportConfiguration(
-            trustedPcr0s = listOf("your-audited-48-byte-pcr0-hex"),
-        ),
     )
 
 val imported =

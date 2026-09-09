@@ -10,24 +10,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import technology.polygon.omswallet.OMSWalletAttestationException
 import technology.polygon.omswallet.OMSWalletErrorCode
-import technology.polygon.omswallet.WalletImportConfiguration
 import technology.polygon.omswallet.models.WalletImportPrivateKey
 import java.security.MessageDigest
 
 class WalletImportCryptoTest {
-    @Test
-    fun configurationRejectsMalformedAndAllZeroPcr0s() {
-        listOf(
-            emptyList(),
-            listOf("0".repeat(95)),
-            listOf("0".repeat(96)),
-            listOf("z".repeat(96)),
-        ).forEach { values ->
-            assertThrows(IllegalArgumentException::class.java) { WalletImportConfiguration(values) }
-        }
-        WalletImportConfiguration(listOf("0x" + "a".repeat(96)))
-    }
-
     @Test
     fun privateKeyValidationCoversScalarAndLengthBoundaries() {
         val one = ByteArray(32).also { it[31] = 1 }

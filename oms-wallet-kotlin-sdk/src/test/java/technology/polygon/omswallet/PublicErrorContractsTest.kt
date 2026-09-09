@@ -98,7 +98,7 @@ class PublicErrorContractsTest {
             )
             val client =
                 createOmsClientWithSession(
-                    walletImport = WalletImportConfiguration(listOf("a".repeat(96))),
+                    walletImportTrustedPcr0s = setOf("a".repeat(96)),
                 )
 
             assertEquals(
@@ -1160,7 +1160,7 @@ class PublicErrorContractsTest {
         okHttpClient: OkHttpClient = OkHttpClient(),
         oidcRedirectAuthStore: OidcRedirectAuthStore? = InMemoryOidcRedirectAuthStore(),
         credentialSigner: CredentialSigner = TrackingCredentialSigner(),
-        walletImport: WalletImportConfiguration? = null,
+        walletImportTrustedPcr0s: Set<String>? = null,
     ): OMSWallet =
         OMSWallet.createForTesting(
             publishableKey = "test-publishable-key",
@@ -1170,14 +1170,14 @@ class PublicErrorContractsTest {
             sessionStore = InMemorySessionStore(),
             oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
-            walletImport = walletImport,
+            walletImportTrustedPcr0s = walletImportTrustedPcr0s,
         )
 
     private fun createOmsClientWithSession(
         okHttpClient: OkHttpClient = OkHttpClient(),
-        walletImport: WalletImportConfiguration? = null,
+        walletImportTrustedPcr0s: Set<String>? = null,
     ): OMSWallet =
-        createOmsClient(okHttpClient = okHttpClient, walletImport = walletImport).also { client ->
+        createOmsClient(okHttpClient = okHttpClient, walletImportTrustedPcr0s = walletImportTrustedPcr0s).also { client ->
             client.wallet.restoreSession(activeSessionSnapshot())
         }
 

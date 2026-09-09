@@ -25,7 +25,6 @@ import technology.polygon.omswallet.OMSWalletStorageException
 import technology.polygon.omswallet.OMSWalletTransactionException
 import technology.polygon.omswallet.OMSWalletValidationException
 import technology.polygon.omswallet.SolanaNetwork
-import technology.polygon.omswallet.WalletImportConfiguration
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.AuthorizeRemoteAccessRequest
@@ -198,7 +197,7 @@ class WalletClient private constructor(
     private val transactionStatusPollIntervalMillis: Long,
     private val transactionStatusPollTimeoutMillis: Long,
     private val transactionStatusDelay: suspend (Long) -> Unit,
-    private val walletImport: WalletImportConfiguration?,
+    private val walletImportTrustedPcr0s: Set<String>?,
 ) {
     companion object {
         /**
@@ -231,7 +230,7 @@ class WalletClient private constructor(
             sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
             now: () -> Long = OMSWalletTimestamps::nowMilliseconds,
             projectScopeKey: String? = null,
-            walletImport: WalletImportConfiguration? = null,
+            walletImportTrustedPcr0s: Set<String>? = null,
         ): WalletClient {
             val createRuntime = {
                 WalletScopeRuntime(
@@ -260,7 +259,7 @@ class WalletClient private constructor(
                 transactionStatusPollIntervalMillis = transactionStatusPollIntervalMillis,
                 transactionStatusPollTimeoutMillis = transactionStatusPollTimeoutMillis,
                 transactionStatusDelay = transactionStatusDelay,
-                walletImport = walletImport,
+                walletImportTrustedPcr0s = walletImportTrustedPcr0s,
             )
         }
     }
@@ -275,7 +274,7 @@ class WalletClient private constructor(
             environment = environment,
             transport = transport,
             authorizeSignedRequest = ::authorizeSignedRequest,
-            walletImport = walletImport,
+            walletImportTrustedPcr0s = walletImportTrustedPcr0s,
         )
     private val indexerClient: IndexerClient =
         IndexerClient.create(
@@ -2772,7 +2771,7 @@ private class WaasWalletGateway(
         endpoint: String,
         body: String,
     ) -> String,
-    private val walletImport: WalletImportConfiguration?,
+    private val walletImportTrustedPcr0s: Set<String>?,
 ) {
     private val publicClient: WaasPublicClient =
         WaasPublicClient(
@@ -3296,16 +3295,16 @@ private class WaasWalletGateway(
         )
 
     private fun walletImportClient(requiredSessionRevision: Long): WaasClient {
-        require(walletImport != null) { "Wallet import requires walletImport.trustedPcr0s configuration" }
+        require(walletImportTrustedPcr0s != null) { "Wallet import is unavailable for this WaaS environment" }
         return WaasClient(
             baseUrl = environment.walletApiBaseUrl(),
-            transport = attestedSignedTransport(requiredSessionRevision, walletImport),
+            transport = attestedSignedTransport(requiredSessionRevision, walletImportTrustedPcr0s),
         )
     }
 
     private fun attestedSignedTransport(
         requiredSessionRevision: Long,
-        configuration: WalletImportConfiguration,
+        trustedPcr0s: Set<String>,
     ): LambdaWebRpcTransport =
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
@@ -3339,7 +3338,7 @@ private class WaasWalletGateway(
                 requestBody = body,
                 responseBody = response.body,
                 nonce = nonce,
-                trustedPcr0s = configuration.trustedPcr0s,
+                trustedPcr0s = trustedPcr0s,
             )
             WebRpcHttpResponse(response.statusCode, response.body)
         }
