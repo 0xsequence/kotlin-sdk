@@ -642,6 +642,8 @@ class WalletEmailAuthTest {
                                     Wallet(
                                         id = "wallet-def",
                                         type = WalletType.Ethereum,
+                                        networkFamily = technology.polygon.omswallet.internal.generated.waas.NetworkFamily.EVM,
+                                        keyOrigin = technology.polygon.omswallet.internal.generated.waas.KeyOrigin.Enclave,
                                         address = "0xdef",
                                         reference = "picked",
                                     ),
@@ -785,7 +787,7 @@ class WalletEmailAuthTest {
                                     walletFixture(
                                         walletId = "wallet-other",
                                         address = "0xother",
-                                        type = WalletType.UNKNOWN_DEFAULT,
+                                        type = WalletType.Solana,
                                     ),
                                 ),
                             page = Page(cursor = "cursor-2"),
@@ -1040,7 +1042,7 @@ class WalletEmailAuthTest {
                                         walletId = "wallet-other",
                                         address = "0xother",
                                         reference = "other",
-                                        type = WalletType.UNKNOWN_DEFAULT,
+                                        type = WalletType.Solana,
                                     ),
                                 ),
                         ),
@@ -1089,7 +1091,7 @@ class WalletEmailAuthTest {
             assertEquals(
                 WaasApi.CreateWallet.encodeRequest(
                     CreateWalletRequest(
-                        type = WalletType.Ethereum,
+                        networkFamily = technology.polygon.omswallet.internal.generated.waas.NetworkFamily.EVM,
                         reference = "fresh",
                     ),
                 ),

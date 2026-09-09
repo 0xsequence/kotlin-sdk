@@ -61,6 +61,11 @@ android {
     }
 }
 
+dependencies {
+    implementation(libs.bouncy.castle)
+    implementation(libs.cbor)
+}
+
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     exclude("**/generated/**")
     doLast {

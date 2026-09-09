@@ -22,6 +22,10 @@ documentation over training-data recall. If context7 is unavailable, use officia
 package sources and note the fallback; do not block ordinary repo work just to install extra
 tooling.
 
+Wallet-import HPKE and attestation verification use Bouncy Castle and CBOR Java, with versions
+owned by `gradle/libs.versions.toml`; consult their pinned-version APIs before changing the crypto,
+certificate, CBOR, or COSE boundaries.
+
 ---
 
 ## Project Overview

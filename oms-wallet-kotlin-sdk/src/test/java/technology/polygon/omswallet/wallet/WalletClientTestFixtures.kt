@@ -4,9 +4,12 @@ import kotlinx.serialization.encodeToString
 import org.junit.Assert.assertTrue
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthResponse
 import technology.polygon.omswallet.internal.generated.waas.CredentialInfo
+import technology.polygon.omswallet.internal.generated.waas.CredentialType
 import technology.polygon.omswallet.internal.generated.waas.Identity
 import technology.polygon.omswallet.internal.generated.waas.IdentityType
+import technology.polygon.omswallet.internal.generated.waas.KeyOrigin
 import technology.polygon.omswallet.internal.generated.waas.ListWalletsResponse
+import technology.polygon.omswallet.internal.generated.waas.NetworkFamily
 import technology.polygon.omswallet.internal.generated.waas.Page
 import technology.polygon.omswallet.internal.generated.waas.Wallet
 import technology.polygon.omswallet.internal.generated.waas.WalletType
@@ -39,6 +42,13 @@ internal fun walletFixture(
     Wallet(
         id = walletId,
         type = type,
+        networkFamily =
+            when (type) {
+                WalletType.Ethereum -> NetworkFamily.EVM
+                WalletType.Solana -> NetworkFamily.Solana
+                WalletType.UNKNOWN_DEFAULT -> NetworkFamily.UNKNOWN_DEFAULT
+            },
+        keyOrigin = KeyOrigin.Enclave,
         address = address,
         reference = reference,
     )
@@ -73,6 +83,7 @@ internal fun completeAuthResponseBody(
 internal fun credentialFixture(): CredentialInfo =
     CredentialInfo(
         credentialId = "credential-123",
+        type = CredentialType.Direct,
         expiresAt = "2099-01-01T00:00:00Z",
         isCaller = true,
     )
