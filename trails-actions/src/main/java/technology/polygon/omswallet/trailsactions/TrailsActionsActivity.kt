@@ -2183,6 +2183,6 @@ class TrailsActionsActivity : AppCompatActivity() {
 }
 
 private object DemoConfig {
-    const val demoPublishableKey: String = "pk_sdbx_01kqfw9zaykks_01kwetq606fv699qb9bhfmb45s"
+    const val demoPublishableKey: String = "pk_sdbx_01m2mwxcn8p59_01m2n33tshe52vt5jyjyt0kc6g"
     const val oidcRedirectUri: String = "omsclientkotlindemo://auth/callback"
 }

@@ -40,14 +40,14 @@ private data class PublishableKeyRoute(
     val walletImportTrustedPcr0s: Set<String>,
 )
 
-// Staging and Production measurements come from the corresponding WaaS GitHub releases. During
-// rotation, publish an SDK that trusts both the current and replacement measurements before the
-// replacement enclave is deployed, then remove the retired measurement in a later SDK release.
+// Measurements are pinned to the deployed WaaS builds. Production measurements are published in
+// WaaS GitHub releases; Staging can advance between releases. During rotation, publish an SDK that
+// trusts both measurements before deploying the replacement, then remove the retired measurement.
 private val debugWalletImportPcr0s = setOf("0".repeat(96))
 private val stagingWalletImportPcr0s =
-    setOf("e4da1f70f6e781d7196dff36d21e57bb5603ec4bcacefb7061493049292b76b620b0ad23b82e280d6130f67384051e9f")
+    setOf("e271fe4b26c9d58d6089b908ab713f888e6107e2cb4782ddaceea950bbec9971ccd9159e7a099bd506e04ce55c3da696")
 private val productionWalletImportPcr0s =
-    setOf("671f22183eed852f4051a50ee54b45153499501538cbd64a277b8ff22a012b37f1905ebfcf7a6be8ce00ec0c8db7bbd2")
+    setOf("1935cbc713f0b43060315689e87285f6ba76bcf06f26d0719735e8d674b71e0eff71dcf77fe90ab32870ef3c954973b7")
 
 private val publishableKeyRoutes =
     listOf(
