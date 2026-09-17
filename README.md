@@ -628,6 +628,9 @@ val result =
 
 ## Reference
 
+When upgrading from `0.2.0`, see [MIGRATION.md](./MIGRATION.md) for the breaking changes in
+`0.3.0`.
+
 ### Errors
 
 Public SDK APIs throw `OMSWalletException` subclasses with stable fields such as
