@@ -11,7 +11,7 @@ reads through a single `OMSWallet` root object.
 Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.0")
+implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.3.0")
 ```
 
 ## Compatibility
