@@ -24,6 +24,20 @@ val wallet =
     )
 ```
 
+### Error enum cases
+
+`OMSWalletErrorCode` now includes `AttestationVerificationFailed`. `OMSWalletOperation` now
+includes these operation identifiers:
+
+- `WalletImportWallet`, `WalletGetImportRecipientKey`, and `WalletImportEncryptedWallet`
+- `WalletInspectRemoteCredential`, `WalletAuthorizeRemoteAccess`,
+  `WalletGetRemoteAccessSession`, and `WalletGetRemoteAccessSessionUsage`
+- `WalletSignSolanaMessage`, `WalletIsValidSolanaMessageSignature`, and
+  `WalletSendSolanaTransfer`
+- `IndexerGetSolanaBalances`
+
+Update exhaustive `when` expressions over either public enum to handle the new cases.
+
 ### Access grants and revocation
 
 `CredentialInfo` was renamed to `WalletCredential`. Access listing now distinguishes direct
@@ -47,19 +61,27 @@ for (grant in omsWallet.wallet.listAccess()) {
 }
 ```
 
-The public `revokeAccess` parameter changed from `targetCredentialId` to `credentialId`. Pass an
-optional `sessionId` to revoke only one remote session for that credential:
+The public `revokeAccess` parameter changed from `targetCredentialId` to `credentialId`. For a
+direct grant, omit `sessionId`. For a remote grant, its `sessionId` is required and revokes exactly
+that session; revoke each session separately when a remote credential has more than one:
 
 ```kotlin
 // 0.2.0
 omsWallet.wallet.revokeAccess(targetCredentialId = credentialId)
 
 // 0.3.0
-omsWallet.wallet.revokeAccess(credentialId = credentialId)
-omsWallet.wallet.revokeAccess(
-    credentialId = credentialId,
-    sessionId = sessionId,
-)
+val grant = omsWallet.wallet.listAccess().firstOrNull { !it.credential.isCaller }
+if (grant != null) {
+    when (grant) {
+        is AccessGrant.Direct ->
+            omsWallet.wallet.revokeAccess(credentialId = grant.credential.credentialId)
+        is AccessGrant.Remote ->
+            omsWallet.wallet.revokeAccess(
+                credentialId = grant.credential.credentialId,
+                sessionId = grant.sessionId,
+            )
+    }
+}
 ```
 
 Authentication results and pending wallet selections expose `WalletCredential` through their
@@ -72,6 +94,28 @@ provided option's `selection` value instead of reconstructing a selection from i
 
 ```kotlin
 val selector = FeeOptionSelector { options -> options.firstOrNull()?.selection }
+```
+
+`FeeOptionWithBalance` now stores `selection` as its second constructor property. Code that creates
+or destructures this data class positionally must account for the inserted property; named
+arguments and property access avoid component-order mistakes:
+
+```kotlin
+// 0.2.0
+val oldOption = FeeOptionWithBalance(feeOption, balance, available, availableRaw, decimals)
+val (quotedFee, quotedBalance) = oldOption
+
+// 0.3.0
+val option =
+    FeeOptionWithBalance(
+        feeOption = feeOption,
+        balance = balance,
+        available = available,
+        availableRaw = availableRaw,
+        decimals = decimals,
+    )
+val quotedFee = option.feeOption
+val quotedBalance = option.balance
 ```
 
 Sponsored transactions invoke the selector with an empty list. Return `null` to acknowledge the

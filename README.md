@@ -359,8 +359,9 @@ val imported =
 println(imported.wallet.keyOrigin == WalletKeyOrigin.Imported)
 ```
 
-Ethereum imports accept 32 raw bytes or hexadecimal text. Solana imports accept a 32-byte seed,
-64-byte keypair, or base58 text. The SDK does not persist plaintext imported keys. For
+Ethereum imports accept a 32-byte raw scalar or 64 hexadecimal digits, optionally prefixed with
+`0x`. Solana imports accept a 32-byte seed or 64-byte keypair as raw bytes, or the base58 encoding
+of either. The SDK does not persist plaintext imported keys. For
 caller-managed HPKE, use `getWalletImportRecipientKey` followed by `importEncryptedWallet`; both
 responses remain attestation verified.
 
@@ -600,8 +601,8 @@ contains the matching `TokenBalance` when available. For both Ethereum and Solan
 fees, `available` is formatted with the token decimals, while `availableRaw` keeps
 the raw integer value. `decimals` is exposed as `Int?`, allowing
 `FeeOptionSelector.firstAvailable` to select the first affordable option on either
-network family. `selection` preserves the
-API-provided `tokenID` when present and falls back to the token symbol. Sponsored
+network family. `selection` preserves the quoted option index and the API-provided
+`tokenID` when present, falling back to the token symbol. Sponsored
 transactions invoke the selector with an empty list; return `null` after acknowledging
 the free fee, or throw to stop execution. `FeeOptionSelector.firstAvailable` returns
 `null` for that empty list and continues execution as before. Unsponsored transactions
@@ -622,7 +623,7 @@ val result =
         network = SolanaNetwork.Devnet,
         asset = "SOL",
         to = "solana-recipient-address",
-        amount = BigInteger("1000000"),
+        amount = java.math.BigInteger("1000000"),
     )
 ```
 
@@ -675,24 +676,37 @@ val scopedIdToken =
         customClaims = mapOf("role" to JsonPrimitive("member")),
     )
 
-val credentials = omsWallet.wallet.listAccess(pageSize = 25u)
+val grants = omsWallet.wallet.listAccess(pageSize = 25u)
 omsWallet.wallet.listAccessPages(pageSize = 25u).collect { page ->
     println(page.grants)
 }
 
-credentials
+grants
     .firstOrNull { !it.credential.isCaller }
-    ?.let { omsWallet.wallet.revokeAccess(credentialId = it.credential.credentialId) }
+    ?.let { grant ->
+        when (grant) {
+            is AccessGrant.Direct ->
+                omsWallet.wallet.revokeAccess(credentialId = grant.credential.credentialId)
+            is AccessGrant.Remote ->
+                omsWallet.wallet.revokeAccess(
+                    credentialId = grant.credential.credentialId,
+                    sessionId = grant.sessionId,
+                )
+        }
+    }
 ```
 
 For an owner-approved smart session, inspect the remote credential before showing consent, then
 authorize bounded EVM transfer grants. Backend credential registration and execution stay outside
-this SDK surface.
+this SDK surface. WaaS caps the requested session expiry at the remote credential's expiry.
 
 ```kotlin
 val credentialId = "remote-credential-id"
 val metadata = omsWallet.wallet.inspectRemoteCredential(credentialId)
-showConsentScreen(metadata)
+// Render these returned public fields in your app's consent UI before authorizing access.
+println("${metadata.appName} ${metadata.appUrl}")
+
+val requestedExpiry = java.time.Instant.now().plusSeconds(3_600).toString()
 
 val session =
     omsWallet.wallet.authorizeRemoteAccess(
@@ -702,15 +716,18 @@ val session =
             listOf(
                 SmartSessionGrant.NativeTransfer(
                     to = "0x1111111111111111111111111111111111111111",
-                    limit = BigInteger("1000000000000000"),
+                    limit = java.math.BigInteger("1000000000000000"),
                 ),
             ),
-        expiresAt = "2099-01-01T00:00:00Z",
+        expiresAt = requestedExpiry,
     )
 
 val details = omsWallet.wallet.getRemoteAccessSession(session.sessionId)
 val usage = omsWallet.wallet.getRemoteAccessSessionUsage(session.sessionId, Network.POLYGON)
-omsWallet.wallet.revokeAccess(credentialId, session.sessionId)
+omsWallet.wallet.revokeAccess(
+    credentialId = credentialId,
+    sessionId = session.sessionId,
+)
 ```
 
 ## API Reference

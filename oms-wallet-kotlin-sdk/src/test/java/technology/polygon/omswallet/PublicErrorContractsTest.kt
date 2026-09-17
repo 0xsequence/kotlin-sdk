@@ -692,6 +692,23 @@ class PublicErrorContractsTest {
                                 ),
                         ),
                     ),
+                    labeled(
+                        "wallet.isValidSolanaMessageSignature",
+                        error(
+                            name = "OMSWalletRequestException",
+                            code = "OMS_REQUEST_FAILED",
+                            operation = "wallet.isValidSolanaMessageSignature",
+                            message = "WebRPC request failed",
+                            retryable = true,
+                            upstreamError =
+                                upstream(
+                                    service = "Waas",
+                                    name = "WebrpcRequestFailed",
+                                    code = "-1",
+                                    message = "WebRPC request failed",
+                                ),
+                        ),
+                    ),
                 ),
                 publicErrors(
                     "wallet.isValidMessageSignature" to {
@@ -709,6 +726,12 @@ class PublicErrorContractsTest {
                                     put("contents", "hello")
                                 },
                             signature = "0xtyped",
+                        )
+                    },
+                    "wallet.isValidSolanaMessageSignature" to {
+                        client.wallet.isValidSolanaMessageSignature(
+                            message = "hello",
+                            signature = "solana-signature",
                         )
                     },
                 ),

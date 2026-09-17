@@ -744,7 +744,10 @@ suspend fun inspectRemoteCredential(credentialId: String): RemoteCredentialMetad
 
 ### `WalletClient.authorizeRemoteAccess`
 
-Authorizes owner-approved EVM smart-session grants for a remote credential.
+Authorizes owner-approved EVM smart-session grants for a remote credential. Omit `sessionId`
+to create a session; pass an existing session ID to replace that session's grants and
+requested expiry without changing its signer. WaaS caps the effective expiry at the remote
+credential's expiry.
 
 ```kotlin
 suspend fun authorizeRemoteAccess(
@@ -823,7 +826,9 @@ suspend fun getIdToken(
 
 ### `WalletClient.revokeAccess`
 
-Revokes a credential's access to the selected wallet.
+Revokes one access grant from the selected wallet. Use `listAccess` or `listAccessPage` to
+find the direct or remote grant. Omit `sessionId` for a direct grant; for a remote grant,
+pass its session ID to revoke exactly that session.
 
 ```kotlin
 suspend fun revokeAccess(
