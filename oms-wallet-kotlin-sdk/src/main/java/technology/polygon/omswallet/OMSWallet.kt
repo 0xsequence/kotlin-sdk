@@ -32,6 +32,7 @@ class OMSWallet private constructor(
     oidcRedirectAuthStore: OidcRedirectAuthStore?,
     credentialSigner: CredentialSigner?,
     projectScopeKey: String?,
+    walletImportTrustedPcr0s: Set<String>?,
 ) {
     private val resolvedProjectId: String = projectId ?: parsePublishableKey(publishableKey).projectId
     private val resolvedEnvironment: OMSWalletEnvironment =
@@ -50,6 +51,7 @@ class OMSWallet private constructor(
             oidcRedirectAuthStore = oidcRedirectAuthStore,
             credentialSigner = credentialSigner,
             projectScopeKey = projectScopeKey,
+            walletImportTrustedPcr0s = walletImportTrustedPcr0s,
         )
 
     val indexer: IndexerClient =
@@ -98,6 +100,7 @@ class OMSWallet private constructor(
                 nonceStoreName = scopedCredentialNonceStoreName(publishableKey),
             ),
         projectScopeKey = scopedSessionSuffix(publishableKey),
+        walletImportTrustedPcr0s = parsePublishableKey(publishableKey).walletImportTrustedPcr0s,
     )
 
     companion object {
@@ -112,6 +115,7 @@ class OMSWallet private constructor(
             oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
             credentialSigner: CredentialSigner? = null,
             projectScopeKey: String? = null,
+            walletImportTrustedPcr0s: Set<String>? = null,
         ): OMSWallet =
             OMSWallet(
                 publishableKey = publishableKey,
@@ -123,6 +127,7 @@ class OMSWallet private constructor(
                 oidcRedirectAuthStore = oidcRedirectAuthStore,
                 credentialSigner = credentialSigner,
                 projectScopeKey = projectScopeKey,
+                walletImportTrustedPcr0s = walletImportTrustedPcr0s,
             )
 
         private fun projectIdFromPublishableKey(publishableKey: String): String = parsePublishableKey(publishableKey).projectId

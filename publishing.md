@@ -21,7 +21,9 @@ Prerequisites:
    ```
 
 2. Update `POM_VERSION_NAME` in `gradle.properties`. Update `README.md` and
-   `docs/api.md` too if the release changes public behavior or API docs.
+   `docs/api.md` too if the release changes public behavior or API docs. If the
+   release contains breaking changes, update `MIGRATION.md` with steps from the
+   previous published version.
 
 3. Verify the SDK:
 

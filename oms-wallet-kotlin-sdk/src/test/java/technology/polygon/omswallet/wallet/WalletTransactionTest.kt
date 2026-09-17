@@ -1,5 +1,6 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import mockwebserver3.MockResponse
@@ -15,6 +16,7 @@ import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.internal.generated.waas.ExecuteRequest
 import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumContractCallRequest
 import technology.polygon.omswallet.internal.generated.waas.TransactionStatusRequest
@@ -290,7 +292,7 @@ class WalletTransactionTest {
                 WaasApi.Execute.encodeRequest(
                     technology.polygon.omswallet.internal.generated.waas.ExecuteRequest(
                         txnId = "txn-1",
-                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                        feeOption = WaasFeeOptionSelection(token = "usdc", index = 1u),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -357,7 +359,7 @@ class WalletTransactionTest {
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-token-id",
-                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                        feeOption = WaasFeeOptionSelection(token = "usdc", index = 0u),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -366,7 +368,7 @@ class WalletTransactionTest {
         }
 
     @Test
-    fun sendTransactionSponsoredSkipsCustomFeeSelector() =
+    fun sendTransactionSponsoredInvokesCustomFeeSelectorWithEmptyOptions() =
         runBlocking {
             enqueueJson(
                 prepareResponse(
@@ -409,7 +411,7 @@ class WalletTransactionTest {
 
             assertEquals("txn-sponsored", result.txnId)
             assertEquals(TransactionStatus.Executed, result.status)
-            assertEquals(false, selectorCalled)
+            assertEquals(true, selectorCalled)
             assertEquals(
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(txnId = "txn-sponsored"),
@@ -417,6 +419,67 @@ class WalletTransactionTest {
                 requireNotNull(executeRequest.body).utf8(),
             )
             assertEquals(2, server.requestCount)
+        }
+
+    @Test
+    fun sendTransactionSponsoredContinuesWithFirstAvailable() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-sponsored-first-available",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            enqueueJson("""{"status":"executed"}""")
+            val client = restoredWalletClient(nonceValue = "1710000117")
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    waitForStatus = false,
+                    selectFeeOption = FeeOptionSelector.firstAvailable,
+                )
+
+            requireNotNull(server.takeRequest())
+            val executeRequest = requireNotNull(server.takeRequest())
+            assertEquals("txn-sponsored-first-available", result.txnId)
+            assertEquals(
+                WaasApi.Execute.encodeRequest(
+                    ExecuteRequest(txnId = "txn-sponsored-first-available"),
+                ),
+                requireNotNull(executeRequest.body).utf8(),
+            )
+        }
+
+    @Test
+    fun sendTransactionSponsoredDoesNotExecuteWhenAcknowledgementThrows() =
+        runBlocking {
+            enqueueJson(
+                prepareResponse(
+                    txnId = "txn-sponsored-cancelled",
+                    feeOptions = "[]",
+                    sponsored = true,
+                ),
+            )
+            val client = restoredWalletClient(nonceValue = "1710000118")
+
+            val error =
+                runCatching {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                        selectFeeOption =
+                            FeeOptionSelector { feeOptions ->
+                                assertTrue(feeOptions.isEmpty())
+                                throw CancellationException("Transaction cancelled")
+                            },
+                    )
+                }.exceptionOrNull()
+
+            assertTrue(error is CancellationException)
+            assertEquals(1, server.requestCount)
         }
 
     @Test
@@ -565,7 +628,7 @@ class WalletTransactionTest {
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(
                         txnId = "txn-first-available",
-                        feeOption = WaasFeeOptionSelection(token = "usdc"),
+                        feeOption = WaasFeeOptionSelection(token = "usdc", index = 1u),
                     ),
                 ),
                 requireNotNull(executeRequest.body).utf8(),
@@ -1165,6 +1228,162 @@ class WalletTransactionTest {
             assertEquals(null, unknown.txnHash)
         }
 
+    @Test
+    fun solanaOperationsUseSolanaRequestShapes() =
+        runBlocking {
+            enqueueJson("""{"signature":"solana-signature"}""")
+            enqueueJson("""{"isValid":true}""")
+            enqueueJson(
+                """{"txnId":"solana-txn","status":"quoted","feeOptions":[],"sponsored":true,"expiresAt":"2099-01-01T00:00:00Z"}""",
+            )
+            enqueueJson("""{"status":"executed"}""")
+            val client =
+                restoredWalletClient(
+                    nonceValue = "1710000120",
+                    walletAddress = "3gFktQX6vki5M2DzN8Y1ESPUJ4fJ8o6hVQWf8vYvPypD",
+                )
+
+            val signature = client.signSolanaMessage("hello")
+            val valid = client.isValidSolanaMessageSignature("hello", signature)
+            val transaction =
+                client.sendSolanaTransfer(
+                    network = SolanaNetwork.Devnet,
+                    asset = "SOL",
+                    to = "recipient",
+                    amount = BigInteger("1000000"),
+                    waitForStatus = false,
+                )
+            val sign = requireNotNull(server.takeRequest())
+            val verify = requireNotNull(server.takeRequest())
+            val prepare = requireNotNull(server.takeRequest())
+            val execute = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/Waas/SignMessage", sign.target)
+            assertTrue(requireNotNull(sign.body).utf8().contains("\"network\":\"\""))
+            assertEquals("/v1/WaasPublic/IsValidMessageSignature", verify.target)
+            assertTrue(requireNotNull(verify.body).utf8().contains("\"networkFamily\":\"solana\""))
+            assertTrue(valid)
+            assertEquals("/v1/Waas/PrepareSolanaTransfer", prepare.target)
+            assertTrue(requireNotNull(prepare.body).utf8().contains("\"network\":\"solana:devnet\""))
+            assertEquals("/v1/Waas/Execute", execute.target)
+            assertEquals("solana-txn", transaction.txnId)
+            assertEquals(TransactionStatusResolution.NotRequested, transaction.statusResolution)
+        }
+
+    @Test
+    fun solanaFirstAvailableUsesIndexerBalances() =
+        runBlocking {
+            val walletAddress = "4Nd1mYQbqjVU2aR7cJNPyqW9XjHnBYvWQd7ZxYxvT6uP"
+            val usdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+            enqueueJson(
+                """
+                {
+                  "txnId": "solana-first-available",
+                  "status": "quoted",
+                  "feeOptions": [
+                    {
+                      "token": {
+                        "network": "solana:devnet",
+                        "name": "SOL",
+                        "symbol": "SOL",
+                        "type": "native"
+                      },
+                      "value": "5000",
+                      "displayValue": "0.000005"
+                    },
+                    {
+                      "token": {
+                        "network": "solana:devnet",
+                        "name": "USD Coin",
+                        "symbol": "USDC",
+                        "type": "spl",
+                        "contractAddress": "$usdcMint"
+                      },
+                      "value": "10000",
+                      "displayValue": "0.01"
+                    }
+                  ],
+                  "sponsored": false,
+                  "expiresAt": "2099-01-01T00:00:00Z"
+                }
+                """.trimIndent(),
+            )
+            enqueueJson(
+                """
+                {
+                  "balances": [
+                    {
+                      "network": "solana:devnet",
+                      "accountAddress": "$walletAddress",
+                      "assetType": "native",
+                      "name": "Solana",
+                      "symbol": "SOL",
+                      "decimals": 9,
+                      "balance": "1000",
+                      "formattedBalance": "0.000001",
+                      "verificationStatus": "unknown",
+                      "verificationSource": "none"
+                    },
+                    {
+                      "network": "solana:devnet",
+                      "accountAddress": "$walletAddress",
+                      "assetType": "fungible-token",
+                      "tokenProgram": "spl-token",
+                      "mintAddress": "$usdcMint",
+                      "name": "USD Coin",
+                      "symbol": "USDC",
+                      "decimals": 6,
+                      "balance": "20000",
+                      "formattedBalance": "0.02",
+                      "verificationStatus": "verified",
+                      "verificationSource": "jupiter"
+                    }
+                  ],
+                  "errors": []
+                }
+                """.trimIndent(),
+            )
+            enqueueJson("""{"status":"pending"}""")
+            val client =
+                restoredWalletClient(
+                    nonceValue = "1710000121",
+                    walletAddress = walletAddress,
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                            solanaIndexerGatewayUrl = server.url("/v1/SolanaIndexerGateway/").toString(),
+                        ),
+                )
+
+            val result =
+                client.sendSolanaTransfer(
+                    network = SolanaNetwork.Devnet,
+                    asset = "SOL",
+                    to = "recipient",
+                    amount = BigInteger("1000000"),
+                    selectFeeOption = FeeOptionSelector.firstAvailable,
+                    waitForStatus = false,
+                )
+            val prepare = requireNotNull(server.takeRequest())
+            val balances = requireNotNull(server.takeRequest())
+            val execute = requireNotNull(server.takeRequest())
+
+            assertEquals("solana-first-available", result.txnId)
+            assertEquals("/v1/Waas/PrepareSolanaTransfer", prepare.target)
+            assertEquals("/v1/SolanaIndexerGateway/GetTokenBalancesDetails", balances.target)
+            assertTrue(requireNotNull(balances.body).utf8().contains("\"contractWhitelist\":[\"$usdcMint\"]"))
+            assertEquals(
+                WaasApi.Execute.encodeRequest(
+                    ExecuteRequest(
+                        txnId = "solana-first-available",
+                        feeOption = WaasFeeOptionSelection(token = "USDC", index = 1u),
+                    ),
+                ),
+                requireNotNull(execute.body).utf8(),
+            )
+        }
+
     private fun enqueueJson(body: String) {
         server.enqueue(
             MockResponse
@@ -1177,6 +1396,7 @@ class WalletTransactionTest {
 
     private fun restoredWalletClient(
         nonceValue: String,
+        walletAddress: String = "0xwallet",
         environment: OMSWalletEnvironment =
             OMSWalletEnvironment(
                 walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -1194,7 +1414,7 @@ class WalletTransactionTest {
                         snapshot =
                             OMSWalletSessionSnapshot(
                                 walletId = "wallet-main",
-                                walletAddress = "0xwallet",
+                                walletAddress = walletAddress,
                                 signerAddress = TEST_CREDENTIAL_ID,
                                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 auth = emailSessionAuth(),

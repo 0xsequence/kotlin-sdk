@@ -21,20 +21,37 @@ class OMSWalletTest {
     fun parsePublishableKeyDerivesProjectAndServiceUrls() {
         val cases =
             listOf(
-                "pk_dev_sdbx_project_key" to "https://sandbox-api.dev.polygon-dev.technology",
-                "pk_dev_live_project_key" to "https://api.dev.polygon-dev.technology",
-                "pk_stg_sdbx_project_key" to "https://sandbox-api.stg.polygon-dev.technology",
-                "pk_stg_live_project_key" to "https://api.stg.polygon-dev.technology",
-                "pk_sdbx_project_key" to "https://sandbox-api.polygon.technology",
-                "pk_live_project_key" to "https://api.polygon.technology",
+                Triple("pk_dev_sdbx_project_key", "https://sandbox-api.dev.polygon-dev.technology", "0".repeat(96)),
+                Triple("pk_dev_live_project_key", "https://api.dev.polygon-dev.technology", "0".repeat(96)),
+                Triple(
+                    "pk_stg_sdbx_project_key",
+                    "https://sandbox-api.stg.polygon-dev.technology",
+                    "e271fe4b26c9d58d6089b908ab713f888e6107e2cb4782ddaceea950bbec9971ccd9159e7a099bd506e04ce55c3da696",
+                ),
+                Triple(
+                    "pk_stg_live_project_key",
+                    "https://api.stg.polygon-dev.technology",
+                    "e271fe4b26c9d58d6089b908ab713f888e6107e2cb4782ddaceea950bbec9971ccd9159e7a099bd506e04ce55c3da696",
+                ),
+                Triple(
+                    "pk_sdbx_project_key",
+                    "https://sandbox-api.polygon.technology",
+                    "1935cbc713f0b43060315689e87285f6ba76bcf06f26d0719735e8d674b71e0eff71dcf77fe90ab32870ef3c954973b7",
+                ),
+                Triple(
+                    "pk_live_project_key",
+                    "https://api.polygon.technology",
+                    "1935cbc713f0b43060315689e87285f6ba76bcf06f26d0719735e8d674b71e0eff71dcf77fe90ab32870ef3c954973b7",
+                ),
             )
 
-        cases.forEach { (publishableKey, apiUrl) ->
+        cases.forEach { (publishableKey, apiUrl, walletImportPcr0) ->
             assertEquals(
                 ParsedPublishableKey(
                     projectId = "prj_project",
                     walletApiUrl = apiUrl,
                     indexerGatewayUrl = "$apiUrl/v1/IndexerGateway/",
+                    walletImportTrustedPcr0s = setOf(walletImportPcr0),
                 ),
                 parsePublishableKey(publishableKey),
             )

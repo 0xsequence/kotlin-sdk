@@ -11,6 +11,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.internal.generated.waas.GetIDTokenRequest
@@ -18,9 +19,11 @@ import technology.polygon.omswallet.internal.generated.waas.ListAccessRequest
 import technology.polygon.omswallet.internal.generated.waas.Page
 import technology.polygon.omswallet.internal.generated.waas.RevokeAccessRequest
 import technology.polygon.omswallet.internal.generated.waas.WaasApi
+import technology.polygon.omswallet.models.SmartSessionGrant
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+import java.math.BigInteger
 
 class WalletAccessTest {
     private lateinit var server: MockWebServer
@@ -49,6 +52,7 @@ class WalletAccessTest {
                           "credentials": [
                             {
                               "credentialId": "credential-1",
+                              "type": "direct",
                               "expiresAt": "2099-01-01T00:00:00Z",
                               "isCaller": true
                             }
@@ -68,6 +72,7 @@ class WalletAccessTest {
                           "credentials": [
                             {
                               "credentialId": "credential-2",
+                              "type": "direct",
                               "expiresAt": "2026-01-02T00:00:00Z",
                               "isCaller": false
                             }
@@ -111,13 +116,13 @@ class WalletAccessTest {
             assertTrue(client.restorePersistedSession())
 
             val credentials = client.listAccess(pageSize = 2u)
-            client.revokeAccess(targetCredentialId = "credential-2")
+            client.revokeAccess(credentialId = "credential-2")
             val firstListRequest = requireNotNull(server.takeRequest())
             val secondListRequest = requireNotNull(server.takeRequest())
             val revokeRequest = requireNotNull(server.takeRequest())
 
-            assertEquals(listOf("credential-1", "credential-2"), credentials.map { it.credentialId })
-            assertEquals(true, credentials.first().isCaller)
+            assertEquals(listOf("credential-1", "credential-2"), credentials.map { it.credential.credentialId })
+            assertEquals(true, credentials.first().credential.isCaller)
             assertEquals("/v1/Waas/ListAccess", firstListRequest.target)
             assertEquals(
                 WaasApi.ListAccess.encodeRequest(
@@ -165,6 +170,7 @@ class WalletAccessTest {
                           "credentials": [
                             {
                               "credentialId": "credential-1",
+                              "type": "direct",
                               "expiresAt": "2099-01-01T00:00:00Z",
                               "isCaller": true
                             }
@@ -184,6 +190,7 @@ class WalletAccessTest {
                           "credentials": [
                             {
                               "credentialId": "credential-2",
+                              "type": "direct",
                               "expiresAt": "2026-01-02T00:00:00Z",
                               "isCaller": false
                             }
@@ -224,9 +231,9 @@ class WalletAccessTest {
             val secondListRequest = requireNotNull(server.takeRequest())
 
             assertEquals(2, pages.size)
-            assertEquals(listOf("credential-1"), pages[0].credentials.map { it.credentialId })
+            assertEquals(listOf("credential-1"), pages[0].grants.map { it.credential.credentialId })
             assertEquals("next", pages[0].page?.cursor)
-            assertEquals(listOf("credential-2"), pages[1].credentials.map { it.credentialId })
+            assertEquals(listOf("credential-2"), pages[1].grants.map { it.credential.credentialId })
             assertEquals(null, pages[1].page?.cursor)
             assertEquals(
                 WaasApi.ListAccess.encodeRequest(
@@ -246,6 +253,74 @@ class WalletAccessTest {
                 ),
                 requireNotNull(secondListRequest.body).utf8(),
             )
+        }
+
+    @Test
+    fun ownerSmartSessionFlowMapsRequestsAndResponses() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"metadata":{"appUrl":"https://app.example","appName":"Example","appLogoUrl":"https://app.example/logo.png","custom":{"environment":"test"}}}""",
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"sessionId":"session-1","expiry":"2099-01-01T00:00:00Z"}""",
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"session":{"sessionId":"session-1","walletId":"wallet-main","signerAddress":"0x3333333333333333333333333333333333333333","grants":{"entries":[{"kind":"nativeTransfer","nativeTransfer":{"to":"0x2222222222222222222222222222222222222222","limit":"100"}}]},"chainId":"137","expiresAt":"2099-01-01T00:00:00Z"}}""",
+                    ).build(),
+            )
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"entries":[{"grant":{"kind":"nativeTransfer","nativeTransfer":{"to":"0x2222222222222222222222222222222222222222","limit":"100"}},"used":"25"}]}""",
+                    ).build(),
+            )
+            val client = restoredWalletClient("1710000114")
+            val grant =
+                SmartSessionGrant.NativeTransfer(
+                    to = "0x2222222222222222222222222222222222222222",
+                    limit = BigInteger("100"),
+                )
+
+            val metadata = client.inspectRemoteCredential("remote-credential")
+            val authorization =
+                client.authorizeRemoteAccess(
+                    credentialId = "remote-credential",
+                    network = Network.POLYGON,
+                    grants = listOf(grant),
+                    expiresAt = "2099-01-01T00:00:00Z",
+                )
+            val session = client.getRemoteAccessSession(authorization.sessionId)
+            val usage = client.getRemoteAccessSessionUsage(authorization.sessionId, Network.POLYGON)
+            val inspect = requireNotNull(server.takeRequest())
+            val authorize = requireNotNull(server.takeRequest())
+            val getSession = requireNotNull(server.takeRequest())
+            val getUsage = requireNotNull(server.takeRequest())
+
+            assertEquals("Example", metadata.appName)
+            assertEquals("/v1/WaasPublic/InspectCredential", inspect.target)
+            assertEquals("/v1/Waas/AuthorizeRemoteAccess", authorize.target)
+            assertTrue(requireNotNull(authorize.body).utf8().contains("\"chainId\":\"137\""))
+            assertEquals("/v1/Waas/GetSession", getSession.target)
+            assertEquals(137, session.chainId)
+            assertEquals(listOf(grant), session.grants)
+            assertEquals("/v1/Waas/GetSessionUsage", getUsage.target)
+            assertEquals(BigInteger("25"), usage.single().used)
         }
 
     @Test
@@ -332,11 +407,36 @@ class WalletAccessTest {
 
             val error =
                 runCatching {
-                    client.revokeAccess(targetCredentialId = "credential-2")
+                    client.revokeAccess(credentialId = "credential-2")
                 }.exceptionOrNull()
 
             assertTrue(error is OMSWalletException)
             assertEquals(OMSWalletErrorCode.SessionMissing, (error as OMSWalletException).code)
             assertEquals(0, server.requestCount)
         }
+
+    private fun restoredWalletClient(nonce: String): WalletClient =
+        WalletClient
+            .create(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment =
+                    OMSWalletEnvironment(
+                        walletApiUrl = server.url("/v1/Waas/").toString(),
+                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    ),
+                transport = OMSWalletHttpClient(),
+                sessionStore =
+                    InMemorySessionStore(
+                        snapshot =
+                            OMSWalletSessionSnapshot(
+                                walletId = "wallet-main",
+                                walletAddress = "0x1111111111111111111111111111111111111111",
+                                signerAddress = TEST_CREDENTIAL_ID,
+                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                                auth = emailSessionAuth(),
+                            ),
+                    ),
+                credentialSigner = TrackingCredentialSigner(nonceValue = nonce),
+            ).also { assertTrue(it.restorePersistedSession()) }
 }

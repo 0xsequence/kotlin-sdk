@@ -11,7 +11,7 @@ reads through a single `OMSWallet` root object.
 Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.2.0")
+implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.3.0")
 ```
 
 ## Compatibility
@@ -337,6 +337,34 @@ omsWallet.wallet.signOut()
 Keystore cleanup fails. Handle `OMSWalletStorageException` to report or retry a
 persistent cleanup failure.
 
+### Import a Wallet
+
+Wallet import verifies AWS Nitro enclave attestations against measurements managed by each OMS
+environment. Development uses Nitro debug mode, whose all-zero PCR0 does not identify a specific
+enclave image; use only disposable test keys there. Staging and Production accept only the release
+measurements shipped by the SDK.
+
+```kotlin
+val omsWallet =
+    OMSWallet(
+        context = context,
+        publishableKey = "your-publishable-key",
+    )
+
+val imported =
+    omsWallet.wallet.importWallet(
+        privateKey = WalletImportPrivateKey.Ethereum("0x..."),
+        reference = "Imported wallet",
+    )
+println(imported.wallet.keyOrigin == WalletKeyOrigin.Imported)
+```
+
+Ethereum imports accept a 32-byte raw scalar or 64 hexadecimal digits, optionally prefixed with
+`0x`. Solana imports accept a 32-byte seed or 64-byte keypair as raw bytes, or the base58 encoding
+of either. The SDK does not persist plaintext imported keys. For
+caller-managed HPKE, use `getWalletImportRecipientKey` followed by `importEncryptedWallet`; both
+responses remain attestation verified.
+
 ## Core Workflows
 
 ### Sign and Verify Messages
@@ -355,6 +383,17 @@ val verifyResult = omsWallet.wallet.isValidMessageSignature(
     network = network,
     message = "hello from OMS Wallet",
     signature = signResult,
+)
+```
+
+For a selected Solana wallet, off-chain messages use the Solana-specific methods and do not require
+a cluster:
+
+```kotlin
+val signature = omsWallet.wallet.signSolanaMessage("hello from Solana")
+val valid = omsWallet.wallet.isValidSolanaMessageSignature(
+    message = "hello from Solana",
+    signature = signature,
 )
 ```
 
@@ -464,6 +503,17 @@ tokenBalances.balances.forEach { balance ->
 }
 ```
 
+Query native SOL and fungible token balances through the Solana indexer gateway:
+
+```kotlin
+val result =
+    omsWallet.indexer.getSolanaBalances(
+        walletAddress = "solana-wallet-address",
+        networks = listOf(SolanaNetwork.Mainnet, SolanaNetwork.Devnet),
+    )
+result.balances.forEach(::println)
+```
+
 Pass `includeMetadata = true` when you need token contract details or NFT/token
 metadata from `balance.contractInfo` and `balance.tokenMetadata`.
 
@@ -537,17 +587,26 @@ val txResult = omsWallet.wallet.sendTransaction(
         mode = TransactionMode.Native,
     ),
 ) { feeOptions ->
-    feeOptions.first().selection
+    if (feeOptions.isEmpty()) {
+        // Present the sponsored transaction for confirmation here.
+        null
+    } else {
+        feeOptions.first().selection
+    }
 }
 ```
 
-The selector receives `FeeOptionWithBalance` values. `balance` is the selected
-wallet's raw indexer balance for that fee token when available. `available` is
-formatted with the token decimals, while `availableRaw` keeps the raw integer
-value. `decimals` is exposed as `Int?`. `selection` preserves the
-API-provided `tokenID` when present and falls back to the token symbol. Sponsored
-transactions skip fee selection; unsponsored transactions fail before execute
-when no fee option can be selected.
+The selector receives `FeeOptionWithBalance` values. For Ethereum fees, `balance`
+contains the matching `TokenBalance` when available. For both Ethereum and Solana
+fees, `available` is formatted with the token decimals, while `availableRaw` keeps
+the raw integer value. `decimals` is exposed as `Int?`, allowing
+`FeeOptionSelector.firstAvailable` to select the first affordable option on either
+network family. `selection` preserves the quoted option index and the API-provided
+`tokenID` when present, falling back to the token symbol. Sponsored
+transactions invoke the selector with an empty list; return `null` after acknowledging
+the free fee, or throw to stop execution. `FeeOptionSelector.firstAvailable` returns
+`null` for that empty list and continues execution as before. Unsponsored transactions
+fail before execute when no fee option can be selected.
 
 To refresh a transaction later:
 
@@ -555,7 +614,23 @@ To refresh a transaction later:
 val status = omsWallet.wallet.getTransactionStatus(txnId = txResult.txnId)
 ```
 
+For a selected Solana wallet, amounts are smallest units (lamports for SOL and base units for SPL
+tokens):
+
+```kotlin
+val result =
+    omsWallet.wallet.sendSolanaTransfer(
+        network = SolanaNetwork.Devnet,
+        asset = "SOL",
+        to = "solana-recipient-address",
+        amount = java.math.BigInteger("1000000"),
+    )
+```
+
 ## Reference
+
+When upgrading from `0.2.0`, see [MIGRATION.md](./MIGRATION.md) for the breaking changes in
+`0.3.0`.
 
 ### Errors
 
@@ -601,14 +676,58 @@ val scopedIdToken =
         customClaims = mapOf("role" to JsonPrimitive("member")),
     )
 
-val credentials = omsWallet.wallet.listAccess(pageSize = 25u)
+val grants = omsWallet.wallet.listAccess(pageSize = 25u)
 omsWallet.wallet.listAccessPages(pageSize = 25u).collect { page ->
-    println(page.credentials)
+    println(page.grants)
 }
 
-credentials
-    .firstOrNull { !it.isCaller }
-    ?.let { omsWallet.wallet.revokeAccess(targetCredentialId = it.credentialId) }
+grants
+    .firstOrNull { !it.credential.isCaller }
+    ?.let { grant ->
+        when (grant) {
+            is AccessGrant.Direct ->
+                omsWallet.wallet.revokeAccess(credentialId = grant.credential.credentialId)
+            is AccessGrant.Remote ->
+                omsWallet.wallet.revokeAccess(
+                    credentialId = grant.credential.credentialId,
+                    sessionId = grant.sessionId,
+                )
+        }
+    }
+```
+
+For an owner-approved smart session, inspect the remote credential before showing consent, then
+authorize bounded EVM transfer grants. Backend credential registration and execution stay outside
+this SDK surface. WaaS caps the requested session expiry at the remote credential's expiry.
+
+```kotlin
+val credentialId = "remote-credential-id"
+val metadata = omsWallet.wallet.inspectRemoteCredential(credentialId)
+// Render these returned public fields in your app's consent UI before authorizing access.
+println("${metadata.appName} ${metadata.appUrl}")
+
+val requestedExpiry = java.time.Instant.now().plusSeconds(3_600).toString()
+
+val session =
+    omsWallet.wallet.authorizeRemoteAccess(
+        credentialId = credentialId,
+        network = Network.POLYGON,
+        grants =
+            listOf(
+                SmartSessionGrant.NativeTransfer(
+                    to = "0x1111111111111111111111111111111111111111",
+                    limit = java.math.BigInteger("1000000000000000"),
+                ),
+            ),
+        expiresAt = requestedExpiry,
+    )
+
+val details = omsWallet.wallet.getRemoteAccessSession(session.sessionId)
+val usage = omsWallet.wallet.getRemoteAccessSessionUsage(session.sessionId, Network.POLYGON)
+omsWallet.wallet.revokeAccess(
+    credentialId = credentialId,
+    sessionId = session.sessionId,
+)
 ```
 
 ## API Reference

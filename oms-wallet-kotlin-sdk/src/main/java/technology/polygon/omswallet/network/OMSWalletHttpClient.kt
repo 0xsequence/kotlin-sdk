@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 internal data class OMSWalletHttpResponse(
     val statusCode: Int,
     val body: String,
+    val headers: Map<String, String>,
 )
 
 internal class OMSWalletHttpClient(
@@ -32,10 +33,11 @@ internal class OMSWalletHttpClient(
                     }.build()
 
             okHttpClient.newCall(request).execute().use { response ->
-                val responseBody = response.body?.string().orEmpty()
+                val responseBody = response.body.string()
                 OMSWalletHttpResponse(
                     statusCode = response.code,
                     body = responseBody,
+                    headers = response.headers.associate { it.first.lowercase() to it.second },
                 )
             }
         }

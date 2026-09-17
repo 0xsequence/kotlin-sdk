@@ -17,6 +17,8 @@ kotlinCompilerEmbeddable = "2.2.10"
 ktlintGradle = "14.2.0"
 ktlint = "1.8.0"
 browser = "1.8.0"
+bouncyCastle = "1.85"
+cbor = "4.4.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -36,6 +38,8 @@ androidx-credentials-play-services-auth = { group = "androidx.credentials", name
 googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
 kotlin-compiler-embeddable = { group = "org.jetbrains.kotlin", name = "kotlin-compiler-embeddable", version.ref = "kotlinCompilerEmbeddable" }
+bouncy-castle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncyCastle" }
+cbor = { group = "com.upokecenter", name = "cbor", version.ref = "cbor" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

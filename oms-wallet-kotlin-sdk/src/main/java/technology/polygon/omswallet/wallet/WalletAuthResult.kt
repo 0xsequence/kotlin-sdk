@@ -4,8 +4,8 @@ import kotlinx.coroutines.sync.Mutex
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletSelectionException
-import technology.polygon.omswallet.models.CredentialInfo
 import technology.polygon.omswallet.models.Wallet
+import technology.polygon.omswallet.models.WalletCredential
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.runOMSWalletOperation
 
@@ -42,7 +42,7 @@ enum class WalletSelectionBehavior {
 class PendingWalletSelection internal constructor(
     val walletType: WalletType,
     val wallets: List<Wallet>,
-    val credential: CredentialInfo,
+    val credential: WalletCredential,
     private val selectWalletAction: suspend (String) -> WalletSelectionResult,
     private val createAndSelectWalletAction: suspend (String?) -> WalletSelectionResult,
 ) {
@@ -106,7 +106,7 @@ sealed interface CompleteAuthResult {
         val walletAddress: String,
         val wallet: Wallet,
         val wallets: List<Wallet>,
-        val credential: CredentialInfo,
+        val credential: WalletCredential,
     ) : CompleteAuthResult
 
     data class WalletSelection(

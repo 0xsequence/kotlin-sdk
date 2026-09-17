@@ -18,7 +18,9 @@ import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletUpstreamService
+import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.indexer.IndexerClient
+import technology.polygon.omswallet.models.SolanaBalance
 import technology.polygon.omswallet.models.TokenBalancesPageRequest
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 
@@ -86,7 +88,7 @@ class ServiceClientsTest {
             assertEquals(null, messageRequest.headers["Authorization"])
             assertEquals(null, messageRequest.headers[OMSWalletEnvironment.walletSignatureHeaderName])
             assertEquals(
-                """{"network":"80002","walletId":"wallet-id","message":"hello","signature":"0xmessage"}""",
+                """{"network":"80002","networkFamily":"evm","walletId":"wallet-id","message":"hello","signature":"0xmessage"}""",
                 requireNotNull(messageRequest.body).utf8(),
             )
             assertEquals(true, messageIsValid)
@@ -224,6 +226,44 @@ class ServiceClientsTest {
             assertEquals("141799", balance.balance)
             assertEquals("USDC", balance.contractInfo?.symbol)
             assertEquals(6, balance.contractInfo?.decimals)
+        }
+
+    @Test
+    fun getSolanaBalancesUsesSolanaGatewayAndDecodesAssets() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"balances":[{"network":"solana:mainnet","accountAddress":"solana-wallet","assetType":"native","name":"Solana","symbol":"SOL","decimals":9,"balance":"1","formattedBalance":"0.000000001","verificationStatus":"unknown","verificationSource":"none"},{"network":"solana:mainnet","accountAddress":"solana-wallet","assetType":"fungible-token","tokenProgram":"spl-token","mintAddress":"usdc-mint","name":"USD Coin","symbol":"USDC","decimals":6,"balance":"10","formattedBalance":"0.00001","verificationStatus":"verified","verificationSource":"jupiter"}],"errors":[{"network":"solana:devnet","reason":"RPC unavailable"}]}""",
+                    ).build(),
+            )
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    solanaIndexerGatewayUrl = server.url("/v1/SolanaIndexerGateway/").toString(),
+                )
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
+
+            val result =
+                client.getSolanaBalances(
+                    walletAddress = "solana-wallet",
+                    includeMetadata = false,
+                    omitNativeBalances = false,
+                    mintAddresses = listOf("usdc-mint"),
+                    excludedMintAddresses = listOf("spam-mint"),
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/SolanaIndexerGateway/GetTokenBalancesDetails", request.target)
+            assertEquals(
+                "webrpc@v0.31.2;gen-kotlin@v0.3.2;solana-indexer-gateway@v1",
+                request.headers["Webrpc"],
+            )
+            assertTrue(result.balances[1] is SolanaBalance.FungibleToken)
+            assertEquals(SolanaNetwork.Devnet, result.errors.first().network)
         }
 
     @Test
