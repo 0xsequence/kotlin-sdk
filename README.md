@@ -11,7 +11,7 @@ reads through a single `OMSWallet` root object.
 Maven Central:
 
 ```kotlin
-implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.3.0")
+implementation("io.github.0xsequence:oms-wallet-kotlin-sdk:0.3.1")
 ```
 
 ## Compatibility
@@ -740,6 +740,10 @@ The published artifact declares `minSdk 24` so apps with lower manifest floors,
 including Expo/React Native apps, can include the dependency. This is only a
 packaging compatibility floor: the SDK requires Android 10 / API 29 or newer at
 runtime because the service endpoints require TLS 1.3.
+
+Release CI also builds the locally published SDK through the current stable
+Expo release and its default Kotlin toolchain. The fixture is updated from the
+npm `latest` tag and must be current before a release can pass.
 
 ## Sample App
 

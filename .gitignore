@@ -14,3 +14,9 @@ build
 .externalNativeBuild
 .cxx
 local.properties
+
+# Generated Expo compatibility fixture files
+/compatibility-tests/expo/.expo/
+/compatibility-tests/expo/android/
+/compatibility-tests/expo/ios/
+/compatibility-tests/expo/node_modules/

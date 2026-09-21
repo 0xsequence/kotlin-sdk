@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "OMS Kotlin SDK Expo Compatibility",
+    "slug": "oms-kotlin-sdk-expo-compatibility",
+    "version": "1.0.0",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.sequence.oms.kotlincompatibility"
+    },
+    "plugins": [
+      "./with-local-kotlin-sdk"
+    ]
+  }
+}
