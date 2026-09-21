@@ -50,6 +50,8 @@ unit tests, Android lint for both modules, and sample app assembly.
 - `oms-wallet-kotlin-sdk/src/androidTest/` - instrumented Android tests for
   Android Keystore credential behavior.
 - `app/` - Android sample app for auth, signing, transaction, and testbed flows.
+- `compatibility-tests/expo/` - minimal current-stable Expo consumer used to
+  compile locally published SDK artifacts with Expo's default Android toolchain.
 - `docs/` - public API notes, public error contracts, session-expiry notes, and
   request-signing parity vectors.
 - `.github/workflows/android-ci.yml` - CI workflow for PRs and `master`.
@@ -60,7 +62,7 @@ unit tests, Android lint for both modules, and sample app assembly.
 ## Development Commands
 
 - `./gradlew --build-cache verify`
-  - Full SDK verification, matching `.github/workflows/android-ci.yml`.
+  - Full SDK verification. CI also runs the stable Expo compatibility command below.
 - `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest`
   - Run SDK JVM unit tests. Use for most library logic changes.
 - `./gradlew :oms-wallet-kotlin-sdk:lintDebug`
@@ -90,6 +92,10 @@ unit tests, Android lint for both modules, and sample app assembly.
     platform session behavior.
 - `./gradlew :oms-wallet-kotlin-sdk:publishToMavenLocal`
   - Publish the SDK artifact to the local Maven cache for packaging checks.
+- `tools/check-expo-compatibility.sh`
+  - Publish a temporary local SDK version and compile it through the locked
+    current-stable Expo fixture. The command fails if npm's `latest` Expo tag
+    has moved ahead of the fixture.
 
 Use the Gradle wrapper; it resolves dependencies from Google Maven, Maven
 Central, and the Gradle Plugin Portal.

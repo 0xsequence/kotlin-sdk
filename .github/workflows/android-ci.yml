@@ -24,8 +24,18 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6.2.0
 
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: compatibility-tests/expo/package-lock.json
+
       - name: Verify
         run: ./gradlew --build-cache verify
+
+      - name: Verify stable Expo compatibility
+        run: tools/check-expo-compatibility.sh
 
       - name: Publish SDK unit test report
         if: always()

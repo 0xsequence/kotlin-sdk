@@ -29,12 +29,13 @@ Prerequisites:
 
    ```sh
    ./gradlew --build-cache verify
+   tools/check-expo-compatibility.sh
    ```
 
-   This is the same task CI runs. It checks formatting, tests, Android lint,
-   both example apps, the public API baseline, release artifact boundaries,
-   release coordinates, Maven metadata, checksums, and the complete publication
-   graph. It writes the validated Central Portal archive to
+   These are the same checks CI runs. They cover formatting, tests, Android
+   lint, both example apps, the public API baseline, release artifacts, Maven
+   metadata, and a build through the current stable Expo release. The Gradle
+   verification writes the validated Central Portal archive to
    `build/nmcp/zip/aggregation.zip` without uploading it. When signing
    properties are present, it also requires signatures for every artifact.
 

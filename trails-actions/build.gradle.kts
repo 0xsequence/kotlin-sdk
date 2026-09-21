@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.ktlint)
-    id("org.jetbrains.kotlin.plugin.serialization") version "2.4.10"
+    alias(libs.plugins.kotlin.serialization)
 }
 
 ktlint {
