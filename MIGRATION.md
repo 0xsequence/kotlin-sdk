@@ -3,13 +3,6 @@
 This document records breaking changes and the steps to migrate between published
 versions of `io.github.0xsequence:oms-wallet-kotlin-sdk`.
 
-## 0.3.1
-
-No code changes are required. The public API is unchanged from `0.3.0`. The SDK is now built
-with Kotlin 2.1.20 and kotlinx-serialization 1.8.1 (previously Kotlin 2.4.10 and
-kotlinx-serialization 1.11.0), so the published artifact compiles in projects that use the
-current stable Expo release and its default Kotlin toolchain.
-
 ## 0.3.0
 
 ### Wallet types and key origin
