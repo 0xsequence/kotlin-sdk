@@ -29,6 +29,12 @@ The SDK does not require consumer apps to enable core library desugaring.
   development and testnet flows.
 - Register any OIDC return URI you use, such as `yourapp://auth/callback`, as an
   Android app link or intent filter before testing redirect auth.
+- Declare the `INTERNET` permission in your app manifest. The SDK's library
+  manifest declares no permissions, so network calls fail without it:
+
+  ```xml
+  <uses-permission android:name="android.permission.INTERNET" />
+  ```
 - Start with sign-in, message signing, or balance reads. Transaction examples
   below use Polygon Amoy; mainnet transactions can move real funds.
 
@@ -75,6 +81,25 @@ lifecycleScope.launch {
 ```
 
 The SDK derives wallet API and indexer routing from the publishable key.
+
+### Packages
+
+Snippets after the Quick Start omit imports. Types live in these packages, all
+under `technology.polygon.omswallet`:
+
+- `technology.polygon.omswallet`: the `OMSWallet` entry point, `Network`,
+  `OMSWalletException`, `OMSWalletErrorCode`, `OMSWalletOperation`, and the
+  session types (`OMSWalletSessionState`, `OMSWalletSessionAuth`, and related).
+- `technology.polygon.omswallet.wallet`: auth and wallet-action results such as
+  `CompleteAuthResult`, `PendingWalletSelection`, and `OidcRedirectAuthResult`,
+  plus OIDC provider configuration.
+- `technology.polygon.omswallet.models`: data models such as `Wallet`,
+  `WalletType`, `WalletKeyOrigin`, `AccessGrant`, `SmartSessionGrant`, and
+  `WalletImportPrivateKey`.
+- `technology.polygon.omswallet.indexer`: `IndexerClient`, reached through
+  `omsWallet.indexer`.
+- `technology.polygon.omswallet.utils`: helpers such as `parseUnits` and
+  `formatUnits`.
 
 ## Overview
 
@@ -402,6 +427,7 @@ val valid = omsWallet.wallet.isValidSolanaMessageSignature(
 ```kotlin
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
@@ -758,6 +784,9 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 - message signing and verification
 - transaction sending
 
+The repository also includes a [`trails-actions/`](trails-actions/) sample
+module, a separate Android app for Trails swap and Earn flows built on the SDK.
+
 The sample app uses additional Google Sign-In / AndroidX Credential Manager
 dependencies and therefore compiles with SDK 35. That sample app requirement
 does not raise the published SDK artifact's consumer `compileSdk` floor.
@@ -779,6 +808,14 @@ and is not wired into GitHub CI.
 ./gradlew :oms-wallet-kotlin-sdk:lintDebug
 ./gradlew :app:lintDebug
 ./gradlew :app:assembleDebug
+```
+
+CI runs the full check below, then the stable Expo compatibility check, which
+needs Node 24 and network access:
+
+```sh
+./gradlew --build-cache verify
+tools/check-expo-compatibility.sh
 ```
 
 ## Publishing

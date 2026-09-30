@@ -85,4 +85,4 @@ Key subdirectories:
 | Run instrumented tests (requires device/emulator) | `./gradlew :oms-wallet-kotlin-sdk:connectedDebugAndroidTest` |
 | Run ktlint style check | `./gradlew ktlintCheck` |
 | Auto-fix ktlint violations | `./gradlew ktlintFormat` |
-| Full CI-equivalent check | `./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug` |
+| Full CI check | `./gradlew --build-cache verify`, then `tools/check-expo-compatibility.sh` |

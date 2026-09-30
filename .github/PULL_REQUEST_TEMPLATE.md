@@ -15,7 +15,7 @@
 
 - [ ] `./gradlew ktlintCheck` passes
 - [ ] `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest` passes
-- [ ] `./gradlew :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug` passes
+- [ ] `./gradlew --build-cache verify` passes (CI also runs `tools/check-expo-compatibility.sh`)
 - [ ] Instrumented tests run if Android Keystore / credential / session behavior changed
 
 ## Related
