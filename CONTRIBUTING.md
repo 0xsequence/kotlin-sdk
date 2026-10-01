@@ -5,7 +5,7 @@
 - JDK 17 (temurin recommended)
 - Android SDK platforms 34 and 35 for SDK and sample app builds
 - Android 10 / API 29 or newer for runtime/manual SDK flows
-- Node 24 (only for `tools/check-expo-compatibility.sh`, the stable Expo compatibility check that CI runs)
+- Node 24 (only for `tools/check-expo-compatibility.sh`, the current and minimum Expo compatibility check that CI runs)
 - Android Studio or IntelliJ IDEA (optional but recommended)
 
 ## Setup
@@ -22,7 +22,7 @@ wrapper — no extra configuration needed.
 ## Building
 
 ```bash
-# Full CI check (Gradle verification, then the stable Expo compatibility check)
+# Full CI check (Gradle verification, then the Expo compatibility check)
 ./gradlew --build-cache verify
 tools/check-expo-compatibility.sh
 
