@@ -31,3 +31,30 @@ updates:
           - "expo"
           - "react"
           - "react-native"
+
+  - package-ecosystem: "npm"
+    directory: "/compatibility-tests/expo-min"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 1
+    labels:
+      - "dependencies"
+    ignore:
+      - dependency-name: "expo"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "react"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+      - dependency-name: "react-native"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
+    groups:
+      expo-min-patch:
+        patterns:
+          - "expo"
+          - "react"
+          - "react-native"
