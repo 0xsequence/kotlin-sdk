@@ -22,7 +22,7 @@ wrapper — no extra configuration needed.
 ## Building
 
 ```bash
-# Full CI check (Gradle verification, then the Expo compatibility check)
+# Full CI check (Gradle verification and the Expo compatibility check)
 ./gradlew --build-cache verify
 tools/check-expo-compatibility.sh
 

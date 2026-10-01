@@ -812,8 +812,8 @@ and is not wired into GitHub CI.
 ./gradlew :app:assembleDebug
 ```
 
-CI runs the full check below, then the Expo compatibility check, which
-needs Node 24 and network access:
+CI runs the full check below and, in parallel jobs, the Expo compatibility
+check, which needs Node 24 and network access:
 
 ```sh
 ./gradlew --build-cache verify

@@ -37,9 +37,9 @@ module plus a small Android sample app used for manual flows.
 Use the Gradle wrapper for all build and verification work. Main CI runs
 `./gradlew --build-cache verify` (formatting, SDK unit tests, Android lint,
 sample app assembly, public API baseline, release artifact boundary, API docs
-drift, and release publication checks), then
-`tools/check-expo-compatibility.sh` (Node 24) for current-stable and
-supported-minimum Expo compatibility.
+drift, and release publication checks) and, in two parallel jobs,
+`tools/check-expo-compatibility.sh current` and `minimum` (Node 24) for
+current-stable and supported-minimum Expo compatibility.
 
 ## Repository Layout
 
@@ -121,9 +121,10 @@ supported-minimum Expo compatibility.
     platform session behavior.
 - `./gradlew :oms-wallet-kotlin-sdk:publishToMavenLocal`
   - Publish the SDK artifact to the local Maven cache for packaging checks.
-- `tools/check-expo-compatibility.sh`
+- `tools/check-expo-compatibility.sh [current|minimum]`
   - Publish a temporary local SDK version and compile it through the locked
-    current-stable and supported-minimum Expo fixtures. The command fails if
+    current-stable and supported-minimum Expo fixtures (both when no argument
+    is given). The command fails if
     npm's `latest` Expo tag has moved ahead of the current-stable fixture; the
     minimum fixture is never freshness-checked and is prebuilt with a pinned
     SDK 56 `expo-template-bare-minimum` template.

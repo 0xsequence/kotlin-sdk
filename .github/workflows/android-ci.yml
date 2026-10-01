@@ -24,20 +24,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6.2.0
 
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: |
-            compatibility-tests/expo/package-lock.json
-            compatibility-tests/expo-min/package-lock.json
-
       - name: Verify
         run: ./gradlew --build-cache verify
-
-      - name: Verify current and minimum Expo compatibility
-        run: tools/check-expo-compatibility.sh
 
       - name: Publish SDK unit test report
         if: always()
@@ -46,3 +34,39 @@ jobs:
           report_paths: oms-wallet-kotlin-sdk/build/test-results/testDebugUnitTest/TEST-*.xml
           detailed_summary: true
           fail_on_failure: true
+
+  expo-compat:
+    name: Expo compatibility (${{ matrix.fixture }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fixture: current
+            lockfile: compatibility-tests/expo/package-lock.json
+          - fixture: minimum
+            lockfile: compatibility-tests/expo-min/package-lock.json
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.2.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ${{ matrix.lockfile }}
+
+      - name: Verify Expo compatibility
+        run: tools/check-expo-compatibility.sh ${{ matrix.fixture }}

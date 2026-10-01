@@ -38,6 +38,7 @@ Key subdirectories:
   `compatibility-tests/expo/` (current stable Expo; fails if npm's `latest` tag is newer) and
   `compatibility-tests/expo-min/` (the React Native SDK's supported minimum, Expo SDK 56; never
   freshness-checked). Catches Kotlin toolchain or artifact metadata changes that break Expo apps.
+  Pass `current` or `minimum` to build one fixture; CI runs each in its own parallel job.
 - **Prerequisites:** Node 24, JDK 17, Android SDK, network access.
 
 ## Conventions
@@ -94,4 +95,4 @@ Key subdirectories:
 | Run instrumented tests (requires device/emulator) | `./gradlew :oms-wallet-kotlin-sdk:connectedDebugAndroidTest` |
 | Run ktlint style check | `./gradlew ktlintCheck` |
 | Auto-fix ktlint violations | `./gradlew ktlintFormat` |
-| Full CI check | `./gradlew --build-cache verify`, then `tools/check-expo-compatibility.sh` |
+| Full CI check | `./gradlew --build-cache verify` and `tools/check-expo-compatibility.sh` |
