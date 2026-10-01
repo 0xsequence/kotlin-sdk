@@ -31,7 +31,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_GITHUB_ACTIONS }}
           github_token: ${{ github.token }}
-          claude_args: "--model claude-opus-4-8"
+          claude_args: "--model claude-sonnet-5-5"
           track_progress: true
           prompt: |
             Review this pull request. Focus on:
@@ -61,5 +61,5 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_GITHUB_ACTIONS }}
           github_token: ${{ github.token }}
-          claude_args: "--model claude-opus-4-8"
+          claude_args: "--model claude-sonnet-5-5"
           trigger_phrase: "@claude review"
