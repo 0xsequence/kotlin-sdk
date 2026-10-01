@@ -29,12 +29,14 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: compatibility-tests/expo/package-lock.json
+          cache-dependency-path: |
+            compatibility-tests/expo/package-lock.json
+            compatibility-tests/expo-min/package-lock.json
 
       - name: Verify
         run: ./gradlew --build-cache verify
 
-      - name: Verify stable Expo compatibility
+      - name: Verify current and minimum Expo compatibility
         run: tools/check-expo-compatibility.sh
 
       - name: Publish SDK unit test report

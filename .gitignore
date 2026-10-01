@@ -20,3 +20,7 @@ local.properties
 /compatibility-tests/expo/android/
 /compatibility-tests/expo/ios/
 /compatibility-tests/expo/node_modules/
+/compatibility-tests/expo-min/.expo/
+/compatibility-tests/expo-min/android/
+/compatibility-tests/expo-min/ios/
+/compatibility-tests/expo-min/node_modules/
