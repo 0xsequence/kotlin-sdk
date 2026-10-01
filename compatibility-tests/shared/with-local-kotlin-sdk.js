@@ -1,14 +1,17 @@
-const {
-  withAppBuildGradle,
-  withMainApplication,
-  withProjectBuildGradle,
-} = require('expo/config-plugins');
-
+// Shared by every fixture under compatibility-tests/. Resolve the config plugin
+// API from the fixture being prebuilt so each one uses its own Expo version.
 module.exports = function withLocalKotlinSdk(config) {
   const sdkVersion = process.env.OMS_KOTLIN_SDK_VERSION;
   if (!sdkVersion) {
     throw new Error('OMS_KOTLIN_SDK_VERSION is required');
   }
+
+  const projectRoot = config._internal?.projectRoot ?? process.cwd();
+  const {
+    withAppBuildGradle,
+    withMainApplication,
+    withProjectBuildGradle,
+  } = require(require.resolve('expo/config-plugins', { paths: [projectRoot] }));
 
   config = withProjectBuildGradle(config, (projectConfig) => {
     const allProjectsRepositories = 'allprojects {\n  repositories {';
