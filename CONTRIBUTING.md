@@ -24,7 +24,7 @@ wrapper — no extra configuration needed.
 ```bash
 # Full CI check (Gradle verification and the Expo compatibility check)
 ./gradlew --build-cache verify
-tools/check-expo-compatibility.sh
+tools/check-expo-compatibility.sh   # or pass current / minimum to build one fixture
 
 # SDK unit tests only
 ./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest

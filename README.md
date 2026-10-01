@@ -820,6 +820,9 @@ check, which needs Node 24 and network access:
 tools/check-expo-compatibility.sh
 ```
 
+Pass `current` or `minimum` to `tools/check-expo-compatibility.sh` to build
+only one Expo fixture.
+
 ## Publishing
 
 See [publishing.md](publishing.md) for release PR and Maven Central publishing
