@@ -34,8 +34,12 @@ This repository is an Android/Kotlin SDK for OMS Wallet wallet, auth, signing,
 indexer, and API integrations. It contains the publishable Android library
 module plus a small Android sample app used for manual flows.
 
-Use the Gradle wrapper for all build and verification work. Main CI runs SDK
-unit tests, Android lint for both modules, and sample app assembly.
+Use the Gradle wrapper for all build and verification work. Main CI runs
+`./gradlew --build-cache verify` (formatting, SDK unit tests, Android lint,
+sample app assembly, public API baseline, release artifact boundary, API docs
+drift, and release publication checks) and, in two parallel jobs,
+`tools/check-expo-compatibility.sh current` and `minimum` (Node 24) for
+current-stable and supported-minimum Expo compatibility.
 
 ## Repository Layout
 
@@ -49,11 +53,25 @@ unit tests, Android lint for both modules, and sample app assembly.
   serialization, service clients, signing vectors, and utility helpers.
 - `oms-wallet-kotlin-sdk/src/androidTest/` - instrumented Android tests for
   Android Keystore credential behavior.
+- `oms-wallet-kotlin-sdk-waas-generated/` - Gradle module holding the generated
+  WaaS client source used by the SDK build.
 - `app/` - Android sample app for auth, signing, transaction, and testbed flows.
+- `trails-actions/` - separate Android sample app for Trails swap and Earn flows.
+- `tools/` - repo tooling: `api-docs-generator/` (generates and checks
+  `docs/api.md`), `git-hooks/` (versioned pre-push hook), `gradlew-local`
+  (wrapper with a repo-local Gradle home), `install-git-hooks.sh`, and
+  `check-expo-compatibility.sh`.
 - `compatibility-tests/expo/` - minimal current-stable Expo consumer used to
   compile locally published SDK artifacts with Expo's default Android toolchain.
+- `compatibility-tests/expo-min/` - the same consumer pinned to the oldest Expo
+  SDK the React Native SDK supports. The React Native SDK
+  (`0xPolygon/oms-wallet-react-native-sdk`) defines that minimum; this fixture
+  only mirrors it.
+- `compatibility-tests/shared/` - the config plugin both Expo fixtures use to
+  add the locally published SDK.
 - `docs/` - public API notes, public error contracts, session-expiry notes, and
-  request-signing parity vectors.
+  request-signing parity vectors. `docs/api.md` is generated; its grouping is
+  configured in `docs/api-groups.conf`.
 - `.github/workflows/android-ci.yml` - CI workflow for PRs and `master`.
 - `.github/workflows/claude-review.yml` - Claude review workflow. It runs once
   for non-Dependabot PRs when opened or marked ready for review, and can be
@@ -62,7 +80,18 @@ unit tests, Android lint for both modules, and sample app assembly.
 ## Development Commands
 
 - `./gradlew --build-cache verify`
-  - Full SDK verification. CI also runs the stable Expo compatibility command below.
+  - Full SDK verification. CI also runs the Expo compatibility command below.
+- `./gradlew generateApiDocs`
+  - Regenerate `docs/api.md` from Kotlin sources and `docs/api-groups.conf`.
+    This writes a tracked file; do not hand-edit `docs/api.md`.
+- `./gradlew checkApiDocs`
+  - Verify `docs/api.md` is current and every public symbol is grouped.
+- `./gradlew :oms-wallet-kotlin-sdk:checkPublicApiBaseline`
+  - Compare the public API against `oms-wallet-kotlin-sdk/api/public-api.txt`.
+    `dumpPublicApi` in the same module regenerates the baseline.
+- `./gradlew :oms-wallet-kotlin-sdk:checkReleaseArtifactBoundary`
+  - Check that the release AAR excludes generated WaaS bytecode and Java-callable
+    implementation details.
 - `./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest`
   - Run SDK JVM unit tests. Use for most library logic changes.
 - `./gradlew :oms-wallet-kotlin-sdk:lintDebug`
@@ -92,10 +121,13 @@ unit tests, Android lint for both modules, and sample app assembly.
     platform session behavior.
 - `./gradlew :oms-wallet-kotlin-sdk:publishToMavenLocal`
   - Publish the SDK artifact to the local Maven cache for packaging checks.
-- `tools/check-expo-compatibility.sh`
+- `tools/check-expo-compatibility.sh [current|minimum]`
   - Publish a temporary local SDK version and compile it through the locked
-    current-stable Expo fixture. The command fails if npm's `latest` Expo tag
-    has moved ahead of the fixture.
+    current-stable and supported-minimum Expo fixtures (both when no argument
+    is given). The command fails if
+    npm's `latest` Expo tag has moved ahead of the current-stable fixture; the
+    minimum fixture is never freshness-checked and is prebuilt with a pinned
+    SDK 56 `expo-template-bare-minimum` template.
 
 Use the Gradle wrapper; it resolves dependencies from Google Maven, Maven
 Central, and the Gradle Plugin Portal.
@@ -268,6 +300,13 @@ and the execution command reference.
 - Ask before making product, architecture, or security trade-offs that are not
   answered by the request or existing docs.
 - Run the relevant verification commands before reporting completion.
+
+## Maintenance Matrix
+
+| When this changes… | Also update… |
+|---|---|
+| React Native SDK supported minimum | `compatibility-tests/expo-min/` pins (`package.json`, `package-lock.json`, `README.md`) and the template pin in `tools/check-expo-compatibility.sh` |
+| Kotlin toolchain / compiler or published artifact metadata | Run `tools/check-expo-compatibility.sh`; both Expo fixtures must pass |
 
 ## PR / Commit Guidance
 

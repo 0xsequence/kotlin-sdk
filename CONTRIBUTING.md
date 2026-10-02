@@ -5,6 +5,7 @@
 - JDK 17 (temurin recommended)
 - Android SDK platforms 34 and 35 for SDK and sample app builds
 - Android 10 / API 29 or newer for runtime/manual SDK flows
+- Node 24 (only for `tools/check-expo-compatibility.sh`, the current and minimum Expo compatibility check that CI runs)
 - Android Studio or IntelliJ IDEA (optional but recommended)
 
 ## Setup
@@ -21,8 +22,9 @@ wrapper — no extra configuration needed.
 ## Building
 
 ```bash
-# Full CI-equivalent check
-./gradlew --build-cache :oms-wallet-kotlin-sdk:testDebugUnitTest :oms-wallet-kotlin-sdk:lintDebug :app:lintDebug :app:assembleDebug
+# Full CI check (Gradle verification and the Expo compatibility check)
+./gradlew --build-cache verify
+tools/check-expo-compatibility.sh   # or pass current / minimum to build one fixture
 
 # SDK unit tests only
 ./gradlew :oms-wallet-kotlin-sdk:testDebugUnitTest
@@ -42,7 +44,10 @@ See [TESTING.md](./TESTING.md) for the full test reference.
 2. Make focused changes. Keep PRs narrow; one concern per PR is easier to review and revert.
 3. Add or update tests for behavior changes (see [TESTING.md](./TESTING.md)).
 4. Run the relevant verification checks before pushing (the pre-push hook runs `ktlintCheck` automatically).
-5. Update `docs/api.md` and `README.md` if you change the public API surface.
+5. Update `README.md` if you change the public API surface. `docs/api.md` is generated: run
+   `./gradlew generateApiDocs` to refresh it (`./gradlew checkApiDocs` verifies it is current).
+   The public API baseline is `oms-wallet-kotlin-sdk/api/public-api.txt`; it is checked by
+   `./gradlew :oms-wallet-kotlin-sdk:checkPublicApiBaseline`.
 
 ## Opening a PR
 

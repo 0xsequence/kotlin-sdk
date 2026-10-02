@@ -6,9 +6,53 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # mikepenz/action-junit-report publishes the unit test report as a check run.
+      checks: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.2.0
+
+      - name: Verify
+        run: ./gradlew --build-cache verify
+
+      - name: Publish SDK unit test report
+        if: always()
+        uses: mikepenz/action-junit-report@v6
+        with:
+          report_paths: oms-wallet-kotlin-sdk/build/test-results/testDebugUnitTest/TEST-*.xml
+          detailed_summary: true
+          fail_on_failure: true
+
+  expo-compat:
+    name: Expo compatibility (${{ matrix.fixture }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fixture: current
+            lockfile: compatibility-tests/expo/package-lock.json
+          - fixture: minimum
+            lockfile: compatibility-tests/expo-min/package-lock.json
 
     steps:
       - name: Check out repository
@@ -29,18 +73,7 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: compatibility-tests/expo/package-lock.json
+          cache-dependency-path: ${{ matrix.lockfile }}
 
-      - name: Verify
-        run: ./gradlew --build-cache verify
-
-      - name: Verify stable Expo compatibility
-        run: tools/check-expo-compatibility.sh
-
-      - name: Publish SDK unit test report
-        if: always()
-        uses: mikepenz/action-junit-report@v6
-        with:
-          report_paths: oms-wallet-kotlin-sdk/build/test-results/testDebugUnitTest/TEST-*.xml
-          detailed_summary: true
-          fail_on_failure: true
+      - name: Verify Expo compatibility
+        run: tools/check-expo-compatibility.sh ${{ matrix.fixture }}

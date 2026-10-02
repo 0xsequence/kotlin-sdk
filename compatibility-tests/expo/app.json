@@ -8,7 +8,7 @@
       "package": "com.sequence.oms.kotlincompatibility"
     },
     "plugins": [
-      "./with-local-kotlin-sdk"
+      "../shared/with-local-kotlin-sdk"
     ]
   }
 }
