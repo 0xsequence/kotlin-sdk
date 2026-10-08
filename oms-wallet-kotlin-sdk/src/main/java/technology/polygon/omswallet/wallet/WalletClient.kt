@@ -3870,7 +3870,7 @@ private class WaasWalletGateway(
                 message = "Wallet response is missing networkFamily",
             )
         // Checks the shape only; EIP-55 checksum casing is not enforced.
-        if (type == WalletType.Ethereum && !address.isEthereumAddressValue()) {
+        if (type == WalletType.Ethereum && !address.isEthereumHexAddress()) {
             throw OMSWalletResponseException(message = "Ethereum wallet response has an invalid address")
         }
         return Wallet(
@@ -3984,7 +3984,7 @@ private class WaasWalletGateway(
     private fun SmartSessionGrant.toWaas(): Grant =
         when (this) {
             is SmartSessionGrant.NativeTransfer -> {
-                require(to.isEthereumAddressValue()) { "Invalid native transfer recipient" }
+                require(to.isEthereumHexAddress()) { "Invalid native transfer recipient" }
                 require(limit.signum() >= 0) { "Native transfer limit must be non-negative" }
                 Grant(
                     kind = GrantKind.NativeTransfer,
@@ -3993,8 +3993,8 @@ private class WaasWalletGateway(
             }
 
             is SmartSessionGrant.Erc20Transfer -> {
-                require(token.isEthereumAddressValue()) { "Invalid ERC-20 token address" }
-                require(to?.isEthereumAddressValue() != false) { "Invalid ERC-20 recipient" }
+                require(token.isEthereumHexAddress()) { "Invalid ERC-20 token address" }
+                require(to?.isEthereumHexAddress() != false) { "Invalid ERC-20 recipient" }
                 require(limit.signum() >= 0) { "ERC-20 transfer limit must be non-negative" }
                 Grant(
                     kind = GrantKind.ERC20Transfer,
@@ -4078,12 +4078,10 @@ private class WaasWalletGateway(
         value: String,
         field: String,
     ) {
-        if (!value.isEthereumAddressValue()) {
+        if (!value.isEthereumHexAddress()) {
             throw OMSWalletResponseException(message = "Session contains an invalid $field")
         }
     }
-
-    private fun String.isEthereumAddressValue(): Boolean = isEthereumHexAddress()
 
     private fun WaasTransactionStatusResponse.toModel(): TransactionStatusResponse =
         TransactionStatusResponse(
@@ -4113,6 +4111,7 @@ private fun String.toWalletType(): WalletType =
     }
 
 /** Shape-only `0x` + 40 hex check; EIP-55 checksum casing is not enforced. */
+@JvmSynthetic
 internal fun String.isEthereumHexAddress(): Boolean = length == 42 && startsWith("0x") && drop(2).all { it.digitToIntOrNull(16) != null }
 
 internal fun interface SessionExpiryScheduler {
