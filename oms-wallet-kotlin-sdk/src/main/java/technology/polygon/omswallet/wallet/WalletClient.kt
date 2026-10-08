@@ -1901,10 +1901,7 @@ class WalletClient private constructor(
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = network,
-                solanaNetwork = null,
-                tronNetwork = null,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -1939,10 +1936,7 @@ class WalletClient private constructor(
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = null,
-                solanaNetwork = network,
-                tronNetwork = null,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichSolanaFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -1983,10 +1977,7 @@ class WalletClient private constructor(
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = null,
-                solanaNetwork = null,
-                tronNetwork = network,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichTronFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -2027,10 +2018,7 @@ class WalletClient private constructor(
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = null,
-                solanaNetwork = null,
-                tronNetwork = network,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichTronFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -2071,10 +2059,7 @@ class WalletClient private constructor(
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = network,
-                solanaNetwork = null,
-                tronNetwork = null,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -2563,11 +2548,12 @@ class WalletClient private constructor(
             )
         }
 
+    /**
+     * Executes [prepared]. [enrichFeeOptions] adds the wallet's balances to the
+     * fee options; it is only called when the caller passes [selectFeeOption].
+     */
     private suspend fun executePreparedTransaction(
-        network: Network?,
-        solanaNetwork: SolanaNetwork?,
-        tronNetwork: TronNetwork?,
-        walletAddress: String?,
+        enrichFeeOptions: suspend (List<FeeOption>) -> List<FeeOptionWithBalance>,
         prepared: PreparedWalletTransaction,
         requiredSessionRevision: Long,
         selectFeeOption: FeeOptionSelector?,
@@ -2597,33 +2583,7 @@ class WalletClient private constructor(
                 }
 
                 else -> {
-                    val options =
-                        if (network != null && walletAddress != null) {
-                            enrichFeeOptionsWithBalances(
-                                network = network,
-                                walletAddress = walletAddress,
-                                feeOptions = prepared.feeOptions,
-                            )
-                        } else if (solanaNetwork != null && walletAddress != null) {
-                            enrichSolanaFeeOptionsWithBalances(
-                                network = solanaNetwork,
-                                walletAddress = walletAddress,
-                                feeOptions = prepared.feeOptions,
-                            )
-                        } else if (tronNetwork != null && walletAddress != null) {
-                            enrichTronFeeOptionsWithBalances(
-                                network = tronNetwork,
-                                walletAddress = walletAddress,
-                                feeOptions = prepared.feeOptions,
-                            )
-                        } else {
-                            prepared.feeOptions.mapIndexed { index, feeOption ->
-                                FeeOptionWithBalance(
-                                    feeOption = feeOption,
-                                    selection = FeeOptionSelection(feeOption, index.toUInt()),
-                                )
-                            }
-                        }
+                    val options = enrichFeeOptions(prepared.feeOptions)
                     selectFeeOption.select(options) ?: throw IllegalArgumentException(
                         "No fee option selected for unsponsored transaction",
                     )
@@ -2739,20 +2699,14 @@ class WalletClient private constructor(
         walletAddress: String,
         feeOptions: List<FeeOption>,
     ): List<FeeOptionWithBalance> {
-        val mintAddresses =
-            feeOptions
-                .filterNot { it.token.isNativeToken() }
-                .mapNotNull { it.token.contractAddress.normalizeCaseSensitiveAddress() }
-                .distinct()
-        val includesNative = feeOptions.any { it.token.isNativeToken() }
         val balances =
             runCatching {
                 indexerClient.getSolanaBalances(
                     walletAddress = walletAddress,
                     networks = listOf(network),
                     includeMetadata = false,
-                    omitNativeBalances = !includesNative,
-                    mintAddresses = mintAddresses,
+                    omitNativeBalances = !feeOptions.includesNativeToken(),
+                    mintAddresses = feeOptions.gatewayTokenAddresses(),
                 )
             }.getOrNull()
         val nativeBalance =
@@ -2766,25 +2720,7 @@ class WalletClient private constructor(
                 ?.filter { it.network == network }
                 ?.associateBy { it.mintAddress }
                 .orEmpty()
-
-        return feeOptions.mapIndexed { index, feeOption ->
-            val balance =
-                if (feeOption.token.isNativeToken()) {
-                    nativeBalance
-                } else {
-                    feeOption.token.contractAddress
-                        .normalizeCaseSensitiveAddress()
-                        ?.let { balancesByMint[it] }
-                }
-            val decimals = balance?.decimals ?: feeOption.token.decimals?.toInt()
-            FeeOptionWithBalance(
-                feeOption = feeOption,
-                selection = FeeOptionSelection(feeOption, index.toUInt()),
-                available = balance?.balance?.formatTokenAmount(decimals),
-                availableRaw = balance?.balance,
-                decimals = decimals,
-            )
-        }
+        return feeOptions.withGatewayBalances(nativeBalance, balancesByMint, { it.balance }, { it.decimals })
     }
 
     private suspend fun enrichTronFeeOptionsWithBalances(
@@ -2792,20 +2728,14 @@ class WalletClient private constructor(
         walletAddress: String,
         feeOptions: List<FeeOption>,
     ): List<FeeOptionWithBalance> {
-        val contractAddresses =
-            feeOptions
-                .filterNot { it.token.isNativeToken() }
-                .mapNotNull { it.token.contractAddress.normalizeCaseSensitiveAddress() }
-                .distinct()
-        val includesNative = feeOptions.any { it.token.isNativeToken() }
         val balances =
             runCatching {
                 indexerClient.getTronBalances(
                     walletAddress = walletAddress,
                     networks = listOf(network),
                     includeMetadata = false,
-                    omitNativeBalances = !includesNative,
-                    contractAddresses = contractAddresses,
+                    omitNativeBalances = !feeOptions.includesNativeToken(),
+                    contractAddresses = feeOptions.gatewayTokenAddresses(),
                 )
             }.getOrNull()
         val nativeBalance =
@@ -2819,26 +2749,47 @@ class WalletClient private constructor(
                 ?.filter { it.network == network }
                 ?.associateBy { it.contractAddress }
                 .orEmpty()
+        return feeOptions.withGatewayBalances(nativeBalance, balancesByContract, { it.balance }, { it.decimals })
+    }
 
-        return feeOptions.mapIndexed { index, feeOption ->
+    private fun List<FeeOption>.includesNativeToken(): Boolean = any { it.token.isNativeToken() }
+
+    /** Distinct case-sensitive token addresses (Solana mints, Tron contracts) of the non-native fee options. */
+    private fun List<FeeOption>.gatewayTokenAddresses(): List<String> =
+        filterNot { it.token.isNativeToken() }
+            .mapNotNull { it.token.contractAddress.normalizeCaseSensitiveAddress() }
+            .distinct()
+
+    /**
+     * Pairs each fee option with its Solana or Tron gateway balance: [nativeBalance]
+     * for the native token, otherwise the [balancesByAddress] entry for its
+     * case-sensitive token address.
+     */
+    private fun <B : Any> List<FeeOption>.withGatewayBalances(
+        nativeBalance: B?,
+        balancesByAddress: Map<String, B>,
+        rawBalance: (B) -> String,
+        balanceDecimals: (B) -> Int,
+    ): List<FeeOptionWithBalance> =
+        mapIndexed { index, feeOption ->
             val balance =
                 if (feeOption.token.isNativeToken()) {
                     nativeBalance
                 } else {
                     feeOption.token.contractAddress
                         .normalizeCaseSensitiveAddress()
-                        ?.let { balancesByContract[it] }
+                        ?.let { balancesByAddress[it] }
                 }
-            val decimals = balance?.decimals ?: feeOption.token.decimals?.toInt()
+            val decimals = balance?.let(balanceDecimals) ?: feeOption.token.decimals?.toInt()
+            val available = balance?.let(rawBalance)
             FeeOptionWithBalance(
                 feeOption = feeOption,
                 selection = FeeOptionSelection(feeOption, index.toUInt()),
-                available = balance?.balance?.formatTokenAmount(decimals),
-                availableRaw = balance?.balance,
+                available = available?.formatTokenAmount(decimals),
+                availableRaw = available,
                 decimals = decimals,
             )
         }
-    }
 
     private fun String?.normalizeAddress(): String? =
         this
