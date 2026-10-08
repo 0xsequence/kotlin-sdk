@@ -19,8 +19,8 @@ ktlint {
     }
 }
 
-group = providers.gradleProperty("POM_GROUP_ID").orElse("io.github.0xsequence").get()
-version = providers.gradleProperty("POM_VERSION_NAME").orElse("0.3.2-SNAPSHOT").get()
+group = providers.gradleProperty("POM_GROUP_ID").get()
+version = providers.gradleProperty("POM_VERSION_NAME").get()
 
 evaluationDependsOn(":oms-wallet-kotlin-sdk-waas-generated")
 val waasGeneratedProject = project(":oms-wallet-kotlin-sdk-waas-generated")
@@ -93,11 +93,34 @@ val packagedReleaseClassesJar =
     layout.buildDirectory.file("intermediates/aar_main_jar/release/syncReleaseLibJars/classes.jar")
 val publicApiBaseline = layout.projectDirectory.file("api/public-api.txt")
 
+fun javapExecutable(): File =
+    File(System.getProperty("java.home"))
+        .resolve("bin")
+        .resolve(if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) "javap.exe" else "javap")
+
+/** Runs `javap -public` (or the given [option]) for [className] and returns its output. */
+fun runJavap(
+    classpath: String,
+    className: String,
+    option: String = "-public",
+): String {
+    val process =
+        ProcessBuilder(
+            javapExecutable().absolutePath,
+            "-classpath",
+            classpath,
+            option,
+            className,
+        ).start()
+    val output = process.inputStream.bufferedReader().readText()
+    val errors = process.errorStream.bufferedReader().readText()
+    if (process.waitFor() != 0) {
+        throw GradleException("javap failed for $className: ${errors.trim()}")
+    }
+    return output
+}
+
 fun generatePublicApiDump(classesJar: File): String {
-    val javapExecutable =
-        File(System.getProperty("java.home"))
-            .resolve("bin")
-            .resolve(if (System.getProperty("os.name").startsWith("Windows", true)) "javap.exe" else "javap")
     val classNames =
         ZipFile(classesJar).use { zip ->
             zip
@@ -112,19 +135,7 @@ fun generatePublicApiDump(classesJar: File): String {
 
     return buildString {
         classNames.forEach { className ->
-            val process =
-                ProcessBuilder(
-                    javapExecutable.absolutePath,
-                    "-classpath",
-                    classesJar.absolutePath,
-                    "-public",
-                    className,
-                ).start()
-            val output = process.inputStream.bufferedReader().readText()
-            val errors = process.errorStream.bufferedReader().readText()
-            if (process.waitFor() != 0) {
-                throw GradleException("javap failed for $className: ${errors.trim()}")
-            }
+            val output = runJavap(classesJar.absolutePath, className)
             val isPublic =
                 output.lineSequence().any { line ->
                     val declaration = line.trim()
@@ -151,18 +162,8 @@ tasks.register("checkPublicApiDoesNotExposeGeneratedWaas") {
 
     doLast {
         val classesDir = releaseKotlinClasses.get().asFile
-        val javapExecutable =
-            File(System.getProperty("java.home"))
-                .resolve("bin")
-                .resolve(
-                    if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
-                        "javap.exe"
-                    } else {
-                        "javap"
-                    },
-                )
-        if (!javapExecutable.isFile) {
-            throw GradleException("Unable to find javap at ${javapExecutable.absolutePath}")
+        if (!javapExecutable().isFile) {
+            throw GradleException("Unable to find javap at ${javapExecutable().absolutePath}")
         }
 
         val generatedPackage = "technology.polygon.omswallet.internal.generated.waas"
@@ -181,23 +182,14 @@ tasks.register("checkPublicApiDoesNotExposeGeneratedWaas") {
         val leaks = mutableListOf<String>()
 
         classNames.forEach { className ->
-            val process =
-                ProcessBuilder(
-                    javapExecutable.absolutePath,
-                    "-classpath",
+            val output =
+                runJavap(
                     listOf(
                         classesDir.absolutePath,
                         waasGeneratedJar.get().asFile.absolutePath,
                     ).joinToString(File.pathSeparator),
-                    "-public",
                     className,
-                ).start()
-            val output = process.inputStream.bufferedReader().readText()
-            val errors = process.errorStream.bufferedReader().readText()
-            val exitValue = process.waitFor()
-            if (exitValue != 0) {
-                throw GradleException("javap failed for $className: ${errors.trim()}")
-            }
+                )
 
             val publicClassDeclaration =
                 output
@@ -277,28 +269,12 @@ tasks.register("checkReleaseArtifactBoundary") {
             )
         }
 
-        val javapExecutable =
-            File(System.getProperty("java.home"))
-                .resolve("bin")
-                .resolve(if (System.getProperty("os.name").startsWith("Windows", true)) "javap.exe" else "javap")
         listOf(
             "technology.polygon.omswallet.Network",
             "technology.polygon.omswallet.wallet.WalletClient",
             "technology.polygon.omswallet.indexer.IndexerClient",
         ).forEach { className ->
-            val process =
-                ProcessBuilder(
-                    javapExecutable.absolutePath,
-                    "-classpath",
-                    classesJar.absolutePath,
-                    "-public",
-                    className,
-                ).start()
-            val output = process.inputStream.bufferedReader().readText()
-            val errors = process.errorStream.bufferedReader().readText()
-            if (process.waitFor() != 0) {
-                throw GradleException("javap failed for $className: ${errors.trim()}")
-            }
+            val output = runJavap(classesJar.absolutePath, className)
             val simpleName = className.substringAfterLast('.')
             val publicConstructors =
                 output.lineSequence().filter { line ->
@@ -396,74 +372,30 @@ dependencies {
 publishing {
     publications {
         register<MavenPublication>("release") {
-            groupId =
-                providers
-                    .gradleProperty("POM_GROUP_ID")
-                    .orElse(project.group.toString())
-                    .get()
-            artifactId =
-                providers
-                    .gradleProperty("POM_ARTIFACT_ID")
-                    .orElse(project.name)
-                    .get()
-            version =
-                providers
-                    .gradleProperty("POM_VERSION_NAME")
-                    .orElse(project.version.toString())
-                    .get()
+            groupId = project.group.toString()
+            artifactId = providers.gradleProperty("POM_ARTIFACT_ID").get()
+            version = project.version.toString()
 
             pom {
-                name.set(providers.gradleProperty("POM_NAME").orElse("OMS Wallet Kotlin SDK"))
-                description.set(
-                    providers
-                        .gradleProperty("POM_DESCRIPTION")
-                        .orElse("Android/Kotlin SDK module for wallet, auth, and API flows."),
-                )
-                url.set(
-                    providers
-                        .gradleProperty("POM_URL")
-                        .orElse("https://github.com/0xsequence/kotlin-sdk"),
-                )
+                name.set(providers.gradleProperty("POM_NAME"))
+                description.set(providers.gradleProperty("POM_DESCRIPTION"))
+                url.set(providers.gradleProperty("POM_URL"))
                 licenses {
                     license {
-                        name.set(
-                            providers
-                                .gradleProperty("POM_LICENSE_NAME")
-                                .orElse("Apache License 2.0"),
-                        )
-                        url.set(
-                            providers
-                                .gradleProperty("POM_LICENSE_URL")
-                                .orElse("https://www.apache.org/licenses/LICENSE-2.0.txt"),
-                        )
+                        name.set(providers.gradleProperty("POM_LICENSE_NAME"))
+                        url.set(providers.gradleProperty("POM_LICENSE_URL"))
                     }
                 }
                 developers {
                     developer {
-                        id.set(providers.gradleProperty("POM_DEVELOPER_ID").orElse("0xsequence"))
-                        name.set(
-                            providers
-                                .gradleProperty("POM_DEVELOPER_NAME")
-                                .orElse("OMS Wallet"),
-                        )
+                        id.set(providers.gradleProperty("POM_DEVELOPER_ID"))
+                        name.set(providers.gradleProperty("POM_DEVELOPER_NAME"))
                     }
                 }
                 scm {
-                    url.set(
-                        providers
-                            .gradleProperty("POM_SCM_URL")
-                            .orElse("https://github.com/0xsequence/kotlin-sdk"),
-                    )
-                    connection.set(
-                        providers
-                            .gradleProperty("POM_SCM_CONNECTION")
-                            .orElse("scm:git:https://github.com/0xsequence/kotlin-sdk.git"),
-                    )
-                    developerConnection.set(
-                        providers
-                            .gradleProperty("POM_SCM_DEV_CONNECTION")
-                            .orElse("scm:git:ssh://git@github.com/0xsequence/kotlin-sdk.git"),
-                    )
+                    url.set(providers.gradleProperty("POM_SCM_URL"))
+                    connection.set(providers.gradleProperty("POM_SCM_CONNECTION"))
+                    developerConnection.set(providers.gradleProperty("POM_SCM_DEV_CONNECTION"))
                 }
             }
         }
