@@ -313,34 +313,6 @@ tasks.register("checkReleaseArtifactBoundary") {
                 throw GradleException("$className exposes a public implementation constructor")
             }
         }
-
-        listOf(
-            "technology.polygon.omswallet.wallet.OidcRedirectAuthStore",
-            "technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore",
-        ).forEach { className ->
-            val process =
-                ProcessBuilder(
-                    javapExecutable.absolutePath,
-                    "-classpath",
-                    classesJar.absolutePath,
-                    "-v",
-                    className,
-                ).start()
-            val output = process.inputStream.bufferedReader().readText()
-            val errors = process.errorStream.bufferedReader().readText()
-            if (process.waitFor() != 0) {
-                throw GradleException("javap failed for $className: ${errors.trim()}")
-            }
-            val getterSection =
-                output
-                    .lineSequence()
-                    .dropWhile { "getSynchronizationKey();" !in it }
-                    .take(3)
-                    .joinToString("\n")
-            if ("getSynchronizationKey();" !in getterSection || "ACC_SYNTHETIC" !in getterSection) {
-                throw GradleException("$className exposes synchronizationKey to Java source callers")
-            }
-        }
     }
 }
 

@@ -57,9 +57,6 @@ import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.network.OMSWalletHttpResponse
 import technology.polygon.omswallet.network.OMSWalletJson
-import technology.polygon.omswallet.network.boolean
-import technology.polygon.omswallet.network.int
-import technology.polygon.omswallet.network.long
 import technology.polygon.omswallet.network.objectOrNull
 import technology.polygon.omswallet.network.parseJsonObject
 import technology.polygon.omswallet.network.string
@@ -363,7 +360,7 @@ class IndexerClient private constructor(
 
     private fun defaultGatewayHeaders(webRpcHeaderValue: String): Map<String, String> =
         mapOf(
-            "Api-Key" to publishableKey,
+            OMSWalletEnvironment.accessKeyHeaderName to publishableKey,
             "Accept" to "application/json",
             "Webrpc" to webRpcHeaderValue,
         )
@@ -689,8 +686,6 @@ class IndexerClient private constructor(
             height = optionalInt("height"),
             updatedAt = optionalString("updatedAt"),
         )
-
-    private fun JsonObject.toMap(): Map<String, JsonElement> = entries.associate { it.key to it.value }
 
     private fun JsonObject.toTokenMetadataRecord(): Map<String, TokenMetadata> =
         entries

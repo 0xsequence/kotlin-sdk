@@ -100,10 +100,6 @@ internal data class PendingOidcRedirectAuth(
 }
 
 internal interface OidcRedirectAuthStore {
-    @get:JvmSynthetic
-    val synchronizationKey: Any
-        get() = this
-
     fun load(): PendingOidcRedirectAuth?
 
     fun save(pending: PendingOidcRedirectAuth)

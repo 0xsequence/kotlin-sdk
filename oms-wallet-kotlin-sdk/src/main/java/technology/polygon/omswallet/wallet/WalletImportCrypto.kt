@@ -3,6 +3,7 @@ package technology.polygon.omswallet.wallet
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
 import org.bouncycastle.crypto.hpke.HPKE
 import technology.polygon.omswallet.models.WalletImportPrivateKey
+import technology.polygon.omswallet.utils.OMSWalletHex
 import java.math.BigInteger
 
 internal object WalletImportCrypto {
@@ -79,7 +80,7 @@ internal object WalletImportCrypto {
         require(hex.length == 64 && hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
             "$label privateKey must be 32 bytes or 64 hexadecimal characters"
         }
-        requireValidSecp256k1Scalar(hex.hexBytes(), label)
+        requireValidSecp256k1Scalar(OMSWalletHex.decode(hex), label)
         return value.toByteArray(Charsets.UTF_8)
     }
 
@@ -116,8 +117,6 @@ internal object WalletImportCrypto {
     }
 
     private fun String.trimAsciiWhitespace(): String = trim { it == ' ' || it == '\t' || it == '\n' || it == '\r' || it == '\u000c' }
-
-    private fun String.hexBytes(): ByteArray = chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 }
 
 internal object WalletImportBase64 {

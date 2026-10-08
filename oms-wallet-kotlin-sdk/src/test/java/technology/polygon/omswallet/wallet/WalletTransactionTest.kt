@@ -227,9 +227,7 @@ class WalletTransactionTest {
                                 ),
                         ),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000107"),
-                    fastTransactionStatusPollIntervalMillis = 1L,
-                    transactionStatusPollIntervalMillis = 1L,
-                    transactionStatusPollTimeoutMillis = 1_000L,
+                    defaultStatusPolling = TransactionStatusPollingOptions(fastIntervalMs = 1L, intervalMs = 1L, timeoutMs = 1_000L),
                 )
             assertTrue(client.restorePersistedSession())
 

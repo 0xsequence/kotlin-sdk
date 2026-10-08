@@ -33,9 +33,7 @@ internal data class OMSWalletPendingAuthSnapshot(
  * This is internal bookkeeping, distinct from the public
  * [technology.polygon.omswallet.OMSWalletSession] metadata snapshot.
  */
-internal class OMSWalletSessionStateMachine(
-    initialSnapshot: OMSWalletSessionSnapshot? = null,
-) {
+internal class OMSWalletSessionStateMachine {
     private sealed interface SessionState {
         fun snapshot(): OMSWalletSessionSnapshot?
 
@@ -96,7 +94,7 @@ internal class OMSWalletSessionStateMachine(
     }
 
     private val lock = Any()
-    private var state: SessionState = initialSnapshot.toSessionState()
+    private var state: SessionState = SessionState.NoSession
     private var nextPendingWalletSelectionId: Long = 1L
     private var revision: Long = 0L
 

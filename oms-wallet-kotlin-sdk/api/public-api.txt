@@ -1771,11 +1771,7 @@ Compiled from "OMSWalletJson.kt"
 public final class technology.polygon.omswallet.network.OMSWalletJsonKt {
   public static final kotlinx.serialization.json.JsonObject parseJsonObject(java.lang.String);
   public static final java.lang.String string(kotlinx.serialization.json.JsonObject, java.lang.String);
-  public static final java.lang.Integer int(kotlinx.serialization.json.JsonObject, java.lang.String);
-  public static final java.lang.Long long(kotlinx.serialization.json.JsonObject, java.lang.String);
-  public static final java.lang.Boolean boolean(kotlinx.serialization.json.JsonObject, java.lang.String);
   public static final kotlinx.serialization.json.JsonObject objectOrNull(kotlinx.serialization.json.JsonObject, java.lang.String);
-  public static final java.util.List<kotlinx.serialization.json.JsonElement> arrayOrEmpty(kotlinx.serialization.json.JsonObject, java.lang.String);
 }
 
 Compiled from "OMSWalletSessionStateMachine.kt"
@@ -1826,8 +1822,7 @@ public final class technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 
 Compiled from "OMSWalletSessionStateMachine.kt"
 public final class technology.polygon.omswallet.session.OMSWalletSessionStateMachine {
-  public technology.polygon.omswallet.session.OMSWalletSessionStateMachine(technology.polygon.omswallet.session.OMSWalletSessionSnapshot);
-  public technology.polygon.omswallet.session.OMSWalletSessionStateMachine(technology.polygon.omswallet.session.OMSWalletSessionSnapshot, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public technology.polygon.omswallet.session.OMSWalletSessionStateMachine();
   public final technology.polygon.omswallet.session.OMSWalletSessionSnapshot snapshot();
   public final long revision();
   public final void requireRevision(long);
@@ -1846,7 +1841,6 @@ public final class technology.polygon.omswallet.session.OMSWalletSessionStateMac
   public static technology.polygon.omswallet.session.OMSWalletSessionSnapshot requireSnapshot$default(technology.polygon.omswallet.session.OMSWalletSessionStateMachine, java.lang.Long, int, java.lang.Object);
   public final technology.polygon.omswallet.session.OMSWalletPendingAuthSnapshot requirePendingAuth();
   public final void requirePendingWalletSelection(long, java.lang.String, technology.polygon.omswallet.wallet.WalletSigningAlgorithm);
-  public technology.polygon.omswallet.session.OMSWalletSessionStateMachine();
 }
 
 Compiled from "OMSWalletSessionStateMachine.kt"
@@ -1926,7 +1920,6 @@ public final class technology.polygon.omswallet.storage.AndroidOidcRedirectAuthS
   public static final technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore$Companion Companion;
   public technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore(android.content.Context, java.lang.String);
   public technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore(android.content.Context, java.lang.String, int, kotlin.jvm.internal.DefaultConstructorMarker);
-  public java.lang.Object getSynchronizationKey();
   public technology.polygon.omswallet.wallet.PendingOidcRedirectAuth load();
   public void save(technology.polygon.omswallet.wallet.PendingOidcRedirectAuth);
   public void clear();
@@ -1935,11 +1928,6 @@ public final class technology.polygon.omswallet.storage.AndroidOidcRedirectAuthS
 Compiled from "AndroidOidcRedirectAuthStore.kt"
 public final class technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore$Companion {
   public technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore$Companion(kotlin.jvm.internal.DefaultConstructorMarker);
-}
-
-Compiled from "AndroidOidcRedirectAuthStore.kt"
-public final class technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStoreKt {
-  public static final void access$writeTextAtomically(java.io.File, java.lang.String);
 }
 
 Compiled from "AndroidSessionMetadataStore.kt"
@@ -1957,9 +1945,9 @@ public final class technology.polygon.omswallet.storage.AndroidSessionMetadataSt
   public technology.polygon.omswallet.storage.AndroidSessionMetadataStore$Companion(kotlin.jvm.internal.DefaultConstructorMarker);
 }
 
-Compiled from "AndroidSessionMetadataStore.kt"
-public final class technology.polygon.omswallet.storage.AndroidSessionMetadataStoreKt {
-  public static final void access$writeTextAtomically(java.io.File, java.lang.String);
+Compiled from "AtomicFiles.kt"
+public final class technology.polygon.omswallet.storage.AtomicFilesKt {
+  public static final void writeTextAtomically(java.io.File, java.lang.String);
 }
 
 Compiled from "OMSWalletSessionMetadataStore.kt"
@@ -1988,14 +1976,6 @@ public final class technology.polygon.omswallet.storage.PersistedSessionRecord$W
   public static final int[] $EnumSwitchMapping$0;
 }
 
-Compiled from "MonotonicNonceGenerator.kt"
-public final class technology.polygon.omswallet.utils.MonotonicNonceGenerator {
-  public technology.polygon.omswallet.utils.MonotonicNonceGenerator(kotlin.jvm.functions.Function0<java.lang.Long>);
-  public technology.polygon.omswallet.utils.MonotonicNonceGenerator(kotlin.jvm.functions.Function0, int, kotlin.jvm.internal.DefaultConstructorMarker);
-  public final long nextNonce();
-  public technology.polygon.omswallet.utils.MonotonicNonceGenerator();
-}
-
 Compiled from "OMSWalletBase64Url.kt"
 public final class technology.polygon.omswallet.utils.OMSWalletBase64Url {
   public static final technology.polygon.omswallet.utils.OMSWalletBase64Url INSTANCE;
@@ -2020,10 +2000,7 @@ public final class technology.polygon.omswallet.utils.OMSWalletIsoTimestamps {
 Compiled from "OMSWalletTimestamps.kt"
 public final class technology.polygon.omswallet.utils.OMSWalletTimestamps {
   public static final technology.polygon.omswallet.utils.OMSWalletTimestamps INSTANCE;
-  public final long nowSeconds();
   public final long nowMilliseconds();
-  public final long nextNonce();
-  public final long secondsFromNow(long);
 }
 
 Compiled from "OMSWalletUnits.kt"
@@ -2244,16 +2221,9 @@ public final class technology.polygon.omswallet.wallet.OidcRedirectAuthResult$No
 
 Compiled from "OidcRedirectAuth.kt"
 public interface technology.polygon.omswallet.wallet.OidcRedirectAuthStore {
-  public default java.lang.Object getSynchronizationKey();
   public abstract technology.polygon.omswallet.wallet.PendingOidcRedirectAuth load();
   public abstract void save(technology.polygon.omswallet.wallet.PendingOidcRedirectAuth);
   public abstract void clear();
-  public static java.lang.Object access$getSynchronizationKey$jd(technology.polygon.omswallet.wallet.OidcRedirectAuthStore);
-}
-
-Compiled from "OidcRedirectAuth.kt"
-public final class technology.polygon.omswallet.wallet.OidcRedirectAuthStore$DefaultImpls {
-  public static java.lang.Object getSynchronizationKey(technology.polygon.omswallet.wallet.OidcRedirectAuthStore);
 }
 
 Compiled from "OidcRedirectAuth.kt"
@@ -2518,7 +2488,7 @@ public final class technology.polygon.omswallet.wallet.WalletClient {
   public static java.lang.Object getIdToken-K5VMiEY$default(technology.polygon.omswallet.wallet.WalletClient, kotlin.UInt, java.util.Map, kotlin.coroutines.Continuation, int, java.lang.Object);
   public final java.lang.Object revokeAccess(java.lang.String, java.lang.String, kotlin.coroutines.Continuation<? super kotlin.Unit>);
   public static java.lang.Object revokeAccess$default(technology.polygon.omswallet.wallet.WalletClient, java.lang.String, java.lang.String, kotlin.coroutines.Continuation, int, java.lang.Object);
-  public technology.polygon.omswallet.wallet.WalletClient(java.lang.String, java.lang.String, technology.polygon.omswallet.network.OMSWalletEnvironment, technology.polygon.omswallet.network.OMSWalletHttpClient, technology.polygon.omswallet.wallet.WalletScopeRuntime, kotlin.jvm.functions.Function0, long, int, long, long, kotlin.jvm.functions.Function2, java.util.Set, kotlin.jvm.internal.DefaultConstructorMarker);
+  public technology.polygon.omswallet.wallet.WalletClient(java.lang.String, java.lang.String, technology.polygon.omswallet.network.OMSWalletEnvironment, technology.polygon.omswallet.network.OMSWalletHttpClient, technology.polygon.omswallet.wallet.WalletScopeRuntime, kotlin.jvm.functions.Function0, technology.polygon.omswallet.models.TransactionStatusPollingOptions, kotlin.jvm.functions.Function2, java.util.Set, kotlin.jvm.internal.DefaultConstructorMarker);
   public static final int access$requireWaasSessionLifetimeSeconds-OGnWXxg(technology.polygon.omswallet.wallet.WalletClient, long);
   public static final technology.polygon.omswallet.wallet.WaasWalletGateway access$getGateway$p(technology.polygon.omswallet.wallet.WalletClient);
   public static final technology.polygon.omswallet.wallet.WalletScopeRuntime access$getRuntime$p(technology.polygon.omswallet.wallet.WalletClient);
@@ -2564,8 +2534,8 @@ public final class technology.polygon.omswallet.wallet.WalletClient {
 
 Compiled from "WalletClient.kt"
 public final class technology.polygon.omswallet.wallet.WalletClient$Companion {
-  public final technology.polygon.omswallet.wallet.WalletClient create$oms_wallet_kotlin_sdk(java.lang.String, java.lang.String, technology.polygon.omswallet.network.OMSWalletEnvironment, technology.polygon.omswallet.network.OMSWalletHttpClient, technology.polygon.omswallet.session.OMSWalletSessionStateMachine, technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore, technology.polygon.omswallet.wallet.OidcRedirectAuthStore, kotlin.jvm.functions.Function0, technology.polygon.omswallet.wallet.CredentialSigner, long, int, long, long, kotlin.jvm.functions.Function2, technology.polygon.omswallet.wallet.SessionExpiryScheduler, technology.polygon.omswallet.wallet.SessionExpiryDispatcher, kotlin.jvm.functions.Function0, java.lang.String, java.util.Set);
-  public static technology.polygon.omswallet.wallet.WalletClient create$oms_wallet_kotlin_sdk$default(technology.polygon.omswallet.wallet.WalletClient$Companion, java.lang.String, java.lang.String, technology.polygon.omswallet.network.OMSWalletEnvironment, technology.polygon.omswallet.network.OMSWalletHttpClient, technology.polygon.omswallet.session.OMSWalletSessionStateMachine, technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore, technology.polygon.omswallet.wallet.OidcRedirectAuthStore, kotlin.jvm.functions.Function0, technology.polygon.omswallet.wallet.CredentialSigner, long, int, long, long, kotlin.jvm.functions.Function2, technology.polygon.omswallet.wallet.SessionExpiryScheduler, technology.polygon.omswallet.wallet.SessionExpiryDispatcher, kotlin.jvm.functions.Function0, java.lang.String, java.util.Set, int, java.lang.Object);
+  public final technology.polygon.omswallet.wallet.WalletClient create$oms_wallet_kotlin_sdk(java.lang.String, java.lang.String, technology.polygon.omswallet.network.OMSWalletEnvironment, technology.polygon.omswallet.network.OMSWalletHttpClient, technology.polygon.omswallet.session.OMSWalletSessionStateMachine, technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore, technology.polygon.omswallet.wallet.OidcRedirectAuthStore, kotlin.jvm.functions.Function0, technology.polygon.omswallet.wallet.CredentialSigner, technology.polygon.omswallet.models.TransactionStatusPollingOptions, kotlin.jvm.functions.Function2, technology.polygon.omswallet.wallet.SessionExpiryScheduler, technology.polygon.omswallet.wallet.SessionExpiryDispatcher, kotlin.jvm.functions.Function0, java.lang.String, java.util.Set);
+  public static technology.polygon.omswallet.wallet.WalletClient create$oms_wallet_kotlin_sdk$default(technology.polygon.omswallet.wallet.WalletClient$Companion, java.lang.String, java.lang.String, technology.polygon.omswallet.network.OMSWalletEnvironment, technology.polygon.omswallet.network.OMSWalletHttpClient, technology.polygon.omswallet.session.OMSWalletSessionStateMachine, technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore, technology.polygon.omswallet.wallet.OidcRedirectAuthStore, kotlin.jvm.functions.Function0, technology.polygon.omswallet.wallet.CredentialSigner, technology.polygon.omswallet.models.TransactionStatusPollingOptions, kotlin.jvm.functions.Function2, technology.polygon.omswallet.wallet.SessionExpiryScheduler, technology.polygon.omswallet.wallet.SessionExpiryDispatcher, kotlin.jvm.functions.Function0, java.lang.String, java.util.Set, int, java.lang.Object);
   public technology.polygon.omswallet.wallet.WalletClient$Companion(kotlin.jvm.internal.DefaultConstructorMarker);
 }
 

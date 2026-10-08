@@ -196,10 +196,7 @@ class WalletClient private constructor(
     private val transport: OMSWalletHttpClient,
     private val runtime: WalletScopeRuntime,
     private val oidcNonceGenerator: () -> String,
-    private val fastTransactionStatusPollIntervalMillis: Long,
-    private val fastTransactionStatusPollCount: Int,
-    private val transactionStatusPollIntervalMillis: Long,
-    private val transactionStatusPollTimeoutMillis: Long,
+    private val defaultStatusPolling: TransactionStatusPollingOptions,
     private val transactionStatusDelay: suspend (Long) -> Unit,
     private val walletImportTrustedPcr0s: Set<String>?,
 ) {
@@ -225,10 +222,7 @@ class WalletClient private constructor(
             oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
             oidcNonceGenerator: () -> String = OidcRedirectAuth::generateNonce,
             credentialSigner: CredentialSigner? = null,
-            fastTransactionStatusPollIntervalMillis: Long = 400L,
-            fastTransactionStatusPollCount: Int = 5,
-            transactionStatusPollIntervalMillis: Long = 2_000L,
-            transactionStatusPollTimeoutMillis: Long = 60_000L,
+            defaultStatusPolling: TransactionStatusPollingOptions = TransactionStatusPollingOptions(),
             transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
             sessionExpiryScheduler: SessionExpiryScheduler = TimerSessionExpiryScheduler,
             sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
@@ -258,10 +252,7 @@ class WalletClient private constructor(
                 transport = transport,
                 runtime = runtime,
                 oidcNonceGenerator = oidcNonceGenerator,
-                fastTransactionStatusPollIntervalMillis = fastTransactionStatusPollIntervalMillis,
-                fastTransactionStatusPollCount = fastTransactionStatusPollCount,
-                transactionStatusPollIntervalMillis = transactionStatusPollIntervalMillis,
-                transactionStatusPollTimeoutMillis = transactionStatusPollTimeoutMillis,
+                defaultStatusPolling = defaultStatusPolling,
                 transactionStatusDelay = transactionStatusDelay,
                 walletImportTrustedPcr0s = walletImportTrustedPcr0s,
             )
@@ -430,8 +421,6 @@ class WalletClient private constructor(
     private fun clearInvalidPersistedSessionLocked() {
         clearSessionUnlocked(
             clearOidcRedirectAuth = true,
-            clearSessionStore = true,
-            clearExpiredEvent = true,
             operation = null,
             throwOnFailure = true,
             requiredSessionRevision = null,
@@ -455,8 +444,6 @@ class WalletClient private constructor(
 
     private fun clearSession(
         clearOidcRedirectAuth: Boolean,
-        clearSessionStore: Boolean = true,
-        clearExpiredEvent: Boolean = true,
         operation: OMSWalletOperation? = null,
         throwOnFailure: Boolean = true,
         requiredSessionRevision: Long? = null,
@@ -465,8 +452,6 @@ class WalletClient private constructor(
             runtime.initialized = true
             clearSessionUnlocked(
                 clearOidcRedirectAuth = clearOidcRedirectAuth,
-                clearSessionStore = clearSessionStore,
-                clearExpiredEvent = clearExpiredEvent,
                 operation = operation,
                 throwOnFailure = throwOnFailure,
                 requiredSessionRevision = requiredSessionRevision,
@@ -475,8 +460,6 @@ class WalletClient private constructor(
 
     private fun clearSessionUnlocked(
         clearOidcRedirectAuth: Boolean,
-        clearSessionStore: Boolean,
-        clearExpiredEvent: Boolean,
         operation: OMSWalletOperation?,
         throwOnFailure: Boolean,
         requiredSessionRevision: Long?,
@@ -498,16 +481,12 @@ class WalletClient private constructor(
             }
         }
 
-        if (clearSessionStore) {
-            attemptCleanup { sessionStore?.clear() }
-        }
+        attemptCleanup { sessionStore?.clear() }
         if (clearOidcRedirectAuth) {
             attemptCleanup { oidcRedirectAuthStore?.clear() }
         }
         attemptCleanup(signer::clear)
-        if (clearExpiredEvent) {
-            clearLatestSessionExpiredEventLocked()
-        }
+        clearLatestSessionExpiredEventLocked()
 
         if (throwOnFailure) {
             cleanupFailure?.let { failure ->
@@ -530,12 +509,6 @@ class WalletClient private constructor(
             throwOnFailure = false,
             requiredSessionRevision = requiredSessionRevision,
         )
-    }
-
-    private fun clearPendingOidcRedirectAuth() {
-        synchronized(runtime.lifecycleLock) {
-            oidcRedirectAuthStore?.clear()
-        }
     }
 
     private fun saveNewPendingOidcRedirectAuth(
@@ -784,7 +757,7 @@ class WalletClient private constructor(
 
             "apple" -> {
                 startOidcRedirectAuth(
-                    issuer = "https://appleid.apple.com",
+                    issuer = APPLE_ISSUER,
                     clientId = DEFAULT_APPLE_OIDC_CLIENT_ID,
                     authorizationUrl = "https://appleid.apple.com/auth/authorize",
                     providerName = "apple",
@@ -1018,9 +991,7 @@ class WalletClient private constructor(
             var ownedSessionRevision =
                 synchronized(runtime.lifecycleLock) { walletSession.revision() }
 
-            var clearPendingAuth = false
             try {
-                clearPendingAuth = true
                 callback.error?.let { error ->
                     throw OMSWalletValidationException(
                         message = callback.errorDescription ?: "OIDC provider returned error: $error",
@@ -1071,9 +1042,7 @@ class WalletClient private constructor(
                 clearSessionAfterOidcRedirectFailure(pending, ownedSessionRevision)
                 throw failure
             } finally {
-                if (clearPendingAuth) {
-                    clearPendingOidcRedirectAuthBestEffort(redirectAuthStore, pending)
-                }
+                clearPendingOidcRedirectAuthBestEffort(redirectAuthStore, pending)
             }
         }
 
@@ -2320,8 +2289,6 @@ class WalletClient private constructor(
         ) {
             clearSessionUnlocked(
                 clearOidcRedirectAuth = true,
-                clearSessionStore = true,
-                clearExpiredEvent = true,
                 operation = null,
                 throwOnFailure = false,
                 requiredSessionRevision = requiredSessionRevision,
@@ -2522,8 +2489,6 @@ class WalletClient private constructor(
             ) {
                 clearSessionUnlocked(
                     clearOidcRedirectAuth = true,
-                    clearSessionStore = true,
-                    clearExpiredEvent = true,
                     operation = null,
                     throwOnFailure = false,
                     requiredSessionRevision = requiredSessionRevision,
@@ -2562,7 +2527,7 @@ class WalletClient private constructor(
     ): SendTransactionResponse {
         if (waitForStatus) {
             requireValidTransactionStatusPollingOptions(
-                statusPolling ?: defaultTransactionStatusPollingOptions(),
+                statusPolling ?: defaultStatusPolling,
             )
         }
         val feeOption =
@@ -2619,7 +2584,7 @@ class WalletClient private constructor(
             waitForTransactionStatus(
                 txnId = prepared.txnId,
                 fallbackStatus = executed.status,
-                options = statusPolling ?: defaultTransactionStatusPollingOptions(),
+                options = statusPolling ?: defaultStatusPolling,
                 requiredSessionRevision = requiredSessionRevision,
             )
         return SendTransactionResponse(
@@ -2889,14 +2854,6 @@ class WalletClient private constructor(
         val response: TransactionStatusResponse,
         val resolution: TransactionStatusResolution,
     )
-
-    private fun defaultTransactionStatusPollingOptions(): TransactionStatusPollingOptions =
-        TransactionStatusPollingOptions(
-            fastIntervalMs = fastTransactionStatusPollIntervalMillis,
-            fastPollCount = fastTransactionStatusPollCount,
-            intervalMs = transactionStatusPollIntervalMillis,
-            timeoutMs = transactionStatusPollTimeoutMillis,
-        )
 }
 
 private data class VerifierCommitment(
