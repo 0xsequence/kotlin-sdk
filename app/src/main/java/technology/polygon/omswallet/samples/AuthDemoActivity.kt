@@ -122,7 +122,9 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var evmActionsContainer: View
     private lateinit var tronActionsContainer: View
     private lateinit var tronBalancesView: TextView
+    private lateinit var tronRefreshBalancesButton: MaterialButton
     private lateinit var tronMessageInput: TextInputEditText
+    private lateinit var tronSignMessageButton: MaterialButton
     private lateinit var tronSignatureView: TextView
     private lateinit var tronSignatureStatusView: TextView
     private lateinit var tronAssetInput: AutoCompleteTextView
@@ -132,6 +134,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var tronRecipientInput: TextInputEditText
     private lateinit var tronAmountLayout: com.google.android.material.textfield.TextInputLayout
     private lateinit var tronAmountInput: TextInputEditText
+    private lateinit var tronSendButton: MaterialButton
     private lateinit var tronTransactionHashView: TextView
     private lateinit var tronTransactionStatusView: TextView
     private lateinit var tronOpenExplorerButton: MaterialButton
@@ -163,7 +166,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private var lastTronTransactionHash: String? = null
     private var selectedSolanaAsset: SolanaAsset = SolanaAsset.Sol
     private var lastSolanaTransactionSignature: String? = null
-    private var isSolanaBusy: Boolean = false
+    private val busyWalletPanels = mutableSetOf<WalletType>()
     private var expiredSessionEvent: OMSWalletSessionExpiredEvent? = null
     private var unsubscribeSessionExpired: (() -> Unit)? = null
 
@@ -226,7 +229,9 @@ class AuthDemoActivity : AppCompatActivity() {
         evmActionsContainer = findViewById(R.id.evmActionsContainer)
         tronActionsContainer = findViewById(R.id.tronActionsContainer)
         tronBalancesView = findViewById(R.id.tronBalancesView)
+        tronRefreshBalancesButton = findViewById(R.id.tronRefreshBalancesButton)
         tronMessageInput = findViewById(R.id.tronMessageInput)
+        tronSignMessageButton = findViewById(R.id.tronSignMessageButton)
         tronSignatureView = findViewById(R.id.tronSignatureView)
         tronSignatureStatusView = findViewById(R.id.tronSignatureStatusView)
         tronAssetInput = findViewById(R.id.tronAssetInput)
@@ -236,6 +241,7 @@ class AuthDemoActivity : AppCompatActivity() {
         tronRecipientInput = findViewById(R.id.tronRecipientInput)
         tronAmountLayout = findViewById(R.id.tronAmountLayout)
         tronAmountInput = findViewById(R.id.tronAmountInput)
+        tronSendButton = findViewById(R.id.tronSendButton)
         tronTransactionHashView = findViewById(R.id.tronTransactionHashView)
         tronTransactionStatusView = findViewById(R.id.tronTransactionStatusView)
         tronOpenExplorerButton = findViewById(R.id.tronOpenExplorerButton)
@@ -508,22 +514,26 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun bindTronActions() {
-        findViewById<MaterialButton>(R.id.tronRefreshBalancesButton).setOnClickListener {
-            refreshTronBalances()
+        tronRefreshBalancesButton.setOnClickListener {
+            val wallet = activeWalletOrNull(WalletType.Tron) ?: return@setOnClickListener
+            launchWalletPanelAction(WalletType.Tron, label = "Refresh Tron balances") {
+                loadTronBalances(wallet)
+            }
         }
 
         findViewById<MaterialButton>(R.id.tronFaucetButton).setOnClickListener {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(NILE_FAUCET_URL)))
         }
 
-        findViewById<MaterialButton>(R.id.tronSignMessageButton).setOnClickListener {
-            launchAction(
+        tronSignMessageButton.setOnClickListener {
+            launchWalletPanelAction(
+                WalletType.Tron,
                 label = "Sign Tron message",
                 onStart = { tronSignatureStatusView.text = "Signature status: signing in progress..." },
                 onFailure = { tronSignatureStatusView.text = "Signature status: ${it.message ?: "signing failed"}" },
             ) {
                 val message = requireText(tronMessageInput, "Message")
-                val walletAddress = requireActiveTronWallet().address
+                val walletAddress = requireActiveWallet(WalletType.Tron).address
                 val signature = sdk.wallet.signTronMessage(message)
                 tronSignatureView.text = "Last signature: $signature"
                 tronSignatureStatusView.text = "Signature status: verifying..."
@@ -539,13 +549,19 @@ class AuthDemoActivity : AppCompatActivity() {
             }
         }
 
-        findViewById<MaterialButton>(R.id.tronSendButton).setOnClickListener {
-            launchAction(
+        tronSendButton.setOnClickListener {
+            launchWalletPanelAction(
+                WalletType.Tron,
                 label = "Send on Tron Nile",
-                onStart = { tronTransactionStatusView.text = "Transfer status: preparing transfer..." },
+                onStart = {
+                    tronTransactionStatusView.text = "Transfer status: preparing transfer..."
+                    tronTransactionHashView.text = "Last tx hash: none"
+                    tronOpenExplorerButton.visibility = View.GONE
+                    lastTronTransactionHash = null
+                },
                 onFailure = { tronTransactionStatusView.text = "Transfer status: ${it.message ?: "send failed"}" },
             ) {
-                requireActiveTronWallet()
+                val wallet = requireActiveWallet(WalletType.Tron)
                 val recipient = requireText(tronRecipientInput, "Recipient")
                 val amount = requireText(tronAmountInput, "Amount")
                 val statusPolling = TransactionStatusPollingOptions(timeoutMs = 120_000L)
@@ -601,7 +617,9 @@ class AuthDemoActivity : AppCompatActivity() {
                     }
                 tronOpenExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
                 appendLog("Tron transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
-                refreshTronBalances()
+                // The transfer already succeeded; a balance refresh failure only updates the balance view.
+                runCatching { loadTronBalances(wallet) }
+                    .onFailure { appendLog("!! Tron balance refresh failed: ${describeThrowable(it)}") }
             }
         }
 
@@ -611,22 +629,20 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
-    private fun requireActiveTronWallet(): Wallet =
-        sdk.wallet.activeWallet?.takeIf { it.type == WalletType.Tron }
-            ?: error("Select a Tron wallet first")
-
-    private fun refreshTronBalances() {
-        val wallet = sdk.wallet.activeWallet?.takeIf { it.type == WalletType.Tron } ?: return
-        launchAction(
-            label = "Refresh Tron balances",
-            onStart = { tronBalancesView.text = "Nile TRX: loading...\nNile USDT: loading..." },
-            onFailure = { tronBalancesView.text = "Balances unavailable: ${it.message ?: "Unknown error"}" },
-        ) {
+    /** Loads Nile TRX and USDT balances; shows the indexer's Nile error instead of zero balances. */
+    private suspend fun loadTronBalances(wallet: Wallet) {
+        tronBalancesView.text = "Nile TRX: loading...\nNile USDT: loading..."
+        try {
             val result =
                 sdk.indexer.getTronBalances(
                     walletAddress = wallet.address,
                     networks = listOf(TronNetwork.Nile),
                 )
+            val networkError = result.errors.firstOrNull { it.network == TronNetwork.Nile }
+            if (networkError != null) {
+                tronBalancesView.text = "Balances unavailable: ${networkError.reason}"
+                return
+            }
             val trx = result.balances.firstOrNull { it is TronBalance.Native }
             val usdt =
                 result.balances.firstOrNull {
@@ -636,23 +652,23 @@ class AuthDemoActivity : AppCompatActivity() {
                 buildString {
                     appendLine("Nile TRX: ${trx?.formattedBalance ?: "0"} TRX")
                     append("Nile USDT: ${usdt?.formattedBalance ?: "0"} USDT")
-                    result.errors.forEach { error ->
-                        append("\n${error.network.wireValue}: ${error.reason}")
-                    }
                 }
+        } catch (throwable: Throwable) {
+            tronBalancesView.text = "Balances unavailable: ${throwable.message ?: "Unknown error"}"
+            throw throwable
         }
     }
 
     private fun bindSolanaActions() {
         solanaRefreshBalancesButton.setOnClickListener {
-            val wallet = activeSolanaWalletOrNull() ?: return@setOnClickListener
-            launchSolanaAction(label = "Refresh Solana balances") {
+            val wallet = activeWalletOrNull(WalletType.Solana) ?: return@setOnClickListener
+            launchWalletPanelAction(WalletType.Solana, label = "Refresh Solana balances") {
                 loadSolanaBalances(wallet)
             }
         }
 
         findViewById<MaterialButton>(R.id.solanaViewWalletButton).setOnClickListener {
-            val address = activeSolanaWalletOrNull()?.address ?: return@setOnClickListener
+            val address = activeWalletOrNull(WalletType.Solana)?.address ?: return@setOnClickListener
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$SOLANA_EXPLORER_URL/address/$address?cluster=devnet")))
         }
 
@@ -665,7 +681,8 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         solanaSignMessageButton.setOnClickListener {
-            launchSolanaAction(
+            launchWalletPanelAction(
+                WalletType.Solana,
                 label = "Sign Solana message",
                 onStart = {
                     solanaSignatureView.text = "Last signature: none"
@@ -674,7 +691,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 onFailure = { solanaSignatureStatusView.text = "Signature status: ${it.message ?: "signing failed"}" },
             ) {
                 val message = requireText(solanaMessageInput, "Message")
-                val walletAddress = requireActiveSolanaWallet().address
+                val walletAddress = requireActiveWallet(WalletType.Solana).address
                 val signature = sdk.wallet.signSolanaMessage(message)
                 solanaSignatureView.text = "Last signature: $signature"
                 solanaSignatureStatusView.text = "Signature status: verifying..."
@@ -691,7 +708,8 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         solanaSendButton.setOnClickListener {
-            launchSolanaAction(
+            launchWalletPanelAction(
+                WalletType.Solana,
                 label = "Send on Solana Devnet",
                 onStart = {
                     solanaTransactionStatusView.text = "Transfer status: preparing relayed transfer..."
@@ -701,7 +719,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 },
                 onFailure = { solanaTransactionStatusView.text = "Transfer status: ${it.message ?: "send failed"}" },
             ) {
-                val wallet = requireActiveSolanaWallet()
+                val wallet = requireActiveWallet(WalletType.Solana)
                 val recipient = requireText(solanaRecipientInput, "Recipient")
                 val amountText = requireText(solanaAmountInput, "Amount")
                 val (asset, decimals) =
@@ -756,32 +774,42 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
-    private fun activeSolanaWalletOrNull(): Wallet? = sdk.wallet.activeWallet?.takeIf { it.type == WalletType.Solana }
+    private fun activeWalletOrNull(type: WalletType): Wallet? = sdk.wallet.activeWallet?.takeIf { it.type == type }
 
-    private fun requireActiveSolanaWallet(): Wallet = activeSolanaWalletOrNull() ?: error("Select a Solana wallet first")
+    private fun requireActiveWallet(type: WalletType): Wallet =
+        activeWalletOrNull(type) ?: error("Select a ${walletTypeLabel(type)} wallet first")
 
-    /** Runs one Solana panel action at a time, disabling the panel's actions while it is busy. */
-    private fun launchSolanaAction(
+    /** Runs one action at a time per wallet panel, disabling that panel's actions while it is busy. */
+    private fun launchWalletPanelAction(
+        walletType: WalletType,
         label: String,
         onStart: (() -> Unit)? = null,
         onFailure: ((Throwable) -> Unit)? = null,
         action: suspend () -> Unit,
     ) {
-        if (isSolanaBusy) return
-        setSolanaBusy(true)
+        if (!busyWalletPanels.add(walletType)) return
+        setWalletPanelEnabled(walletType, enabled = false)
         launchAction(label = label, onStart = onStart, onFailure = onFailure) {
             try {
                 action()
             } finally {
-                setSolanaBusy(false)
+                busyWalletPanels.remove(walletType)
+                setWalletPanelEnabled(walletType, enabled = true)
             }
         }
     }
 
-    private fun setSolanaBusy(busy: Boolean) {
-        isSolanaBusy = busy
-        listOf(solanaRefreshBalancesButton, solanaSignMessageButton, solanaSendButton).forEach { it.isEnabled = !busy }
-        solanaAssetInput.isEnabled = !busy
+    private fun setWalletPanelEnabled(
+        walletType: WalletType,
+        enabled: Boolean,
+    ) {
+        val controls =
+            when (walletType) {
+                WalletType.Solana -> listOf(solanaRefreshBalancesButton, solanaSignMessageButton, solanaSendButton, solanaAssetInput)
+                WalletType.Tron -> listOf(tronRefreshBalancesButton, tronSignMessageButton, tronSendButton, tronAssetInput)
+                else -> emptyList()
+            }
+        controls.forEach { it.isEnabled = enabled }
     }
 
     /** Loads Devnet SOL and USDC balances; shows the indexer's Devnet error instead of zero balances. */
@@ -912,7 +940,7 @@ class AuthDemoActivity : AppCompatActivity() {
             solanaTransactionStatusView.text = "Transfer status: ready to send."
             solanaOpenExplorerButton.visibility = View.GONE
             lastSolanaTransactionSignature = null
-            launchSolanaAction(label = "Refresh Solana balances") { loadSolanaBalances(wallet) }
+            launchWalletPanelAction(WalletType.Solana, label = "Refresh Solana balances") { loadSolanaBalances(wallet) }
         }
         if (isTron) {
             tronSignatureView.text = "Last signature: none"
@@ -921,7 +949,7 @@ class AuthDemoActivity : AppCompatActivity() {
             tronTransactionStatusView.text = "Transfer status: ready to send."
             tronOpenExplorerButton.visibility = View.GONE
             lastTronTransactionHash = null
-            refreshTronBalances()
+            launchWalletPanelAction(WalletType.Tron, label = "Refresh Tron balances") { loadTronBalances(wallet) }
         }
     }
 
