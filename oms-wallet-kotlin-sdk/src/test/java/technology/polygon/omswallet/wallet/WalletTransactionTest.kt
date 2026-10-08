@@ -915,10 +915,10 @@ class WalletTransactionTest {
                         ),
                     statusPolling =
                         TransactionStatusPollingOptions(
-                            fastPollIntervalMillis = 1L,
+                            fastIntervalMs = 1L,
                             fastPollCount = 3,
-                            pollIntervalMillis = 1L,
-                            timeoutMillis = 1_000L,
+                            intervalMs = 1L,
+                            timeoutMs = 1_000L,
                         ),
                 )
 
@@ -949,7 +949,7 @@ class WalletTransactionTest {
                     statusPolling =
                         TransactionStatusPollingOptions(
                             fastPollCount = 0,
-                            timeoutMillis = 0L,
+                            timeoutMs = 0L,
                         ),
                 )
 
@@ -978,7 +978,7 @@ class WalletTransactionTest {
                 client.sendTransaction(
                     network = Network.AMOY,
                     request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
-                    statusPolling = TransactionStatusPollingOptions(timeoutMillis = 0L),
+                    statusPolling = TransactionStatusPollingOptions(timeoutMs = 0L),
                 )
 
             assertEquals("txn-unknown-timeout", result.txnId)
@@ -989,14 +989,64 @@ class WalletTransactionTest {
         }
 
     @Test
+    fun transactionStatusPollingOptionsKeepDefaults() {
+        val options = TransactionStatusPollingOptions()
+
+        assertEquals(400L, options.fastIntervalMs)
+        assertEquals(5, options.fastPollCount)
+        assertEquals(2_000L, options.intervalMs)
+        assertEquals(60_000L, options.timeoutMs)
+        assertEquals(
+            TransactionStatusPollingOptions(fastIntervalMs = 400L, fastPollCount = 5, intervalMs = 2_000L, timeoutMs = 60_000L),
+            options,
+        )
+    }
+
+    @Test
+    fun sendTransactionValueOverloadForwardsMode() =
+        runBlocking {
+            listOf(null, TransactionMode.Native, TransactionMode.Relayer).forEachIndexed { index, mode ->
+                enqueueJson(prepareResponse(txnId = "txn-mode-$index", feeOptions = "[]", sponsored = true))
+                enqueueJson("""{"status":"pending"}""")
+                val client = restoredWalletClient(nonceValue = "17100003$index")
+
+                if (mode == null) {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        to = "0xabc0000000000000000000000000000000000000",
+                        value = BigInteger.ONE,
+                        waitForStatus = false,
+                    )
+                } else {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        to = "0xabc0000000000000000000000000000000000000",
+                        value = BigInteger.ONE,
+                        mode = mode,
+                        waitForStatus = false,
+                    )
+                }
+                val prepare = requireNotNull(server.takeRequest())
+                requireNotNull(server.takeRequest())
+
+                assertEquals("/v1/Waas/PrepareEthereumTransaction", prepare.target)
+                assertTrue(
+                    requireNotNull(prepare.body)
+                        .utf8()
+                        .contains("\"mode\":\"${(mode ?: TransactionMode.Relayer).wireValue}\""),
+                )
+            }
+        }
+
+    @Test
     fun sendTransactionRejectsInvalidPollingOptionsBeforeExecute() =
         runBlocking {
             val invalidOptions =
                 listOf(
-                    TransactionStatusPollingOptions(fastPollIntervalMillis = 0L),
+                    TransactionStatusPollingOptions(fastIntervalMs = 0L),
                     TransactionStatusPollingOptions(fastPollCount = -1),
-                    TransactionStatusPollingOptions(pollIntervalMillis = 0L),
-                    TransactionStatusPollingOptions(timeoutMillis = -1L),
+                    TransactionStatusPollingOptions(intervalMs = 0L),
+                    TransactionStatusPollingOptions(timeoutMs = -1L),
                 )
 
             invalidOptions.forEachIndexed { index, options ->
@@ -1092,7 +1142,7 @@ class WalletTransactionTest {
             val result =
                 client.callContract(
                     network = Network.AMOY,
-                    contract = "0xcontract",
+                    contractAddress = "0xcontract",
                     method = "transfer",
                     args = args,
                     mode = TransactionMode.Native,

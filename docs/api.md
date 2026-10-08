@@ -421,7 +421,7 @@ data class CustomOidcProviderConfig(
     val providerLabel: String? = null,
     val scopes: List<String> = emptyList(),
     val authorizeParams: Map<String, String> = emptyMap(),
-    val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
+    val authMode: OidcAuthMode = OidcAuthMode.AuthCodePKCE,
 )
 ```
 
@@ -445,13 +445,13 @@ object OmsRelayOidcProviders {
 }
 ```
 
-### `OidcRedirectAuthMode`
+### `OidcAuthMode`
 
 WaaS redirect auth-code mode supported by OIDC redirect providers.
 
 ```kotlin
 @Serializable
-enum class OidcRedirectAuthMode {
+enum class OidcAuthMode {
     @SerialName("auth-code")
     AuthCode,
     @SerialName("auth-code-pkce")
@@ -497,12 +497,12 @@ data object NotOidcRedirectCallback : OidcRedirectAuthResult
 data object NoPendingAuth : OidcRedirectAuthResult
 ```
 
-### `WalletSelectionResult`
+### `WalletActivationResult`
 
-Result returned after selecting or creating a wallet.
+Result returned after selecting, creating, or importing a wallet.
 
 ```kotlin
-data class WalletSelectionResult(
+data class WalletActivationResult(
     val wallet: Wallet,
 )
 ```
@@ -543,13 +543,13 @@ class PendingWalletSelection {
     /**
      * Selects one of `wallets` and persists it as the active wallet session.
      */
-    suspend fun selectWallet(walletId: String): WalletSelectionResult
+    suspend fun selectWallet(walletId: String): WalletActivationResult
 
     /**
      * Creates a new wallet for `walletType`, selects it, and persists it as the
      * active wallet session.
      */
-    suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult
+    suspend fun createAndSelectWallet(reference: String? = null): WalletActivationResult
 }
 ```
 
@@ -559,16 +559,26 @@ Result returned by auth completion APIs when wallet selection can be automatic
 or app-driven.
 
 ```kotlin
-sealed interface CompleteAuthResult
+sealed interface CompleteAuthResult {
+    /**
+     * The credential issued by auth completion.
+     */
+    val credential: WalletCredential
+
+    /**
+     * The selected wallet, or `null` while wallet selection is pending.
+     */
+    val wallet: Wallet?
+}
 ```
 
 ### `CompleteAuthResult.WalletSelected`
 
 ```kotlin
 data class WalletSelected(
-    val wallet: Wallet,
+    override val wallet: Wallet,
     val wallets: List<Wallet>,
-    val credential: WalletCredential,
+    override val credential: WalletCredential,
 ) : CompleteAuthResult
 ```
 
@@ -577,7 +587,11 @@ data class WalletSelected(
 ```kotlin
 data class WalletSelection(
     val pendingSelection: PendingWalletSelection,
-) : CompleteAuthResult
+) : CompleteAuthResult {
+    override val credential: WalletCredential
+
+    override val wallet: Wallet?
+}
 ```
 
 ### `WalletClient`
@@ -652,8 +666,8 @@ suspend fun signInWithOidcIdToken(
     idToken: String,
     issuer: String,
     audience: String,
-    walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     walletType: WalletType = WalletType.Ethereum,
+    walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
     sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
     provider: String? = null,
     providerLabel: String? = null,
@@ -677,8 +691,8 @@ suspend fun startOidcRedirectAuth(
     walletType: WalletType = WalletType.Ethereum,
     walletSelection: WalletSelectionBehavior? = null,
     sessionLifetimeSeconds: Long? = null,
-    authorizeParams: Map<String, String> = emptyMap(),
     loginHint: String? = null,
+    authorizeParams: Map<String, String> = emptyMap(),
 ): StartOidcRedirectAuthResult
 ```
 
@@ -707,7 +721,7 @@ suspend fun completeEmailAuth(
 Selects an existing wallet by its WaaS wallet id.
 
 ```kotlin
-suspend fun useWallet(walletId: String): WalletSelectionResult
+suspend fun useWallet(walletId: String): WalletActivationResult
 ```
 
 ### `WalletClient.createWallet`
@@ -718,7 +732,7 @@ Creates and selects a new wallet for the authenticated user.
 suspend fun createWallet(
     walletType: WalletType = WalletType.Ethereum,
     reference: String? = null,
-): WalletSelectionResult
+): WalletActivationResult
 ```
 
 ### `WalletClient.importWallet`
@@ -729,7 +743,7 @@ Imports and activates an Ethereum, Solana, or Tron private key through the attes
 suspend fun importWallet(
     privateKey: WalletImportPrivateKey,
     reference: String? = null,
-): WalletSelectionResult
+): WalletActivationResult
 ```
 
 ### `WalletClient.getWalletImportRecipientKey`
@@ -749,7 +763,7 @@ suspend fun importEncryptedWallet(
     walletType: WalletType,
     keyMaterial: EncryptedWalletImportKeyMaterial,
     reference: String? = null,
-): WalletSelectionResult
+): WalletActivationResult
 ```
 
 ### `WalletClient.listWallets`
@@ -1016,12 +1030,16 @@ enum class TransactionStatusResolution {
 
 ### `TransactionStatusPollingOptions`
 
+Transaction status polling after execution. The first `fastPollCount` polls wait
+`fastIntervalMs` between requests, later polls wait `intervalMs`, and polling
+stops after `timeoutMs`. All durations are in milliseconds.
+
 ```kotlin
 data class TransactionStatusPollingOptions(
-    val fastPollIntervalMillis: Long = 400L,
+    val fastIntervalMs: Long = 400L,
     val fastPollCount: Int = 5,
-    val pollIntervalMillis: Long = 2_000L,
-    val timeoutMillis: Long = 60_000L,
+    val intervalMs: Long = 2_000L,
+    val timeoutMs: Long = 60_000L,
 )
 ```
 
@@ -1058,35 +1076,45 @@ suspend fun signTypedData(
 ### `WalletClient.isValidMessageSignature`
 
 Validates `signature` for `message` through the WaaS public wallet RPC.
+Pass the `0x` `walletAddress` to verify any Ethereum wallet without a
+session; when it is omitted, the active Ethereum wallet's address is used.
 
 ```kotlin
 suspend fun isValidMessageSignature(
     network: Network,
     message: String,
     signature: String,
+    walletAddress: String? = null,
 ): Boolean
 ```
 
 ### `WalletClient.isValidSolanaMessageSignature`
 
-Validates `signature` for a Solana `message` through the WaaS public wallet RPC.
+Validates `signature` for a Solana `message` through the WaaS public wallet
+RPC. Pass the base58 `walletAddress` to verify any Solana wallet without a
+session; when it is omitted, the active Solana wallet's address is used.
 
 ```kotlin
 suspend fun isValidSolanaMessageSignature(
     message: String,
     signature: String,
+    walletAddress: String? = null,
 ): Boolean
 ```
 
 ### `WalletClient.isValidTypedDataSignature`
 
-Validates `signature` for EIP-712 `typedData` through the WaaS public wallet RPC.
+Validates `signature` for EIP-712 `typedData` through the WaaS public
+wallet RPC. Pass the `0x` `walletAddress` to verify any Ethereum wallet
+without a session; when it is omitted, the active Ethereum wallet's address
+is used.
 
 ```kotlin
 suspend fun isValidTypedDataSignature(
     network: Network,
     typedData: JsonElement,
     signature: String,
+    walletAddress: String? = null,
 ): Boolean
 ```
 
@@ -1110,30 +1138,30 @@ suspend fun signTronTypedData(typedData: JsonElement): String
 ### `WalletClient.isValidTronMessageSignature`
 
 Validates a Tron `signature` for `message` through the WaaS public wallet
-RPC. Pass `walletAddress` (Base58Check `T…`) or `walletId` to verify any
-wallet; when both are omitted, the active wallet is used.
+RPC. Pass the Base58Check `walletAddress` (`T…`) to verify any Tron wallet
+without a session; when it is omitted, the active Tron wallet's address is
+used.
 
 ```kotlin
 suspend fun isValidTronMessageSignature(
     message: String,
     signature: String,
     walletAddress: String? = null,
-    walletId: String? = null,
 ): Boolean
 ```
 
 ### `WalletClient.isValidTronTypedDataSignature`
 
 Validates a Tron `signature` for TIP-712 `typedData` through the WaaS
-public wallet RPC. Pass `walletAddress` (Base58Check `T…`) or `walletId` to
-verify any wallet; when both are omitted, the active wallet is used.
+public wallet RPC. Pass the Base58Check `walletAddress` (`T…`) to verify
+any Tron wallet without a session; when it is omitted, the active Tron
+wallet's address is used.
 
 ```kotlin
 suspend fun isValidTronTypedDataSignature(
     typedData: JsonElement,
     signature: String,
     walletAddress: String? = null,
-    walletId: String? = null,
 ): Boolean
 ```
 
@@ -1146,6 +1174,7 @@ suspend fun sendTransaction(
     network: Network,
     to: String,
     value: BigInteger,
+    mode: TransactionMode = TransactionMode.Relayer,
     waitForStatus: Boolean = true,
     statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
@@ -1202,7 +1231,7 @@ prepare/execute flow.
 ```kotlin
 suspend fun callContract(
     network: Network,
-    contract: String,
+    contractAddress: String,
     method: String,
     args: List<AbiArg>? = null,
     mode: TransactionMode = TransactionMode.Relayer,
@@ -1221,7 +1250,7 @@ address-typed arguments accept Base58Check (`T…`) addresses.
 ```kotlin
 suspend fun callTronContract(
     network: TronNetwork,
-    contract: String,
+    contractAddress: String,
     method: String,
     args: List<AbiArg>? = null,
     waitForStatus: Boolean = true,
@@ -1262,7 +1291,7 @@ suspend fun getBalances(
     tokenIds: List<String> = emptyList(),
     contractStatus: ContractVerificationStatus? = null,
     page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
-): TokenBalancesResult
+): BalancesResult
 ```
 
 ### `IndexerClient.getTransactionHistory`
@@ -1592,11 +1621,42 @@ data class TronBalancesResult(
 
 ### `TokenBalancesPageRequest`
 
+Indexer page request. `column`, `before`, `after`, and `sort` are the
+indexer's optional cursor fields and are sent only when set.
+
 ```kotlin
 data class TokenBalancesPageRequest(
     val page: Int = 0,
     val pageSize: Int = 40,
+    val column: String? = null,
+    val before: JsonElement? = null,
+    val after: JsonElement? = null,
+    val sort: List<SortBy>? = null,
 )
+```
+
+### `SortBy`
+
+Indexer sort column and direction.
+
+```kotlin
+data class SortBy(
+    val column: String,
+    val order: SortOrder,
+)
+```
+
+### `SortOrder`
+
+Indexer sort direction.
+
+```kotlin
+enum class SortOrder(
+    val wireValue: String,
+) {
+    DESC("DESC"),
+    ASC("ASC"),
+}
 ```
 
 ### `IndexerNetworkType`
@@ -1625,11 +1685,18 @@ enum class ContractVerificationStatus(
 
 ### `TokenBalancesPage`
 
+Indexer page returned with results. `before`, `after`, `column`, and `sort`
+are present when the indexer returns cursor paging state.
+
 ```kotlin
 data class TokenBalancesPage(
     val page: Int,
     val pageSize: Int,
     val more: Boolean,
+    val column: String? = null,
+    val before: JsonElement? = null,
+    val after: JsonElement? = null,
+    val sort: List<SortBy>? = null,
 )
 ```
 
@@ -1769,10 +1836,10 @@ data class ContractTokenBalance(
 ) : TokenBalance
 ```
 
-### `TokenBalancesResult`
+### `BalancesResult`
 
 ```kotlin
-data class TokenBalancesResult(
+data class BalancesResult(
     val status: Int,
     val page: TokenBalancesPage?,
     val balances: List<ContractTokenBalance>,
@@ -1974,6 +2041,7 @@ enum class OMSWalletErrorCode(
     ValidationError("OMS_VALIDATION_ERROR"),
     StorageError("OMS_STORAGE_ERROR"),
     AttestationVerificationFailed("OMS_ATTESTATION_VERIFICATION_FAILED"),
+    WalletAddressAlreadyImported("OMS_WALLET_ADDRESS_ALREADY_IMPORTED"),
 }
 ```
 
@@ -2036,12 +2104,15 @@ enum class OMSWalletOperation(
 
 ### `OMSWalletUpstreamService`
 
-Remote OMS service that produced diagnostic failure details.
+Remote OMS service that produced diagnostic failure details. `wireValue` is the
+service identifier shared with the TypeScript and Swift SDKs.
 
 ```kotlin
-enum class OMSWalletUpstreamService {
-    Waas,
-    Indexer,
+enum class OMSWalletUpstreamService(
+    val wireValue: String,
+) {
+    Waas("waas"),
+    Indexer("indexer"),
 }
 ```
 

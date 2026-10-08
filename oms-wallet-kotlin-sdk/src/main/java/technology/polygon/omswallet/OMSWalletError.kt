@@ -25,6 +25,7 @@ enum class OMSWalletErrorCode(
     ValidationError("OMS_VALIDATION_ERROR"),
     StorageError("OMS_STORAGE_ERROR"),
     AttestationVerificationFailed("OMS_ATTESTATION_VERIFICATION_FAILED"),
+    WalletAddressAlreadyImported("OMS_WALLET_ADDRESS_ALREADY_IMPORTED"),
 }
 
 /**
@@ -82,11 +83,14 @@ enum class OMSWalletOperation(
 }
 
 /**
- * Remote OMS service that produced diagnostic failure details.
+ * Remote OMS service that produced diagnostic failure details. [wireValue] is the
+ * service identifier shared with the TypeScript and Swift SDKs.
  */
-enum class OMSWalletUpstreamService {
-    Waas,
-    Indexer,
+enum class OMSWalletUpstreamService(
+    val wireValue: String,
+) {
+    Waas("waas"),
+    Indexer("indexer"),
 }
 
 /**
@@ -156,7 +160,8 @@ class OMSWalletRequestException(
         require(
             code == OMSWalletErrorCode.RequestFailed ||
                 code == OMSWalletErrorCode.HttpError ||
-                code == OMSWalletErrorCode.AuthCommitmentConsumed,
+                code == OMSWalletErrorCode.AuthCommitmentConsumed ||
+                code == OMSWalletErrorCode.WalletAddressAlreadyImported,
         ) {
             "OMSWalletRequestException requires a request error code"
         }
@@ -310,6 +315,18 @@ private fun WebRpcError.toOMSWalletException(operation: OMSWalletOperation): OMS
     val normalizedMessage = normalizedMessage()
 
     return when {
+        errorKind == ErrorKind.ADDRESS_ALREADY_IMPORTED || error == "AddressAlreadyImported" -> {
+            OMSWalletRequestException(
+                code = OMSWalletErrorCode.WalletAddressAlreadyImported,
+                operation = operation,
+                status = 409,
+                retryable = false,
+                upstreamError = upstreamError,
+                message = normalizedMessage,
+                cause = this,
+            )
+        }
+
         errorKind == ErrorKind.COMMITMENT_CONSUMED -> {
             OMSWalletRequestException(
                 code = OMSWalletErrorCode.AuthCommitmentConsumed,

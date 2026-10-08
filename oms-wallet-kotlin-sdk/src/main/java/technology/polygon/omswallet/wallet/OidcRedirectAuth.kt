@@ -23,7 +23,7 @@ data class CustomOidcProviderConfig(
     val providerLabel: String? = null,
     val scopes: List<String> = emptyList(),
     val authorizeParams: Map<String, String> = emptyMap(),
-    val authMode: OidcRedirectAuthMode = OidcRedirectAuthMode.AuthCodePKCE,
+    val authMode: OidcAuthMode = OidcAuthMode.AuthCodePKCE,
 )
 
 /** Opaque OIDC provider value whose OAuth callback is owned by the OMS relay. */
@@ -43,7 +43,7 @@ object OmsRelayOidcProviders {
  * WaaS redirect auth-code mode supported by OIDC redirect providers.
  */
 @Serializable
-enum class OidcRedirectAuthMode {
+enum class OidcAuthMode {
     @SerialName("auth-code")
     AuthCode,
 
@@ -51,8 +51,8 @@ enum class OidcRedirectAuthMode {
     AuthCodePKCE,
 }
 
-internal val OidcRedirectAuthMode.usesPkce: Boolean
-    get() = this == OidcRedirectAuthMode.AuthCodePKCE
+internal val OidcAuthMode.usesPkce: Boolean
+    get() = this == OidcAuthMode.AuthCodePKCE
 
 /**
  * Result returned after starting an OIDC authorization-code redirect flow.
@@ -82,7 +82,7 @@ internal data class PendingOidcRedirectAuth(
     val verifier: String,
     val challenge: String,
     val nonce: String,
-    val authMode: OidcRedirectAuthMode,
+    val authMode: OidcAuthMode,
     val redirectUri: String,
     val issuer: String,
     val provider: String? = null,

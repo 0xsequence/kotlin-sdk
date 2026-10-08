@@ -448,6 +448,9 @@ class WalletEmailAuthTest {
             assertEquals(1, response.wallets.size)
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, response.wallets.single().type)
             assertEquals("0xabc0000000000000000000000000000000000000", response.wallets.single().address)
+            val result: CompleteAuthResult = response
+            assertEquals(response.wallet, result.wallet)
+            assertEquals(response.credential, result.credential)
         }
 
     @Test
@@ -1024,6 +1027,8 @@ class WalletEmailAuthTest {
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
+            assertNull(result.wallet)
+            assertEquals(selection.pendingSelection.credential, result.credential)
             assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
             assertNull(client.activeWallet)
             assertTrue(client.hasPendingSignIn)

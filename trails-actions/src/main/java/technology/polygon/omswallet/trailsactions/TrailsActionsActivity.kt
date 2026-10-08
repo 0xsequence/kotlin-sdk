@@ -218,7 +218,7 @@ class TrailsActionsActivity : AppCompatActivity() {
 
         sessionStateCard =
             card {
-                addView(authDemoSectionTitle("OMSWalletSessionState"))
+                addView(authDemoSectionTitle("OMSWalletSession"))
                 sessionStateView = monospaceBody("")
                 addView(sessionStateView, matchWrap(topMargin = 10))
             }
@@ -1126,10 +1126,10 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private suspend fun requestWalletSelectionChoice(pendingSelection: PendingWalletSelection) =
-        suspendCancellableCoroutine<technology.polygon.omswallet.wallet.WalletSelectionResult> { continuation ->
+        suspendCancellableCoroutine<technology.polygon.omswallet.wallet.WalletActivationResult> { continuation ->
             var resumed = false
 
-            fun resumeOnce(action: suspend () -> technology.polygon.omswallet.wallet.WalletSelectionResult) {
+            fun resumeOnce(action: suspend () -> technology.polygon.omswallet.wallet.WalletActivationResult) {
                 if (resumed) return
                 resumed = true
                 uiScope.launch {

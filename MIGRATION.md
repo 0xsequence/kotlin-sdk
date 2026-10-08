@@ -23,8 +23,8 @@ if (activeWallet?.type == WalletType.Ethereum) {
 }
 ```
 
-The `walletAddress` property was also removed from `WalletSelectionResult` and
-`CompleteAuthResult.WalletSelected`. Use `result.wallet.address`. Code that creates or
+The `walletAddress` property was also removed from `WalletActivationResult` (formerly
+`WalletSelectionResult`) and `CompleteAuthResult.WalletSelected`. Use `result.wallet.address`. Code that creates or
 destructures these data classes positionally must drop the removed first component.
 
 ### `session` is null when signed out
@@ -63,8 +63,145 @@ accepted full signatures; the SDK now rejects values such as `"transfer(address,
 omsWallet.wallet.callContract(network, contract, method = "transfer(address,uint256)", args = args)
 
 // 0.4.0
-omsWallet.wallet.callContract(network, contract, method = "transfer", args = args)
+omsWallet.wallet.callContract(network, contractAddress, method = "transfer", args = args)
 ```
+
+The contract parameter of `callContract` and `callTronContract` is now named `contractAddress`.
+Positional calls are unchanged; update named arguments:
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.callContract(network = network, contract = token, method = "transfer", args = args)
+
+// 0.4.0
+omsWallet.wallet.callContract(network = network, contractAddress = token, method = "transfer", args = args)
+```
+
+### Signature verification targets a wallet address
+
+Every verification method (`isValidMessageSignature`, `isValidTypedDataSignature`,
+`isValidSolanaMessageSignature`, `isValidTronMessageSignature`, `isValidTronTypedDataSignature`)
+takes an optional trailing `walletAddress` and no `walletId`. The SDK always sends `networkFamily`
+and `walletAddress` to the wallet service and never sends `walletId`; `isValidTypedDataSignature`
+now also sends `networkFamily = "evm"`.
+
+- Passing `walletAddress` verifies any wallet and no longer requires a session, so the EVM and
+  Solana methods now work while signed out.
+- Omitting `walletAddress` uses the active wallet's address. Without a session the methods still
+  throw `OMSWalletSessionException`. When the active wallet belongs to another family (for example
+  an active Ethereum wallet for `isValidSolanaMessageSignature`, or an active Tron wallet for
+  `isValidTypedDataSignature`), they now throw `OMSWalletValidationException` before any request.
+  Previously such calls reached the wallet service, which rejected them with an
+  `OMSWalletRequestException` or, for `isValidTypedDataSignature` with an active Tron wallet,
+  verified the signature as Tron typed data.
+
+```kotlin
+// 0.3.x: always the active wallet, which had to be signed in
+omsWallet.wallet.isValidMessageSignature(network, message, signature)
+
+// 0.4.0: the active wallet (unchanged call), or any Ethereum wallet, even while signed out
+omsWallet.wallet.isValidMessageSignature(network, message, signature)
+omsWallet.wallet.isValidMessageSignature(network, message, signature, walletAddress = "0x…")
+```
+
+### Renamed types
+
+| 0.3.x | 0.4.0 |
+|---|---|
+| `WalletSelectionResult` | `WalletActivationResult` |
+| `TokenBalancesResult` | `BalancesResult` |
+| `OidcRedirectAuthMode` | `OidcAuthMode` (wire values `auth-code`/`auth-code-pkce` are unchanged, so pending redirects saved by 0.3.x still load) |
+
+```kotlin
+// 0.3.x
+val result: WalletSelectionResult = omsWallet.wallet.useWallet(walletId)
+val balances: TokenBalancesResult = omsWallet.indexer.getBalances(walletAddress)
+
+// 0.4.0
+val result: WalletActivationResult = omsWallet.wallet.useWallet(walletId)
+val balances: BalancesResult = omsWallet.indexer.getBalances(walletAddress)
+```
+
+### Transaction status polling options
+
+`TransactionStatusPollingOptions` properties were renamed to match the TypeScript and Swift SDKs.
+The defaults (`400`, `5`, `2_000`, `60_000` milliseconds/polls), the constructor order, and the
+polling behavior are unchanged. Validation messages use the new names (for example
+`"timeoutMs must not be negative"`).
+
+| 0.3.x | 0.4.0 |
+|---|---|
+| `fastPollIntervalMillis` | `fastIntervalMs` |
+| `fastPollCount` | `fastPollCount` |
+| `pollIntervalMillis` | `intervalMs` |
+| `timeoutMillis` | `timeoutMs` |
+
+```kotlin
+// 0.3.x
+TransactionStatusPollingOptions(timeoutMillis = 120_000L, pollIntervalMillis = 3_000L)
+
+// 0.4.0
+TransactionStatusPollingOptions(timeoutMs = 120_000L, intervalMs = 3_000L)
+```
+
+### `sendTransaction(network, to, value)` takes `mode`
+
+The `to`/`value` overload gained `mode: TransactionMode = TransactionMode.Relayer` before
+`waitForStatus`, matching `callContract` and `sendSolanaTransfer`. Positional calls that passed
+`waitForStatus` fourth must name it:
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.sendTransaction(network, to, value, false)
+
+// 0.4.0
+omsWallet.wallet.sendTransaction(network, to, value, waitForStatus = false)
+omsWallet.wallet.sendTransaction(network, to, value, mode = TransactionMode.Native)
+```
+
+### OIDC parameter order
+
+Parameters now follow the same order as the TypeScript and Swift SDKs. Defaults are unchanged and
+named arguments are unaffected:
+
+- `signInWithOidcIdToken(idToken, issuer, audience, walletType, walletSelection, sessionLifetimeSeconds, provider, providerLabel)`:
+  `walletType` now comes before `walletSelection`.
+- `startOidcRedirectAuth(provider: CustomOidcProviderConfig, walletType, walletSelection, sessionLifetimeSeconds, loginHint, authorizeParams)`:
+  `loginHint` now comes before `authorizeParams`.
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.signInWithOidcIdToken(idToken, issuer, audience, WalletSelectionBehavior.Manual, WalletType.Solana)
+
+// 0.4.0
+omsWallet.wallet.signInWithOidcIdToken(idToken, issuer, audience, WalletType.Solana, WalletSelectionBehavior.Manual)
+```
+
+### Address-already-imported errors
+
+Importing a key whose address is already imported (WaaS `AddressAlreadyImported`, code `7313`)
+now throws `OMSWalletRequestException` with `code = OMSWalletErrorCode.WalletAddressAlreadyImported`
+(`OMS_WALLET_ADDRESS_ALREADY_IMPORTED`), `status = 409`, and `retryable = false`. It previously
+used `OMSWalletErrorCode.RequestFailed`:
+
+```kotlin
+// 0.3.x
+catch (error: OMSWalletRequestException) {
+    if (error.code == OMSWalletErrorCode.RequestFailed && error.status == 409) showAlreadyImported()
+}
+
+// 0.4.0
+catch (error: OMSWalletRequestException) {
+    if (error.code == OMSWalletErrorCode.WalletAddressAlreadyImported) showAlreadyImported()
+}
+```
+
+### Indexer page cursors
+
+`TokenBalancesPageRequest` and `TokenBalancesPage` gained trailing `column`, `before`, `after`, and
+`sort` properties (`SortBy`, `SortOrder`). Omitted request fields are not sent. A page response
+whose `sort` entries are malformed or use an order other than `DESC`/`ASC` now fails with
+`OMSWalletResponseException` (`OMS_INVALID_RESPONSE`); previously the SDK ignored those fields.
 
 ### Wallet responses
 
@@ -81,6 +218,7 @@ These public enums gained cases. Update exhaustive `when` expressions over them:
 - `OMSWalletOperation.WalletSignTronMessage`, `WalletSignTronTypedData`,
   `WalletIsValidTronMessageSignature`, `WalletIsValidTronTypedDataSignature`,
   `WalletSendTronTransaction`, `WalletCallTronContract`, and `IndexerGetTronBalances`
+- `OMSWalletErrorCode.WalletAddressAlreadyImported`
 
 `WalletImportPrivateKey` also gained the `Tron` and `TronBytes` subtypes; exhaustive `when`
 expressions over it need branches for them.

@@ -657,8 +657,8 @@ class WalletClient private constructor(
         idToken: String,
         issuer: String,
         audience: String,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = WalletType.Ethereum,
+        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
         provider: String? = null,
         providerLabel: String? = null,
@@ -772,7 +772,7 @@ class WalletClient private constructor(
                             "access_type" to "offline",
                             "prompt" to "consent",
                         ),
-                    authMode = OidcRedirectAuthMode.AuthCodePKCE,
+                    authMode = OidcAuthMode.AuthCodePKCE,
                     redirectUris = redirectUris,
                     walletType = walletType,
                     walletSelection = walletSelection,
@@ -791,7 +791,7 @@ class WalletClient private constructor(
                     providerLabel = "Apple",
                     scopes = listOf("openid", "email"),
                     providerAuthorizeParams = mapOf("response_mode" to "form_post"),
-                    authMode = OidcRedirectAuthMode.AuthCodePKCE,
+                    authMode = OidcAuthMode.AuthCodePKCE,
                     redirectUris = redirectUris,
                     walletType = walletType,
                     walletSelection = walletSelection,
@@ -812,8 +812,8 @@ class WalletClient private constructor(
         walletType: WalletType = WalletType.Ethereum,
         walletSelection: WalletSelectionBehavior? = null,
         sessionLifetimeSeconds: Long? = null,
-        authorizeParams: Map<String, String> = emptyMap(),
         loginHint: String? = null,
+        authorizeParams: Map<String, String> = emptyMap(),
     ): StartOidcRedirectAuthResult {
         require(provider.providerRedirectUri.isNotBlank()) { "providerRedirectUri must not be blank" }
         return startOidcRedirectAuth(
@@ -847,7 +847,7 @@ class WalletClient private constructor(
         providerLabel: String?,
         scopes: List<String>,
         providerAuthorizeParams: Map<String, String>,
-        authMode: OidcRedirectAuthMode,
+        authMode: OidcAuthMode,
         redirectUris: OidcRedirectUris,
         walletType: WalletType,
         walletSelection: WalletSelectionBehavior?,
@@ -878,8 +878,8 @@ class WalletClient private constructor(
                         redirectUri = redirectUris.oauthRedirectUri,
                         authMode =
                             when (authMode) {
-                                OidcRedirectAuthMode.AuthCode -> AuthMode.AuthCode
-                                OidcRedirectAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
+                                OidcAuthMode.AuthCode -> AuthMode.AuthCode
+                                OidcAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
                             },
                         requiredSessionRevision = ownedSessionRevision,
                     )
@@ -1045,8 +1045,8 @@ class WalletClient private constructor(
                         code = code,
                         authMode =
                             when (pending.authMode) {
-                                OidcRedirectAuthMode.AuthCode -> AuthMode.AuthCode
-                                OidcRedirectAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
+                                OidcAuthMode.AuthCode -> AuthMode.AuthCode
+                                OidcAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
                             },
                         sessionLifetimeSeconds = validatedSessionLifetimeSeconds,
                         requiredSessionRevision = ownedSessionRevision,
@@ -1166,7 +1166,7 @@ class WalletClient private constructor(
     /**
      * Selects an existing wallet by its WaaS wallet id.
      */
-    suspend fun useWallet(walletId: String): WalletSelectionResult =
+    suspend fun useWallet(walletId: String): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletUseWallet) {
             useWalletForCurrentSession(walletId, requireWalletSelectionOrActiveSession())
         }
@@ -1176,7 +1176,7 @@ class WalletClient private constructor(
         requiredSessionRevision: Long,
         oidcRedirectAuthOwnership: PendingOidcRedirectAuth? = null,
         onSessionRevisionChanged: ((Long) -> Unit)? = null,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         requireWalletSelectionOrActiveSession(requiredSessionRevision)
         val wallet = requestUseWallet(walletId, requiredSessionRevision)
         return withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
@@ -1196,7 +1196,7 @@ class WalletClient private constructor(
     suspend fun createWallet(
         walletType: WalletType = WalletType.Ethereum,
         reference: String? = null,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletCreateWallet) {
             createWalletForCurrentSession(
                 walletType,
@@ -1209,7 +1209,7 @@ class WalletClient private constructor(
     suspend fun importWallet(
         privateKey: WalletImportPrivateKey,
         reference: String? = null,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletImportWallet) {
             val context = walletImportActivationContext(privateKey.walletType)
             WalletImportCrypto.validateReference(reference)
@@ -1258,7 +1258,7 @@ class WalletClient private constructor(
         walletType: WalletType,
         keyMaterial: EncryptedWalletImportKeyMaterial,
         reference: String? = null,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletImportEncryptedWallet) {
             val context = walletImportActivationContext(walletType)
             WalletImportCrypto.validateReference(reference)
@@ -1294,7 +1294,7 @@ class WalletClient private constructor(
     private fun activateImportedWallet(
         wallet: Wallet,
         context: WalletImportActivationContext,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         synchronized(runtime.lifecycleLock) {
             walletSession.requireRevision(context.revision)
             val selectedRevision =
@@ -1322,7 +1322,7 @@ class WalletClient private constructor(
         requiredSessionRevision: Long,
         oidcRedirectAuthOwnership: PendingOidcRedirectAuth? = null,
         onSessionRevisionChanged: ((Long) -> Unit)? = null,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         requireWalletSelectionOrActiveSession(requiredSessionRevision)
         val wallet = requestCreateWallet(walletType, reference, requiredSessionRevision)
         return withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
@@ -1341,7 +1341,7 @@ class WalletClient private constructor(
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
         walletId: String,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         val requiredSessionRevision =
             requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         val wallet = requestUseWallet(walletId, requiredSessionRevision)
@@ -1364,7 +1364,7 @@ class WalletClient private constructor(
         signerKeyType: WalletSigningAlgorithm?,
         walletType: WalletType,
         reference: String?,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         val requiredSessionRevision =
             requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         val wallet = requestCreateWallet(walletType, reference, requiredSessionRevision)
@@ -1435,11 +1435,11 @@ class WalletClient private constructor(
     private fun persistSelectedWallet(
         wallet: Wallet,
         selectedSessionRevision: Long,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         synchronized(runtime.lifecycleLock) {
             try {
                 persistCurrentSession(selectedSessionRevision)
-                WalletSelectionResult(wallet = wallet)
+                WalletActivationResult(wallet = wallet)
             } catch (throwable: Throwable) {
                 clearSessionAfterFailure(requiredSessionRevision = selectedSessionRevision)
                 throw throwable
@@ -1680,60 +1680,63 @@ class WalletClient private constructor(
 
     /**
      * Validates [signature] for [message] through the WaaS public wallet RPC.
+     * Pass the `0x` [walletAddress] to verify any Ethereum wallet without a
+     * session; when it is omitted, the active Ethereum wallet's address is used.
      */
     suspend fun isValidMessageSignature(
         network: Network,
         message: String,
         signature: String,
+        walletAddress: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidMessageSignature) {
-            val activeSession =
-                requireActiveWalletSession(
-                    OMSWalletOperation.WalletIsValidMessageSignature,
-                    requireCredential = false,
-                )
             gateway.isValidMessageSignature(
-                walletId = activeSession.walletId,
+                walletAddress =
+                    walletAddress
+                        ?: activeVerifierWalletAddress(WalletType.Ethereum, OMSWalletOperation.WalletIsValidMessageSignature),
                 network = network,
                 message = message,
                 signature = signature,
             )
         }
 
-    /** Validates [signature] for a Solana [message] through the WaaS public wallet RPC. */
+    /**
+     * Validates [signature] for a Solana [message] through the WaaS public wallet
+     * RPC. Pass the base58 [walletAddress] to verify any Solana wallet without a
+     * session; when it is omitted, the active Solana wallet's address is used.
+     */
     suspend fun isValidSolanaMessageSignature(
         message: String,
         signature: String,
+        walletAddress: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidSolanaMessageSignature) {
-            val activeSession =
-                requireActiveWalletSession(
-                    OMSWalletOperation.WalletIsValidSolanaMessageSignature,
-                    requireCredential = false,
-                )
             gateway.isValidSolanaMessageSignature(
-                walletId = activeSession.walletId,
+                walletAddress =
+                    walletAddress
+                        ?: activeVerifierWalletAddress(WalletType.Solana, OMSWalletOperation.WalletIsValidSolanaMessageSignature),
                 message = message,
                 signature = signature,
             )
         }
 
     /**
-     * Validates [signature] for EIP-712 [typedData] through the WaaS public wallet RPC.
+     * Validates [signature] for EIP-712 [typedData] through the WaaS public
+     * wallet RPC. Pass the `0x` [walletAddress] to verify any Ethereum wallet
+     * without a session; when it is omitted, the active Ethereum wallet's address
+     * is used.
      */
     suspend fun isValidTypedDataSignature(
         network: Network,
         typedData: JsonElement,
         signature: String,
+        walletAddress: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidTypedDataSignature) {
-            val activeSession =
-                requireActiveWalletSession(
-                    OMSWalletOperation.WalletIsValidTypedDataSignature,
-                    requireCredential = false,
-                )
             gateway.isValidTypedDataSignature(
-                walletId = activeSession.walletId,
+                walletAddress =
+                    walletAddress
+                        ?: activeVerifierWalletAddress(WalletType.Ethereum, OMSWalletOperation.WalletIsValidTypedDataSignature),
                 network = network,
                 typedData = typedData,
                 signature = signature,
@@ -1769,19 +1772,20 @@ class WalletClient private constructor(
 
     /**
      * Validates a Tron [signature] for [message] through the WaaS public wallet
-     * RPC. Pass [walletAddress] (Base58Check `T…`) or [walletId] to verify any
-     * wallet; when both are omitted, the active wallet is used.
+     * RPC. Pass the Base58Check [walletAddress] (`T…`) to verify any Tron wallet
+     * without a session; when it is omitted, the active Tron wallet's address is
+     * used.
      */
     suspend fun isValidTronMessageSignature(
         message: String,
         signature: String,
         walletAddress: String? = null,
-        walletId: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidTronMessageSignature) {
             gateway.isValidTronMessageSignature(
-                walletAddress = walletAddress,
-                walletId = walletId ?: activeWalletIdUnless(walletAddress, OMSWalletOperation.WalletIsValidTronMessageSignature),
+                walletAddress =
+                    walletAddress
+                        ?: activeVerifierWalletAddress(WalletType.Tron, OMSWalletOperation.WalletIsValidTronMessageSignature),
                 message = message,
                 signature = signature,
             )
@@ -1789,43 +1793,50 @@ class WalletClient private constructor(
 
     /**
      * Validates a Tron [signature] for TIP-712 [typedData] through the WaaS
-     * public wallet RPC. Pass [walletAddress] (Base58Check `T…`) or [walletId] to
-     * verify any wallet; when both are omitted, the active wallet is used.
+     * public wallet RPC. Pass the Base58Check [walletAddress] (`T…`) to verify
+     * any Tron wallet without a session; when it is omitted, the active Tron
+     * wallet's address is used.
      */
     suspend fun isValidTronTypedDataSignature(
         typedData: JsonElement,
         signature: String,
         walletAddress: String? = null,
-        walletId: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidTronTypedDataSignature) {
             gateway.isValidTronTypedDataSignature(
-                walletAddress = walletAddress,
-                walletId = walletId ?: activeWalletIdUnless(walletAddress, OMSWalletOperation.WalletIsValidTronTypedDataSignature),
+                walletAddress =
+                    walletAddress
+                        ?: activeVerifierWalletAddress(WalletType.Tron, OMSWalletOperation.WalletIsValidTronTypedDataSignature),
                 typedData = typedData,
                 signature = signature,
             )
         }
 
-    private fun activeWalletIdUnless(
-        walletAddress: String?,
+    /**
+     * Returns the active wallet's address for signature verification. Requires an
+     * active session (not a usable credential) and rejects a wallet of another
+     * family before any request.
+     */
+    private fun activeVerifierWalletAddress(
+        walletType: WalletType,
         operation: OMSWalletOperation,
-    ): String? =
-        if (walletAddress != null) {
-            null
-        } else {
-            requireActiveWalletSession(operation, requireCredential = false).walletId
-        }
+    ): String {
+        val activeSession = requireActiveWalletSession(operation, requireCredential = false)
+        activeSession.requireWalletType(walletType)
+        return activeSession.walletAddress
+    }
 
     /**
      * Sends a transaction from the currently selected wallet on [network].
      *
-     * This overload sends [value] to [to] without calldata.
+     * This overload sends [value] to [to] without calldata. [mode] defaults to
+     * [TransactionMode.Relayer].
      */
     suspend fun sendTransaction(
         network: Network,
         to: String,
         value: BigInteger,
+        mode: TransactionMode = TransactionMode.Relayer,
         waitForStatus: Boolean = true,
         statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
@@ -1836,6 +1847,7 @@ class WalletClient private constructor(
                 SendTransactionRequest(
                     to = to,
                     value = value,
+                    mode = mode,
                 ),
             selectFeeOption = selectFeeOption,
             waitForStatus = waitForStatus,
@@ -1967,13 +1979,13 @@ class WalletClient private constructor(
      * wallet in native mode. The wallet service ABI-encodes [args];
      * address-typed arguments accept Base58Check (`T…`) addresses.
      *
-     * [contract] is a Base58Check address. [method] is the function name only,
-     * such as `"transfer"`; the wallet service builds the signature from the
-     * [args] types.
+     * [contractAddress] is a Base58Check address. [method] is the function name
+     * only, such as `"transfer"`; the wallet service builds the signature from
+     * the [args] types.
      */
     suspend fun callTronContract(
         network: TronNetwork,
-        contract: String,
+        contractAddress: String,
         method: String,
         args: List<AbiArg>? = null,
         waitForStatus: Boolean = true,
@@ -1988,7 +2000,7 @@ class WalletClient private constructor(
                 gateway.prepareTronContractCall(
                     walletId = activeSession.walletId,
                     network = network,
-                    contract = contract,
+                    contract = contractAddress,
                     method = method,
                     args = args,
                     requiredSessionRevision = activeSession.revision,
@@ -2015,7 +2027,7 @@ class WalletClient private constructor(
      */
     suspend fun callContract(
         network: Network,
-        contract: String,
+        contractAddress: String,
         method: String,
         args: List<AbiArg>? = null,
         mode: TransactionMode = TransactionMode.Relayer,
@@ -2031,7 +2043,7 @@ class WalletClient private constructor(
                 gateway.prepareEthereumContractCall(
                     walletId = activeSession.walletId,
                     network = network,
-                    contract = contract,
+                    contract = contractAddress,
                     method = method,
                     args = args,
                     mode = mode,
@@ -2837,7 +2849,7 @@ class WalletClient private constructor(
         options: TransactionStatusPollingOptions,
         requiredSessionRevision: Long,
     ): ResolvedTransactionStatus {
-        val deadline = System.currentTimeMillis() + options.timeoutMillis
+        val deadline = System.currentTimeMillis() + options.timeoutMs
         var lastStatus = TransactionStatusResponse(status = fallbackStatus)
         var completedStatusPolls = 0
 
@@ -2878,26 +2890,26 @@ class WalletClient private constructor(
             }
             val nextDelayMillis =
                 if (completedStatusPolls < options.fastPollCount) {
-                    options.fastPollIntervalMillis
+                    options.fastIntervalMs
                 } else {
-                    options.pollIntervalMillis
+                    options.intervalMs
                 }
             transactionStatusDelay(minOf(nextDelayMillis, remainingMillis))
         } while (true)
     }
 
     private fun requireValidTransactionStatusPollingOptions(options: TransactionStatusPollingOptions) {
-        require(options.fastPollIntervalMillis > 0L) {
-            "fastPollIntervalMillis must be greater than zero"
+        require(options.fastIntervalMs > 0L) {
+            "fastIntervalMs must be greater than zero"
         }
         require(options.fastPollCount >= 0) {
             "fastPollCount must not be negative"
         }
-        require(options.pollIntervalMillis > 0L) {
-            "pollIntervalMillis must be greater than zero"
+        require(options.intervalMs > 0L) {
+            "intervalMs must be greater than zero"
         }
-        require(options.timeoutMillis >= 0L) {
-            "timeoutMillis must not be negative"
+        require(options.timeoutMs >= 0L) {
+            "timeoutMs must not be negative"
         }
     }
 
@@ -2908,10 +2920,10 @@ class WalletClient private constructor(
 
     private fun defaultTransactionStatusPollingOptions(): TransactionStatusPollingOptions =
         TransactionStatusPollingOptions(
-            fastPollIntervalMillis = fastTransactionStatusPollIntervalMillis,
+            fastIntervalMs = fastTransactionStatusPollIntervalMillis,
             fastPollCount = fastTransactionStatusPollCount,
-            pollIntervalMillis = transactionStatusPollIntervalMillis,
-            timeoutMillis = transactionStatusPollTimeoutMillis,
+            intervalMs = transactionStatusPollIntervalMillis,
+            timeoutMs = transactionStatusPollTimeoutMillis,
         )
 }
 
@@ -3315,7 +3327,7 @@ private class WaasWalletGateway(
             ).signature
 
     suspend fun isValidMessageSignature(
-        walletId: String,
+        walletAddress: String,
         network: Network,
         message: String,
         signature: String,
@@ -3325,14 +3337,14 @@ private class WaasWalletGateway(
                 IsValidMessageSignatureRequest(
                     network = network.id.toString(),
                     networkFamily = WaasNetworkFamily.EVM,
-                    walletId = walletId,
+                    walletAddress = walletAddress,
                     message = message,
                     signature = signature,
                 ),
             ).isValid
 
     suspend fun isValidSolanaMessageSignature(
-        walletId: String,
+        walletAddress: String,
         message: String,
         signature: String,
     ): Boolean =
@@ -3340,14 +3352,14 @@ private class WaasWalletGateway(
             .isValidMessageSignature(
                 IsValidMessageSignatureRequest(
                     networkFamily = WaasNetworkFamily.Solana,
-                    walletId = walletId,
+                    walletAddress = walletAddress,
                     message = message,
                     signature = signature,
                 ),
             ).isValid
 
     suspend fun isValidTypedDataSignature(
-        walletId: String,
+        walletAddress: String,
         network: Network,
         typedData: JsonElement,
         signature: String,
@@ -3356,15 +3368,15 @@ private class WaasWalletGateway(
             .isValidTypedDataSignature(
                 IsValidTypedDataSignatureRequest(
                     network = network.id.toString(),
-                    walletId = walletId,
+                    networkFamily = WaasNetworkFamily.EVM,
+                    walletAddress = walletAddress,
                     typedData = typedData,
                     signature = signature,
                 ),
             ).isValid
 
     suspend fun isValidTronMessageSignature(
-        walletAddress: String?,
-        walletId: String?,
+        walletAddress: String,
         message: String,
         signature: String,
     ): Boolean =
@@ -3373,15 +3385,13 @@ private class WaasWalletGateway(
                 IsValidMessageSignatureRequest(
                     networkFamily = WaasNetworkFamily.Tron,
                     walletAddress = walletAddress,
-                    walletId = walletId,
                     message = message,
                     signature = signature,
                 ),
             ).isValid
 
     suspend fun isValidTronTypedDataSignature(
-        walletAddress: String?,
-        walletId: String?,
+        walletAddress: String,
         typedData: JsonElement,
         signature: String,
     ): Boolean =
@@ -3390,7 +3400,6 @@ private class WaasWalletGateway(
                 IsValidTypedDataSignatureRequest(
                     networkFamily = WaasNetworkFamily.Tron,
                     walletAddress = walletAddress,
-                    walletId = walletId,
                     typedData = typedData,
                     signature = signature,
                 ),

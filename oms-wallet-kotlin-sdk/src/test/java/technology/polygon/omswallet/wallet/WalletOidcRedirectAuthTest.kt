@@ -4,6 +4,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
@@ -26,6 +28,7 @@ import technology.polygon.omswallet.internal.generated.waas.IdentityType
 import technology.polygon.omswallet.internal.generated.waas.UseWalletRequest
 import technology.polygon.omswallet.internal.generated.waas.WaasApi
 import technology.polygon.omswallet.internal.generated.waas.WalletType
+import technology.polygon.omswallet.internal.generated.waas.WebRpcJson
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
@@ -49,6 +52,23 @@ class WalletOidcRedirectAuthTest {
     @After
     fun tearDown() {
         server.close()
+    }
+
+    @Test
+    fun pendingRedirectAuthPersistsAuthModeWireValues() {
+        val pending = pendingOidcRedirectAuthFixture()
+
+        val encoded = WebRpcJson.encodeToString(pending)
+
+        assertTrue(encoded.contains("\"authMode\":\"auth-code-pkce\""))
+        assertEquals(pending, WebRpcJson.decodeFromString<PendingOidcRedirectAuth>(encoded))
+        assertEquals(
+            OidcAuthMode.AuthCode,
+            WebRpcJson
+                .decodeFromString<PendingOidcRedirectAuth>(
+                    encoded.replace("\"auth-code-pkce\"", "\"auth-code\""),
+                ).authMode,
+        )
     }
 
     @Test
@@ -153,7 +173,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals("oidc-verifier-123", redirectStore.pending?.verifier)
             assertEquals("pkce-challenge", redirectStore.pending?.challenge)
             assertEquals("nonce-123", redirectStore.pending?.nonce)
-            assertEquals(OidcRedirectAuthMode.AuthCodePKCE, redirectStore.pending?.authMode)
+            assertEquals(OidcAuthMode.AuthCodePKCE, redirectStore.pending?.authMode)
             assertEquals("omsclientkotlindemo://auth/callback", redirectStore.pending?.redirectUri)
             assertEquals(WalletType.Ethereum.wireValue, redirectStore.pending?.walletType)
             assertNull(redirectStore.pending?.walletSelection)
@@ -664,7 +684,7 @@ class WalletOidcRedirectAuthTest {
                             "code_challenge" to "manual-challenge",
                             "code_challenge_method" to "plain",
                         ),
-                    authMode = OidcRedirectAuthMode.AuthCode,
+                    authMode = OidcAuthMode.AuthCode,
                 )
 
             val started =

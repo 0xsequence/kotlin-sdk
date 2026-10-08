@@ -1,6 +1,7 @@
 package technology.polygon.omswallet.network
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import mockwebserver3.MockResponse
@@ -21,7 +22,11 @@ import technology.polygon.omswallet.OMSWalletUpstreamService
 import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.indexer.IndexerClient
+import technology.polygon.omswallet.models.BalancesResult
 import technology.polygon.omswallet.models.SolanaBalance
+import technology.polygon.omswallet.models.SortBy
+import technology.polygon.omswallet.models.SortOrder
+import technology.polygon.omswallet.models.TokenBalancesPage
 import technology.polygon.omswallet.models.TokenBalancesPageRequest
 import technology.polygon.omswallet.models.TronBalance
 import technology.polygon.omswallet.models.TronTokenStandard
@@ -94,7 +99,7 @@ class ServiceClientsTest {
             assertEquals(null, messageRequest.headers["Authorization"])
             assertEquals(null, messageRequest.headers[OMSWalletEnvironment.walletSignatureHeaderName])
             assertEquals(
-                """{"network":"80002","networkFamily":"evm","walletId":"wallet-id","message":"hello","signature":"0xmessage"}""",
+                """{"network":"80002","networkFamily":"evm","walletAddress":"0xwallet","message":"hello","signature":"0xmessage"}""",
                 requireNotNull(messageRequest.body).utf8(),
             )
             assertEquals(true, messageIsValid)
@@ -115,7 +120,7 @@ class ServiceClientsTest {
             assertEquals(null, typedDataRequest.headers["Authorization"])
             assertEquals(null, typedDataRequest.headers[OMSWalletEnvironment.walletSignatureHeaderName])
             assertEquals(
-                """{"network":"80002","walletId":"wallet-id","typedData":{"contents":"hello"},"signature":"0xtyped"}""",
+                """{"network":"80002","networkFamily":"evm","walletAddress":"0xwallet","typedData":{"contents":"hello"},"signature":"0xtyped"}""",
                 requireNotNull(typedDataRequest.body).utf8(),
             )
             assertEquals(false, typedDataIsValid)
@@ -425,6 +430,7 @@ class ServiceClientsTest {
             assertEquals(503, error.status)
             assertEquals(true, error.retryable)
             assertEquals(OMSWalletUpstreamService.Indexer, error.upstreamError?.service)
+            assertEquals("indexer", error.upstreamError?.service?.wireValue)
             assertEquals("tron gateway down", error.upstreamError?.message)
         }
 
@@ -465,6 +471,80 @@ class ServiceClientsTest {
             )
             assertTrue(response.nativeBalances.isEmpty())
             assertTrue(response.balances.isEmpty())
+        }
+
+    @Test
+    fun getBalancesSendsCursorPagingAndDecodesReturnedCursor() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"page":{"page":0,"column":"balance","before":null,"after":{"id":42},"sort":[{"column":"balance","order":"DESC"}],"pageSize":10,"more":true},"nativeBalances":[],"balances":[]}""",
+                    ).build(),
+            )
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                )
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
+
+            val response: BalancesResult =
+                client.getBalances(
+                    walletAddress = "0xwallet",
+                    page =
+                        TokenBalancesPageRequest(
+                            pageSize = 10,
+                            column = "balance",
+                            after = JsonPrimitive("cursor-1"),
+                            sort = listOf(SortBy(column = "balance", order = SortOrder.DESC)),
+                        ),
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals(
+                "{\"networkType\":\"MAINNETS\",\"filter\":{\"accountAddresses\":[\"0xwallet\"],\"omitNativeBalances\":false},\"omitMetadata\":false,\"page\":{\"page\":0,\"pageSize\":10,\"column\":\"balance\",\"after\":\"cursor-1\",\"sort\":[{\"column\":\"balance\",\"order\":\"DESC\"}]}}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals(
+                TokenBalancesPage(
+                    page = 0,
+                    pageSize = 10,
+                    more = true,
+                    column = "balance",
+                    before = null,
+                    after = buildJsonObject { put("id", 42) },
+                    sort = listOf(SortBy(column = "balance", order = SortOrder.DESC)),
+                ),
+                response.page,
+            )
+        }
+
+    @Test
+    fun getBalancesRejectsUnknownSortOrder() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"page":{"page":0,"sort":[{"column":"balance","order":"SIDEWAYS"}],"pageSize":10,"more":false},"nativeBalances":[],"balances":[]}""",
+                    ).build(),
+            )
+            val environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                )
+            val client = IndexerClient.create("test-publishable-key", environment, OMSWalletHttpClient())
+
+            val error = runCatching { client.getBalances(walletAddress = "0xwallet") }.exceptionOrNull() as? OMSWalletException
+
+            requireNotNull(error)
+            assertEquals(OMSWalletErrorCode.InvalidResponse, error.code)
+            assertEquals(OMSWalletOperation.IndexerGetBalances, error.operation)
         }
 
     @Test
@@ -725,6 +805,7 @@ class ServiceClientsTest {
             assertEquals(400, failure.status)
             assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
             assertEquals(OMSWalletUpstreamService.Waas, failure.upstreamError?.service)
+            assertEquals("waas", failure.upstreamError?.service?.wireValue)
             assertEquals("WebrpcEndpoint", failure.upstreamError?.name)
             assertEquals("-999", failure.upstreamError?.code)
             assertEquals("endpoint error", failure.upstreamError?.message)

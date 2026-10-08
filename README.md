@@ -153,7 +153,9 @@ By default email OTP and OIDC ID-token auth completion use
 wallet type, create one when none exists, and return
 `CompleteAuthResult.WalletSelected`. If more than one matching wallet exists,
 automatic mode selects the first matching wallet returned by the wallet API. Use manual
-mode for apps that need to let users choose between multiple wallets.
+mode for apps that need to let users choose between multiple wallets. Every
+`CompleteAuthResult` exposes `credential`, and `wallet` is the selected wallet or `null`
+while a manual selection is pending.
 
 Completed auth requests ask the wallet API for a one-week session lifetime by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds).
@@ -399,6 +401,9 @@ val imported =
 println(imported.wallet.keyOrigin == WalletKeyOrigin.Imported)
 ```
 
+Importing a key whose address is already imported fails with `OMSWalletRequestException` and
+`OMSWalletErrorCode.WalletAddressAlreadyImported` (`status` 409, not retryable).
+
 Ethereum and Tron imports (`WalletImportPrivateKey.Ethereum`/`EthereumBytes` and
 `WalletImportPrivateKey.Tron`/`TronBytes`) accept the same secp256k1 key format: a 32-byte raw
 scalar or 64 hexadecimal digits, optionally prefixed with `0x`. Solana imports accept a 32-byte
@@ -424,6 +429,24 @@ val verifyResult = omsWallet.wallet.isValidMessageSignature(
     network = network,
     message = "hello from OMS Wallet",
     signature = signResult,
+)
+```
+
+Every signature verification method (`isValidMessageSignature`,
+`isValidTypedDataSignature`, `isValidSolanaMessageSignature`,
+`isValidTronMessageSignature`, and `isValidTronTypedDataSignature`) accepts an optional
+`walletAddress`. Pass it to verify a signature from any wallet, even while signed out.
+When it is omitted, the SDK uses the active wallet's address: without a session it throws
+`OMSWalletSessionException`, and when the active wallet belongs to another family (for
+example an Ethereum wallet for `isValidSolanaMessageSignature`) it throws
+`OMSWalletValidationException` before any request.
+
+```kotlin
+val valid = omsWallet.wallet.isValidMessageSignature(
+    network = network,
+    message = "hello from OMS Wallet",
+    signature = signResult,
+    walletAddress = "0x1111111111111111111111111111111111111111",
 )
 ```
 
@@ -519,7 +542,11 @@ transaction is still nonterminal when polling times out, the response keeps the
 `txnId`, latest status, any available hash, and
 `statusResolution = TransactionStatusResolution.TimedOut`. Set
 `waitForStatus = false` to return after submission with `NotRequested`;
-completed polling returns `Resolved`.
+completed polling returns `Resolved`. Pass
+`statusPolling = TransactionStatusPollingOptions(...)` to change `timeoutMs` (default
+`60_000`), `intervalMs` (`2_000`), `fastIntervalMs` (`400`), or `fastPollCount` (`5`).
+Like `callContract`, the `to`/`value` overload accepts `mode`, which defaults to
+`TransactionMode.Relayer`.
 Transaction values are raw base-unit integers. Use `parseUnits` to convert
 human-entered decimal values before sending. Import the helpers from
 `technology.polygon.omswallet.utils`.
@@ -556,8 +583,14 @@ val result =
 result.balances.forEach(::println)
 ```
 
-Pass `includeMetadata = true` when you need token contract details or NFT/token
-metadata from `balance.contractInfo` and `balance.tokenMetadata`.
+`getBalances` returns a `BalancesResult`. `includeMetadata` defaults to `true`, so
+`balance.contractInfo` and `balance.tokenMetadata` carry token contract details and
+NFT/token metadata; pass `includeMetadata = false` to omit them.
+
+`getBalances` and `getTransactionHistory` accept a `TokenBalancesPageRequest` with `page` and
+`pageSize`, plus the indexer's optional cursor fields `column`, `before`, `after`, and `sort`
+(`SortBy` with `SortOrder.DESC` or `SortOrder.ASC`). Omitted fields are not sent. The returned
+`page` (`TokenBalancesPage`) carries the same fields when the indexer returns them.
 
 ### Query Transaction History
 
@@ -594,7 +627,7 @@ signatures with `OMSWalletValidationException` before sending a request:
 ```kotlin
 val txResult = omsWallet.wallet.callContract(
     network = network,
-    contract = "0x3333333333333333333333333333333333333333",
+    contractAddress = "0x3333333333333333333333333333333333333333",
     method = "transfer",
     args =
         listOf(
@@ -706,7 +739,7 @@ val trxTransfer =
 val trc20Transfer =
     omsWallet.wallet.callTronContract(
         network = TronNetwork.Nile,
-        contract = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        contractAddress = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
         method = "transfer",
         args =
             listOf(
@@ -718,8 +751,8 @@ val trc20Transfer =
 
 `signTronTypedData` and `isValidTronTypedDataSignature` sign and verify TIP-712 typed
 data, whose address values may be Base58Check. The verification methods accept an
-optional `walletAddress` or `walletId`; when both are omitted they verify against the
-active wallet.
+optional Base58Check `walletAddress`; when it is omitted they verify against the active
+Tron wallet.
 
 Omitting `data` from `sendTronTransaction` sends a plain TRX transfer. Passing `data`,
 even `"0x"`, makes the transaction a contract call: `"0x"` calls the recipient

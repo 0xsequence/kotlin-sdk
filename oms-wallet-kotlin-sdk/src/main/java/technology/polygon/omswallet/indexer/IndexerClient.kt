@@ -25,6 +25,7 @@ import technology.polygon.omswallet.OMSWalletUpstreamError
 import technology.polygon.omswallet.OMSWalletUpstreamService
 import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.TronNetwork
+import technology.polygon.omswallet.models.BalancesResult
 import technology.polygon.omswallet.models.ContractTokenBalance
 import technology.polygon.omswallet.models.ContractVerificationStatus
 import technology.polygon.omswallet.models.IndexerNetworkType
@@ -36,10 +37,11 @@ import technology.polygon.omswallet.models.SolanaNetworkError
 import technology.polygon.omswallet.models.SolanaTokenProgram
 import technology.polygon.omswallet.models.SolanaVerificationSource
 import technology.polygon.omswallet.models.SolanaVerificationStatus
+import technology.polygon.omswallet.models.SortBy
+import technology.polygon.omswallet.models.SortOrder
 import technology.polygon.omswallet.models.TokenBalance
 import technology.polygon.omswallet.models.TokenBalancesPage
 import technology.polygon.omswallet.models.TokenBalancesPageRequest
-import technology.polygon.omswallet.models.TokenBalancesResult
 import technology.polygon.omswallet.models.TokenContractInfo
 import technology.polygon.omswallet.models.TokenMetadata
 import technology.polygon.omswallet.models.TokenMetadataAsset
@@ -80,7 +82,7 @@ class IndexerClient private constructor(
         tokenIds: List<String> = emptyList(),
         contractStatus: ContractVerificationStatus? = null,
         page: TokenBalancesPageRequest = TokenBalancesPageRequest(),
-    ): TokenBalancesResult {
+    ): BalancesResult {
         val operation = OMSWalletOperation.IndexerGetBalances
         val response =
             postIndexerGatewayJson(
@@ -106,15 +108,12 @@ class IndexerClient private constructor(
                             putStringArrayIfNotEmpty("tokenIDs", tokenIds)
                         }
                         put("omitMetadata", includeMetadata == false)
-                        putJsonObject("page") {
-                            put("page", page.page)
-                            put("pageSize", page.pageSize)
-                        }
+                        putPage(page)
                     }.toString(),
             )
 
         return decodeIndexerResponse(response, operation) { root ->
-            TokenBalancesResult(
+            BalancesResult(
                 status = response.statusCode,
                 page = root.objectOrNull("page")?.toTokenBalancesPage(),
                 balances = flattenGatewayResults(root.requiredObjectArray("balances")).map { it.toTokenBalance() },
@@ -175,10 +174,7 @@ class IndexerClient private constructor(
                                 putStringArrayIfNotEmpty("includeContracts", options.includeContracts)
                             }
                         }
-                        putJsonObject("page") {
-                            put("page", page.page)
-                            put("pageSize", page.pageSize)
-                        }
+                        putPage(page)
                     }.toString(),
             )
 
@@ -556,6 +552,20 @@ class IndexerClient private constructor(
             page = requiredInt("page"),
             pageSize = requiredInt("pageSize"),
             more = requiredBoolean("more"),
+            column = optionalString("column"),
+            before = this["before"]?.takeUnless { it === JsonNull },
+            after = this["after"]?.takeUnless { it === JsonNull },
+            sort = optionalObjectArray("sort")?.map { it.toSortBy() },
+        )
+
+    private fun JsonObject.toSortBy(): SortBy =
+        SortBy(
+            column = requiredString("column"),
+            order =
+                requiredString("order").let { order ->
+                    SortOrder.entries.firstOrNull { it.wireValue == order }
+                        ?: throw IllegalArgumentException("Invalid sort order")
+                },
         )
 
     private fun JsonObject.toNativeTokenBalance(): NativeTokenBalance =
@@ -778,6 +788,28 @@ class IndexerClient private constructor(
         groups.flatMap { group ->
             group.requiredObjectArray("results")
         }
+
+    private fun JsonObjectBuilder.putPage(page: TokenBalancesPageRequest) {
+        putJsonObject("page") {
+            put("page", page.page)
+            put("pageSize", page.pageSize)
+            page.column?.let { put("column", it) }
+            page.before?.let { put("before", it) }
+            page.after?.let { put("after", it) }
+            page.sort?.let { sort ->
+                putJsonArray("sort") {
+                    sort.forEach { sortBy ->
+                        add(
+                            buildJsonObject {
+                                put("column", sortBy.column)
+                                put("order", sortBy.order.wireValue)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     private fun JsonObjectBuilder.putStringArrayIfNotEmpty(
         name: String,

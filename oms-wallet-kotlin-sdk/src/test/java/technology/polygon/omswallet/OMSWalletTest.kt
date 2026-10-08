@@ -9,7 +9,7 @@ import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.session.OMSWalletSessionStateMachine
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
-import technology.polygon.omswallet.wallet.OidcRedirectAuthMode
+import technology.polygon.omswallet.wallet.OidcAuthMode
 import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
 import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
@@ -126,7 +126,7 @@ class OMSWalletTest {
                             verifier = "verifier-123",
                             challenge = "challenge-123",
                             nonce = "nonce-123",
-                            authMode = OidcRedirectAuthMode.AuthCodePKCE,
+                            authMode = OidcAuthMode.AuthCodePKCE,
                             redirectUri = "omsclientkotlindemo://auth/callback",
                             issuer = "https://issuer.example",
                             projectId = "test-project-id",

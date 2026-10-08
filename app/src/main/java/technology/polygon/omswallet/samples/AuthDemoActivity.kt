@@ -503,7 +503,7 @@ class AuthDemoActivity : AppCompatActivity() {
                 requireActiveTronWallet()
                 val recipient = requireText(tronRecipientInput, "Recipient")
                 val amount = requireText(tronAmountInput, "Amount")
-                val statusPolling = TransactionStatusPollingOptions(timeoutMillis = 120_000L)
+                val statusPolling = TransactionStatusPollingOptions(timeoutMs = 120_000L)
                 val result =
                     when (val asset = selectedTronAsset) {
                         TronAsset.Trx -> {
@@ -535,7 +535,7 @@ class AuthDemoActivity : AppCompatActivity() {
                             // TRC-20 transfers are contract calls; the wallet service ABI-encodes the args.
                             sdk.wallet.callTronContract(
                                 network = TronNetwork.Nile,
-                                contract = contract,
+                                contractAddress = contract,
                                 method = "transfer",
                                 args =
                                     listOf(

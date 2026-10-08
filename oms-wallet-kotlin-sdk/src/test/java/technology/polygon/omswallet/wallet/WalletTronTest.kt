@@ -130,7 +130,7 @@ class WalletTronTest {
 
             client.callTronContract(
                 network = TronNetwork.Mainnet,
-                contract = TRON_NILE_USDT,
+                contractAddress = TRON_NILE_USDT,
                 method = "transfer",
                 args =
                     listOf(
@@ -156,7 +156,7 @@ class WalletTronTest {
                 runCatching {
                     tronWalletClient().callTronContract(
                         network = TronNetwork.Nile,
-                        contract = TRON_NILE_USDT,
+                        contractAddress = TRON_NILE_USDT,
                         method = "transfer(address,uint256)",
                     )
                 }.exceptionOrNull()
@@ -164,7 +164,7 @@ class WalletTronTest {
                 runCatching {
                     walletClient(testWallet("wallet-eth", ETHEREUM_ADDRESS)).callContract(
                         network = Network.AMOY,
-                        contract = ETHEREUM_ADDRESS,
+                        contractAddress = ETHEREUM_ADDRESS,
                         method = "transfer(address,uint256)",
                     )
                 }.exceptionOrNull()
@@ -329,7 +329,7 @@ class WalletTronTest {
             assertEquals("/v1/WaasPublic/IsValidTypedDataSignature", typedDataRequest.target)
             assertEquals(
                 parseJson(
-                    """{"networkFamily":"tron","walletId":"wallet-tron","typedData":{"primaryType":"Mail"},"signature":"0xsig"}""",
+                    """{"networkFamily":"tron","walletAddress":"$TRON_WALLET","typedData":{"primaryType":"Mail"},"signature":"0xsig"}""",
                 ),
                 typedDataRequest.jsonBody(),
             )

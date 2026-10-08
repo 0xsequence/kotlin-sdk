@@ -475,7 +475,7 @@ class PublicErrorContractsTest {
                     "wallet.callContract" to {
                         client.wallet.callContract(
                             network = Network.POLYGON,
-                            contract = "0x2222222222222222222222222222222222222222",
+                            contractAddress = "0x2222222222222222222222222222222222222222",
                             method = "transfer",
                             args =
                                 listOf(
@@ -734,6 +734,7 @@ class PublicErrorContractsTest {
                         client.wallet.isValidSolanaMessageSignature(
                             message = "hello",
                             signature = "solana-signature",
+                            walletAddress = "4Nd1mYQbqjVU2aR7cJNPyqW9XjHnBYvWQd7ZxYxvT6uP",
                         )
                     },
                 ),
@@ -772,6 +773,44 @@ class PublicErrorContractsTest {
                 ),
                 publicError {
                     client.getTransactionStatus("txn-missing")
+                },
+            )
+        }
+
+    @Test
+    fun snapshotsAddressAlreadyImportedBackendErrorAsStableCode() =
+        runBlocking {
+            // Wallet import responses require enclave attestation, so this uses another signed
+            // WaaS call; the WebRPC error mapping does not depend on the operation.
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(409)
+                    .body("""{"error":"AddressAlreadyImported","code":7313,"msg":"Address already imported","status":409}""")
+                    .build(),
+            )
+
+            val client = createRestoredWalletClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_WALLET_ADDRESS_ALREADY_IMPORTED",
+                    operation = "wallet.useWallet",
+                    message = "Address already imported",
+                    status = 409,
+                    retryable = false,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "AddressAlreadyImported",
+                            code = "7313",
+                            message = "Address already imported",
+                            status = 409,
+                        ),
+                ),
+                publicError {
+                    client.useWallet("wallet-imported")
                 },
             )
         }
