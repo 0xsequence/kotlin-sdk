@@ -44,6 +44,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.JsonPrimitive
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
@@ -52,9 +53,15 @@ import technology.polygon.omswallet.OMSWalletNetworks
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
+import technology.polygon.omswallet.TronNetwork
+import technology.polygon.omswallet.models.AbiArg
 import technology.polygon.omswallet.models.FeeOptionSelection
 import technology.polygon.omswallet.models.FeeOptionWithBalance
+import technology.polygon.omswallet.models.TransactionStatus
+import technology.polygon.omswallet.models.TransactionStatusPollingOptions
+import technology.polygon.omswallet.models.TronBalance
 import technology.polygon.omswallet.models.Wallet
+import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.utils.parseUnits
 import technology.polygon.omswallet.wallet.CompleteAuthResult
 import technology.polygon.omswallet.wallet.OidcRedirectAuthResult
@@ -108,11 +115,31 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var startAppleRedirectSignInButton: MaterialButton
     private lateinit var manualWalletSelectionCheckbox: MaterialCheckBox
     private lateinit var sessionLifetimeInput: TextInputEditText
+    private lateinit var walletTypeInput: AutoCompleteTextView
+    private lateinit var networkInputLayout: View
+    private lateinit var evmActionsContainer: View
+    private lateinit var tronActionsContainer: View
+    private lateinit var tronBalancesView: TextView
+    private lateinit var tronMessageInput: TextInputEditText
+    private lateinit var tronSignatureView: TextView
+    private lateinit var tronSignatureStatusView: TextView
+    private lateinit var tronAssetInput: AutoCompleteTextView
+    private lateinit var tronCustomTokenContainer: View
+    private lateinit var tronTokenContractInput: TextInputEditText
+    private lateinit var tronTokenDecimalsInput: TextInputEditText
+    private lateinit var tronRecipientInput: TextInputEditText
+    private lateinit var tronAmountLayout: com.google.android.material.textfield.TextInputLayout
+    private lateinit var tronAmountInput: TextInputEditText
+    private lateinit var tronTransactionHashView: TextView
+    private lateinit var tronTransactionStatusView: TextView
+    private lateinit var tronOpenExplorerButton: MaterialButton
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
     private var lastTransactionHash: String? = null
     private var selectedNetwork: Network = Network.AMOY
+    private var selectedTronAsset: TronAsset = TronAsset.Trx
+    private var lastTronTransactionHash: String? = null
     private var expiredSessionEvent: OMSWalletSessionExpiredEvent? = null
     private var unsubscribeSessionExpired: (() -> Unit)? = null
 
@@ -170,6 +197,24 @@ class AuthDemoActivity : AppCompatActivity() {
         startAppleRedirectSignInButton = findViewById(R.id.startAppleRedirectSignInButton)
         manualWalletSelectionCheckbox = findViewById(R.id.manualWalletSelectionCheckbox)
         sessionLifetimeInput = findViewById(R.id.sessionLifetimeInput)
+        walletTypeInput = findViewById(R.id.walletTypeInput)
+        networkInputLayout = findViewById(R.id.networkInputLayout)
+        evmActionsContainer = findViewById(R.id.evmActionsContainer)
+        tronActionsContainer = findViewById(R.id.tronActionsContainer)
+        tronBalancesView = findViewById(R.id.tronBalancesView)
+        tronMessageInput = findViewById(R.id.tronMessageInput)
+        tronSignatureView = findViewById(R.id.tronSignatureView)
+        tronSignatureStatusView = findViewById(R.id.tronSignatureStatusView)
+        tronAssetInput = findViewById(R.id.tronAssetInput)
+        tronCustomTokenContainer = findViewById(R.id.tronCustomTokenContainer)
+        tronTokenContractInput = findViewById(R.id.tronTokenContractInput)
+        tronTokenDecimalsInput = findViewById(R.id.tronTokenDecimalsInput)
+        tronRecipientInput = findViewById(R.id.tronRecipientInput)
+        tronAmountLayout = findViewById(R.id.tronAmountLayout)
+        tronAmountInput = findViewById(R.id.tronAmountInput)
+        tronTransactionHashView = findViewById(R.id.tronTransactionHashView)
+        tronTransactionStatusView = findViewById(R.id.tronTransactionStatusView)
+        tronOpenExplorerButton = findViewById(R.id.tronOpenExplorerButton)
     }
 
     private fun populateDefaults() {
@@ -177,6 +222,8 @@ class AuthDemoActivity : AppCompatActivity() {
         transactionToInput.setText("0xE5E8B483FfC05967FcFed58cc98D053265af6D99")
         restoreAuthPreferences()
         configureNetworkPicker()
+        configureWalletTypePicker()
+        configureTronAssetPicker()
         resetUiForNoSession()
     }
 
@@ -410,6 +457,207 @@ class AuthDemoActivity : AppCompatActivity() {
 
         copyWalletAddressButton.setOnClickListener {
             copyWalletAddress()
+        }
+
+        bindTronActions()
+    }
+
+    private fun bindTronActions() {
+        findViewById<MaterialButton>(R.id.tronRefreshBalancesButton).setOnClickListener {
+            refreshTronBalances()
+        }
+
+        findViewById<MaterialButton>(R.id.tronFaucetButton).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(NILE_FAUCET_URL)))
+        }
+
+        findViewById<MaterialButton>(R.id.tronSignMessageButton).setOnClickListener {
+            launchAction(
+                label = "Sign Tron message",
+                onStart = { tronSignatureStatusView.text = "Signature status: signing in progress..." },
+                onFailure = { tronSignatureStatusView.text = "Signature status: ${it.message ?: "signing failed"}" },
+            ) {
+                val message = requireText(tronMessageInput, "Message")
+                val walletAddress = requireActiveTronWallet().address
+                val signature = sdk.wallet.signTronMessage(message)
+                tronSignatureView.text = "Last signature: $signature"
+                tronSignatureStatusView.text = "Signature status: verifying..."
+                val valid =
+                    sdk.wallet.isValidTronMessageSignature(
+                        message = message,
+                        signature = signature,
+                        walletAddress = walletAddress,
+                    )
+                tronSignatureStatusView.text =
+                    if (valid) "Signature status: signed and verified." else "Signature status: verification failed."
+                appendLog("Tron message signed; isValid=$valid")
+            }
+        }
+
+        findViewById<MaterialButton>(R.id.tronSendButton).setOnClickListener {
+            launchAction(
+                label = "Send on Tron Nile",
+                onStart = { tronTransactionStatusView.text = "Transfer status: preparing transfer..." },
+                onFailure = { tronTransactionStatusView.text = "Transfer status: ${it.message ?: "send failed"}" },
+            ) {
+                requireActiveTronWallet()
+                val recipient = requireText(tronRecipientInput, "Recipient")
+                val amount = requireText(tronAmountInput, "Amount")
+                val statusPolling = TransactionStatusPollingOptions(timeoutMillis = 120_000L)
+                val result =
+                    when (val asset = selectedTronAsset) {
+                        TronAsset.Trx -> {
+                            sdk.wallet.sendTronTransaction(
+                                network = TronNetwork.Nile,
+                                to = recipient,
+                                value = parseUnits(amount, TRX_DECIMALS),
+                                statusPolling = statusPolling,
+                                selectFeeOption = ::selectFeeOption,
+                            )
+                        }
+
+                        TronAsset.Usdt, TronAsset.Custom -> {
+                            val contract =
+                                if (asset == TronAsset.Usdt) {
+                                    NILE_USDT_CONTRACT
+                                } else {
+                                    requireText(tronTokenContractInput, "Token contract")
+                                }
+                            val decimals =
+                                if (asset == TronAsset.Usdt) {
+                                    USDT_DECIMALS
+                                } else {
+                                    requireText(tronTokenDecimalsInput, "Token decimals")
+                                        .toIntOrNull()
+                                        ?.takeIf { it in 0..255 }
+                                        ?: error("Token decimals must be between 0 and 255")
+                                }
+                            // TRC-20 transfers are contract calls; the wallet service ABI-encodes the args.
+                            sdk.wallet.callTronContract(
+                                network = TronNetwork.Nile,
+                                contract = contract,
+                                method = "transfer",
+                                args =
+                                    listOf(
+                                        AbiArg(type = "address", value = JsonPrimitive(recipient)),
+                                        AbiArg(type = "uint256", value = JsonPrimitive(parseUnits(amount, decimals).toString())),
+                                    ),
+                                statusPolling = statusPolling,
+                                selectFeeOption = ::selectFeeOption,
+                            )
+                        }
+                    }
+                lastTronTransactionHash = result.txnHash
+                tronTransactionHashView.text = "Last tx hash: ${result.txnHash ?: result.txnId}"
+                tronTransactionStatusView.text =
+                    when (result.status) {
+                        TransactionStatus.Executed, TransactionStatus.Failed -> "Transfer status: transfer ${result.status}."
+                        else -> "Transfer status: Transaction submitted."
+                    }
+                tronOpenExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
+                appendLog("Tron transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
+                refreshTronBalances()
+            }
+        }
+
+        tronOpenExplorerButton.setOnClickListener {
+            val txnHash = lastTronTransactionHash ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$TRONSCAN_NILE_URL/transaction/$txnHash")))
+        }
+    }
+
+    private fun requireActiveTronWallet(): Wallet =
+        sdk.wallet.activeWallet?.takeIf { it.type == WalletType.Tron }
+            ?: error("Select a Tron wallet first")
+
+    private fun refreshTronBalances() {
+        val wallet = sdk.wallet.activeWallet?.takeIf { it.type == WalletType.Tron } ?: return
+        launchAction(
+            label = "Refresh Tron balances",
+            onStart = { tronBalancesView.text = "Nile TRX: loading...\nNile USDT: loading..." },
+            onFailure = { tronBalancesView.text = "Balances unavailable: ${it.message ?: "Unknown error"}" },
+        ) {
+            val result =
+                sdk.indexer.getTronBalances(
+                    walletAddress = wallet.address,
+                    networks = listOf(TronNetwork.Nile),
+                )
+            val trx = result.balances.firstOrNull { it is TronBalance.Native }
+            val usdt =
+                result.balances.firstOrNull {
+                    it is TronBalance.FungibleToken && it.contractAddress == NILE_USDT_CONTRACT
+                }
+            tronBalancesView.text =
+                buildString {
+                    appendLine("Nile TRX: ${trx?.formattedBalance ?: "0"} TRX")
+                    append("Nile USDT: ${usdt?.formattedBalance ?: "0"} USDT")
+                    result.errors.forEach { error ->
+                        append("\n${error.network.wireValue}: ${error.reason}")
+                    }
+                }
+        }
+    }
+
+    private fun configureWalletTypePicker() {
+        val labels = SELECTABLE_WALLET_TYPES.map(::walletTypeLabel)
+        walletTypeInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
+        walletTypeInput.setOnItemClickListener { _, _, position, _ ->
+            activateWalletType(SELECTABLE_WALLET_TYPES[position])
+        }
+    }
+
+    /** Uses the account's first wallet of [type], creating one when none exists. */
+    private fun activateWalletType(type: WalletType) {
+        if (sdk.wallet.activeWallet?.type == type) return
+        launchAction(
+            label = "Switch to ${walletTypeLabel(type)} wallet",
+            onStart = { authStatusView.text = "Switching to a ${walletTypeLabel(type)} wallet..." },
+            onFailure = { sdk.wallet.activeWallet?.let(::renderWalletPanels) },
+        ) {
+            val existing = sdk.wallet.listWallets().firstOrNull { it.type == type }
+            val result =
+                if (existing != null) {
+                    sdk.wallet.useWallet(existing.id)
+                } else {
+                    sdk.wallet.createWallet(walletType = type)
+                }
+            renderSignedInWallet(result.wallet, "${walletTypeLabel(type)} wallet ready")
+        }
+    }
+
+    private fun configureTronAssetPicker() {
+        val assets = TronAsset.entries
+        tronAssetInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, assets.map { it.label }))
+        tronAssetInput.setText(selectedTronAsset.label, false)
+        tronAssetInput.setOnItemClickListener { _, _, position, _ ->
+            selectedTronAsset = assets[position]
+            tronCustomTokenContainer.visibility =
+                if (selectedTronAsset == TronAsset.Custom) View.VISIBLE else View.GONE
+            tronAmountLayout.hint =
+                when (selectedTronAsset) {
+                    TronAsset.Trx -> "Amount (TRX)"
+                    TronAsset.Usdt -> "Amount (USDT)"
+                    TronAsset.Custom -> "Amount (token units)"
+                }
+        }
+    }
+
+    /** Shows the EVM or Tron actions that match the active wallet's stored type. */
+    private fun renderWalletPanels(wallet: Wallet) {
+        walletTypeInput.setText(walletTypeLabel(wallet.type), false)
+        val isEthereum = wallet.type == WalletType.Ethereum
+        val isTron = wallet.type == WalletType.Tron
+        networkInputLayout.visibility = if (isEthereum) View.VISIBLE else View.GONE
+        evmActionsContainer.visibility = if (isEthereum) View.VISIBLE else View.GONE
+        tronActionsContainer.visibility = if (isTron) View.VISIBLE else View.GONE
+        if (isTron) {
+            tronSignatureView.text = "Last signature: none"
+            tronSignatureStatusView.text = "Signature status: ready to sign."
+            tronTransactionHashView.text = "Last tx hash: none"
+            tronTransactionStatusView.text = "Transfer status: ready to send."
+            tronOpenExplorerButton.visibility = View.GONE
+            lastTronTransactionHash = null
+            refreshTronBalances()
         }
     }
 
@@ -872,7 +1120,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     addWalletSelectionRow(
                         title = shortWalletAddress(wallet.address),
                         subtitle = walletSelectionSubtitle(wallet),
-                        leadingText = "0x",
+                        leadingText = walletLeadingText(wallet.type),
                         topMargin = dp(8),
                     ) {
                         onChoice(ManualWalletChoice.Existing(wallet.id))
@@ -1033,6 +1281,14 @@ class AuthDemoActivity : AppCompatActivity() {
             wallet.id.takeIf { it.isNotBlank() },
         ).joinToString(" / ")
 
+    private fun walletLeadingText(type: WalletType): String =
+        when (type) {
+            WalletType.Ethereum -> "0x"
+            WalletType.Solana -> "SOL"
+            WalletType.Tron -> "T"
+            WalletType.UNKNOWN_DEFAULT -> "?"
+        }
+
     private fun shortWalletAddress(address: String): String =
         if (address.length > 18) {
             "${address.take(10)}...${address.takeLast(6)}"
@@ -1119,7 +1375,8 @@ class AuthDemoActivity : AppCompatActivity() {
         copyWalletAddressButton.visibility = View.VISIBLE
         signatureStatusView.text = "Signature status: ready to sign."
         transactionStatusView.text = "Transaction status: ready to send."
-        appendLog("Wallet ready: ${wallet.address}")
+        renderWalletPanels(wallet)
+        appendLog("Wallet ready: ${wallet.type.wireValue} ${wallet.address}")
     }
 
     private fun renderSessionState() {
@@ -1147,6 +1404,7 @@ class AuthDemoActivity : AppCompatActivity() {
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
         copyWalletAddressButton.visibility = View.VISIBLE
+        renderWalletPanels(activeWallet)
     }
 
     private fun renderExpiredSession(event: OMSWalletSessionExpiredEvent) {
@@ -1300,6 +1558,14 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
+    private enum class TronAsset(
+        val label: String,
+    ) {
+        Trx("TRX"),
+        Usdt("USDT (Nile)"),
+        Custom("Custom TRC-20"),
+    }
+
     private sealed interface ManualWalletChoice {
         data class Existing(
             val walletId: String,
@@ -1314,6 +1580,20 @@ class AuthDemoActivity : AppCompatActivity() {
         private const val AUTH_DEMO_MANUAL_WALLET_SELECTION_KEY = "manual_wallet_selection"
         private const val AUTH_DEMO_SESSION_LIFETIME_SECONDS_KEY = "session_lifetime_seconds"
         private val AUTH_DEMO_DEFAULT_SESSION_LIFETIME_SECONDS = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS.toString()
+        private val SELECTABLE_WALLET_TYPES = listOf(WalletType.Ethereum, WalletType.Tron)
+        private const val NILE_USDT_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+        private const val NILE_FAUCET_URL = "https://nileex.io/join/getJoinPage"
+        private const val TRONSCAN_NILE_URL = "https://nile.tronscan.org/#"
+        private const val TRX_DECIMALS = 6
+        private const val USDT_DECIMALS = 6
+
+        private fun walletTypeLabel(type: WalletType): String =
+            when (type) {
+                WalletType.Ethereum -> "Ethereum"
+                WalletType.Solana -> "Solana"
+                WalletType.Tron -> "Tron"
+                WalletType.UNKNOWN_DEFAULT -> type.wireValue
+            }
 
         private fun generateSecureRandomNonce(byteLength: Int = 32): String {
             val randomBytes = ByteArray(byteLength)
