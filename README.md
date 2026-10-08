@@ -766,9 +766,10 @@ which a fee selector receives like any other fee option. Tron transactions repor
 status polling stops once the hash is available.
 
 Use `getTronBalances` for TRX and TRC-20 balances. Omit `networks` to query both Tron
-Mainnet and Nile, or pass either network explicitly. Results have the same shape as
+Mainnet and Nile, or pass either network explicitly. Results have the same structure as
 `getSolanaBalances`: precision-safe raw and formatted balance strings, with TRC-20
-entries (`TronBalance.FungibleToken`) identified by `contractAddress`. Pass
+entries (`TronBalance.FungibleToken`) identified by `tokenStandard` and `contractAddress`
+where Solana tokens use `tokenProgram` and `mintAddress`. Pass
 `contractAddresses` or `excludedContractAddresses` to filter tokens. Individual network
 failures are reported in `errors` without discarding balances returned by the other
 requested network.

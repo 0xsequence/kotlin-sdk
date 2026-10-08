@@ -202,6 +202,8 @@ catch (error: OMSWalletRequestException) {
 `sort` properties (`SortBy`, `SortOrder`). Omitted request fields are not sent. A page response
 whose `sort` entries are malformed or use an order other than `DESC`/`ASC` now fails with
 `OMSWalletResponseException` (`OMS_INVALID_RESPONSE`); previously the SDK ignored those fields.
+Because these are data-class properties, `TokenBalancesPage` equality and `toString()` now include
+them.
 
 ### Wallet responses
 
