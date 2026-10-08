@@ -122,6 +122,35 @@ class WalletSignatureVerificationTest {
             assertEquals(0, server.requestCount)
         }
 
+    @Test
+    fun rejectsEmptyOrBlankWalletAddressBeforeAnyRequest() =
+        runBlocking {
+            val clients =
+                listOf(
+                    signedOutWalletClient(),
+                    activeWalletClient(testWallet("wallet-eth", ETHEREUM_ADDRESS, WalletType.Ethereum)),
+                )
+
+            clients.forEach { client ->
+                VerificationMethod.entries.forEach { method ->
+                    listOf("", "   ").forEach { walletAddress ->
+                        val failure = runCatching { method.verify(client, walletAddress) }.exceptionOrNull()
+
+                        assertTrue(
+                            "expected validation error for ${method.operation.id} with \"$walletAddress\", got $failure",
+                            failure is OMSWalletValidationException,
+                        )
+                        failure as OMSWalletValidationException
+                        assertEquals(OMSWalletErrorCode.ValidationError, failure.code)
+                        assertEquals(method.operation, failure.operation)
+                        assertEquals("walletAddress must not be empty", failure.message)
+                        assertNull(failure.upstreamError)
+                    }
+                }
+            }
+            assertEquals(0, server.requestCount)
+        }
+
     private enum class VerificationMethod(
         val walletType: WalletType,
         val address: String,

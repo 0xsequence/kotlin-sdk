@@ -1691,9 +1691,7 @@ class WalletClient private constructor(
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidMessageSignature) {
             gateway.isValidMessageSignature(
-                walletAddress =
-                    walletAddress
-                        ?: activeVerifierWalletAddress(WalletType.Ethereum, OMSWalletOperation.WalletIsValidMessageSignature),
+                walletAddress = verifierWalletAddress(walletAddress, WalletType.Ethereum, OMSWalletOperation.WalletIsValidMessageSignature),
                 network = network,
                 message = message,
                 signature = signature,
@@ -1713,8 +1711,11 @@ class WalletClient private constructor(
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidSolanaMessageSignature) {
             gateway.isValidSolanaMessageSignature(
                 walletAddress =
-                    walletAddress
-                        ?: activeVerifierWalletAddress(WalletType.Solana, OMSWalletOperation.WalletIsValidSolanaMessageSignature),
+                    verifierWalletAddress(
+                        walletAddress,
+                        WalletType.Solana,
+                        OMSWalletOperation.WalletIsValidSolanaMessageSignature,
+                    ),
                 message = message,
                 signature = signature,
             )
@@ -1735,8 +1736,11 @@ class WalletClient private constructor(
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidTypedDataSignature) {
             gateway.isValidTypedDataSignature(
                 walletAddress =
-                    walletAddress
-                        ?: activeVerifierWalletAddress(WalletType.Ethereum, OMSWalletOperation.WalletIsValidTypedDataSignature),
+                    verifierWalletAddress(
+                        walletAddress,
+                        WalletType.Ethereum,
+                        OMSWalletOperation.WalletIsValidTypedDataSignature,
+                    ),
                 network = network,
                 typedData = typedData,
                 signature = signature,
@@ -1783,9 +1787,7 @@ class WalletClient private constructor(
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidTronMessageSignature) {
             gateway.isValidTronMessageSignature(
-                walletAddress =
-                    walletAddress
-                        ?: activeVerifierWalletAddress(WalletType.Tron, OMSWalletOperation.WalletIsValidTronMessageSignature),
+                walletAddress = verifierWalletAddress(walletAddress, WalletType.Tron, OMSWalletOperation.WalletIsValidTronMessageSignature),
                 message = message,
                 signature = signature,
             )
@@ -1805,12 +1807,31 @@ class WalletClient private constructor(
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidTronTypedDataSignature) {
             gateway.isValidTronTypedDataSignature(
                 walletAddress =
-                    walletAddress
-                        ?: activeVerifierWalletAddress(WalletType.Tron, OMSWalletOperation.WalletIsValidTronTypedDataSignature),
+                    verifierWalletAddress(
+                        walletAddress,
+                        WalletType.Tron,
+                        OMSWalletOperation.WalletIsValidTronTypedDataSignature,
+                    ),
                 typedData = typedData,
                 signature = signature,
             )
         }
+
+    /**
+     * Returns the address to verify against: [walletAddress] when provided (it
+     * must not be blank), otherwise the active wallet's address.
+     */
+    private fun verifierWalletAddress(
+        walletAddress: String?,
+        walletType: WalletType,
+        operation: OMSWalletOperation,
+    ): String {
+        if (walletAddress != null) {
+            require(walletAddress.isNotBlank()) { "walletAddress must not be empty" }
+            return walletAddress
+        }
+        return activeVerifierWalletAddress(walletType, operation)
+    }
 
     /**
      * Returns the active wallet's address for signature verification. Requires an
