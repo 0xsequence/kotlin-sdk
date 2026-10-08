@@ -53,10 +53,12 @@ import technology.polygon.omswallet.OMSWalletNetworks
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
+import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.models.AbiArg
 import technology.polygon.omswallet.models.FeeOptionSelection
 import technology.polygon.omswallet.models.FeeOptionWithBalance
+import technology.polygon.omswallet.models.SolanaBalance
 import technology.polygon.omswallet.models.TransactionStatus
 import technology.polygon.omswallet.models.TransactionStatusPollingOptions
 import technology.polygon.omswallet.models.TronBalance
@@ -133,6 +135,25 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var tronTransactionHashView: TextView
     private lateinit var tronTransactionStatusView: TextView
     private lateinit var tronOpenExplorerButton: MaterialButton
+    private lateinit var solanaActionsContainer: View
+    private lateinit var solanaBalancesView: TextView
+    private lateinit var solanaRefreshBalancesButton: MaterialButton
+    private lateinit var solanaMessageInput: TextInputEditText
+    private lateinit var solanaSignMessageButton: MaterialButton
+    private lateinit var solanaSignatureView: TextView
+    private lateinit var solanaSignatureStatusView: TextView
+    private lateinit var solanaAssetInput: AutoCompleteTextView
+    private lateinit var solanaAssetHintView: TextView
+    private lateinit var solanaCustomTokenContainer: View
+    private lateinit var solanaTokenMintInput: TextInputEditText
+    private lateinit var solanaTokenDecimalsInput: TextInputEditText
+    private lateinit var solanaRecipientInput: TextInputEditText
+    private lateinit var solanaAmountLayout: com.google.android.material.textfield.TextInputLayout
+    private lateinit var solanaAmountInput: TextInputEditText
+    private lateinit var solanaSendButton: MaterialButton
+    private lateinit var solanaTransactionSignatureView: TextView
+    private lateinit var solanaTransactionStatusView: TextView
+    private lateinit var solanaOpenExplorerButton: MaterialButton
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
@@ -140,6 +161,9 @@ class AuthDemoActivity : AppCompatActivity() {
     private var selectedNetwork: Network = Network.AMOY
     private var selectedTronAsset: TronAsset = TronAsset.Trx
     private var lastTronTransactionHash: String? = null
+    private var selectedSolanaAsset: SolanaAsset = SolanaAsset.Sol
+    private var lastSolanaTransactionSignature: String? = null
+    private var isSolanaBusy: Boolean = false
     private var expiredSessionEvent: OMSWalletSessionExpiredEvent? = null
     private var unsubscribeSessionExpired: (() -> Unit)? = null
 
@@ -215,6 +239,25 @@ class AuthDemoActivity : AppCompatActivity() {
         tronTransactionHashView = findViewById(R.id.tronTransactionHashView)
         tronTransactionStatusView = findViewById(R.id.tronTransactionStatusView)
         tronOpenExplorerButton = findViewById(R.id.tronOpenExplorerButton)
+        solanaActionsContainer = findViewById(R.id.solanaActionsContainer)
+        solanaBalancesView = findViewById(R.id.solanaBalancesView)
+        solanaRefreshBalancesButton = findViewById(R.id.solanaRefreshBalancesButton)
+        solanaMessageInput = findViewById(R.id.solanaMessageInput)
+        solanaSignMessageButton = findViewById(R.id.solanaSignMessageButton)
+        solanaSignatureView = findViewById(R.id.solanaSignatureView)
+        solanaSignatureStatusView = findViewById(R.id.solanaSignatureStatusView)
+        solanaAssetInput = findViewById(R.id.solanaAssetInput)
+        solanaAssetHintView = findViewById(R.id.solanaAssetHintView)
+        solanaCustomTokenContainer = findViewById(R.id.solanaCustomTokenContainer)
+        solanaTokenMintInput = findViewById(R.id.solanaTokenMintInput)
+        solanaTokenDecimalsInput = findViewById(R.id.solanaTokenDecimalsInput)
+        solanaRecipientInput = findViewById(R.id.solanaRecipientInput)
+        solanaAmountLayout = findViewById(R.id.solanaAmountLayout)
+        solanaAmountInput = findViewById(R.id.solanaAmountInput)
+        solanaSendButton = findViewById(R.id.solanaSendButton)
+        solanaTransactionSignatureView = findViewById(R.id.solanaTransactionSignatureView)
+        solanaTransactionStatusView = findViewById(R.id.solanaTransactionStatusView)
+        solanaOpenExplorerButton = findViewById(R.id.solanaOpenExplorerButton)
     }
 
     private fun populateDefaults() {
@@ -224,6 +267,7 @@ class AuthDemoActivity : AppCompatActivity() {
         configureNetworkPicker()
         configureWalletTypePicker()
         configureTronAssetPicker()
+        configureSolanaAssetPicker()
         resetUiForNoSession()
     }
 
@@ -460,6 +504,7 @@ class AuthDemoActivity : AppCompatActivity() {
         }
 
         bindTronActions()
+        bindSolanaActions()
     }
 
     private fun bindTronActions() {
@@ -598,6 +643,214 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
+    private fun bindSolanaActions() {
+        solanaRefreshBalancesButton.setOnClickListener {
+            val wallet = activeSolanaWalletOrNull() ?: return@setOnClickListener
+            launchSolanaAction(label = "Refresh Solana balances") {
+                loadSolanaBalances(wallet)
+            }
+        }
+
+        findViewById<MaterialButton>(R.id.solanaViewWalletButton).setOnClickListener {
+            val address = activeSolanaWalletOrNull()?.address ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$SOLANA_EXPLORER_URL/address/$address?cluster=devnet")))
+        }
+
+        findViewById<MaterialButton>(R.id.solanaSolFaucetButton).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SOLANA_SOL_FAUCET_URL)))
+        }
+
+        findViewById<MaterialButton>(R.id.solanaUsdcFaucetButton).setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SOLANA_USDC_FAUCET_URL)))
+        }
+
+        solanaSignMessageButton.setOnClickListener {
+            launchSolanaAction(
+                label = "Sign Solana message",
+                onStart = {
+                    solanaSignatureView.text = "Last signature: none"
+                    solanaSignatureStatusView.text = "Signature status: signing in progress..."
+                },
+                onFailure = { solanaSignatureStatusView.text = "Signature status: ${it.message ?: "signing failed"}" },
+            ) {
+                val message = requireText(solanaMessageInput, "Message")
+                val walletAddress = requireActiveSolanaWallet().address
+                val signature = sdk.wallet.signSolanaMessage(message)
+                solanaSignatureView.text = "Last signature: $signature"
+                solanaSignatureStatusView.text = "Signature status: verifying..."
+                val valid =
+                    sdk.wallet.isValidSolanaMessageSignature(
+                        message = message,
+                        signature = signature,
+                        walletAddress = walletAddress,
+                    )
+                solanaSignatureStatusView.text =
+                    if (valid) "Signature status: signed and verified." else "Signature status: verification failed."
+                appendLog("Solana message signed; isValid=$valid")
+            }
+        }
+
+        solanaSendButton.setOnClickListener {
+            launchSolanaAction(
+                label = "Send on Solana Devnet",
+                onStart = {
+                    solanaTransactionStatusView.text = "Transfer status: preparing relayed transfer..."
+                    solanaTransactionSignatureView.text = "Last tx signature: none"
+                    solanaOpenExplorerButton.visibility = View.GONE
+                    lastSolanaTransactionSignature = null
+                },
+                onFailure = { solanaTransactionStatusView.text = "Transfer status: ${it.message ?: "send failed"}" },
+            ) {
+                val wallet = requireActiveSolanaWallet()
+                val recipient = requireText(solanaRecipientInput, "Recipient")
+                val amountText = requireText(solanaAmountInput, "Amount")
+                val (asset, decimals) =
+                    when (selectedSolanaAsset) {
+                        SolanaAsset.Sol -> {
+                            SOLANA_NATIVE_ASSET to SOL_DECIMALS
+                        }
+
+                        SolanaAsset.Usdc -> {
+                            DEVNET_USDC_MINT to USDC_DECIMALS
+                        }
+
+                        SolanaAsset.Custom -> {
+                            requireText(solanaTokenMintInput, "Token mint") to
+                                (
+                                    requireText(solanaTokenDecimalsInput, "Token decimals")
+                                        .toIntOrNull()
+                                        ?.takeIf { it in 0..255 }
+                                        ?: error("Token decimals must be between 0 and 255")
+                                )
+                        }
+                    }
+                val amount = parseUnits(amountText, decimals)
+                require(amount.signum() > 0) { "Amount must be greater than zero" }
+                val result =
+                    sdk.wallet.sendSolanaTransfer(
+                        network = SolanaNetwork.Devnet,
+                        asset = asset,
+                        to = recipient,
+                        amount = amount,
+                        statusPolling = TransactionStatusPollingOptions(timeoutMs = 120_000L),
+                        selectFeeOption = ::selectFeeOption,
+                    )
+                lastSolanaTransactionSignature = result.txnHash
+                solanaTransactionSignatureView.text = "Last tx signature: ${result.txnHash ?: result.txnId}"
+                solanaTransactionStatusView.text =
+                    when (result.status) {
+                        TransactionStatus.Executed, TransactionStatus.Failed -> "Transfer status: transfer ${result.status}."
+                        else -> "Transfer status: Transaction submitted."
+                    }
+                solanaOpenExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
+                appendLog("Solana transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
+                // The transfer already succeeded; a balance refresh failure only updates the balance view.
+                runCatching { loadSolanaBalances(wallet) }
+                    .onFailure { appendLog("!! Solana balance refresh failed: ${describeThrowable(it)}") }
+            }
+        }
+
+        solanaOpenExplorerButton.setOnClickListener {
+            val signature = lastSolanaTransactionSignature ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$SOLANA_EXPLORER_URL/tx/$signature?cluster=devnet")))
+        }
+    }
+
+    private fun activeSolanaWalletOrNull(): Wallet? = sdk.wallet.activeWallet?.takeIf { it.type == WalletType.Solana }
+
+    private fun requireActiveSolanaWallet(): Wallet = activeSolanaWalletOrNull() ?: error("Select a Solana wallet first")
+
+    /** Runs one Solana panel action at a time, disabling the panel's actions while it is busy. */
+    private fun launchSolanaAction(
+        label: String,
+        onStart: (() -> Unit)? = null,
+        onFailure: ((Throwable) -> Unit)? = null,
+        action: suspend () -> Unit,
+    ) {
+        if (isSolanaBusy) return
+        setSolanaBusy(true)
+        launchAction(label = label, onStart = onStart, onFailure = onFailure) {
+            try {
+                action()
+            } finally {
+                setSolanaBusy(false)
+            }
+        }
+    }
+
+    private fun setSolanaBusy(busy: Boolean) {
+        isSolanaBusy = busy
+        listOf(solanaRefreshBalancesButton, solanaSignMessageButton, solanaSendButton).forEach { it.isEnabled = !busy }
+        solanaAssetInput.isEnabled = !busy
+    }
+
+    /** Loads Devnet SOL and USDC balances; shows the indexer's Devnet error instead of zero balances. */
+    private suspend fun loadSolanaBalances(wallet: Wallet) {
+        solanaBalancesView.text = "Devnet SOL: loading...\nDevnet USDC: loading..."
+        try {
+            val result =
+                sdk.indexer.getSolanaBalances(
+                    walletAddress = wallet.address,
+                    networks = listOf(SolanaNetwork.Devnet),
+                    mintAddresses = listOf(DEVNET_USDC_MINT),
+                )
+            val networkError = result.errors.firstOrNull { it.network == SolanaNetwork.Devnet }
+            if (networkError != null) {
+                solanaBalancesView.text = "Balances unavailable: ${networkError.reason}"
+                return
+            }
+            val sol = result.balances.firstOrNull { it is SolanaBalance.Native }
+            val usdc =
+                result.balances.firstOrNull {
+                    it is SolanaBalance.FungibleToken && it.mintAddress == DEVNET_USDC_MINT
+                }
+            solanaBalancesView.text =
+                buildString {
+                    appendLine("Devnet SOL: ${sol?.formattedBalance ?: "0"} SOL")
+                    append("Devnet USDC: ${usdc?.formattedBalance ?: "0"} USDC")
+                }
+        } catch (throwable: Throwable) {
+            solanaBalancesView.text = "Balances unavailable: ${throwable.message ?: "Unknown error"}"
+            throw throwable
+        }
+    }
+
+    private fun configureSolanaAssetPicker() {
+        val assets = SolanaAsset.entries
+        solanaAssetInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, assets.map { it.label }))
+        solanaAssetInput.setText(selectedSolanaAsset.label, false)
+        solanaAssetInput.setOnItemClickListener { _, _, position, _ ->
+            val previous = selectedSolanaAsset
+            selectedSolanaAsset = assets[position]
+            renderSolanaAssetFields()
+            if ((previous == SolanaAsset.Sol) != (selectedSolanaAsset == SolanaAsset.Sol)) {
+                solanaAmountInput.setText(if (selectedSolanaAsset == SolanaAsset.Sol) "0.001" else "1")
+            }
+        }
+        renderSolanaAssetFields()
+    }
+
+    private fun renderSolanaAssetFields() {
+        solanaCustomTokenContainer.visibility =
+            if (selectedSolanaAsset == SolanaAsset.Custom) View.VISIBLE else View.GONE
+        solanaAmountLayout.hint =
+            when (selectedSolanaAsset) {
+                SolanaAsset.Sol -> "Amount (SOL)"
+                SolanaAsset.Usdc -> "Amount (USDC)"
+                SolanaAsset.Custom -> "Amount (token units)"
+            }
+        val tokenAccountHint =
+            "WaaS uses the recipient's associated token account when one exists. If one must be " +
+                "created, you choose how to pay the required account rent."
+        solanaAssetHintView.text =
+            when (selectedSolanaAsset) {
+                SolanaAsset.Sol -> ""
+                SolanaAsset.Usdc -> "USDC mint: $DEVNET_USDC_MINT\n$tokenAccountHint"
+                SolanaAsset.Custom -> tokenAccountHint
+            }
+        solanaAssetHintView.visibility = if (selectedSolanaAsset == SolanaAsset.Sol) View.GONE else View.VISIBLE
+    }
+
     private fun configureWalletTypePicker() {
         val labels = SELECTABLE_WALLET_TYPES.map(::walletTypeLabel)
         walletTypeInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
@@ -642,14 +895,25 @@ class AuthDemoActivity : AppCompatActivity() {
         }
     }
 
-    /** Shows the EVM or Tron actions that match the active wallet's stored type. */
+    /** Shows the EVM, Solana, or Tron actions that match the active wallet's stored type. */
     private fun renderWalletPanels(wallet: Wallet) {
         walletTypeInput.setText(walletTypeLabel(wallet.type), false)
         val isEthereum = wallet.type == WalletType.Ethereum
+        val isSolana = wallet.type == WalletType.Solana
         val isTron = wallet.type == WalletType.Tron
         networkInputLayout.visibility = if (isEthereum) View.VISIBLE else View.GONE
         evmActionsContainer.visibility = if (isEthereum) View.VISIBLE else View.GONE
+        solanaActionsContainer.visibility = if (isSolana) View.VISIBLE else View.GONE
         tronActionsContainer.visibility = if (isTron) View.VISIBLE else View.GONE
+        if (isSolana) {
+            solanaSignatureView.text = "Last signature: none"
+            solanaSignatureStatusView.text = "Signature status: ready to sign."
+            solanaTransactionSignatureView.text = "Last tx signature: none"
+            solanaTransactionStatusView.text = "Transfer status: ready to send."
+            solanaOpenExplorerButton.visibility = View.GONE
+            lastSolanaTransactionSignature = null
+            launchSolanaAction(label = "Refresh Solana balances") { loadSolanaBalances(wallet) }
+        }
         if (isTron) {
             tronSignatureView.text = "Last signature: none"
             tronSignatureStatusView.text = "Signature status: ready to sign."
@@ -1558,6 +1822,14 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
+    private enum class SolanaAsset(
+        val label: String,
+    ) {
+        Sol("SOL"),
+        Usdc("USDC (Devnet)"),
+        Custom("Custom SPL token"),
+    }
+
     private enum class TronAsset(
         val label: String,
     ) {
@@ -1580,7 +1852,14 @@ class AuthDemoActivity : AppCompatActivity() {
         private const val AUTH_DEMO_MANUAL_WALLET_SELECTION_KEY = "manual_wallet_selection"
         private const val AUTH_DEMO_SESSION_LIFETIME_SECONDS_KEY = "session_lifetime_seconds"
         private val AUTH_DEMO_DEFAULT_SESSION_LIFETIME_SECONDS = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS.toString()
-        private val SELECTABLE_WALLET_TYPES = listOf(WalletType.Ethereum, WalletType.Tron)
+        private val SELECTABLE_WALLET_TYPES = listOf(WalletType.Ethereum, WalletType.Solana, WalletType.Tron)
+        private const val SOLANA_NATIVE_ASSET = "SOL"
+        private const val DEVNET_USDC_MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+        private const val SOLANA_EXPLORER_URL = "https://explorer.solana.com"
+        private const val SOLANA_SOL_FAUCET_URL = "https://faucet.solana.com/"
+        private const val SOLANA_USDC_FAUCET_URL = "https://faucet.circle.com/"
+        private const val SOL_DECIMALS = 9
+        private const val USDC_DECIMALS = 6
         private const val NILE_USDT_CONTRACT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
         private const val NILE_FAUCET_URL = "https://nileex.io/join/getJoinPage"
         private const val TRONSCAN_NILE_URL = "https://nile.tronscan.org/#"
