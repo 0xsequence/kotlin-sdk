@@ -336,14 +336,10 @@ class AuthDemoActivity : AppCompatActivity() {
                 val email = requireEmailForSignIn()
                 val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
                 persistAuthPreferences()
-                if (sessionLifetimeSeconds == null) {
-                    sdk.wallet.startEmailAuth(email)
-                } else {
-                    sdk.wallet.startEmailAuth(
-                        email = email,
-                        sessionLifetimeSeconds = sessionLifetimeSeconds,
-                    )
-                }
+                sdk.wallet.startEmailAuth(
+                    email = email,
+                    sessionLifetimeSeconds = sessionLifetimeSeconds ?: WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
+                )
                 authStatusView.text =
                     buildString {
                         append("Code requested for ")
@@ -371,42 +367,22 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 val code = requireText(codeInput, "Verification code")
                 codeInput.text?.clear()
-                if (manualWalletSelectionCheckbox.isChecked) {
-                    when (
-                        val result =
-                            completePendingEmailAuth(
-                                code = code,
-                                walletSelection = WalletSelectionBehavior.Manual,
-                            )
-                    ) {
-                        is CompleteAuthResult.WalletSelection -> {
-                            completePendingWalletSelection(
-                                pendingSelection = result.pendingSelection,
-                                status = "Email login complete",
-                            )
-                        }
-
-                        is CompleteAuthResult.WalletSelected -> {
-                            renderSignedInWallet(result.wallet, "Email login complete")
-                        }
+                when (
+                    val result =
+                        sdk.wallet.completeEmailAuth(
+                            code = code,
+                            walletSelection = currentWalletSelectionBehavior(),
+                        )
+                ) {
+                    is CompleteAuthResult.WalletSelected -> {
+                        renderSignedInWallet(result.wallet, "Email login complete")
                     }
-                } else {
-                    when (
-                        val result =
-                            completePendingEmailAuth(
-                                code = code,
-                            )
-                    ) {
-                        is CompleteAuthResult.WalletSelected -> {
-                            renderSignedInWallet(result.wallet, "Email login complete")
-                        }
 
-                        is CompleteAuthResult.WalletSelection -> {
-                            completePendingWalletSelection(
-                                pendingSelection = result.pendingSelection,
-                                status = "Email login complete",
-                            )
-                        }
+                    is CompleteAuthResult.WalletSelection -> {
+                        completePendingWalletSelection(
+                            pendingSelection = result.pendingSelection,
+                            status = "Email login complete",
+                        )
                     }
                 }
             }
@@ -1246,32 +1222,14 @@ class AuthDemoActivity : AppCompatActivity() {
         val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
         persistAuthPreferences()
         val walletSelection = currentWalletSelectionBehavior()
-        return if (sessionLifetimeSeconds == null) {
-            sdk.wallet.signInWithOidcIdToken(
-                idToken = idToken,
-                issuer = DemoConfig.googleIssuer,
-                audience = DemoConfig.demoGoogleWebClientId,
-                walletSelection = walletSelection,
-            )
-        } else {
-            sdk.wallet.signInWithOidcIdToken(
-                idToken = idToken,
-                issuer = DemoConfig.googleIssuer,
-                audience = DemoConfig.demoGoogleWebClientId,
-                walletSelection = walletSelection,
-                sessionLifetimeSeconds = sessionLifetimeSeconds,
-            )
-        }
-    }
-
-    private suspend fun completePendingEmailAuth(
-        code: String,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-    ): CompleteAuthResult =
-        sdk.wallet.completeEmailAuth(
-            code = code,
+        return sdk.wallet.signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = DemoConfig.googleIssuer,
+            audience = DemoConfig.demoGoogleWebClientId,
             walletSelection = walletSelection,
+            sessionLifetimeSeconds = sessionLifetimeSeconds ?: WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
         )
+    }
 
     private suspend fun handleOidcRedirectCallbackFromPendingAuth(callbackUrl: String): OidcRedirectAuthResult =
         sdk.wallet.handleOidcRedirectCallback(callbackUrl = callbackUrl)
