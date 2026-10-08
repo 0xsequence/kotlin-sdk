@@ -44,7 +44,8 @@ val email = omsWallet.wallet.session?.auth?.email
 
 `OMSWalletSessionExpiredEvent` gained `wallet: Wallet?`, and its `session` is an
 `OMSWalletSession` without `walletAddress`. `wallet` is `null` when the credential expired while a
-manual wallet selection was still pending.
+manual wallet selection was still pending. `wallet` is the first constructor property, so code that
+creates or destructures the event positionally must account for it; prefer named arguments.
 
 ### One-time sign-in after upgrading
 
