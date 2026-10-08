@@ -38,6 +38,34 @@ class WalletImportCryptoTest {
     }
 
     @Test
+    fun tronImportsAcceptSecp256k1KeysAndRejectInvalidOnes() {
+        val hexKey = "0x" + "11".repeat(32)
+        assertArrayEquals(
+            hexKey.toByteArray(Charsets.UTF_8),
+            WalletImportCrypto.plaintext(WalletImportPrivateKey.Tron(" $hexKey\n")),
+        )
+        val one = ByteArray(32).also { it[31] = 1 }
+        assertArrayEquals(one, WalletImportCrypto.plaintext(WalletImportPrivateKey.TronBytes(one)))
+        assertEquals(technology.polygon.omswallet.models.WalletType.Tron, WalletImportPrivateKey.Tron(hexKey).walletType)
+
+        val invalidLength =
+            assertThrows(IllegalArgumentException::class.java) {
+                WalletImportCrypto.plaintext(WalletImportPrivateKey.Tron("TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL"))
+            }
+        assertEquals("Tron privateKey must be 32 bytes or 64 hexadecimal characters", invalidLength.message)
+        val outOfRange =
+            assertThrows(IllegalArgumentException::class.java) {
+                WalletImportCrypto.plaintext(WalletImportPrivateKey.TronBytes(ByteArray(32)))
+            }
+        assertEquals("Tron privateKey is outside the valid secp256k1 scalar range", outOfRange.message)
+        val wrongSize =
+            assertThrows(IllegalArgumentException::class.java) {
+                WalletImportCrypto.plaintext(WalletImportPrivateKey.TronBytes(ByteArray(31)))
+            }
+        assertEquals("Tron privateKey must contain exactly 32 bytes", wrongSize.message)
+    }
+
+    @Test
     fun canonicalBase64CoversPaddingAndRejectsNonCanonicalInputs() {
         listOf(
             byteArrayOf(0),

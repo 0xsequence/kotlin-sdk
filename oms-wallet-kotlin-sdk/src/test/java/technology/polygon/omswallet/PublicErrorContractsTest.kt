@@ -34,12 +34,14 @@ import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
 import technology.polygon.omswallet.wallet.StartOidcRedirectAuthResult
 import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
+import technology.polygon.omswallet.wallet.TEST_SESSION_EXPIRES_AT
 import technology.polygon.omswallet.wallet.TrackingCredentialSigner
 import technology.polygon.omswallet.wallet.WalletClient
 import technology.polygon.omswallet.wallet.WalletSelectionBehavior
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 import technology.polygon.omswallet.wallet.activeSessionSnapshot
 import technology.polygon.omswallet.wallet.completeAuthResponseBody
+import technology.polygon.omswallet.wallet.testWallet
 import technology.polygon.omswallet.wallet.walletFixture
 import java.io.IOException
 import java.math.BigInteger
@@ -474,7 +476,7 @@ class PublicErrorContractsTest {
                         client.wallet.callContract(
                             network = Network.POLYGON,
                             contract = "0x2222222222222222222222222222222222222222",
-                            method = "transfer(address,uint256)",
+                            method = "transfer",
                             args =
                                 listOf(
                                     AbiArg("address", JsonPrimitive("0x3333333333333333333333333333333333333333")),
@@ -1214,8 +1216,8 @@ class PublicErrorContractsTest {
                 sessionStore =
                     InMemorySessionStore(
                         OMSWalletSessionSnapshot(
-                            walletId = "wallet-main",
-                            walletAddress = "0x9999999999999999999999999999999999999999",
+                            wallet = testWallet("wallet-main", "0x9999999999999999999999999999999999999999"),
+                            expiresAt = TEST_SESSION_EXPIRES_AT,
                             signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                             auth = OMSWalletEmailSessionAuth(email = "user@example.com"),

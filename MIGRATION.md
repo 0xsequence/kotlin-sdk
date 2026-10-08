@@ -3,6 +3,88 @@
 This document records breaking changes and the steps to migrate between published
 versions of `io.github.0xsequence:oms-wallet-kotlin-sdk`.
 
+## 0.4.0
+
+### Active wallet replaces `walletAddress`
+
+`omsWallet.wallet.walletAddress` was removed. Read the active wallet from
+`omsWallet.wallet.activeWallet`, which is a `Wallet` (`id`, `type`, `address`, `reference`,
+`keyOrigin`) or `null` when signed out. Branch on `type` before passing the address to
+family-specific code:
+
+```kotlin
+// 0.3.x
+val address = omsWallet.wallet.walletAddress
+
+// 0.4.0
+val activeWallet = omsWallet.wallet.activeWallet
+if (activeWallet?.type == WalletType.Ethereum) {
+    val ethereumAddress = activeWallet.address
+}
+```
+
+The `walletAddress` property was also removed from `WalletSelectionResult` and
+`CompleteAuthResult.WalletSelected`. Use `result.wallet.address`. Code that creates or
+destructures these data classes positionally must drop the removed first component.
+
+### `session` is null when signed out
+
+`OMSWalletSessionState` was renamed to `OMSWalletSession`, and `omsWallet.wallet.session` is now
+`OMSWalletSession?`. Previously it returned an object whose fields were all `null` when signed
+out. The `walletAddress` property was removed, and `expiresAt` and `auth` are now non-null.
+`session` is non-null exactly when `activeWallet` is.
+
+```kotlin
+// 0.3.x
+val email = omsWallet.wallet.session.auth?.email
+
+// 0.4.0
+val email = omsWallet.wallet.session?.auth?.email
+```
+
+`OMSWalletSessionExpiredEvent` gained `wallet: Wallet?`, and its `session` is an
+`OMSWalletSession` without `walletAddress`. `wallet` is `null` when the credential expired while a
+manual wallet selection was still pending.
+
+### One-time sign-in after upgrading
+
+Saved sessions now record the full active wallet, including its type. Sessions saved by 0.3.x do
+not, so 0.4.0 discards them on load and users sign in once after upgrading.
+
+### Contract method names
+
+`callContract` (and the new `callTronContract`) now require `method` to be a bare function name
+such as `"transfer"`. The wallet service builds the signature from the `args` types and never
+accepted full signatures; the SDK now rejects values such as `"transfer(address,uint256)"` with
+`OMSWalletValidationException` before sending a request.
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.callContract(network, contract, method = "transfer(address,uint256)", args = args)
+
+// 0.4.0
+omsWallet.wallet.callContract(network, contract, method = "transfer", args = args)
+```
+
+### Wallet responses
+
+Ethereum wallet addresses returned by the wallet API must be `0x` followed by 40 hexadecimal
+characters (checksum casing is not enforced). Other values fail with `OMSWalletResponseException`
+(`OMS_INVALID_RESPONSE`). Wallet-family checks now use the wallet's stored type instead of the
+address shape.
+
+### Exhaustive `when` expressions
+
+These public enums gained cases. Update exhaustive `when` expressions over them:
+
+- `WalletType.Tron`
+- `OMSWalletOperation.WalletSignTronMessage`, `WalletSignTronTypedData`,
+  `WalletIsValidTronMessageSignature`, `WalletIsValidTronTypedDataSignature`,
+  `WalletSendTronTransaction`, `WalletCallTronContract`, and `IndexerGetTronBalances`
+
+`WalletImportPrivateKey` also gained the `Tron` and `TronBytes` subtypes; exhaustive `when`
+expressions over it need branches for them.
+
 ## 0.3.0
 
 ### Wallet types and key origin

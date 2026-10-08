@@ -65,7 +65,7 @@ class WalletOidcIdTokenAuthTest {
                                     sub = "google-sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -73,8 +73,13 @@ class WalletOidcIdTokenAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -143,11 +148,11 @@ class WalletOidcIdTokenAuthTest {
                 ),
                 requireNotNull(useWalletRequest.body).utf8(),
             )
-            assertEquals("0xdef", wallet.address)
-            assertEquals("0xdef", client.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", wallet.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", client.activeWallet?.address)
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
-            assertEquals("0xdef", store.snapshot?.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertOidcSessionAuth(store.snapshot?.auth, flow = OMSWalletOidcSessionAuthFlow.IdToken)
             assertEquals(WalletSigningAlgorithm.ECDSA_P256_SHA256, store.snapshot?.signerKeyType)
@@ -180,7 +185,7 @@ class WalletOidcIdTokenAuthTest {
                                     sub = "custom-sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-custom-oidc", "0xcustomoidc", "picked")),
+                            wallets = listOf(walletFixture("wallet-custom-oidc", "0xc0de000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -188,8 +193,13 @@ class WalletOidcIdTokenAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-custom-oidc", address = "0xcustomoidc", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-custom-oidc",
+                            address = "0xc0de000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val store = InMemorySessionStore()
@@ -247,7 +257,7 @@ class WalletOidcIdTokenAuthTest {
                                     iss = "https://accounts.google.com",
                                     sub = "google-sub-123",
                                 ),
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -255,8 +265,13 @@ class WalletOidcIdTokenAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -355,7 +370,7 @@ class WalletOidcIdTokenAuthTest {
                                     sub = "google-sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -391,7 +406,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals(WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-def"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(client.hasPendingSignIn)
             assertOidcSessionAuth(client.snapshotSession()?.auth, flow = OMSWalletOidcSessionAuthFlow.IdToken)
             assertNull(client.snapshotSession()?.walletId)
@@ -423,7 +438,7 @@ class WalletOidcIdTokenAuthTest {
                                     sub = "google-sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -431,8 +446,13 @@ class WalletOidcIdTokenAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val redirectStore = InMemoryOidcRedirectAuthStore(pendingOidcRedirectAuthFixture())
@@ -459,7 +479,7 @@ class WalletOidcIdTokenAuthTest {
                 )
             val wallet = (result as CompleteAuthResult.WalletSelected).wallet
 
-            assertEquals("0xdef", wallet.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", wallet.address)
             assertNull(redirectStore.pending)
             assertEquals(1, redirectStore.clearCalls)
         }
@@ -488,7 +508,7 @@ class WalletOidcIdTokenAuthTest {
                                     sub = "google-sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -496,8 +516,13 @@ class WalletOidcIdTokenAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val activeSession = activeSessionSnapshot()
@@ -531,9 +556,9 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
-            assertEquals("0xdef", wallet.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", wallet.address)
             assertEquals("wallet-def", client.snapshotSession()?.walletId)
-            assertEquals("0xdef", store.snapshot?.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", store.snapshot?.walletAddress)
         }
 
     @Test
@@ -588,7 +613,7 @@ class WalletOidcIdTokenAuthTest {
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(client.signerAddress)
             assertNull(store.snapshot)
             assertEquals(0, store.saveCalls)
@@ -637,7 +662,7 @@ class WalletOidcIdTokenAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(store.snapshot)
             assertEquals(0, store.saveCalls)
             assertFalse(signer.hasCredential())

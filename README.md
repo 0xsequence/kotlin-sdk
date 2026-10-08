@@ -89,7 +89,8 @@ under `technology.polygon.omswallet`:
 
 - `technology.polygon.omswallet`: the `OMSWallet` entry point, `Network`,
   `OMSWalletException`, `OMSWalletErrorCode`, `OMSWalletOperation`, and the
-  session types (`OMSWalletSessionState`, `OMSWalletSessionAuth`, and related).
+  session types (`OMSWalletSession`, `OMSWalletSessionAuth`, and related), and the
+  Solana and Tron network enums (`SolanaNetwork`, `TronNetwork`).
 - `technology.polygon.omswallet.wallet`: auth and wallet-action results such as
   `CompleteAuthResult`, `PendingWalletSelection`, and `OidcRedirectAuthResult`,
   plus OIDC provider configuration.
@@ -317,13 +318,22 @@ when (
 Useful state checks:
 
 ```kotlin
-val walletAddress = omsWallet.wallet.session.walletAddress
-val expiresAt = omsWallet.wallet.session.expiresAt
-val auth = omsWallet.wallet.session.auth
-val authEmail = auth?.email
+val activeWallet = omsWallet.wallet.activeWallet // Wallet? (null when signed out)
+val session = omsWallet.wallet.session // OMSWalletSession? (null when signed out)
+val expiresAt = session?.expiresAt
+val authEmail = session?.auth?.email
+
+when (activeWallet?.type) {
+    WalletType.Ethereum -> println("EVM address ${activeWallet.address}")
+    WalletType.Solana -> println("Solana address ${activeWallet.address}")
+    WalletType.Tron -> println("Tron address ${activeWallet.address}")
+    else -> println("Signed out")
+}
 ```
 
-`expiresAt` is an ISO-8601 timestamp string returned by the wallet API. OIDC
+`activeWallet` has the same shape as `listWallets()` entries (`id`, `type`,
+`address`, `reference`, `keyOrigin`). `session` is non-null exactly when
+`activeWallet` is. `expiresAt` is an ISO-8601 timestamp string returned by the wallet API. OIDC
 sessions include issuer/provider metadata on `OMSWalletOidcSessionAuth`, so apps
 can display built-in Google and Apple sessions by provider label.
 
@@ -334,9 +344,14 @@ method result that started the flow, not from session state.
 Always pass incoming app links to `handleOidcRedirectCallback`. If it returns
 `NoPendingAuth`, show sign-in UI and let the user start again.
 
-A fresh SDK instance restores completed wallet sessions, including the session
-expiry and auth metadata returned by the wallet API, but not email OTP pending
-state.
+A fresh SDK instance restores completed wallet sessions, including the full active
+wallet and the session expiry and auth metadata returned by the wallet API, but not
+email OTP pending state. Sessions saved by SDK 0.3.x do not record the wallet type,
+so they are discarded on load and users sign in once after upgrading.
+
+`onSessionExpired` events carry the expired `session` and the `wallet` that was
+active, or a null `wallet` when the credential expired while a manual wallet
+selection was still pending.
 
 Completed auth requests ask the wallet API for a one-week session lifetime by
 default. For email auth, pass `sessionLifetimeSeconds` to `startEmailAuth`; the
@@ -384,9 +399,10 @@ val imported =
 println(imported.wallet.keyOrigin == WalletKeyOrigin.Imported)
 ```
 
-Ethereum imports accept a 32-byte raw scalar or 64 hexadecimal digits, optionally prefixed with
-`0x`. Solana imports accept a 32-byte seed or 64-byte keypair as raw bytes, or the base58 encoding
-of either. The SDK does not persist plaintext imported keys. For
+Ethereum and Tron imports (`WalletImportPrivateKey.Ethereum`/`EthereumBytes` and
+`WalletImportPrivateKey.Tron`/`TronBytes`) accept the same secp256k1 key format: a 32-byte raw
+scalar or 64 hexadecimal digits, optionally prefixed with `0x`. Solana imports accept a 32-byte
+seed or 64-byte keypair as raw bytes, or the base58 encoding of either. The SDK does not persist plaintext imported keys. For
 caller-managed HPKE, use `getWalletImportRecipientKey` followed by `importEncryptedWallet`; both
 responses remain attestation verified.
 
@@ -511,7 +527,7 @@ human-entered decimal values before sending. Import the helpers from
 ### Query Balances
 
 ```kotlin
-val walletAddress = requireNotNull(omsWallet.wallet.walletAddress)
+val walletAddress = requireNotNull(omsWallet.wallet.activeWallet).address
 
 val tokenBalances = omsWallet.indexer.getBalances(
     walletAddress = walletAddress,
@@ -570,13 +586,16 @@ val txResult = omsWallet.wallet.sendTransaction(
 )
 ```
 
-For ABI-style contract calls, use `callContract`:
+For ABI-style contract calls, use `callContract`. Pass the bare function name as
+`method` (for example `"transfer"`, not `"transfer(address,uint256)"`); the wallet
+service builds the signature from the `args` types, and the SDK rejects full
+signatures with `OMSWalletValidationException` before sending a request:
 
 ```kotlin
 val txResult = omsWallet.wallet.callContract(
     network = network,
     contract = "0x3333333333333333333333333333333333333333",
-    method = "transfer(address,uint256)",
+    method = "transfer",
     args =
         listOf(
             AbiArg(type = "address", value = JsonPrimitive("0x1111111111111111111111111111111111111111")),
@@ -623,7 +642,7 @@ val txResult = omsWallet.wallet.sendTransaction(
 ```
 
 The selector receives `FeeOptionWithBalance` values. For Ethereum fees, `balance`
-contains the matching `TokenBalance` when available. For both Ethereum and Solana
+contains the matching `TokenBalance` when available. For Ethereum, Solana, and Tron
 fees, `available` is formatted with the token decimals, while `availableRaw` keeps
 the raw integer value. `decimals` is exposed as `Int?`, allowing
 `FeeOptionSelector.firstAvailable` to select the first affordable option on either
@@ -653,10 +672,89 @@ val result =
     )
 ```
 
+### Tron Wallets
+
+Tron wallets are EOAs and always execute in native mode, so the Tron methods take no
+`mode` parameter. Create one with `createWallet(walletType = WalletType.Tron)`, sign in
+with `walletType = WalletType.Tron`, or import a secp256k1 private key with
+`WalletImportPrivateKey.Tron`. Tron addresses are Base58Check strings (`T…`). Supported
+networks are `TronNetwork.Mainnet` (`tron:mainnet`) and `TronNetwork.Nile`
+(`tron:nile`). TRC-10 tokens are not supported. Tron wallets are rejected by the EVM,
+Solana, and smart-session methods (and vice versa) with `OMSWalletValidationException`
+before any request, based on the stored wallet type.
+
+```kotlin
+val wallet = omsWallet.wallet.createWallet(walletType = WalletType.Tron).wallet
+
+val signature = omsWallet.wallet.signTronMessage("some message to sign")
+val isValid =
+    omsWallet.wallet.isValidTronMessageSignature(
+        message = "some message to sign",
+        signature = signature,
+        walletAddress = wallet.address,
+    )
+
+// TRX transfer. Values are in sun (1 TRX = 1,000,000 sun).
+val trxTransfer =
+    omsWallet.wallet.sendTronTransaction(
+        network = TronNetwork.Nile,
+        to = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+        value = java.math.BigInteger("1000000"),
+    )
+
+// TRC-20 transfer. The wallet service ABI-encodes the call; address arguments accept `T…`.
+val trc20Transfer =
+    omsWallet.wallet.callTronContract(
+        network = TronNetwork.Nile,
+        contract = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+        method = "transfer",
+        args =
+            listOf(
+                AbiArg(type = "address", value = JsonPrimitive("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")),
+                AbiArg(type = "uint256", value = JsonPrimitive("1000000")),
+            ),
+    )
+```
+
+`signTronTypedData` and `isValidTronTypedDataSignature` sign and verify TIP-712 typed
+data, whose address values may be Base58Check. The verification methods accept an
+optional `walletAddress` or `walletId`; when both are omitted they verify against the
+active wallet.
+
+Omitting `data` from `sendTronTransaction` sends a plain TRX transfer. Passing `data`,
+even `"0x"`, makes the transaction a contract call: `"0x"` calls the recipient
+contract's payable fallback.
+
+Every Tron account gets a daily free bandwidth allowance (600 points, about two TRX
+transfers), so prepared Tron transactions are often sponsored even without a relayer.
+When the allowance is spent, WaaS quotes the TRX to burn as a single native fee option,
+which a fee selector receives like any other fee option. Tron transactions report
+`TransactionStatus.Pending` with a `txnHash` until they solidify (about one minute);
+status polling stops once the hash is available.
+
+Use `getTronBalances` for TRX and TRC-20 balances. Omit `networks` to query both Tron
+Mainnet and Nile, or pass either network explicitly. Results have the same shape as
+`getSolanaBalances`: precision-safe raw and formatted balance strings, with TRC-20
+entries (`TronBalance.FungibleToken`) identified by `contractAddress`. Pass
+`contractAddresses` or `excludedContractAddresses` to filter tokens. Individual network
+failures are reported in `errors` without discarding balances returned by the other
+requested network.
+
+```kotlin
+val balances =
+    omsWallet.indexer.getTronBalances(
+        walletAddress = wallet.address,
+        networks = listOf(TronNetwork.Nile),
+    )
+balances.balances.forEach { balance ->
+    println("${balance.network} ${balance.symbol} ${balance.formattedBalance}")
+}
+```
+
 ## Reference
 
-When upgrading from `0.2.0`, see [MIGRATION.md](./MIGRATION.md) for the breaking changes in
-`0.3.0`.
+When upgrading from an earlier version, see [MIGRATION.md](./MIGRATION.md) for the breaking
+changes in `0.3.0` and `0.4.0`.
 
 ### Errors
 

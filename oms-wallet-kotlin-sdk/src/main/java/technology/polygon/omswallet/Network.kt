@@ -12,6 +12,19 @@ object SolanaNetworks {
     val MAINNET: SolanaNetwork = SolanaNetwork.Mainnet
 }
 
+/** A Tron network supported by the OMS Wallet Tron APIs. */
+enum class TronNetwork(
+    val wireValue: String,
+) {
+    Mainnet("tron:mainnet"),
+    Nile("tron:nile"),
+}
+
+object TronNetworks {
+    val MAINNET: TronNetwork = TronNetwork.Mainnet
+    val NILE: TronNetwork = TronNetwork.Nile
+}
+
 /**
  * A network supported by the OMS Wallet SDK.
  *

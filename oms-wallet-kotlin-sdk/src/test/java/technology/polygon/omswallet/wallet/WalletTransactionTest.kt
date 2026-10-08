@@ -67,8 +67,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -84,7 +84,7 @@ class WalletTransactionTest {
                         network = Network.AMOY,
                         request =
                             SendTransactionRequest(
-                                to = "0xabc",
+                                to = "0xabc0000000000000000000000000000000000000",
                                 value = BigInteger.ONE.negate(),
                             ),
                     )
@@ -219,8 +219,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -238,7 +238,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                             data = "0x1234",
                             mode = TransactionMode.Native,
@@ -273,7 +273,7 @@ class WalletTransactionTest {
                     technology.polygon.omswallet.internal.generated.waas.PrepareEthereumTransactionRequest(
                         walletId = "wallet-main",
                         network = "80002",
-                        to = "0xabc",
+                        to = "0xabc0000000000000000000000000000000000000",
                         value = "0",
                         data = "0x1234",
                         mode = WaasTransactionMode.Native,
@@ -344,7 +344,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                     waitForStatus = false,
@@ -396,7 +396,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                     waitForStatus = false,
@@ -437,7 +437,7 @@ class WalletTransactionTest {
             val result =
                 client.sendTransaction(
                     network = Network.AMOY,
-                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                     waitForStatus = false,
                     selectFeeOption = FeeOptionSelector.firstAvailable,
                 )
@@ -469,7 +469,7 @@ class WalletTransactionTest {
                 runCatching {
                     client.sendTransaction(
                         network = Network.AMOY,
-                        request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                        request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                         selectFeeOption =
                             FeeOptionSelector { feeOptions ->
                                 assertTrue(feeOptions.isEmpty())
@@ -501,7 +501,7 @@ class WalletTransactionTest {
                         network = Network.AMOY,
                         request =
                             SendTransactionRequest(
-                                to = "0xabc",
+                                to = "0xabc0000000000000000000000000000000000000",
                                 value = BigInteger.ZERO,
                             ),
                         waitForStatus = false,
@@ -549,7 +549,7 @@ class WalletTransactionTest {
                         network = Network.AMOY,
                         request =
                             SendTransactionRequest(
-                                to = "0xabc",
+                                to = "0xabc0000000000000000000000000000000000000",
                                 value = BigInteger.ZERO,
                             ),
                         waitForStatus = false,
@@ -607,7 +607,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                     waitForStatus = false,
@@ -671,7 +671,7 @@ class WalletTransactionTest {
                         network = Network.AMOY,
                         request =
                             SendTransactionRequest(
-                                to = "0xabc",
+                                to = "0xabc0000000000000000000000000000000000000",
                                 value = BigInteger.ZERO,
                             ),
                         waitForStatus = false,
@@ -742,8 +742,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -759,7 +759,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                 )
@@ -801,8 +801,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -818,7 +818,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                 )
@@ -893,8 +893,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -910,7 +910,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                     statusPolling =
@@ -945,7 +945,7 @@ class WalletTransactionTest {
             val result =
                 client.sendTransaction(
                     network = Network.AMOY,
-                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                     statusPolling =
                         TransactionStatusPollingOptions(
                             fastPollCount = 0,
@@ -977,7 +977,7 @@ class WalletTransactionTest {
             val result =
                 client.sendTransaction(
                     network = Network.AMOY,
-                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                     statusPolling = TransactionStatusPollingOptions(timeoutMillis = 0L),
                 )
 
@@ -1013,7 +1013,7 @@ class WalletTransactionTest {
                     runCatching {
                         client.sendTransaction(
                             network = Network.AMOY,
-                            request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                            request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                             statusPolling = options,
                         )
                     }.exceptionOrNull() as OMSWalletException
@@ -1073,8 +1073,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -1093,7 +1093,7 @@ class WalletTransactionTest {
                 client.callContract(
                     network = Network.AMOY,
                     contract = "0xcontract",
-                    method = "transfer(address,uint256)",
+                    method = "transfer",
                     args = args,
                     mode = TransactionMode.Native,
                 )
@@ -1111,7 +1111,7 @@ class WalletTransactionTest {
                         walletId = "wallet-main",
                         network = "80002",
                         contract = "0xcontract",
-                        method = "transfer(address,uint256)",
+                        method = "transfer",
                         args = args.map { WaasAbiArg(type = it.type, value = it.value) },
                         mode = WaasTransactionMode.Native,
                     ),
@@ -1151,8 +1151,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -1208,8 +1208,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -1241,6 +1241,7 @@ class WalletTransactionTest {
                 restoredWalletClient(
                     nonceValue = "1710000120",
                     walletAddress = "3gFktQX6vki5M2DzN8Y1ESPUJ4fJ8o6hVQWf8vYvPypD",
+                    walletType = technology.polygon.omswallet.models.WalletType.Solana,
                 )
 
             val signature = client.signSolanaMessage("hello")
@@ -1348,6 +1349,7 @@ class WalletTransactionTest {
                 restoredWalletClient(
                     nonceValue = "1710000121",
                     walletAddress = walletAddress,
+                    walletType = technology.polygon.omswallet.models.WalletType.Solana,
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -1397,6 +1399,7 @@ class WalletTransactionTest {
     private fun restoredWalletClient(
         nonceValue: String,
         walletAddress: String = "0xwallet",
+        walletType: technology.polygon.omswallet.models.WalletType = technology.polygon.omswallet.models.WalletType.Ethereum,
         environment: OMSWalletEnvironment =
             OMSWalletEnvironment(
                 walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -1413,8 +1416,8 @@ class WalletTransactionTest {
                     InMemorySessionStore(
                         snapshot =
                             OMSWalletSessionSnapshot(
-                                walletId = "wallet-main",
-                                walletAddress = walletAddress,
+                                wallet = testWallet("wallet-main", walletAddress, walletType),
+                                expiresAt = TEST_SESSION_EXPIRES_AT,
                                 signerAddress = TEST_CREDENTIAL_ID,
                                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 auth = emailSessionAuth(),

@@ -19,10 +19,16 @@ import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletUpstreamService
 import technology.polygon.omswallet.SolanaNetwork
+import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.models.SolanaBalance
 import technology.polygon.omswallet.models.TokenBalancesPageRequest
+import technology.polygon.omswallet.models.TronBalance
+import technology.polygon.omswallet.models.TronTokenStandard
+import technology.polygon.omswallet.models.TronVerificationStatus
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+import technology.polygon.omswallet.wallet.TEST_SESSION_EXPIRES_AT
+import technology.polygon.omswallet.wallet.testWallet
 
 class ServiceClientsTest {
     private lateinit var server: MockWebServer
@@ -69,8 +75,8 @@ class ServiceClientsTest {
                 )
             client.wallet.restoreSession(
                 OMSWalletSessionSnapshot(
-                    walletId = "wallet-id",
-                    walletAddress = "0xwallet",
+                    wallet = testWallet("wallet-id", "0xwallet"),
+                    expiresAt = TEST_SESSION_EXPIRES_AT,
                     auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
                 ),
             )
@@ -267,6 +273,169 @@ class ServiceClientsTest {
         }
 
     @Test
+    fun getTronBalancesUsesTronGatewayAndDecodesAssets() =
+        runBlocking {
+            // Mirrors the live dev gateway response, including the extra coverage fields.
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """
+                        {
+                          "balances": [
+                            {"network":"tron:nile","accountAddress":"$TRON_WALLET","assetType":"fungible-token","contractAddress":"$TRON_NILE_USDT","tokenStandard":"trc20","name":"Tether USD","symbol":"USDT","decimals":6,"balance":"999000000","formattedBalance":"999","imageUrl":null,"metadataUri":"","verificationStatus":"unknown","verificationSource":"none","priceUSD":null,"balanceUSD":null},
+                            {"network":"tron:nile","accountAddress":"$TRON_WALLET","assetType":"native","contractAddress":null,"tokenStandard":null,"name":"Tron","symbol":"TRX","decimals":6,"balance":"983121000","formattedBalance":"983.121","imageUrl":"https://example.com/trx.png","verificationStatus":"verified","verificationSource":"tronscan","priceUSD":"0.25","balanceUSD":"245.78"}
+                          ],
+                          "errors": [{"network":"tron:mainnet","reason":"gateway unavailable"}],
+                          "coverage": {"network":"tron:nile","tokenSymbols":["USDT"],"nativeIncluded":true},
+                          "coverages": [{"network":"tron:nile","tokenSymbols":["USDT"],"nativeIncluded":true}]
+                        }
+                        """.trimIndent(),
+                    ).build(),
+            )
+            val client = IndexerClient.create("test-publishable-key", tronEnvironment(), OMSWalletHttpClient())
+
+            val result =
+                client.getTronBalances(
+                    walletAddress = TRON_WALLET,
+                    networks = listOf(TronNetwork.Nile),
+                    includeMetadata = false,
+                    omitNativeBalances = false,
+                    contractAddresses = listOf(TRON_NILE_USDT),
+                    excludedContractAddresses = listOf("TSpamToken"),
+                )
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals("/v1/TronIndexerGateway/GetTokenBalancesDetails", request.target)
+            assertEquals("test-publishable-key", request.headers["Api-Key"])
+            assertEquals("webrpc@v0.31.2;gen-kotlin@v0.3.2;tron-indexer-gateway@v1", request.headers["Webrpc"])
+            assertEquals(
+                "{\"networks\":[\"tron:nile\"],\"filter\":{\"accountAddresses\":[\"$TRON_WALLET\"]," +
+                    "\"omitNativeBalances\":false,\"contractWhitelist\":[\"$TRON_NILE_USDT\"]," +
+                    "\"contractBlacklist\":[\"TSpamToken\"]},\"omitMetadata\":true}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals(200, result.status)
+            assertEquals(
+                TronBalance.FungibleToken(
+                    network = TronNetwork.Nile,
+                    accountAddress = TRON_WALLET,
+                    tokenStandard = TronTokenStandard.Trc20,
+                    contractAddress = TRON_NILE_USDT,
+                    name = "Tether USD",
+                    symbol = "USDT",
+                    decimals = 6,
+                    balance = "999000000",
+                    formattedBalance = "999",
+                    imageUrl = null,
+                    metadataUri = null,
+                    verificationStatus = TronVerificationStatus.Unknown,
+                    verificationSource = "none",
+                    priceUSD = null,
+                    balanceUSD = null,
+                ),
+                result.balances[0],
+            )
+            assertEquals(
+                TronBalance.Native(
+                    network = TronNetwork.Nile,
+                    accountAddress = TRON_WALLET,
+                    name = "Tron",
+                    symbol = "TRX",
+                    decimals = 6,
+                    balance = "983121000",
+                    formattedBalance = "983.121",
+                    imageUrl = "https://example.com/trx.png",
+                    metadataUri = null,
+                    verificationStatus = TronVerificationStatus.Verified,
+                    verificationSource = "tronscan",
+                    priceUSD = "0.25",
+                    balanceUSD = "245.78",
+                ),
+                result.balances[1],
+            )
+            assertEquals(TronNetwork.Mainnet, result.errors.single().network)
+            assertEquals("gateway unavailable", result.errors.single().reason)
+        }
+
+    @Test
+    fun getTronBalancesDefaultsToMainnetAndNile() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"balances":[],"errors":[]}""")
+                    .build(),
+            )
+            val client = IndexerClient.create("test-publishable-key", tronEnvironment(), OMSWalletHttpClient())
+
+            val result = client.getTronBalances(walletAddress = TRON_WALLET)
+            val request = requireNotNull(server.takeRequest())
+
+            assertEquals(
+                "{\"networks\":[\"tron:mainnet\",\"tron:nile\"],\"filter\":{\"accountAddresses\":[\"$TRON_WALLET\"]}," +
+                    "\"omitMetadata\":false}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertTrue(result.balances.isEmpty())
+            assertTrue(result.errors.isEmpty())
+        }
+
+    @Test
+    fun getTronBalancesRejectsUnsupportedNetworks() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body(
+                        """{"balances":[{"network":"tron:shasta","accountAddress":"$TRON_WALLET","assetType":"native","name":"Tron","symbol":"TRX","decimals":6,"balance":"1","formattedBalance":"0.000001","verificationStatus":"unknown","verificationSource":"none"}],"errors":[]}""",
+                    ).build(),
+            )
+            val client = IndexerClient.create("test-publishable-key", tronEnvironment(), OMSWalletHttpClient())
+
+            val error = runCatching { client.getTronBalances(walletAddress = TRON_WALLET) }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            error as OMSWalletException
+            assertEquals(OMSWalletErrorCode.InvalidResponse, error.code)
+            assertEquals(OMSWalletOperation.IndexerGetTronBalances, error.operation)
+        }
+
+    @Test
+    fun getTronBalancesSurfacesGatewayErrorsWithUpstreamDetails() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(503)
+                    .body("""{"error":"Unavailable","code":1000,"msg":"tron gateway down"}""")
+                    .build(),
+            )
+            val client = IndexerClient.create("test-publishable-key", tronEnvironment(), OMSWalletHttpClient())
+
+            val error = runCatching { client.getTronBalances(walletAddress = TRON_WALLET) }.exceptionOrNull()
+
+            assertTrue(error is OMSWalletException)
+            error as OMSWalletException
+            assertEquals(OMSWalletErrorCode.HttpError, error.code)
+            assertEquals(OMSWalletOperation.IndexerGetTronBalances, error.operation)
+            assertEquals(503, error.status)
+            assertEquals(true, error.retryable)
+            assertEquals(OMSWalletUpstreamService.Indexer, error.upstreamError?.service)
+            assertEquals("tron gateway down", error.upstreamError?.message)
+        }
+
+    private fun tronEnvironment(): OMSWalletEnvironment =
+        OMSWalletEnvironment(
+            walletApiUrl = server.url("/v1/Waas/").toString(),
+            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+            tronIndexerGatewayUrl = server.url("/v1/TronIndexerGateway/").toString(),
+        )
+
+    @Test
     fun getBalancesDefaultsToMainnetsWhenNetworksAreOmitted() =
         runBlocking {
             server.enqueue(
@@ -455,9 +624,9 @@ class ServiceClientsTest {
                               "chainId": 1,
                               "results": [
                                 {
-                                  "txnHash": "0xabc",
+                                  "txnHash": "0xabc0000000000000000000000000000000000000",
                                   "blockNumber": 123,
-                                  "blockHash": "0xdef",
+                                  "blockHash": "0xdef0000000000000000000000000000000000000",
                                   "chainId": 1,
                                   "metaTxnID": "meta-1",
                                   "transfers": [
@@ -506,7 +675,7 @@ class ServiceClientsTest {
             assertEquals(0, response.page?.page)
             assertEquals(true, response.page?.more)
             val transaction = response.transactions.single()
-            assertEquals("0xabc", transaction.txnHash)
+            assertEquals("0xabc0000000000000000000000000000000000000", transaction.txnHash)
             assertEquals("meta-1", transaction.metaTxnId)
             assertEquals(listOf("0"), transaction.transfers.single().tokenIds)
         }
@@ -534,8 +703,8 @@ class ServiceClientsTest {
                 )
             client.wallet.restoreSession(
                 OMSWalletSessionSnapshot(
-                    walletId = "wallet-id",
-                    walletAddress = "0xwallet",
+                    wallet = testWallet("wallet-id", "0xwallet"),
+                    expiresAt = TEST_SESSION_EXPIRES_AT,
                     auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
                 ),
             )
@@ -585,8 +754,8 @@ class ServiceClientsTest {
                 )
             client.wallet.restoreSession(
                 OMSWalletSessionSnapshot(
-                    walletId = "wallet-id",
-                    walletAddress = "0xwallet",
+                    wallet = testWallet("wallet-id", "0xwallet"),
+                    expiresAt = TEST_SESSION_EXPIRES_AT,
                     auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
                 ),
             )
@@ -613,3 +782,6 @@ class ServiceClientsTest {
             assertEquals(409, failure.upstreamError?.status)
         }
 }
+
+private const val TRON_WALLET: String = "TW39NT9SCCv7aomYYXgh4wcUWag4XtVe2H"
+private const val TRON_NILE_USDT: String = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"

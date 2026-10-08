@@ -104,8 +104,8 @@ class WalletAccessTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -215,8 +215,8 @@ class WalletAccessTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -348,8 +348,8 @@ class WalletAccessTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -430,8 +430,8 @@ class WalletAccessTest {
                     InMemorySessionStore(
                         snapshot =
                             OMSWalletSessionSnapshot(
-                                walletId = "wallet-main",
-                                walletAddress = "0x1111111111111111111111111111111111111111",
+                                wallet = testWallet("wallet-main", "0x1111111111111111111111111111111111111111"),
+                                expiresAt = TEST_SESSION_EXPIRES_AT,
                                 signerAddress = TEST_CREDENTIAL_ID,
                                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                 auth = emailSessionAuth(),

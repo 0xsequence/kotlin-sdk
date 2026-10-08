@@ -65,23 +65,15 @@ data class OMSWalletOidcSessionAuth(
 ) : OMSWalletSessionAuth
 ```
 
-### `OMSWalletSessionState`
+### `OMSWalletSession`
 
-Current durable wallet-session state for a `WalletClient`.
+Expiry and auth metadata for the active wallet session of a `WalletClient`.
 
 ```kotlin
-data class OMSWalletSessionState(
-    /**
-     * Address of the selected wallet in a completed session, or null when the
-     * SDK is signed out.
-     */
-    val walletAddress: String?,
-    /**
-     * ISO-8601 expiration time for the current completed wallet session, or null
-     * when the SDK is signed out.
-     */
-    val expiresAt: String? = null,
-    val auth: OMSWalletSessionAuth? = null,
+data class OMSWalletSession(
+    /** ISO-8601 expiration time of the wallet session. */
+    val expiresAt: String,
+    val auth: OMSWalletSessionAuth,
 )
 ```
 
@@ -91,7 +83,12 @@ Event delivered when a wallet session expires.
 
 ```kotlin
 data class OMSWalletSessionExpiredEvent(
-    val session: OMSWalletSessionState,
+    /**
+     * Wallet that was active when the session expired, or null when the
+     * credential expired while a manual wallet selection was still pending.
+     */
+    val wallet: Wallet?,
+    val session: OMSWalletSession,
     val expiredAt: String,
 )
 ```
@@ -104,11 +101,14 @@ enum class WalletType(
 ) {
     Ethereum("ethereum"),
     Solana("solana"),
+    Tron("tron"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 ```
 
 ### `Wallet`
+
+A wallet available to the authenticated user.
 
 ```kotlin
 data class Wallet(
@@ -210,6 +210,30 @@ Solana seed or keypair supplied as 32 or 64 raw bytes.
 
 ```kotlin
 class SolanaBytes(
+    val value: ByteArray,
+) : WalletImportPrivateKey {
+    override val walletType: WalletType
+}
+```
+
+### `WalletImportPrivateKey.Tron`
+
+Tron (secp256k1) private key supplied as hexadecimal text.
+
+```kotlin
+data class Tron(
+    val value: String,
+) : WalletImportPrivateKey {
+    override val walletType: WalletType
+}
+```
+
+### `WalletImportPrivateKey.TronBytes`
+
+Tron (secp256k1) private key supplied as 32 raw bytes.
+
+```kotlin
+class TronBytes(
     val value: ByteArray,
 ) : WalletImportPrivateKey {
     override val walletType: WalletType
@@ -479,7 +503,6 @@ Result returned after selecting or creating a wallet.
 
 ```kotlin
 data class WalletSelectionResult(
-    val walletAddress: String,
     val wallet: Wallet,
 )
 ```
@@ -543,7 +566,6 @@ sealed interface CompleteAuthResult
 
 ```kotlin
 data class WalletSelected(
-    val walletAddress: String,
     val wallet: Wallet,
     val wallets: List<Wallet>,
     val credential: WalletCredential,
@@ -580,20 +602,24 @@ Maximum requested WaaS wallet session lifetime in seconds.
 const val MAX_SESSION_LIFETIME_SECONDS: Long = 2_592_000L
 ```
 
-### `WalletClient.walletAddress`
+### `WalletClient.activeWallet`
 
-Address of the currently selected wallet, or null when no wallet is selected.
+The active wallet, or null until auth completes or a session is restored,
+and after sign-out or session expiry. Same shape as `listWallets` entries;
+branch on `Wallet.type` before using `Wallet.address` with family-specific
+code.
 
 ```kotlin
-val walletAddress: String?
+val activeWallet: Wallet?
 ```
 
 ### `WalletClient.session`
 
-Snapshot of the current completed wallet-session state.
+Expiry and auth metadata for the active wallet session. Non-null exactly
+when `activeWallet` is.
 
 ```kotlin
-val session: OMSWalletSessionState
+val session: OMSWalletSession?
 ```
 
 ### `WalletClient.onSessionExpired`
@@ -697,7 +723,7 @@ suspend fun createWallet(
 
 ### `WalletClient.importWallet`
 
-Imports and activates an Ethereum or Solana private key through the attested import transport.
+Imports and activates an Ethereum, Solana, or Tron private key through the attested import transport.
 
 ```kotlin
 suspend fun importWallet(
@@ -1064,6 +1090,53 @@ suspend fun isValidTypedDataSignature(
 ): Boolean
 ```
 
+### `WalletClient.signTronMessage`
+
+Signs `message` with the currently selected Tron wallet.
+
+```kotlin
+suspend fun signTronMessage(message: String): String
+```
+
+### `WalletClient.signTronTypedData`
+
+Signs TIP-712 `typedData` with the currently selected Tron wallet. Address
+values may be Base58Check (`T…`).
+
+```kotlin
+suspend fun signTronTypedData(typedData: JsonElement): String
+```
+
+### `WalletClient.isValidTronMessageSignature`
+
+Validates a Tron `signature` for `message` through the WaaS public wallet
+RPC. Pass `walletAddress` (Base58Check `T…`) or `walletId` to verify any
+wallet; when both are omitted, the active wallet is used.
+
+```kotlin
+suspend fun isValidTronMessageSignature(
+    message: String,
+    signature: String,
+    walletAddress: String? = null,
+    walletId: String? = null,
+): Boolean
+```
+
+### `WalletClient.isValidTronTypedDataSignature`
+
+Validates a Tron `signature` for TIP-712 `typedData` through the WaaS
+public wallet RPC. Pass `walletAddress` (Base58Check `T…`) or `walletId` to
+verify any wallet; when both are omitted, the active wallet is used.
+
+```kotlin
+suspend fun isValidTronTypedDataSignature(
+    typedData: JsonElement,
+    signature: String,
+    walletAddress: String? = null,
+    walletId: String? = null,
+): Boolean
+```
+
 ### `WalletClient.sendTransaction`
 
 Sends a transaction from the currently selected wallet on `network`.
@@ -1104,6 +1177,23 @@ suspend fun sendSolanaTransfer(
 ): SendTransactionResponse
 ```
 
+### `WalletClient.sendTronTransaction`
+
+Sends a Tron transaction from the selected Tron wallet. Tron wallets are
+EOAs and always execute in native mode.
+
+```kotlin
+suspend fun sendTronTransaction(
+    network: TronNetwork,
+    to: String,
+    value: BigInteger = BigInteger.ZERO,
+    data: String? = null,
+    waitForStatus: Boolean = true,
+    statusPolling: TransactionStatusPollingOptions? = null,
+    selectFeeOption: FeeOptionSelector? = null,
+): SendTransactionResponse
+```
+
 ### `WalletClient.callContract`
 
 Calls a state-changing smart contract function through the WaaS
@@ -1116,6 +1206,24 @@ suspend fun callContract(
     method: String,
     args: List<AbiArg>? = null,
     mode: TransactionMode = TransactionMode.Relayer,
+    waitForStatus: Boolean = true,
+    statusPolling: TransactionStatusPollingOptions? = null,
+    selectFeeOption: FeeOptionSelector? = null,
+): SendTransactionResponse
+```
+
+### `WalletClient.callTronContract`
+
+Calls a state-changing Tron contract function from the selected Tron
+wallet in native mode. The wallet service ABI-encodes `args`;
+address-typed arguments accept Base58Check (`T…`) addresses.
+
+```kotlin
+suspend fun callTronContract(
+    network: TronNetwork,
+    contract: String,
+    method: String,
+    args: List<AbiArg>? = null,
     waitForStatus: Boolean = true,
     statusPolling: TransactionStatusPollingOptions? = null,
     selectFeeOption: FeeOptionSelector? = null,
@@ -1329,6 +1437,156 @@ data class SolanaBalancesResult(
     val status: Int,
     val balances: List<SolanaBalance>,
     val errors: List<SolanaNetworkError>,
+)
+```
+
+### `IndexerClient.getTronBalances`
+
+Gets native TRX and TRC-20 balances for the Base58Check `walletAddress` (`T…`).
+
+```kotlin
+suspend fun getTronBalances(
+    walletAddress: String,
+    networks: List<TronNetwork> = listOf(TronNetwork.Mainnet, TronNetwork.Nile),
+    includeMetadata: Boolean = true,
+    omitNativeBalances: Boolean? = null,
+    contractAddresses: List<String> = emptyList(),
+    excludedContractAddresses: List<String> = emptyList(),
+): TronBalancesResult
+```
+
+### `TronVerificationStatus`
+
+Verification state assigned to Tron asset metadata.
+
+```kotlin
+enum class TronVerificationStatus {
+    Verified,
+    Unverified,
+    Unknown,
+}
+```
+
+### `TronTokenStandard`
+
+Token standard of a Tron fungible token. TRC-10 tokens are not supported.
+
+```kotlin
+enum class TronTokenStandard {
+    Trc20,
+}
+```
+
+### `TronBalance`
+
+Common public fields returned for a Tron balance.
+
+```kotlin
+sealed interface TronBalance {
+    val network: TronNetwork
+
+    /**
+     * Base58Check account address (`T…`).
+     */
+    val accountAddress: String
+
+    val name: String
+
+    val symbol: String
+
+    val decimals: Int
+
+    /**
+     * Raw balance in the token's base units (sun for TRX).
+     */
+    val balance: String
+
+    val formattedBalance: String
+
+    val imageUrl: String?
+
+    val metadataUri: String?
+
+    val verificationStatus: TronVerificationStatus
+
+    /**
+     * Source reported by the gateway for `verificationStatus`, such as `none`.
+     */
+    val verificationSource: String
+
+    val priceUSD: String?
+
+    val balanceUSD: String?
+}
+```
+
+### `TronBalance.Native`
+
+Native TRX balance.
+
+```kotlin
+data class Native(
+    override val network: TronNetwork,
+    override val accountAddress: String,
+    override val name: String,
+    override val symbol: String,
+    override val decimals: Int,
+    override val balance: String,
+    override val formattedBalance: String,
+    override val imageUrl: String?,
+    override val metadataUri: String?,
+    override val verificationStatus: TronVerificationStatus,
+    override val verificationSource: String,
+    override val priceUSD: String?,
+    override val balanceUSD: String?,
+) : TronBalance
+```
+
+### `TronBalance.FungibleToken`
+
+TRC-20 token balance.
+
+```kotlin
+data class FungibleToken(
+    override val network: TronNetwork,
+    override val accountAddress: String,
+    val tokenStandard: TronTokenStandard,
+    /** Base58Check TRC-20 contract address (`T…`). */
+    val contractAddress: String,
+    override val name: String,
+    override val symbol: String,
+    override val decimals: Int,
+    override val balance: String,
+    override val formattedBalance: String,
+    override val imageUrl: String?,
+    override val metadataUri: String?,
+    override val verificationStatus: TronVerificationStatus,
+    override val verificationSource: String,
+    override val priceUSD: String?,
+    override val balanceUSD: String?,
+) : TronBalance
+```
+
+### `TronNetworkError`
+
+Per-network failure returned alongside partial Tron balance results.
+
+```kotlin
+data class TronNetworkError(
+    val network: TronNetwork,
+    val reason: String,
+)
+```
+
+### `TronBalancesResult`
+
+Tron balances and partial network errors returned by the gateway.
+
+```kotlin
+data class TronBalancesResult(
+    val status: Int,
+    val balances: List<TronBalance>,
+    val errors: List<TronNetworkError>,
 )
 ```
 
@@ -1671,6 +1929,29 @@ object SolanaNetworks {
 }
 ```
 
+### `TronNetwork`
+
+A Tron network supported by the OMS Wallet Tron APIs.
+
+```kotlin
+enum class TronNetwork(
+    val wireValue: String,
+) {
+    Mainnet("tron:mainnet"),
+    Nile("tron:nile"),
+}
+```
+
+### `TronNetworks`
+
+```kotlin
+object TronNetworks {
+    val MAINNET: TronNetwork
+
+    val NILE: TronNetwork
+}
+```
+
 ### `OMSWalletErrorCode`
 
 Stable SDK-level error categories for app-facing error handling.
@@ -1709,8 +1990,10 @@ enum class OMSWalletOperation(
     PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
     IndexerGetBalances("indexer.getBalances"),
     IndexerGetSolanaBalances("indexer.getSolanaBalances"),
+    IndexerGetTronBalances("indexer.getTronBalances"),
     IndexerGetTransactionHistory("indexer.getTransactionHistory"),
     WalletCallContract("wallet.callContract"),
+    WalletCallTronContract("wallet.callTronContract"),
     WalletAuthorizeRemoteAccess("wallet.authorizeRemoteAccess"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),
@@ -1726,6 +2009,8 @@ enum class OMSWalletOperation(
     WalletIsValidMessageSignature("wallet.isValidMessageSignature"),
     WalletIsValidSolanaMessageSignature("wallet.isValidSolanaMessageSignature"),
     WalletIsValidTypedDataSignature("wallet.isValidTypedDataSignature"),
+    WalletIsValidTronMessageSignature("wallet.isValidTronMessageSignature"),
+    WalletIsValidTronTypedDataSignature("wallet.isValidTronTypedDataSignature"),
     WalletInspectRemoteCredential("wallet.inspectRemoteCredential"),
     WalletListAccess("wallet.listAccess"),
     WalletListAccessPage("wallet.listAccessPage"),
@@ -1734,11 +2019,14 @@ enum class OMSWalletOperation(
     WalletRevokeAccess("wallet.revokeAccess"),
     WalletSendTransaction("wallet.sendTransaction"),
     WalletSendSolanaTransfer("wallet.sendSolanaTransfer"),
+    WalletSendTronTransaction("wallet.sendTronTransaction"),
     WalletSignInWithOidcIdToken("wallet.signInWithOidcIdToken"),
     WalletSignMessage("wallet.signMessage"),
     WalletSignSolanaMessage("wallet.signSolanaMessage"),
     WalletSignOut("wallet.signOut"),
     WalletSignTypedData("wallet.signTypedData"),
+    WalletSignTronMessage("wallet.signTronMessage"),
+    WalletSignTronTypedData("wallet.signTronTypedData"),
     WalletStartEmailAuth("wallet.startEmailAuth"),
     WalletStartOidcRedirectAuth("wallet.startOidcRedirectAuth"),
     WalletTransactionStatus("wallet.transactionStatus"),

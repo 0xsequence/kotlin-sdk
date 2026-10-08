@@ -13,7 +13,6 @@ import technology.polygon.omswallet.runOMSWalletOperation
  * Result returned after selecting or creating a wallet.
  */
 data class WalletSelectionResult(
-    val walletAddress: String,
     val wallet: Wallet,
 )
 
@@ -103,7 +102,6 @@ class PendingWalletSelection internal constructor(
  */
 sealed interface CompleteAuthResult {
     data class WalletSelected(
-        val walletAddress: String,
         val wallet: Wallet,
         val wallets: List<Wallet>,
         val credential: WalletCredential,

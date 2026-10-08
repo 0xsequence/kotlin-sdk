@@ -6,15 +6,17 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import technology.polygon.omswallet.network.OMSWalletEnvironment
-import technology.polygon.omswallet.session.OMSWalletSession
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+import technology.polygon.omswallet.session.OMSWalletSessionStateMachine
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import technology.polygon.omswallet.wallet.OidcRedirectAuthMode
 import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
 import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
+import technology.polygon.omswallet.wallet.TEST_SESSION_EXPIRES_AT
 import technology.polygon.omswallet.wallet.TrackingCredentialSigner
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
+import technology.polygon.omswallet.wallet.testWallet
 
 class OMSWalletTest {
     @Test
@@ -57,6 +59,8 @@ class OMSWalletTest {
                     projectId = "prj_project",
                     walletApiUrl = apiUrl,
                     indexerGatewayUrl = "$apiUrl/v1/IndexerGateway/",
+                    solanaIndexerGatewayUrl = "$apiUrl/v1/SolanaIndexerGateway/",
+                    tronIndexerGatewayUrl = "$apiUrl/v1/TronIndexerGateway/",
                     walletImportTrustedPcr0s = walletImportPcr0s,
                 ),
                 parsePublishableKey(publishableKey),
@@ -68,7 +72,7 @@ class OMSWalletTest {
     fun constructorDerivesProjectIdFromPublishableKey() {
         val sdk = OMSWallet.createForTesting(publishableKey = "pk_live_project_key")
 
-        assertNull(sdk.wallet.session.walletAddress)
+        assertNull(sdk.wallet.activeWallet)
     }
 
     @Test
@@ -86,8 +90,7 @@ class OMSWalletTest {
     fun constructorRestoresPersistedSessionAutomatically() {
         val snapshot =
             OMSWalletSessionSnapshot(
-                walletId = "wallet-main",
-                walletAddress = "0xwallet",
+                wallet = testWallet("wallet-main", "0xwallet"),
                 signerAddress = TEST_CREDENTIAL_ID,
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2099-01-01T00:00:00Z",
@@ -98,15 +101,15 @@ class OMSWalletTest {
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
-                walletSession = OMSWalletSession(),
+                walletSession = OMSWalletSessionStateMachine(),
                 sessionStore = StubSessionMetadataStore(snapshot),
                 credentialSigner = TrackingCredentialSigner(),
             )
 
-        assertEquals("0xwallet", sdk.wallet.walletAddress)
-        assertEquals("0xwallet", sdk.wallet.session.walletAddress)
-        assertEquals("2099-01-01T00:00:00Z", sdk.wallet.session.expiresAt)
-        assertEquals(OMSWalletEmailSessionAuth(email = "user@example.com"), sdk.wallet.session.auth)
+        assertEquals("0xwallet", sdk.wallet.activeWallet?.address)
+        assertEquals("0xwallet", sdk.wallet.activeWallet?.address)
+        assertEquals("2099-01-01T00:00:00Z", sdk.wallet.session?.expiresAt)
+        assertEquals(OMSWalletEmailSessionAuth(email = "user@example.com"), sdk.wallet.session?.auth)
     }
 
     @Test
@@ -116,7 +119,7 @@ class OMSWalletTest {
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
-                walletSession = OMSWalletSession(),
+                walletSession = OMSWalletSessionStateMachine(),
                 oidcRedirectAuthStore =
                     StubOidcRedirectAuthStore(
                         PendingOidcRedirectAuth(
@@ -136,9 +139,8 @@ class OMSWalletTest {
                     ),
             )
 
-        assertNull(sdk.wallet.session.walletAddress)
-        assertNull(sdk.wallet.session.expiresAt)
-        assertNull(sdk.wallet.session.auth)
+        assertNull(sdk.wallet.activeWallet)
+        assertNull(sdk.wallet.session)
     }
 
     @Test
@@ -146,8 +148,8 @@ class OMSWalletTest {
         val store =
             MutableSessionMetadataStore(
                 OMSWalletSessionSnapshot(
-                    walletId = "wallet-main",
-                    walletAddress = "0xwallet",
+                    wallet = testWallet("wallet-main", "0xwallet"),
+                    expiresAt = TEST_SESSION_EXPIRES_AT,
                     signerAddress = TEST_CREDENTIAL_ID,
                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                     auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
@@ -158,17 +160,16 @@ class OMSWalletTest {
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
-                walletSession = OMSWalletSession(),
+                walletSession = OMSWalletSessionStateMachine(),
                 sessionStore = store,
                 credentialSigner = TrackingCredentialSigner(),
             )
 
         sdk.wallet.signOut()
 
-        assertNull(sdk.wallet.walletAddress)
-        assertNull(sdk.wallet.session.walletAddress)
-        assertNull(sdk.wallet.session.expiresAt)
-        assertNull(sdk.wallet.session.auth)
+        assertNull(sdk.wallet.activeWallet)
+        assertNull(sdk.wallet.activeWallet)
+        assertNull(sdk.wallet.session)
         assertNull(store.snapshot)
         assertEquals(1, store.clearCalls)
     }

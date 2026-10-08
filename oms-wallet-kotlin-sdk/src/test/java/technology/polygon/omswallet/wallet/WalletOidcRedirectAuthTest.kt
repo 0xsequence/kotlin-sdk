@@ -441,8 +441,7 @@ class WalletOidcRedirectAuthTest {
 
             val activeSession =
                 OMSWalletSessionSnapshot(
-                    walletId = "wallet-main",
-                    walletAddress = "0xwallet",
+                    wallet = testWallet("wallet-main", "0xwallet"),
                     signerAddress = TEST_CREDENTIAL_ID,
                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                     expiresAt = "2099-01-01T00:00:00Z",
@@ -620,7 +619,7 @@ class WalletOidcRedirectAuthTest {
                                     iss = "https://issuer.example",
                                     sub = "oidc-sub-123",
                                 ),
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -628,8 +627,13 @@ class WalletOidcRedirectAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -734,7 +738,7 @@ class WalletOidcRedirectAuthTest {
                                     sub = "oidc-sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -742,8 +746,13 @@ class WalletOidcRedirectAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -805,12 +814,12 @@ class WalletOidcRedirectAuthTest {
                 WaasApi.UseWallet.encodeRequest(UseWalletRequest(walletId = "wallet-def")),
                 requireNotNull(useWalletRequest.body).utf8(),
             )
-            assertEquals("0xdef", wallet.address)
-            assertEquals("0xdef", client.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", wallet.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", client.activeWallet?.address)
             assertNull(redirectStore.pending)
             assertEquals(2, redirectStore.clearCalls)
             assertEquals("wallet-def", sessionStore.snapshot?.walletId)
-            assertEquals("0xdef", sessionStore.snapshot?.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", sessionStore.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", sessionStore.snapshot?.expiresAt)
             assertOidcSessionAuth(
                 sessionStore.snapshot?.auth,
@@ -843,7 +852,7 @@ class WalletOidcRedirectAuthTest {
                                     iss = "https://issuer.example",
                                     sub = "oidc-sub-123",
                                 ),
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -851,8 +860,13 @@ class WalletOidcRedirectAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -925,7 +939,7 @@ class WalletOidcRedirectAuthTest {
                                     iss = "https://issuer.example",
                                     sub = "oidc-sub-123",
                                 ),
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1008,7 +1022,7 @@ class WalletOidcRedirectAuthTest {
                                     iss = "https://issuer.example",
                                     sub = "oidc-sub-123",
                                 ),
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1016,8 +1030,13 @@ class WalletOidcRedirectAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -1150,7 +1169,7 @@ class WalletOidcRedirectAuthTest {
                                     sub = "oidc-sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1199,7 +1218,7 @@ class WalletOidcRedirectAuthTest {
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-def"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(client.hasPendingSignIn)
             assertNull(redirectStore.pending)
             assertEquals(2, redirectStore.clearCalls)
@@ -1234,7 +1253,7 @@ class WalletOidcRedirectAuthTest {
 
             assertEquals(OidcRedirectAuthResult.NoPendingAuth, result)
             assertEquals(activeSession, client.snapshotSession())
-            assertEquals("0xactive", client.walletAddress)
+            assertEquals("0xactive", client.activeWallet?.address)
             assertEquals(0, redirectStore.clearCalls)
             assertEquals(0, server.requestCount)
         }

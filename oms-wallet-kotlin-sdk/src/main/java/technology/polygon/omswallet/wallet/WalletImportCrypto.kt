@@ -12,19 +12,20 @@ internal object WalletImportCrypto {
     fun plaintext(privateKey: WalletImportPrivateKey): ByteArray =
         when (privateKey) {
             is WalletImportPrivateKey.Ethereum -> {
-                val value = privateKey.value.trimAsciiWhitespace()
-                val hex = value.removePrefix("0x")
-                require(hex.length == 64 && hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
-                    "Ethereum privateKey must be 32 bytes or 64 hexadecimal characters"
-                }
-                requireValidEthereumScalar(hex.hexBytes())
-                value.toByteArray(Charsets.UTF_8)
+                secp256k1HexPlaintext(privateKey.value, "Ethereum")
             }
 
             is WalletImportPrivateKey.EthereumBytes -> {
-                require(privateKey.value.size == 32) { "Ethereum privateKey must contain exactly 32 bytes" }
-                requireValidEthereumScalar(privateKey.value)
-                privateKey.value.copyOf()
+                secp256k1BytesPlaintext(privateKey.value, "Ethereum")
+            }
+
+            // Tron uses the same secp256k1 private key format as Ethereum.
+            is WalletImportPrivateKey.Tron -> {
+                secp256k1HexPlaintext(privateKey.value, "Tron")
+            }
+
+            is WalletImportPrivateKey.TronBytes -> {
+                secp256k1BytesPlaintext(privateKey.value, "Tron")
             }
 
             is WalletImportPrivateKey.Solana -> {
@@ -69,10 +70,35 @@ internal object WalletImportCrypto {
         return sealed[1] to sealed[0]
     }
 
-    private fun requireValidEthereumScalar(value: ByteArray) {
+    private fun secp256k1HexPlaintext(
+        privateKey: String,
+        label: String,
+    ): ByteArray {
+        val value = privateKey.trimAsciiWhitespace()
+        val hex = value.removePrefix("0x")
+        require(hex.length == 64 && hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+            "$label privateKey must be 32 bytes or 64 hexadecimal characters"
+        }
+        requireValidSecp256k1Scalar(hex.hexBytes(), label)
+        return value.toByteArray(Charsets.UTF_8)
+    }
+
+    private fun secp256k1BytesPlaintext(
+        privateKey: ByteArray,
+        label: String,
+    ): ByteArray {
+        require(privateKey.size == 32) { "$label privateKey must contain exactly 32 bytes" }
+        requireValidSecp256k1Scalar(privateKey, label)
+        return privateKey.copyOf()
+    }
+
+    private fun requireValidSecp256k1Scalar(
+        value: ByteArray,
+        label: String,
+    ) {
         val scalar = BigInteger(1, value)
         require(scalar.signum() > 0 && scalar < secp256k1Order) {
-            "Ethereum privateKey is outside the valid secp256k1 scalar range"
+            "$label privateKey is outside the valid secp256k1 scalar range"
         }
     }
 

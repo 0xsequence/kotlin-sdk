@@ -1,27 +1,39 @@
 package technology.polygon.omswallet.session
 
 import technology.polygon.omswallet.OMSWalletSessionAuth
+import technology.polygon.omswallet.models.Wallet
+import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 
 internal data class OMSWalletSessionSnapshot(
     val challenge: String? = null,
     val verifier: String? = null,
-    val walletId: String? = null,
-    val walletAddress: String? = null,
+    /** Selected wallet; set only for a completed (active) wallet session. */
+    val wallet: Wallet? = null,
     val signerAddress: String? = null,
     val signerKeyType: WalletSigningAlgorithm? = null,
     val expiresAt: String? = null,
     val auth: OMSWalletSessionAuth? = null,
     val pendingWalletSelectionId: Long? = null,
-    val pendingWalletType: technology.polygon.omswallet.models.WalletType? = null,
-)
+    val pendingWalletType: WalletType? = null,
+) {
+    val walletId: String? get() = wallet?.id
+
+    val walletAddress: String? get() = wallet?.address
+}
 
 internal data class OMSWalletPendingAuthSnapshot(
     val challenge: String,
     val verifier: String,
 )
 
-internal class OMSWalletSession(
+/**
+ * Thread-safe auth/wallet-session state machine backing a wallet client scope.
+ *
+ * This is internal bookkeeping, distinct from the public
+ * [technology.polygon.omswallet.OMSWalletSession] metadata snapshot.
+ */
+internal class OMSWalletSessionStateMachine(
     initialSnapshot: OMSWalletSessionSnapshot? = null,
 ) {
     private sealed interface SessionState {
@@ -52,7 +64,7 @@ internal class OMSWalletSession(
             val expiresAt: String,
             val auth: OMSWalletSessionAuth,
             val pendingWalletSelectionId: Long?,
-            val walletType: technology.polygon.omswallet.models.WalletType?,
+            val walletType: WalletType?,
         ) : SessionState {
             override fun snapshot(): OMSWalletSessionSnapshot =
                 OMSWalletSessionSnapshot(
@@ -66,17 +78,15 @@ internal class OMSWalletSession(
         }
 
         data class ActiveSession(
-            val walletId: String,
-            val walletAddress: String,
+            val wallet: Wallet,
             val signerAddress: String?,
             val signerKeyType: WalletSigningAlgorithm?,
-            val expiresAt: String?,
+            val expiresAt: String,
             val auth: OMSWalletSessionAuth,
         ) : SessionState {
             override fun snapshot(): OMSWalletSessionSnapshot =
                 OMSWalletSessionSnapshot(
-                    walletId = walletId,
-                    walletAddress = walletAddress,
+                    wallet = wallet,
                     signerAddress = signerAddress,
                     signerKeyType = signerKeyType,
                     expiresAt = expiresAt,
@@ -142,7 +152,7 @@ internal class OMSWalletSession(
     fun markAuthVerified(
         expiresAt: String,
         auth: OMSWalletSessionAuth,
-        walletType: technology.polygon.omswallet.models.WalletType,
+        walletType: WalletType,
         requiredRevision: Long? = null,
     ): Pair<Long, Long> {
         synchronized(lock) {
@@ -168,8 +178,7 @@ internal class OMSWalletSession(
     }
 
     fun selectWallet(
-        walletId: String,
-        walletAddress: String,
+        wallet: Wallet,
         requiredRevision: Long? = null,
     ): Long =
         synchronized(lock) {
@@ -178,8 +187,7 @@ internal class OMSWalletSession(
                 when (val current = state) {
                     is SessionState.AwaitingWalletSelection -> {
                         SessionState.ActiveSession(
-                            walletId = walletId,
-                            walletAddress = walletAddress,
+                            wallet = wallet,
                             signerAddress = current.signerAddress,
                             signerKeyType = current.signerKeyType,
                             expiresAt = current.expiresAt,
@@ -188,10 +196,7 @@ internal class OMSWalletSession(
                     }
 
                     is SessionState.ActiveSession -> {
-                        current.copy(
-                            walletId = walletId,
-                            walletAddress = walletAddress,
-                        )
+                        current.copy(wallet = wallet)
                     }
 
                     else -> {
@@ -206,15 +211,13 @@ internal class OMSWalletSession(
         pendingWalletSelectionId: Long,
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
-        walletId: String,
-        walletAddress: String,
+        wallet: Wallet,
     ): Long =
         synchronized(lock) {
             val current = currentPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
             replaceState(
                 SessionState.ActiveSession(
-                    walletId = walletId,
-                    walletAddress = walletAddress,
+                    wallet = wallet,
                     signerAddress = current.signerAddress,
                     signerKeyType = current.signerKeyType,
                     expiresAt = current.expiresAt,
@@ -290,14 +293,16 @@ internal class OMSWalletSession(
     private fun OMSWalletSessionSnapshot?.toSessionState(): SessionState {
         val snapshot = this ?: return SessionState.NoSession
         return when {
-            !snapshot.walletId.isNullOrBlank() && !snapshot.walletAddress.isNullOrBlank() -> {
+            snapshot.wallet != null -> {
+                val wallet = snapshot.wallet
                 val auth = snapshot.auth ?: return SessionState.NoSession
+                val expiresAt = snapshot.expiresAt?.takeIf(String::isNotBlank) ?: return SessionState.NoSession
+                if (wallet.id.isBlank() || wallet.address.isBlank()) return SessionState.NoSession
                 SessionState.ActiveSession(
-                    walletId = snapshot.walletId,
-                    walletAddress = snapshot.walletAddress,
+                    wallet = wallet,
                     signerAddress = snapshot.signerAddress,
                     signerKeyType = snapshot.signerKeyType,
-                    expiresAt = snapshot.expiresAt,
+                    expiresAt = expiresAt,
                     auth = auth,
                 )
             }

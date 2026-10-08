@@ -8,6 +8,7 @@ enum class WalletType(
 ) {
     Ethereum("ethereum"),
     Solana("solana"),
+    Tron("tron"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 
@@ -38,6 +39,12 @@ enum class TransactionStatus(
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 
+/**
+ * A wallet available to the authenticated user.
+ *
+ * [address] is a `0x` hex address for [WalletType.Ethereum], a base58 public key
+ * for [WalletType.Solana], and a Base58Check `T…` address for [WalletType.Tron].
+ */
 data class Wallet(
     val id: String,
     val type: WalletType,

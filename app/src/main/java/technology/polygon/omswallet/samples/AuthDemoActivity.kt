@@ -692,7 +692,7 @@ class AuthDemoActivity : AppCompatActivity() {
     ): String = "$label:\n${address ?: "none"}"
 
     private fun copyWalletAddress() {
-        val address = sdk.wallet.session.walletAddress
+        val address = sdk.wallet.activeWallet?.address
         if (address.isNullOrBlank()) {
             Toast.makeText(this, "No wallet address to copy", Toast.LENGTH_SHORT).show()
             return
@@ -1123,7 +1123,8 @@ class AuthDemoActivity : AppCompatActivity() {
     }
 
     private fun renderSessionState() {
-        if (sdk.wallet.session.walletAddress == null) {
+        val activeWallet = sdk.wallet.activeWallet
+        if (activeWallet == null) {
             renderSessionStateBox()
             expiredSessionEvent?.let {
                 renderExpiredSession(it)
@@ -1141,7 +1142,7 @@ class AuthDemoActivity : AppCompatActivity() {
         openExplorerButton.visibility = View.GONE
 
         authStatusView.text = "Restored persisted wallet session"
-        walletAddressView.text = addressLabel("Wallet address", sdk.wallet.session.walletAddress)
+        walletAddressView.text = addressLabel("Wallet address", activeWallet.address)
         authCard.visibility = View.GONE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
@@ -1157,10 +1158,12 @@ class AuthDemoActivity : AppCompatActivity() {
         authStatusView.text =
             buildString {
                 append("Wallet session expired. Sign in again")
-                event.session.auth?.email?.takeIf { it.isNotBlank() }?.let { email ->
-                    append(" as ")
-                    append(email)
-                }
+                event.session.auth.email
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { email ->
+                        append(" as ")
+                        append(email)
+                    }
                 append(".")
             }
         lastSignedMessage = null
@@ -1180,7 +1183,7 @@ class AuthDemoActivity : AppCompatActivity() {
         if (isNewEvent) {
             appendLog(
                 "Wallet session expired at ${event.expiredAt}: " +
-                    "wallet=${event.session.walletAddress ?: "none"} email=${event.session.auth?.email ?: "none"}",
+                    "wallet=${event.wallet?.address ?: "none"} email=${event.session.auth.email ?: "none"}",
             )
         }
     }
@@ -1246,29 +1249,31 @@ class AuthDemoActivity : AppCompatActivity() {
         val session = sdk.wallet.session
         val expiredEvent = expiredSessionEvent
         sessionStateCard.visibility =
-            if (session.walletAddress == null && expiredEvent == null) {
+            if (session == null && expiredEvent == null) {
                 View.GONE
             } else {
                 View.VISIBLE
             }
         sessionStateView.text =
-            if (expiredEvent != null && session.walletAddress == null) {
+            if (expiredEvent != null && session == null) {
                 buildString {
                     appendLine("expiredAt: ${expiredEvent.expiredAt}")
-                    appendLine("walletAddress: ${expiredEvent.session.walletAddress ?: "null"}")
-                    appendLine("expiresAt: ${expiredEvent.session.expiresAt ?: "null"}")
+                    appendLine("wallet: ${formatWallet(expiredEvent.wallet)}")
+                    appendLine("expiresAt: ${expiredEvent.session.expiresAt}")
                     appendLine("auth: ${formatSessionAuth(expiredEvent.session.auth)}")
-                    append("authEmail: ${expiredEvent.session.auth?.email ?: "null"}")
+                    append("authEmail: ${expiredEvent.session.auth.email ?: "null"}")
                 }
             } else {
                 buildString {
-                    appendLine("walletAddress: ${session.walletAddress ?: "null"}")
-                    appendLine("expiresAt: ${session.expiresAt ?: "null"}")
-                    appendLine("auth: ${formatSessionAuth(session.auth)}")
-                    append("authEmail: ${session.auth?.email ?: "null"}")
+                    appendLine("wallet: ${formatWallet(sdk.wallet.activeWallet)}")
+                    appendLine("expiresAt: ${session?.expiresAt ?: "null"}")
+                    appendLine("auth: ${formatSessionAuth(session?.auth)}")
+                    append("authEmail: ${session?.auth?.email ?: "null"}")
                 }
             }
     }
+
+    private fun formatWallet(wallet: Wallet?): String = wallet?.let { "${it.type.wireValue} ${it.address}" } ?: "null"
 
     private fun formatSessionAuth(auth: OMSWalletSessionAuth?): String =
         when (auth) {

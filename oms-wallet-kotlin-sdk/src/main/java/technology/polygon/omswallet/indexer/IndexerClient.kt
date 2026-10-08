@@ -24,6 +24,7 @@ import technology.polygon.omswallet.OMSWalletResponseException
 import technology.polygon.omswallet.OMSWalletUpstreamError
 import technology.polygon.omswallet.OMSWalletUpstreamService
 import technology.polygon.omswallet.SolanaNetwork
+import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.models.ContractTokenBalance
 import technology.polygon.omswallet.models.ContractVerificationStatus
 import technology.polygon.omswallet.models.IndexerNetworkType
@@ -45,6 +46,11 @@ import technology.polygon.omswallet.models.TokenMetadataAsset
 import technology.polygon.omswallet.models.Transaction
 import technology.polygon.omswallet.models.TransactionHistoryResult
 import technology.polygon.omswallet.models.TransactionTransfer
+import technology.polygon.omswallet.models.TronBalance
+import technology.polygon.omswallet.models.TronBalancesResult
+import technology.polygon.omswallet.models.TronNetworkError
+import technology.polygon.omswallet.models.TronTokenStandard
+import technology.polygon.omswallet.models.TronVerificationStatus
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.network.OMSWalletHttpResponse
@@ -218,6 +224,48 @@ class IndexerClient private constructor(
                 status = response.statusCode,
                 balances = root.requiredObjectArray("balances").map { it.toSolanaBalance() },
                 errors = root.requiredObjectArray("errors").map { it.toSolanaNetworkError() },
+            )
+        }
+    }
+
+    /**
+     * Gets native TRX and TRC-20 balances for the Base58Check [walletAddress] (`T…`).
+     *
+     * [contractAddresses] limits fungible results to those TRC-20 contracts, and
+     * [excludedContractAddresses] removes them. TRC-10 tokens are not supported.
+     */
+    suspend fun getTronBalances(
+        walletAddress: String,
+        networks: List<TronNetwork> = listOf(TronNetwork.Mainnet, TronNetwork.Nile),
+        includeMetadata: Boolean = true,
+        omitNativeBalances: Boolean? = null,
+        contractAddresses: List<String> = emptyList(),
+        excludedContractAddresses: List<String> = emptyList(),
+    ): TronBalancesResult {
+        val operation = OMSWalletOperation.IndexerGetTronBalances
+        val response =
+            postIndexerGatewayJson(
+                operation = operation,
+                baseUrl = environment.tronIndexerGatewayUrl,
+                webRpcHeaderValue = tronIndexerGatewayWebrpcHeaderValue,
+                path = "/GetTokenBalancesDetails",
+                body =
+                    buildJsonObject {
+                        putJsonArray("networks") { networks.forEach { add(it.wireValue) } }
+                        putJsonObject("filter") {
+                            putJsonArray("accountAddresses") { add(walletAddress) }
+                            omitNativeBalances?.let { put("omitNativeBalances", it) }
+                            putStringArrayIfNotEmpty("contractWhitelist", contractAddresses)
+                            putStringArrayIfNotEmpty("contractBlacklist", excludedContractAddresses)
+                        }
+                        put("omitMetadata", includeMetadata == false)
+                    }.toString(),
+            )
+        return decodeIndexerResponse(response, operation) { root ->
+            TronBalancesResult(
+                status = response.statusCode,
+                balances = root.requiredObjectArray("balances").map { it.toTronBalance() },
+                errors = root.requiredObjectArray("errors").map { it.toTronNetworkError() },
             )
         }
     }
@@ -415,6 +463,89 @@ class IndexerClient private constructor(
             "jupiter" -> SolanaVerificationSource.Jupiter
             "solflare-utl" -> SolanaVerificationSource.SolflareUtl
             "none" -> SolanaVerificationSource.None
+            else -> throw IllegalArgumentException("Invalid $name")
+        }
+
+    private fun JsonObject.toTronBalance(): TronBalance {
+        val network = requiredTronNetwork("network")
+        val accountAddress = requiredString("accountAddress")
+        val name = requiredString("name")
+        val symbol = requiredString("symbol")
+        val decimals = requiredInt("decimals")
+        val balance = requiredString("balance")
+        val formattedBalance = requiredString("formattedBalance")
+        val imageUrl = optionalNonEmptyString("imageUrl")
+        val metadataUri = optionalNonEmptyString("metadataUri")
+        val verificationStatus = requiredTronVerificationStatus("verificationStatus")
+        val verificationSource = requiredString("verificationSource")
+        val priceUSD = optionalString("priceUSD")
+        val balanceUSD = optionalString("balanceUSD")
+        return when (requiredString("assetType")) {
+            "native" -> {
+                require(this["tokenStandard"] == null || this["tokenStandard"] === JsonNull)
+                require(this["contractAddress"] == null || this["contractAddress"] === JsonNull)
+                TronBalance.Native(
+                    network,
+                    accountAddress,
+                    name,
+                    symbol,
+                    decimals,
+                    balance,
+                    formattedBalance,
+                    imageUrl,
+                    metadataUri,
+                    verificationStatus,
+                    verificationSource,
+                    priceUSD,
+                    balanceUSD,
+                )
+            }
+
+            "fungible-token" -> {
+                TronBalance.FungibleToken(
+                    network,
+                    accountAddress,
+                    requiredTronTokenStandard("tokenStandard"),
+                    requiredString("contractAddress"),
+                    name,
+                    symbol,
+                    decimals,
+                    balance,
+                    formattedBalance,
+                    imageUrl,
+                    metadataUri,
+                    verificationStatus,
+                    verificationSource,
+                    priceUSD,
+                    balanceUSD,
+                )
+            }
+
+            else -> {
+                throw IllegalArgumentException("Invalid assetType")
+            }
+        }
+    }
+
+    private fun JsonObject.toTronNetworkError(): TronNetworkError =
+        TronNetworkError(requiredTronNetwork("network"), requiredString("reason"))
+
+    private fun JsonObject.requiredTronNetwork(name: String): TronNetwork {
+        val value = requiredString(name)
+        return TronNetwork.entries.firstOrNull { it.wireValue == value } ?: throw IllegalArgumentException("Invalid $name")
+    }
+
+    private fun JsonObject.requiredTronTokenStandard(name: String): TronTokenStandard =
+        when (requiredString(name)) {
+            "trc20" -> TronTokenStandard.Trc20
+            else -> throw IllegalArgumentException("Invalid $name")
+        }
+
+    private fun JsonObject.requiredTronVerificationStatus(name: String): TronVerificationStatus =
+        when (requiredString(name)) {
+            "verified" -> TronVerificationStatus.Verified
+            "unverified" -> TronVerificationStatus.Unverified
+            "unknown" -> TronVerificationStatus.Unknown
             else -> throw IllegalArgumentException("Invalid $name")
         }
 
@@ -718,5 +849,7 @@ class IndexerClient private constructor(
             "webrpc@v0.31.2;gen-typescript@v0.23.1;sequence-indexer@v0.4.0"
         private const val solanaIndexerGatewayWebrpcHeaderValue: String =
             "webrpc@v0.31.2;gen-kotlin@v0.3.2;solana-indexer-gateway@v1"
+        private const val tronIndexerGatewayWebrpcHeaderValue: String =
+            "webrpc@v0.31.2;gen-kotlin@v0.3.2;tron-indexer-gateway@v1"
     }
 }

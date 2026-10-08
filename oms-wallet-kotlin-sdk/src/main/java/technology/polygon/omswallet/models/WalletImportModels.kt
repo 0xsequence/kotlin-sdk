@@ -28,6 +28,20 @@ sealed interface WalletImportPrivateKey {
         override val walletType: WalletType = WalletType.Ethereum
     }
 
+    /** Tron (secp256k1) private key supplied as hexadecimal text. */
+    data class Tron(
+        val value: String,
+    ) : WalletImportPrivateKey {
+        override val walletType: WalletType = WalletType.Tron
+    }
+
+    /** Tron (secp256k1) private key supplied as 32 raw bytes. */
+    class TronBytes(
+        val value: ByteArray,
+    ) : WalletImportPrivateKey {
+        override val walletType: WalletType = WalletType.Tron
+    }
+
     /** Solana seed or keypair supplied as base58 text. */
     data class Solana(
         val value: String,

@@ -144,13 +144,13 @@ class WalletPayloadBuilderTest {
     @Test
     fun prepareEthereumContractCallPayloadMatchesWaasRequestShape() {
         assertEquals(
-            "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"contract\":\"0xcontract\",\"method\":\"mint()\",\"mode\":\"relayer\"}",
+            "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"contract\":\"0xcontract\",\"method\":\"mint\",\"mode\":\"relayer\"}",
             WaasApi.PrepareEthereumContractCall.encodeRequest(
                 PrepareEthereumContractCallRequest(
                     network = "80002",
                     walletId = "wallet-0",
                     contract = "0xcontract",
-                    method = "mint()",
+                    method = "mint",
                     mode = TransactionMode.Relayer,
                 ),
             ),
@@ -168,6 +168,8 @@ class WalletPayloadBuilderTest {
         assertEquals("/SignTypedData", WaasApi.SignTypedData.path)
         assertEquals("/PrepareEthereumTransaction", WaasApi.PrepareEthereumTransaction.path)
         assertEquals("/PrepareEthereumContractCall", WaasApi.PrepareEthereumContractCall.path)
+        assertEquals("/PrepareTronTransaction", WaasApi.PrepareTronTransaction.path)
+        assertEquals("/PrepareTronContractCall", WaasApi.PrepareTronContractCall.path)
         assertEquals("/Execute", WaasApi.Execute.path)
         assertEquals("/TransactionStatus", WaasApi.TransactionStatusMethod.path)
         assertEquals("/ListAccess", WaasApi.ListAccess.path)
