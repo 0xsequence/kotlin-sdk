@@ -5,7 +5,7 @@
   "main": "index.js",
   "dependencies": {
     "expo": "56.0.23",
-    "react": "19.2.3",
+    "react": "19.2.8",
     "react-native": "0.85.3"
   }
 }
