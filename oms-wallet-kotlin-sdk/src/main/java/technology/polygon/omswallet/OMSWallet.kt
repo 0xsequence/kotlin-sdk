@@ -5,7 +5,7 @@ import okhttp3.OkHttpClient
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
-import technology.polygon.omswallet.session.OMSWalletSession
+import technology.polygon.omswallet.session.OMSWalletSessionStateMachine
 import technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore
 import technology.polygon.omswallet.storage.AndroidSessionMetadataStore
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
@@ -27,7 +27,7 @@ class OMSWallet private constructor(
     projectId: String?,
     environment: OMSWalletEnvironment?,
     okHttpClient: OkHttpClient,
-    walletSession: OMSWalletSession?,
+    walletSession: OMSWalletSessionStateMachine?,
     sessionStore: OMSWalletSessionMetadataStore?,
     oidcRedirectAuthStore: OidcRedirectAuthStore?,
     credentialSigner: CredentialSigner?,
@@ -110,7 +110,7 @@ class OMSWallet private constructor(
             projectId: String? = null,
             environment: OMSWalletEnvironment? = null,
             okHttpClient: OkHttpClient = OkHttpClient(),
-            walletSession: OMSWalletSession = OMSWalletSession(),
+            walletSession: OMSWalletSessionStateMachine = OMSWalletSessionStateMachine(),
             sessionStore: OMSWalletSessionMetadataStore? = null,
             oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
             credentialSigner: CredentialSigner? = null,

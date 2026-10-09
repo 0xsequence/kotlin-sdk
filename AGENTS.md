@@ -88,7 +88,11 @@ current-stable and supported-minimum Expo compatibility.
   - Verify `docs/api.md` is current and every public symbol is grouped.
 - `./gradlew :oms-wallet-kotlin-sdk:checkPublicApiBaseline`
   - Compare the public API against `oms-wallet-kotlin-sdk/api/public-api.txt`.
-    `dumpPublicApi` in the same module regenerates the baseline.
+    `dumpPublicApi` in the same module regenerates the baseline. The dump uses the
+    binary-compatibility-validator library, so `internal` and synthetic declarations are excluded,
+    and it fails if it mentions a non-public SDK type or its top-level declarations differ from
+    `docs/api.md`; run `generateApiDocs`
+    first when the public API changes.
 - `./gradlew :oms-wallet-kotlin-sdk:checkReleaseArtifactBoundary`
   - Check that the release AAR excludes generated WaaS bytecode and Java-callable
     implementation details.
@@ -191,9 +195,9 @@ result.
   `https://github.com/0xsequence/waas` project; update this generated client
   from upstream as needed.
 - `WalletClient.kt`, `WalletRequestSigner.kt`, `WalletAuthChallenge.kt`,
-  `AndroidKeystoreP256CredentialSigner.kt`, and `AndroidKeystoreSessionStore.kt`
-  handle auth state, credentials, nonces, signing, and persisted sessions. Treat
-  behavior changes here as security-sensitive and add regression tests.
+  `AndroidKeystoreP256CredentialSigner.kt`, `AndroidSessionMetadataStore.kt`, and
+  `PersistedSessionRecord.kt` handle auth state, credentials, nonces, signing, and
+  persisted sessions. Treat behavior changes here as security-sensitive and add regression tests.
 - Wallet auth, signing, access, session, and transaction tests live under
   `oms-wallet-kotlin-sdk/src/test/java/technology/polygon/omswallet/wallet/`. Add
   narrowly scoped tests near the behavior being changed instead of broad setup

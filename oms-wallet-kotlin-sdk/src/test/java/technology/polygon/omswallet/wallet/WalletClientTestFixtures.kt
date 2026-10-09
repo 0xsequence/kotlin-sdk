@@ -46,6 +46,7 @@ internal fun walletFixture(
             when (type) {
                 WalletType.Ethereum -> NetworkFamily.EVM
                 WalletType.Solana -> NetworkFamily.Solana
+                WalletType.Tron -> NetworkFamily.Tron
                 WalletType.UNKNOWN_DEFAULT -> NetworkFamily.UNKNOWN_DEFAULT
             },
         keyOrigin = KeyOrigin.Enclave,
@@ -117,10 +118,28 @@ internal fun fakeJwt(exp: Long): String {
     return "$header.$payload.signature"
 }
 
+internal const val TEST_SESSION_EXPIRES_AT: String = "2099-01-01T00:00:00Z"
+
+/** Public SDK wallet model for session snapshots; the stored type drives wallet-family checks. */
+internal fun testWallet(
+    id: String,
+    address: String,
+    type: technology.polygon.omswallet.models.WalletType = technology.polygon.omswallet.models.WalletType.Ethereum,
+    reference: String? = null,
+    keyOrigin: technology.polygon.omswallet.models.WalletKeyOrigin = technology.polygon.omswallet.models.WalletKeyOrigin.Enclave,
+): technology.polygon.omswallet.models.Wallet =
+    technology.polygon.omswallet.models.Wallet(
+        id = id,
+        type = type,
+        address = address,
+        reference = reference,
+        keyOrigin = keyOrigin,
+    )
+
 internal fun activeSessionSnapshot(): OMSWalletSessionSnapshot =
     OMSWalletSessionSnapshot(
-        walletId = "wallet-active",
-        walletAddress = "0xactive",
+        wallet = testWallet("wallet-active", "0xactive"),
+        expiresAt = TEST_SESSION_EXPIRES_AT,
         signerAddress = TEST_CREDENTIAL_ID,
         signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
         auth = emailSessionAuth(),
@@ -131,7 +150,7 @@ internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
         verifier = "stale-oidc-verifier",
         challenge = "stale-oidc-challenge",
         nonce = "stale-oidc-nonce",
-        authMode = OidcRedirectAuthMode.AuthCodePKCE,
+        authMode = OidcAuthMode.AuthCodePKCE,
         redirectUri = "omsclientkotlindemo://auth/callback",
         issuer = "https://issuer.example",
         projectId = "test-project-id",

@@ -360,7 +360,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(store.snapshot)
             assertEquals(0, store.saveCalls)
             assertFalse(signer.hasCredential())
@@ -383,7 +383,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = null,
-                            wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
+                            wallets = listOf(walletFixture("wallet-abc", "0xabc0000000000000000000000000000000000000", "demo")),
                         ),
                     ).build(),
             )
@@ -391,8 +391,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-abc", address = "0xabc", reference = "demo"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-abc",
+                            address = "0xabc0000000000000000000000000000000000000",
+                            reference = "demo",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -442,13 +447,16 @@ class WalletEmailAuthTest {
             assertEmailSessionAuth(client.snapshotSession()?.auth)
             assertEquals(1, response.wallets.size)
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, response.wallets.single().type)
-            assertEquals("0xabc", response.wallets.single().address)
+            assertEquals("0xabc0000000000000000000000000000000000000", response.wallets.single().address)
+            val result: CompleteAuthResult = response
+            assertEquals(response.wallet, result.wallet)
+            assertEquals(response.credential, result.credential)
         }
 
     @Test
     fun completeEmailAuthBindsSessionToLocalSignerAcrossProtectedCallsAndRestore() =
         runBlocking {
-            val wallet = walletFixture("wallet-local-signer", "0xabc", "demo")
+            val wallet = walletFixture("wallet-local-signer", "0xabc0000000000000000000000000000000000000", "demo")
             val store = InMemorySessionStore()
             val signer = TrackingCredentialSigner(nonceValue = "1710000199")
             val environment =
@@ -511,7 +519,7 @@ class WalletEmailAuthTest {
             val restoredWallets = restoredClient.listWallets()
 
             assertEquals(listOf(wallet.id), activeWallets.map { it.id })
-            assertEquals(wallet.address, restoredClient.walletAddress)
+            assertEquals(wallet.address, restoredClient.activeWallet?.address)
             assertEquals(listOf(wallet.id), restoredWallets.map { it.id })
             assertEquals("/v1/Waas/CompleteAuth", requireNotNull(server.takeRequest()).target)
             assertEquals("/v1/Waas/UseWallet", requireNotNull(server.takeRequest()).target)
@@ -535,7 +543,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
+                            wallets = listOf(walletFixture("wallet-abc", "0xabc0000000000000000000000000000000000000", "demo")),
                         ),
                     ).build(),
             )
@@ -543,8 +551,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-abc", address = "0xabc", reference = "demo"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-abc",
+                            address = "0xabc0000000000000000000000000000000000000",
+                            reference = "demo",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -644,7 +657,7 @@ class WalletEmailAuthTest {
                                         type = WalletType.Ethereum,
                                         networkFamily = technology.polygon.omswallet.internal.generated.waas.NetworkFamily.EVM,
                                         keyOrigin = technology.polygon.omswallet.internal.generated.waas.KeyOrigin.Enclave,
-                                        address = "0xdef",
+                                        address = "0xdef0000000000000000000000000000000000000",
                                         reference = "picked",
                                     ),
                                 ),
@@ -655,8 +668,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -690,7 +708,7 @@ class WalletEmailAuthTest {
             assertEquals("/v1/Waas/UseWallet", request.target)
             assertEquals(expectedPayload, requireNotNull(request.body).utf8())
             assertEquals("wallet-def", resolved.id)
-            assertEquals("0xdef", resolved.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", resolved.address)
         }
 
     @Test
@@ -716,7 +734,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -724,8 +742,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -760,9 +783,9 @@ class WalletEmailAuthTest {
                 ),
                 requireNotNull(useWalletRequest.body).utf8(),
             )
-            assertEquals("0xdef", resolved.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", resolved.address)
             assertEquals("wallet-def", resolved.id)
-            assertEquals("0xdef", client.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", client.activeWallet?.address)
             assertFalse(client.hasPendingSignIn)
         }
 
@@ -800,7 +823,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         listWalletsResponseBody(
-                            wallets = listOf(walletFixture("wallet-later", "0xlater", "later")),
+                            wallets = listOf(walletFixture("wallet-later", "0x1a7e000000000000000000000000000000000000", "later")),
                         ),
                     ).build(),
             )
@@ -808,8 +831,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-later", address = "0xlater", reference = "later"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-later",
+                            address = "0x1a7e000000000000000000000000000000000000",
+                            reference = "later",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -854,7 +882,7 @@ class WalletEmailAuthTest {
                 requireNotNull(useWalletRequest.body).utf8(),
             )
             assertEquals("wallet-later", resolved.id)
-            assertEquals("0xlater", resolved.address)
+            assertEquals("0x1a7e000000000000000000000000000000000000", resolved.address)
             assertEquals(4, server.requestCount)
         }
 
@@ -874,7 +902,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-aaa", "0xaaa", "first")),
+                            wallets = listOf(walletFixture("wallet-aaa", "0xaaa0000000000000000000000000000000000000", "first")),
                             page = Page(cursor = "cursor-2"),
                         ),
                     ).build(),
@@ -885,7 +913,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         listWalletsResponseBody(
-                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb", "second")),
+                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second")),
                         ),
                     ).build(),
             )
@@ -893,8 +921,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -929,7 +962,7 @@ class WalletEmailAuthTest {
             assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals("wallet-bbb", resolved.wallet.id)
-            assertEquals("0xbbb", client.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", client.activeWallet?.address)
         }
 
     @Test
@@ -948,7 +981,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-aaa", "0xaaa", "first")),
+                            wallets = listOf(walletFixture("wallet-aaa", "0xaaa0000000000000000000000000000000000000", "first")),
                             page = Page(cursor = "cursor-2"),
                         ),
                     ).build(),
@@ -959,7 +992,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         listWalletsResponseBody(
-                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb", "second")),
+                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second")),
                         ),
                     ).build(),
             )
@@ -994,8 +1027,10 @@ class WalletEmailAuthTest {
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
+            assertNull(result.wallet)
+            assertEquals(selection.pendingSelection.credential, result.credential)
             assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(client.hasPendingSignIn)
             assertEquals(3, server.requestCount)
             assertNull(store.snapshot)
@@ -1004,8 +1039,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
 
             val selected = selection.pendingSelection.selectWallet("wallet-bbb")
@@ -1013,9 +1053,9 @@ class WalletEmailAuthTest {
 
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
             assertEquals("wallet-bbb", selected.wallet.id)
-            assertEquals("0xbbb", selected.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", selected.wallet.address)
             assertEquals("wallet-bbb", store.snapshot?.walletId)
-            assertEquals("0xbbb", store.snapshot?.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEmailSessionAuth(store.snapshot?.auth)
         }
@@ -1078,8 +1118,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-new", address = "0xnew", reference = "fresh"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-new",
+                            address = "0x4e00000000000000000000000000000000000000",
+                            reference = "fresh",
+                        ),
+                    ).build(),
             )
 
             val selected = selection.pendingSelection.createAndSelectWallet(reference = "fresh")
@@ -1098,9 +1143,9 @@ class WalletEmailAuthTest {
                 requireNotNull(createWalletRequest.body).utf8(),
             )
             assertEquals("wallet-new", selected.wallet.id)
-            assertEquals("0xnew", selected.walletAddress)
+            assertEquals("0x4e00000000000000000000000000000000000000", selected.wallet.address)
             assertEquals("wallet-new", store.snapshot?.walletId)
-            assertEquals("0xnew", store.snapshot?.walletAddress)
+            assertEquals("0x4e00000000000000000000000000000000000000", store.snapshot?.walletAddress)
         }
 
     @Test
@@ -1120,7 +1165,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "old@example.com",
-                            wallets = listOf(walletFixture("wallet-old", "0xold", "old")),
+                            wallets = listOf(walletFixture("wallet-old", "0x01d0000000000000000000000000000000000000", "old")),
                         ),
                     ).build(),
             )
@@ -1138,7 +1183,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "new@example.com",
-                            wallets = listOf(walletFixture("wallet-new", "0xnew", "new")),
+                            wallets = listOf(walletFixture("wallet-new", "0x4e00000000000000000000000000000000000000", "new")),
                         ),
                     ).build(),
             )
@@ -1146,15 +1191,25 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-old", address = "0xold", reference = "old"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-old",
+                            address = "0x01d0000000000000000000000000000000000000",
+                            reference = "old",
+                        ),
+                    ).build(),
             )
             server.enqueue(
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-stale", address = "0xstale", reference = "stale"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-stale",
+                            address = "0x57a1e00000000000000000000000000000000000",
+                            reference = "stale",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -1198,7 +1253,7 @@ class WalletEmailAuthTest {
             assertEquals("Pending wallet selection is no longer active", selectFailure?.message)
             assertEquals("Pending wallet selection is no longer active", createFailure?.message)
             assertEquals(requestCountBeforeStaleSelection, server.requestCount)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(client.hasPendingSignIn)
         }
 
@@ -1218,7 +1273,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb", "second")),
+                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second")),
                         ),
                     ).build(),
             )
@@ -1226,15 +1281,25 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
             server.enqueue(
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -1266,7 +1331,7 @@ class WalletEmailAuthTest {
                 }.exceptionOrNull()
 
             assertEquals("wallet-bbb", selected.wallet.id)
-            assertEquals("0xbbb", client.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", client.activeWallet?.address)
             assertEquals("Pending wallet selection is no longer active", reuseFailure?.message)
             assertEquals(requestCountAfterSelection, server.requestCount)
         }
@@ -1288,7 +1353,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "old@example.com",
-                            wallets = listOf(walletFixture("wallet-old", "0xold", "old")),
+                            wallets = listOf(walletFixture("wallet-old", "0x01d0000000000000000000000000000000000000", "old")),
                         ),
                     ).build(),
             )
@@ -1306,7 +1371,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "new@example.com",
-                            wallets = listOf(walletFixture("wallet-new", "0xnew", "new")),
+                            wallets = listOf(walletFixture("wallet-new", "0x4e00000000000000000000000000000000000000", "new")),
                         ),
                     ).build(),
             )
@@ -1314,15 +1379,25 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-new", address = "0xnew", reference = "new"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-new",
+                            address = "0x4e00000000000000000000000000000000000000",
+                            reference = "new",
+                        ),
+                    ).build(),
             )
             server.enqueue(
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-stale", address = "0xstale", reference = "stale"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-stale",
+                            address = "0x57a1e00000000000000000000000000000000000",
+                            reference = "stale",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -1354,7 +1429,7 @@ class WalletEmailAuthTest {
                     oldPendingSelection.createAndSelectWallet(reference = "stale")
                 }.exceptionOrNull()
 
-            assertEquals("0xnew", client.walletAddress)
+            assertEquals("0x4e00000000000000000000000000000000000000", client.activeWallet?.address)
             assertEquals("Pending wallet selection is no longer active", createFailure?.message)
             assertEquals(requestCountBeforeStaleSelection, server.requestCount)
         }
@@ -1389,7 +1464,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1397,8 +1472,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val store = InMemorySessionStore()
@@ -1444,7 +1524,7 @@ class WalletEmailAuthTest {
                 TEST_CREDENTIAL_ID,
                 client.signerAddress,
             )
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(store.snapshot)
             assertEquals(0, store.saveCalls)
 
@@ -1452,11 +1532,11 @@ class WalletEmailAuthTest {
 
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
-            assertEquals("0xdef", wallet.address)
-            assertEquals("0xdef", client.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", wallet.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", client.activeWallet?.address)
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
-            assertEquals("0xdef", store.snapshot?.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEmailSessionAuth(store.snapshot?.auth)
             assertEquals(1, store.saveCalls)
@@ -1481,8 +1561,8 @@ class WalletEmailAuthTest {
                             email = "user@example.com",
                             wallets =
                                 listOf(
-                                    walletFixture("wallet-aaa", "0xaaa", "first"),
-                                    walletFixture("wallet-bbb", "0xbbb", "second"),
+                                    walletFixture("wallet-aaa", "0xaaa0000000000000000000000000000000000000", "first"),
+                                    walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second"),
                                 ),
                         ),
                     ).build(),
@@ -1491,8 +1571,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-aaa", address = "0xaaa", reference = "first"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-aaa",
+                            address = "0xaaa0000000000000000000000000000000000000",
+                            reference = "first",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -1529,13 +1614,13 @@ class WalletEmailAuthTest {
             assertTrue(result is CompleteAuthResult.WalletSelected)
             val selected = result as CompleteAuthResult.WalletSelected
             assertEquals("wallet-aaa", selected.wallet.id)
-            assertEquals("0xaaa", selected.walletAddress)
+            assertEquals("0xaaa0000000000000000000000000000000000000", selected.wallet.address)
             assertFalse(client.hasPendingSignIn)
             assertEquals(
                 TEST_CREDENTIAL_ID,
                 client.signerAddress,
             )
-            assertEquals("0xaaa", client.walletAddress)
+            assertEquals("0xaaa0000000000000000000000000000000000000", client.activeWallet?.address)
         }
 
     @Test
@@ -1557,8 +1642,8 @@ class WalletEmailAuthTest {
                             email = "user@example.com",
                             wallets =
                                 listOf(
-                                    walletFixture("wallet-aaa", "0xaaa", "first"),
-                                    walletFixture("wallet-bbb", "0xbbb", "second"),
+                                    walletFixture("wallet-aaa", "0xaaa0000000000000000000000000000000000000", "first"),
+                                    walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second"),
                                 ),
                         ),
                     ).build(),
@@ -1567,8 +1652,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -1608,8 +1698,8 @@ class WalletEmailAuthTest {
                 ),
                 requireNotNull(useWalletRequest.body).utf8(),
             )
-            assertEquals("0xbbb", selectedWallet.wallet.address)
-            assertEquals("0xbbb", client.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", selectedWallet.wallet.address)
+            assertEquals("0xbbb0000000000000000000000000000000000000", client.activeWallet?.address)
         }
 
     @Test
@@ -1635,7 +1725,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1675,7 +1765,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(store.snapshot)
         }
 
@@ -1742,7 +1832,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(store.snapshot)
         }
 
@@ -1769,7 +1859,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1777,8 +1867,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val store = FailingSaveSessionStore()
@@ -1811,7 +1906,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(store.clearCalls > 0)
         }
 

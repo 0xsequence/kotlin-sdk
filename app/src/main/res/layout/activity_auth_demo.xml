@@ -61,7 +61,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="OMSWalletSessionState"
+                    android:text="OMSWalletSession"
                     android:textColor="@color/slate_900"
                     android:textSize="18sp"
                     android:textStyle="bold" />
@@ -322,6 +322,22 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="14dp"
+                        android:hint="Wallet type"
+                        app:endIconMode="dropdown_menu">
+
+                        <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                            android:id="@+id/walletTypeInput"
+                            style="@style/Widget.Kotlinsdk.Dropdown"
+                            android:layout_width="match_parent"
+                            android:inputType="none" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/networkInputLayout"
+                        style="@style/Widget.Kotlinsdk.TextInputLayout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
                         android:hint="Network"
                         app:endIconMode="dropdown_menu">
 
@@ -334,175 +350,788 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Kotlinsdk.Card"
+            <LinearLayout
+                android:id="@+id/evmActionsContainer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp">
+                android:orientation="vertical">
 
-                <LinearLayout
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="20dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Signature"
-                        android:textColor="@color/slate_900"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Kotlinsdk.TextInputLayout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:hint="Message to sign">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/messageInput"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="textMultiLine" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                    android:layout_marginTop="14dp">
 
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:baselineAligned="false"
-                        android:orientation="horizontal">
+                        android:orientation="vertical"
+                        android:padding="20dp">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/signMessageButton"
-                            style="@style/Widget.Kotlinsdk.Button"
-                            android:layout_width="0dp"
-                            android:layout_height="52dp"
-                            android:layout_weight="1"
-                            android:text="Sign Message" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Signature"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
 
-                        <Space
-                            android:layout_width="12dp"
-                            android:layout_height="1dp" />
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:hint="Message to sign">
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/verifySignatureButton"
-                            style="@style/Widget.Kotlinsdk.Button.Outline"
-                            android:layout_width="0dp"
-                            android:layout_height="52dp"
-                            android:layout_weight="1"
-                            android:text="Verify Signature" />
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/messageInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textMultiLine" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:baselineAligned="false"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/signMessageButton"
+                                style="@style/Widget.Kotlinsdk.Button"
+                                android:layout_width="0dp"
+                                android:layout_height="52dp"
+                                android:layout_weight="1"
+                                android:text="Sign Message" />
+
+                            <Space
+                                android:layout_width="12dp"
+                                android:layout_height="1dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/verifySignatureButton"
+                                style="@style/Widget.Kotlinsdk.Button.Outline"
+                                android:layout_width="0dp"
+                                android:layout_height="52dp"
+                                android:layout_weight="1"
+                                android:text="Verify Signature" />
+                        </LinearLayout>
+
+                        <TextView
+                            android:id="@+id/lastSignatureView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Last signature: none"
+                            android:textColor="@color/slate_700"
+                            android:textSize="12sp"
+                            android:typeface="monospace" />
+
+                        <TextView
+                            android:id="@+id/signatureStatusView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Signature status: waiting for a message."
+                            android:textColor="@color/slate_700"
+                            android:textSize="13sp" />
                     </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
 
-                    <TextView
-                        android:id="@+id/lastSignatureView"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:text="Last signature: none"
-                        android:textColor="@color/slate_700"
-                        android:textSize="12sp"
-                        android:typeface="monospace" />
-
-                    <TextView
-                        android:id="@+id/signatureStatusView"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:text="Signature status: waiting for a message."
-                        android:textColor="@color/slate_700"
-                        android:textSize="13sp" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
-
-            <com.google.android.material.card.MaterialCardView
-                style="@style/Widget.Kotlinsdk.Card"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp">
-
-                <LinearLayout
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:padding="20dp">
+                    android:layout_marginTop="14dp">
 
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Transaction"
-                        android:textColor="@color/slate_900"
-                        android:textSize="20sp"
-                        android:textStyle="bold" />
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Kotlinsdk.TextInputLayout"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:hint="Transaction destination">
+                        android:orientation="vertical"
+                        android:padding="20dp">
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/transactionToInput"
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Transaction"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="textNoSuggestions" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                            android:layout_marginTop="14dp"
+                            android:hint="Transaction destination">
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        style="@style/Widget.Kotlinsdk.TextInputLayout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:hint="Transaction value">
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/transactionToInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textNoSuggestions" />
+                        </com.google.android.material.textfield.TextInputLayout>
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/transactionValueInput"
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:digits="0123456789."
-                            android:inputType="numberDecimal"
-                            android:text="0" />
-                    </com.google.android.material.textfield.TextInputLayout>
+                            android:layout_marginTop="10dp"
+                            android:hint="Transaction value">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/sendTransactionButton"
-                        style="@style/Widget.Kotlinsdk.Button"
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/transactionValueInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:digits="0123456789."
+                                android:inputType="numberDecimal"
+                                android:text="0" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/sendTransactionButton"
+                            style="@style/Widget.Kotlinsdk.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Send Transaction" />
+
+                        <TextView
+                            android:id="@+id/lastTransactionHashView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Last tx hash: none"
+                            android:textColor="@color/slate_700"
+                            android:textSize="12sp"
+                            android:typeface="monospace" />
+
+                        <TextView
+                            android:id="@+id/transactionStatusView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Transaction status: waiting to send."
+                            android:textColor="@color/slate_700"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/openExplorerButton"
+                            style="@style/Widget.Kotlinsdk.Button.Outline"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Open Tx In Explorer" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/tronActionsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:text="Send Transaction" />
+                        android:orientation="vertical"
+                        android:padding="20dp">
 
-                    <TextView
-                        android:id="@+id/lastTransactionHashView"
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Tron (Nile testnet)"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Tron wallets use native mode only. Transactions are often sponsored by each account's daily free bandwidth; once it is spent, the network fee is paid in TRX."
+                            android:textColor="@color/slate_500"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/tronBalancesView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Nile TRX: -\nNile USDT: -"
+                            android:textColor="@color/forest_700"
+                            android:textIsSelectable="true"
+                            android:textSize="13sp"
+                            android:typeface="monospace" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:baselineAligned="false"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/tronRefreshBalancesButton"
+                                style="@style/Widget.Kotlinsdk.Button.Outline"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:text="Refresh" />
+
+                            <Space
+                                android:layout_width="12dp"
+                                android:layout_height="1dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/tronFaucetButton"
+                                style="@style/Widget.Kotlinsdk.Button.Outline"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:text="Nile faucet" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="14dp"
-                        android:text="Last tx hash: none"
-                        android:textColor="@color/slate_700"
-                        android:textSize="12sp"
-                        android:typeface="monospace" />
+                        android:orientation="vertical"
+                        android:padding="20dp">
 
-                    <TextView
-                        android:id="@+id/transactionStatusView"
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Tron Signature"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:hint="Message to sign">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/tronMessageInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textMultiLine"
+                                android:text="Sign in to OMS Wallet" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/tronSignMessageButton"
+                            style="@style/Widget.Kotlinsdk.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="14dp"
+                            android:text="Sign And Verify" />
+
+                        <TextView
+                            android:id="@+id/tronSignatureView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Last signature: none"
+                            android:textColor="@color/slate_700"
+                            android:textIsSelectable="true"
+                            android:textSize="12sp"
+                            android:typeface="monospace" />
+
+                        <TextView
+                            android:id="@+id/tronSignatureStatusView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Signature status: ready to sign."
+                            android:textColor="@color/slate_700"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:text="Transaction status: waiting to send."
-                        android:textColor="@color/slate_700"
-                        android:textSize="13sp" />
+                        android:orientation="vertical"
+                        android:padding="20dp">
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/openExplorerButton"
-                        style="@style/Widget.Kotlinsdk.Button.Outline"
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Tron Transfer"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:hint="Asset"
+                            app:endIconMode="dropdown_menu">
+
+                            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                                android:id="@+id/tronAssetInput"
+                                style="@style/Widget.Kotlinsdk.Dropdown"
+                                android:layout_width="match_parent"
+                                android:inputType="none" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <LinearLayout
+                            android:id="@+id/tronCustomTokenContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Kotlinsdk.TextInputLayout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:hint="TRC-20 contract address (T...)">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/tronTokenContractInput"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="textNoSuggestions" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Kotlinsdk.TextInputLayout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:hint="Token decimals">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/tronTokenDecimalsInput"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="number"
+                                    android:text="6" />
+                            </com.google.android.material.textfield.TextInputLayout>
+                        </LinearLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:hint="Recipient (T...)">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/tronRecipientInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textNoSuggestions" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/tronAmountLayout"
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:hint="Amount (TRX)">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/tronAmountInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:digits="0123456789."
+                                android:inputType="numberDecimal"
+                                android:text="1" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/tronSendButton"
+                            style="@style/Widget.Kotlinsdk.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Send On Tron Nile" />
+
+                        <TextView
+                            android:id="@+id/tronTransactionHashView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Last tx hash: none"
+                            android:textColor="@color/slate_700"
+                            android:textIsSelectable="true"
+                            android:textSize="12sp"
+                            android:typeface="monospace" />
+
+                        <TextView
+                            android:id="@+id/tronTransactionStatusView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Transfer status: ready to send."
+                            android:textColor="@color/slate_700"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/tronOpenExplorerButton"
+                            style="@style/Widget.Kotlinsdk.Button.Outline"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Open In Tronscan"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/solanaActionsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="12dp"
-                        android:text="Open Tx In Explorer" />
-                </LinearLayout>
-            </com.google.android.material.card.MaterialCardView>
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Solana (Devnet)"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Transfers are relayed. When a recipient token account must be created, you choose how to pay its rent."
+                            android:textColor="@color/slate_500"
+                            android:textSize="13sp" />
+
+                        <TextView
+                            android:id="@+id/solanaBalancesView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Devnet SOL: -\nDevnet USDC: -"
+                            android:textColor="@color/forest_700"
+                            android:textIsSelectable="true"
+                            android:textSize="13sp"
+                            android:typeface="monospace" />
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:baselineAligned="false"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/solanaRefreshBalancesButton"
+                                style="@style/Widget.Kotlinsdk.Button.Outline"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:text="Refresh" />
+
+                            <Space
+                                android:layout_width="12dp"
+                                android:layout_height="1dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/solanaViewWalletButton"
+                                style="@style/Widget.Kotlinsdk.Button.Outline"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:text="View wallet" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:baselineAligned="false"
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/solanaSolFaucetButton"
+                                style="@style/Widget.Kotlinsdk.Button.Outline"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:text="SOL faucet" />
+
+                            <Space
+                                android:layout_width="12dp"
+                                android:layout_height="1dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/solanaUsdcFaucetButton"
+                                style="@style/Widget.Kotlinsdk.Button.Outline"
+                                android:layout_width="0dp"
+                                android:layout_height="48dp"
+                                android:layout_weight="1"
+                                android:text="USDC faucet" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Solana Signature"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:hint="Message to sign">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/solanaMessageInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textMultiLine"
+                                android:text="Sign in to OMS Wallet" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/solanaSignMessageButton"
+                            style="@style/Widget.Kotlinsdk.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:layout_marginTop="14dp"
+                            android:text="Sign And Verify" />
+
+                        <TextView
+                            android:id="@+id/solanaSignatureView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Last signature: none"
+                            android:textColor="@color/slate_700"
+                            android:textIsSelectable="true"
+                            android:textSize="12sp"
+                            android:typeface="monospace" />
+
+                        <TextView
+                            android:id="@+id/solanaSignatureStatusView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Signature status: ready to sign."
+                            android:textColor="@color/slate_700"
+                            android:textSize="13sp" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <com.google.android.material.card.MaterialCardView
+                    style="@style/Widget.Kotlinsdk.Card"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Solana Transfer"
+                            android:textColor="@color/slate_900"
+                            android:textSize="20sp"
+                            android:textStyle="bold" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:hint="Asset"
+                            app:endIconMode="dropdown_menu">
+
+                            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                                android:id="@+id/solanaAssetInput"
+                                style="@style/Widget.Kotlinsdk.Dropdown"
+                                android:layout_width="match_parent"
+                                android:inputType="none" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <TextView
+                            android:id="@+id/solanaAssetHintView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textColor="@color/slate_500"
+                            android:textIsSelectable="true"
+                            android:textSize="12sp"
+                            android:visibility="gone" />
+
+                        <LinearLayout
+                            android:id="@+id/solanaCustomTokenContainer"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical"
+                            android:visibility="gone">
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Kotlinsdk.TextInputLayout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:hint="SPL or Token-2022 mint address">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/solanaTokenMintInput"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="textNoSuggestions" />
+                            </com.google.android.material.textfield.TextInputLayout>
+
+                            <com.google.android.material.textfield.TextInputLayout
+                                style="@style/Widget.Kotlinsdk.TextInputLayout"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="10dp"
+                                android:hint="Token decimals">
+
+                                <com.google.android.material.textfield.TextInputEditText
+                                    android:id="@+id/solanaTokenDecimalsInput"
+                                    android:layout_width="match_parent"
+                                    android:layout_height="wrap_content"
+                                    android:inputType="number"
+                                    android:text="6" />
+                            </com.google.android.material.textfield.TextInputLayout>
+                        </LinearLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:hint="Recipient wallet address">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/solanaRecipientInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="textNoSuggestions" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/solanaAmountLayout"
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:hint="Amount (SOL)">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/solanaAmountInput"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:digits="0123456789."
+                                android:inputType="numberDecimal"
+                                android:text="0.001" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/solanaSendButton"
+                            style="@style/Widget.Kotlinsdk.Button"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Send On Solana Devnet" />
+
+                        <TextView
+                            android:id="@+id/solanaTransactionSignatureView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="14dp"
+                            android:text="Last tx signature: none"
+                            android:textColor="@color/slate_700"
+                            android:textIsSelectable="true"
+                            android:textSize="12sp"
+                            android:typeface="monospace" />
+
+                        <TextView
+                            android:id="@+id/solanaTransactionStatusView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="10dp"
+                            android:text="Transfer status: ready to send."
+                            android:textColor="@color/slate_700"
+                            android:textSize="13sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/solanaOpenExplorerButton"
+                            style="@style/Widget.Kotlinsdk.Button.Outline"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:text="Open In Solana Explorer"
+                            android:visibility="gone" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+            </LinearLayout>
         </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView

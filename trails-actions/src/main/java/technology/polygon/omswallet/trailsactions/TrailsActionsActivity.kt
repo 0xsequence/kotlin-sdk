@@ -50,6 +50,7 @@ import technology.polygon.omswallet.models.SendTransactionResponse
 import technology.polygon.omswallet.models.TransactionStatus
 import technology.polygon.omswallet.models.TransactionStatusResolution
 import technology.polygon.omswallet.models.Wallet
+import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.trailsactions.generated.CommitIntentRequest
 import technology.polygon.omswallet.trailsactions.generated.CreateYieldActionRequest
 import technology.polygon.omswallet.trailsactions.generated.ExecuteIntentRequest
@@ -171,7 +172,7 @@ class TrailsActionsActivity : AppCompatActivity() {
         restoreAuthPreferences()
         subscribeSessionExpiry()
         renderSessionState()
-        if (sdk.wallet.session.walletAddress != null) {
+        if (activeEthereumAddress() != null) {
             refreshSignedInData()
         }
         handleOidcRedirectCallback(intent)
@@ -217,7 +218,7 @@ class TrailsActionsActivity : AppCompatActivity() {
 
         sessionStateCard =
             card {
-                addView(authDemoSectionTitle("OMSWalletSessionState"))
+                addView(authDemoSectionTitle("OMSWalletSession"))
                 sessionStateView = monospaceBody("")
                 addView(sessionStateView, matchWrap(topMargin = 10))
             }
@@ -579,7 +580,7 @@ class TrailsActionsActivity : AppCompatActivity() {
             val initialBalances = balances
             val latest = sendPreparedSwap(prepared)
             val hash = latest.txnHash ?: latest.txnId
-            lastTransactionHash = hash
+            lastTransactionHash = latest.txnHash
             renderLastTransaction()
             swapStatusView.text = "Swap status: sent ${shortHash(hash)}. Refreshing balances..."
             waitForUsdcBalanceIncrease(
@@ -656,7 +657,7 @@ class TrailsActionsActivity : AppCompatActivity() {
             val initialBalances = balances
             val swapResponse = sendPreparedSwap(plan.swap)
             val swapHash = swapResponse.txnHash ?: swapResponse.txnId
-            lastTransactionHash = swapHash
+            lastTransactionHash = swapResponse.txnHash
             renderLastTransaction()
             val didReceiveSwapOutput =
                 waitForUsdcBalanceIncrease(
@@ -708,7 +709,7 @@ class TrailsActionsActivity : AppCompatActivity() {
                     renderEarnPositions(EarnPositionsResult(earnPositions, emptyList()))
                 }
             val hash = response.txnHash ?: response.txnId
-            lastTransactionHash = hash
+            lastTransactionHash = response.txnHash
             lastWithdrawTransactionHashes[position.id] = hash
             renderLastTransaction()
             withdrawStatusesByPosition[position.id] = "Withdraw status: sent ${shortHash(hash)}. Refreshing..."
@@ -1125,10 +1126,10 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private suspend fun requestWalletSelectionChoice(pendingSelection: PendingWalletSelection) =
-        suspendCancellableCoroutine<technology.polygon.omswallet.wallet.WalletSelectionResult> { continuation ->
+        suspendCancellableCoroutine<technology.polygon.omswallet.wallet.WalletActivationResult> { continuation ->
             var resumed = false
 
-            fun resumeOnce(action: suspend () -> technology.polygon.omswallet.wallet.WalletSelectionResult) {
+            fun resumeOnce(action: suspend () -> technology.polygon.omswallet.wallet.WalletActivationResult) {
                 if (resumed) return
                 resumed = true
                 uiScope.launch {
@@ -1288,7 +1289,7 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private fun renderSessionState() {
-        val walletAddress = sdk.wallet.session.walletAddress
+        val walletAddress = activeEthereumAddress()
         if (walletAddress == null) {
             renderSessionStateBox()
             expiredSessionEvent?.let(::renderExpiredSession) ?: resetUiForNoSession()
@@ -1372,7 +1373,7 @@ class TrailsActionsActivity : AppCompatActivity() {
         if (isNewEvent) {
             appendLog(
                 "Wallet session expired at ${event.expiredAt}: " +
-                    "wallet=${event.session.walletAddress ?: "none"} email=${event.session.auth?.email ?: "none"}",
+                    "wallet=${event.wallet?.address ?: "none"} email=${event.session.auth.email ?: "none"}",
             )
         }
     }
@@ -1444,26 +1445,26 @@ class TrailsActionsActivity : AppCompatActivity() {
         val session = sdk.wallet.session
         val expiredEvent = expiredSessionEvent
         sessionStateCard.visibility =
-            if (session.walletAddress == null && expiredEvent == null) {
+            if (session == null && expiredEvent == null) {
                 View.GONE
             } else {
                 View.VISIBLE
             }
         sessionStateView.text =
-            if (expiredEvent != null && session.walletAddress == null) {
+            if (expiredEvent != null && session == null) {
                 buildString {
                     appendLine("expiredAt: ${expiredEvent.expiredAt}")
-                    appendLine("walletAddress: ${expiredEvent.session.walletAddress ?: "null"}")
-                    appendLine("expiresAt: ${expiredEvent.session.expiresAt ?: "null"}")
+                    appendLine("walletAddress: ${expiredEvent.wallet?.address ?: "null"}")
+                    appendLine("expiresAt: ${expiredEvent.session.expiresAt}")
                     appendLine("auth: ${formatSessionAuth(expiredEvent.session.auth)}")
-                    append("authEmail: ${expiredEvent.session.auth?.email ?: "null"}")
+                    append("authEmail: ${expiredEvent.session.auth.email ?: "null"}")
                 }
             } else {
                 buildString {
-                    appendLine("walletAddress: ${session.walletAddress ?: "null"}")
-                    appendLine("expiresAt: ${session.expiresAt ?: "null"}")
-                    appendLine("auth: ${formatSessionAuth(session.auth)}")
-                    append("authEmail: ${session.auth?.email ?: "null"}")
+                    appendLine("walletAddress: ${activeEthereumAddress() ?: "null"}")
+                    appendLine("expiresAt: ${session?.expiresAt ?: "null"}")
+                    appendLine("auth: ${formatSessionAuth(session?.auth)}")
+                    append("authEmail: ${session?.auth?.email ?: "null"}")
                 }
             }
     }
@@ -1476,9 +1477,14 @@ class TrailsActionsActivity : AppCompatActivity() {
         }
 
     private fun requireWalletAddress(): String =
-        sdk.wallet.session.walletAddress
-            ?.takeIf { it.isNotBlank() }
-            ?: throw IllegalStateException("Sign in before preparing a Trails action.")
+        activeEthereumAddress()
+            ?: throw IllegalStateException("Sign in with an Ethereum wallet before preparing a Trails action.")
+
+    /** Trails actions are EVM-only; non-Ethereum active wallets are treated as no wallet. */
+    private fun activeEthereumAddress(): String? =
+        sdk.wallet.activeWallet
+            ?.takeIf { it.type == WalletType.Ethereum }
+            ?.address
 
     private fun requireEmailForSignIn(): String {
         val typedEmail =
@@ -1642,7 +1648,7 @@ class TrailsActionsActivity : AppCompatActivity() {
     }
 
     private fun copyWalletAddress() {
-        val address = sdk.wallet.session.walletAddress
+        val address = activeEthereumAddress()
         if (address.isNullOrBlank()) {
             Toast.makeText(this, "No wallet address", Toast.LENGTH_SHORT).show()
             return

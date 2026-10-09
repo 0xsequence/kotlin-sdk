@@ -18,9 +18,6 @@ internal fun googleRedirectSessionAuth(email: String? = "user@example.com"): OMS
         email = email,
     )
 
-internal fun googleIdTokenSessionAuth(email: String? = "user@example.com"): OMSWalletOidcSessionAuth =
-    googleRedirectSessionAuth(email = email).copy(flow = OMSWalletOidcSessionAuthFlow.IdToken)
-
 internal fun assertEmailSessionAuth(
     auth: OMSWalletSessionAuth?,
     email: String? = "user@example.com",

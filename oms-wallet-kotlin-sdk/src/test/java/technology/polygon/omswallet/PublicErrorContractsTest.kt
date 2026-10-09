@@ -34,12 +34,14 @@ import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
 import technology.polygon.omswallet.wallet.StartOidcRedirectAuthResult
 import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
+import technology.polygon.omswallet.wallet.TEST_SESSION_EXPIRES_AT
 import technology.polygon.omswallet.wallet.TrackingCredentialSigner
 import technology.polygon.omswallet.wallet.WalletClient
 import technology.polygon.omswallet.wallet.WalletSelectionBehavior
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 import technology.polygon.omswallet.wallet.activeSessionSnapshot
 import technology.polygon.omswallet.wallet.completeAuthResponseBody
+import technology.polygon.omswallet.wallet.testWallet
 import technology.polygon.omswallet.wallet.walletFixture
 import java.io.IOException
 import java.math.BigInteger
@@ -473,8 +475,8 @@ class PublicErrorContractsTest {
                     "wallet.callContract" to {
                         client.wallet.callContract(
                             network = Network.POLYGON,
-                            contract = "0x2222222222222222222222222222222222222222",
-                            method = "transfer(address,uint256)",
+                            contractAddress = "0x2222222222222222222222222222222222222222",
+                            method = "transfer",
                             args =
                                 listOf(
                                     AbiArg("address", JsonPrimitive("0x3333333333333333333333333333333333333333")),
@@ -732,6 +734,7 @@ class PublicErrorContractsTest {
                         client.wallet.isValidSolanaMessageSignature(
                             message = "hello",
                             signature = "solana-signature",
+                            walletAddress = "4Nd1mYQbqjVU2aR7cJNPyqW9XjHnBYvWQd7ZxYxvT6uP",
                         )
                     },
                 ),
@@ -770,6 +773,44 @@ class PublicErrorContractsTest {
                 ),
                 publicError {
                     client.getTransactionStatus("txn-missing")
+                },
+            )
+        }
+
+    @Test
+    fun snapshotsAddressAlreadyImportedBackendErrorAsStableCode() =
+        runBlocking {
+            // Wallet import responses require enclave attestation, so this uses another signed
+            // WaaS call; the WebRPC error mapping does not depend on the operation.
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(409)
+                    .body("""{"error":"AddressAlreadyImported","code":7313,"msg":"Address already imported","status":409}""")
+                    .build(),
+            )
+
+            val client = createRestoredWalletClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_WALLET_ADDRESS_ALREADY_IMPORTED",
+                    operation = "wallet.useWallet",
+                    message = "Address already imported",
+                    status = 409,
+                    retryable = false,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "AddressAlreadyImported",
+                            code = "7313",
+                            message = "Address already imported",
+                            status = 409,
+                        ),
+                ),
+                publicError {
+                    client.useWallet("wallet-imported")
                 },
             )
         }
@@ -1214,8 +1255,8 @@ class PublicErrorContractsTest {
                 sessionStore =
                     InMemorySessionStore(
                         OMSWalletSessionSnapshot(
-                            walletId = "wallet-main",
-                            walletAddress = "0x9999999999999999999999999999999999999999",
+                            wallet = testWallet("wallet-main", "0x9999999999999999999999999999999999999999"),
+                            expiresAt = TEST_SESSION_EXPIRES_AT,
                             signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                             auth = OMSWalletEmailSessionAuth(email = "user@example.com"),

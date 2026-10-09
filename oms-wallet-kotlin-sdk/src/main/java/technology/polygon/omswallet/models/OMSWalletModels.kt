@@ -8,6 +8,7 @@ enum class WalletType(
 ) {
     Ethereum("ethereum"),
     Solana("solana"),
+    Tron("tron"),
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 
@@ -38,6 +39,12 @@ enum class TransactionStatus(
     UNKNOWN_DEFAULT("UNKNOWN_DEFAULT"),
 }
 
+/**
+ * A wallet available to the authenticated user.
+ *
+ * [address] is a `0x` hex address for [WalletType.Ethereum], a base58 public key
+ * for [WalletType.Solana], and a Base58Check `T…` address for [WalletType.Tron].
+ */
 data class Wallet(
     val id: String,
     val type: WalletType,
@@ -234,17 +241,44 @@ enum class TransactionStatusResolution {
     TimedOut,
 }
 
+/**
+ * Transaction status polling after execution. The first [fastPollCount] polls wait
+ * [fastIntervalMs] between requests, later polls wait [intervalMs], and polling
+ * stops after [timeoutMs]. All durations are in milliseconds.
+ */
 data class TransactionStatusPollingOptions(
-    val fastPollIntervalMillis: Long = 400L,
+    val fastIntervalMs: Long = 400L,
     val fastPollCount: Int = 5,
-    val pollIntervalMillis: Long = 2_000L,
-    val timeoutMillis: Long = 60_000L,
+    val intervalMs: Long = 2_000L,
+    val timeoutMs: Long = 60_000L,
 )
 
+/**
+ * Indexer page request. [column], [before], [after], and [sort] are the
+ * indexer's optional cursor fields and are sent only when set.
+ */
 data class TokenBalancesPageRequest(
     val page: Int = 0,
     val pageSize: Int = 40,
+    val column: String? = null,
+    val before: JsonElement? = null,
+    val after: JsonElement? = null,
+    val sort: List<SortBy>? = null,
 )
+
+/** Indexer sort column and direction. */
+data class SortBy(
+    val column: String,
+    val order: SortOrder,
+)
+
+/** Indexer sort direction. */
+enum class SortOrder(
+    val wireValue: String,
+) {
+    DESC("DESC"),
+    ASC("ASC"),
+}
 
 enum class IndexerNetworkType(
     val wireValue: String,
@@ -262,10 +296,18 @@ enum class ContractVerificationStatus(
     ALL("ALL"),
 }
 
+/**
+ * Indexer page returned with results. [before], [after], [column], and [sort]
+ * are present when the indexer returns cursor paging state.
+ */
 data class TokenBalancesPage(
     val page: Int,
     val pageSize: Int,
     val more: Boolean,
+    val column: String? = null,
+    val before: JsonElement? = null,
+    val after: JsonElement? = null,
+    val sort: List<SortBy>? = null,
 )
 
 data class MetadataOptions(
@@ -370,7 +412,7 @@ data class ContractTokenBalance(
     val tokenMetadata: TokenMetadata? = null,
 ) : TokenBalance
 
-data class TokenBalancesResult(
+data class BalancesResult(
     val status: Int,
     val page: TokenBalancesPage?,
     val balances: List<ContractTokenBalance>,

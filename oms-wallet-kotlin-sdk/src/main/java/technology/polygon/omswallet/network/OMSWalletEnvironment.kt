@@ -7,6 +7,7 @@ internal class OMSWalletEnvironment(
     val walletApiUrl: String,
     val indexerGatewayUrl: String,
     val solanaIndexerGatewayUrl: String = "${walletApiUrl.trimEnd('/')}/v1/SolanaIndexerGateway/",
+    val tronIndexerGatewayUrl: String = "${walletApiUrl.trimEnd('/')}/v1/TronIndexerGateway/",
 ) {
     internal fun walletApiBaseUrl(): String {
         val uri = URI(walletApiUrl)
@@ -19,19 +20,21 @@ internal class OMSWalletEnvironment(
 
         return walletApiBaseUrl() == other.walletApiBaseUrl() &&
             indexerGatewayUrl == other.indexerGatewayUrl &&
-            solanaIndexerGatewayUrl == other.solanaIndexerGatewayUrl
+            solanaIndexerGatewayUrl == other.solanaIndexerGatewayUrl &&
+            tronIndexerGatewayUrl == other.tronIndexerGatewayUrl
     }
 
     override fun hashCode(): Int {
         var result = walletApiBaseUrl().hashCode()
         result = 31 * result + indexerGatewayUrl.hashCode()
         result = 31 * result + solanaIndexerGatewayUrl.hashCode()
+        result = 31 * result + tronIndexerGatewayUrl.hashCode()
         return result
     }
 
     override fun toString(): String =
         "OMSWalletEnvironment(walletApiUrl=$walletApiUrl, indexerGatewayUrl=$indexerGatewayUrl, " +
-            "solanaIndexerGatewayUrl=$solanaIndexerGatewayUrl)"
+            "solanaIndexerGatewayUrl=$solanaIndexerGatewayUrl, tronIndexerGatewayUrl=$tronIndexerGatewayUrl)"
 
     companion object {
         internal const val accessKeyHeaderName: String = "Api-Key"
@@ -44,6 +47,7 @@ internal class OMSWalletEnvironment(
                 walletApiUrl = parsed.walletApiUrl,
                 indexerGatewayUrl = parsed.indexerGatewayUrl,
                 solanaIndexerGatewayUrl = parsed.solanaIndexerGatewayUrl,
+                tronIndexerGatewayUrl = parsed.tronIndexerGatewayUrl,
             )
         }
     }
