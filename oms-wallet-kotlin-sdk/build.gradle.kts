@@ -138,17 +138,33 @@ fun runJavap(
  * companions and serializers, and synthetic accessors are excluded.
  */
 fun generatePublicApiDump(classesJar: File): String {
-    val dump =
+    val fullDump =
         JarFile(classesJar).use { jar ->
-            StringBuilder().also { jar.loadApiFromJvmClasses().filterOutNonPublic().dump(it) }.trimEnd().toString() + "\n"
+            StringBuilder().also { jar.loadApiFromJvmClasses().filterOutNonPublic().dump(it) }.toString()
         }
+    // The validator keeps synthetic constructor bridges of non-public constructors. Nothing outside
+    // the SDK can call them, and they name internal types, so drop the ones that do.
+    val publicTypes = sdkTypeHeader.findAll(fullDump).map { it.groupValues[1] }.toSet()
+    val dump =
+        fullDump
+            .lineSequence()
+            .filterNot { line ->
+                line.startsWith("\t") &&
+                    " synthetic " in line &&
+                    sdkTypeReference.findAll(line).any { it.groupValues[1] !in publicTypes }
+            }.joinToString("\n")
+            .trimEnd() + "\n"
     verifyPublicApiDump(dump)
     return dump
 }
 
+val sdkTypeHeader = Regex("""(?m)^\S.*\b(?:class|interface) (technology/polygon/omswallet/\S+) """)
+val sdkTypeReference = Regex("""L(technology/polygon/omswallet/[^;]+);""")
+
 /**
  * Guards the dump against regressing to Java-visible-but-internal symbols: it must contain no
- * name-mangled internal members or synthetic accessors, and its top-level types and top-level
+ * name-mangled internal members or synthetic accessors, every SDK type it mentions must itself be
+ * public, and its top-level types and top-level
  * functions must match the source-based API reference (`docs/api.md`, kept current by
  * `checkApiDocs`).
  */
@@ -157,6 +173,18 @@ fun verifyPublicApiDump(dump: String) {
         dump.lineSequence().filter { "\$oms_wallet_kotlin_sdk" in it || "access\$" in it }.toList()
     if (leaked.isNotEmpty()) {
         throw GradleException("Public API dump contains internal or synthetic members:\n${leaked.joinToString("\n")}")
+    }
+
+    val publicTypes = sdkTypeHeader.findAll(dump).map { it.groupValues[1] }.toSet()
+    val nonPublicReferences =
+        dump
+            .lineSequence()
+            .filter { line -> sdkTypeReference.findAll(line).any { it.groupValues[1] !in publicTypes } }
+            .toList()
+    if (nonPublicReferences.isNotEmpty()) {
+        throw GradleException(
+            "Public API dump references SDK types that are not public:\n${nonPublicReferences.joinToString("\n")}",
+        )
     }
 
     val classHeader = Regex("""^\S.*\b(?:class|interface) (technology/polygon/omswallet/\S+) """)

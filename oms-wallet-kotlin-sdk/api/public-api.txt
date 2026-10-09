@@ -34,7 +34,6 @@ public final class technology/polygon/omswallet/OMSWallet {
 	public static final field Companion Ltechnology/polygon/omswallet/OMSWallet$Companion;
 	public fun <init> (Landroid/content/Context;Ljava/lang/String;Lokhttp3/OkHttpClient;)V
 	public synthetic fun <init> (Landroid/content/Context;Ljava/lang/String;Lokhttp3/OkHttpClient;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ltechnology/polygon/omswallet/network/OMSWalletEnvironment;Lokhttp3/OkHttpClient;Ltechnology/polygon/omswallet/session/OMSWalletSessionStateMachine;Ltechnology/polygon/omswallet/storage/OMSWalletSessionMetadataStore;Ltechnology/polygon/omswallet/wallet/OidcRedirectAuthStore;Ltechnology/polygon/omswallet/wallet/CredentialSigner;Ljava/lang/String;Ljava/util/Set;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getIndexer ()Ltechnology/polygon/omswallet/indexer/IndexerClient;
 	public final fun getWallet ()Ltechnology/polygon/omswallet/wallet/WalletClient;
 }
@@ -310,7 +309,6 @@ public final class technology/polygon/omswallet/TronNetworks {
 
 public final class technology/polygon/omswallet/indexer/IndexerClient {
 	public static final field Companion Ltechnology/polygon/omswallet/indexer/IndexerClient$Companion;
-	public synthetic fun <init> (Ljava/lang/String;Ltechnology/polygon/omswallet/network/OMSWalletEnvironment;Ltechnology/polygon/omswallet/network/OMSWalletHttpClient;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getBalances (Ljava/lang/String;Ljava/util/List;Ltechnology/polygon/omswallet/models/IndexerNetworkType;Ljava/util/List;ZLjava/lang/Boolean;Ljava/util/List;Ltechnology/polygon/omswallet/models/ContractVerificationStatus;Ltechnology/polygon/omswallet/models/TokenBalancesPageRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun getBalances$default (Ltechnology/polygon/omswallet/indexer/IndexerClient;Ljava/lang/String;Ljava/util/List;Ltechnology/polygon/omswallet/models/IndexerNetworkType;Ljava/util/List;ZLjava/lang/Boolean;Ljava/util/List;Ltechnology/polygon/omswallet/models/ContractVerificationStatus;Ltechnology/polygon/omswallet/models/TokenBalancesPageRequest;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun getSolanaBalances (Ljava/lang/String;Ljava/util/List;ZLjava/lang/Boolean;Ljava/util/List;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -1676,7 +1674,6 @@ public final class technology/polygon/omswallet/wallet/WalletClient {
 	public static final field Companion Ltechnology/polygon/omswallet/wallet/WalletClient$Companion;
 	public static final field DEFAULT_SESSION_LIFETIME_SECONDS J
 	public static final field MAX_SESSION_LIFETIME_SECONDS J
-	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ltechnology/polygon/omswallet/network/OMSWalletEnvironment;Ltechnology/polygon/omswallet/network/OMSWalletHttpClient;Ltechnology/polygon/omswallet/wallet/WalletScopeRuntime;Lkotlin/jvm/functions/Function0;Ltechnology/polygon/omswallet/models/TransactionStatusPollingOptions;Lkotlin/jvm/functions/Function2;Ljava/util/Set;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun authorizeRemoteAccess (Ljava/lang/String;Ltechnology/polygon/omswallet/Network;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun authorizeRemoteAccess$default (Ltechnology/polygon/omswallet/wallet/WalletClient;Ljava/lang/String;Ltechnology/polygon/omswallet/Network;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun callContract (Ltechnology/polygon/omswallet/Network;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ltechnology/polygon/omswallet/models/TransactionMode;ZLtechnology/polygon/omswallet/models/TransactionStatusPollingOptions;Ltechnology/polygon/omswallet/models/FeeOptionSelector;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

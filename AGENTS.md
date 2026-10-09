@@ -90,7 +90,8 @@ current-stable and supported-minimum Expo compatibility.
   - Compare the public API against `oms-wallet-kotlin-sdk/api/public-api.txt`.
     `dumpPublicApi` in the same module regenerates the baseline. The dump uses the
     binary-compatibility-validator library, so `internal` and synthetic declarations are excluded,
-    and it fails if its top-level declarations differ from `docs/api.md`; run `generateApiDocs`
+    and it fails if it mentions a non-public SDK type or its top-level declarations differ from
+    `docs/api.md`; run `generateApiDocs`
     first when the public API changes.
 - `./gradlew :oms-wallet-kotlin-sdk:checkReleaseArtifactBoundary`
   - Check that the release AAR excludes generated WaaS bytecode and Java-callable
