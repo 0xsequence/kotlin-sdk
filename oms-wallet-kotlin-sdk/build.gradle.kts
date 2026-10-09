@@ -1,5 +1,17 @@
+import kotlinx.validation.api.dump
+import kotlinx.validation.api.filterOutNonPublic
+import kotlinx.validation.api.loadApiFromJvmClasses
 import java.io.File
+import java.util.jar.JarFile
 import java.util.zip.ZipFile
+
+buildscript {
+    dependencies {
+        // Kotlin-aware public API dump (drops internal, private and synthetic declarations).
+        classpath(libs.binary.compatibility.validator)
+        classpath(libs.kotlin.metadata.jvm)
+    }
+}
 
 plugins {
     alias(libs.plugins.android.library)
@@ -120,37 +132,64 @@ fun runJavap(
     return output
 }
 
+/**
+ * Dumps the public Kotlin/JVM API of [classesJar] with the binary-compatibility-validator library.
+ * Unlike `javap -public`, it reads Kotlin metadata, so `internal` declarations, private classes'
+ * companions and serializers, and synthetic accessors are excluded.
+ */
 fun generatePublicApiDump(classesJar: File): String {
-    val classNames =
-        ZipFile(classesJar).use { zip ->
-            zip
-                .entries()
-                .asSequence()
-                .map { it.name }
-                .filter { it.endsWith(".class") && !it.endsWith("module-info.class") }
-                .map { it.removeSuffix(".class").replace('/', '.') }
-                .sorted()
-                .toList()
+    val dump =
+        JarFile(classesJar).use { jar ->
+            StringBuilder().also { jar.loadApiFromJvmClasses().filterOutNonPublic().dump(it) }.trimEnd().toString() + "\n"
         }
+    verifyPublicApiDump(dump)
+    return dump
+}
 
-    return buildString {
-        classNames.forEach { className ->
-            val output = runJavap(classesJar.absolutePath, className)
-            val isPublic =
-                output.lineSequence().any { line ->
-                    val declaration = line.trim()
-                    declaration.startsWith("public class ") ||
-                        declaration.startsWith("public final class ") ||
-                        declaration.startsWith("public abstract class ") ||
-                        declaration.startsWith("public interface ") ||
-                        declaration.startsWith("public enum ")
-                }
-            if (isPublic) {
-                appendLine(output.trim())
-                appendLine()
-            }
+/**
+ * Guards the dump against regressing to Java-visible-but-internal symbols: it must contain no
+ * name-mangled internal members or synthetic accessors, and its top-level types and top-level
+ * functions must match the source-based API reference (`docs/api.md`, kept current by
+ * `checkApiDocs`).
+ */
+fun verifyPublicApiDump(dump: String) {
+    val leaked =
+        dump.lineSequence().filter { "\$oms_wallet_kotlin_sdk" in it || "access\$" in it }.toList()
+    if (leaked.isNotEmpty()) {
+        throw GradleException("Public API dump contains internal or synthetic members:\n${leaked.joinToString("\n")}")
+    }
+
+    val classHeader = Regex("""^\S.*\b(?:class|interface) (technology/polygon/omswallet/\S+) """)
+    val topLevelFunction = Regex("""^\tpublic static final fun (\w+) """)
+    val dumpNames = sortedSetOf<String>()
+    var currentFacade = false
+    dump.lineSequence().forEach { line ->
+        val header = classHeader.find(line)
+        if (header != null) {
+            val simpleName = header.groupValues[1].substringAfterLast('/')
+            currentFacade = simpleName.endsWith("Kt") && '$' !in simpleName
+            if ('$' !in simpleName && !currentFacade) dumpNames += simpleName
+        } else if (currentFacade) {
+            topLevelFunction.find(line)?.let { dumpNames += it.groupValues[1] }
         }
-    }.trimEnd() + "\n"
+    }
+
+    val apiDocs =
+        rootProject.layout.projectDirectory
+            .file("docs/api.md")
+            .asFile
+    val documentedNames =
+        Regex("""^### `([^`.]+)`""", RegexOption.MULTILINE)
+            .findAll(apiDocs.readText())
+            .map { it.groupValues[1] }
+            .toSortedSet()
+    if (dumpNames != documentedNames) {
+        throw GradleException(
+            "Public API dump and docs/api.md disagree on top-level declarations.\n" +
+                "Only in the binary dump: ${dumpNames - documentedNames}\n" +
+                "Only in docs/api.md: ${documentedNames - dumpNames}",
+        )
+    }
 }
 
 tasks.register("checkPublicApiDoesNotExposeGeneratedWaas") {
@@ -294,9 +333,10 @@ tasks.register("checkReleaseArtifactBoundary") {
 
 tasks.register("dumpPublicApi") {
     group = "documentation"
-    description = "Writes the Java-visible API shipped in the release AAR."
+    description = "Writes the public Kotlin/JVM API shipped in the release AAR."
     dependsOn("syncReleaseLibJars")
     inputs.file(packagedReleaseClassesJar)
+    inputs.file(rootProject.layout.projectDirectory.file("docs/api.md"))
     outputs.file(publicApiBaseline)
 
     doLast {
@@ -308,10 +348,11 @@ tasks.register("dumpPublicApi") {
 
 tasks.register("checkPublicApiBaseline") {
     group = "verification"
-    description = "Fails when the packaged Java-visible API differs from the committed baseline."
+    description = "Fails when the packaged public Kotlin/JVM API differs from the committed baseline."
     dependsOn("syncReleaseLibJars")
     mustRunAfter("dumpPublicApi")
     inputs.file(packagedReleaseClassesJar)
+    inputs.file(rootProject.layout.projectDirectory.file("docs/api.md"))
     inputs.file(publicApiBaseline)
 
     doLast {
