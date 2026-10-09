@@ -716,7 +716,7 @@ class ServiceClientsTest {
                                       "contractType": "NATIVE",
                                       "from": "0xfrom",
                                       "to": "0xwallet",
-                                      "tokenIDs": ["0"],
+                                      "tokenIds": ["0"],
                                       "amounts": ["1"],
                                       "logIndex": 0
                                     }

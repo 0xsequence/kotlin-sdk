@@ -14,7 +14,7 @@ import java.io.IOException
  */
 internal class AndroidSessionMetadataStore(
     context: Context,
-    private val fileName: String = DEFAULT_FILE_NAME,
+    private val fileName: String,
 ) : OMSWalletSessionMetadataStore {
     private val sessionFile = File(context.noBackupFilesDir, fileName)
 
@@ -35,9 +35,5 @@ internal class AndroidSessionMetadataStore(
         if (sessionFile.exists() && !sessionFile.delete()) {
             throw IOException("Unable to delete OMS Wallet session metadata")
         }
-    }
-
-    companion object {
-        private const val DEFAULT_FILE_NAME = "oms-wallet-session.json"
     }
 }

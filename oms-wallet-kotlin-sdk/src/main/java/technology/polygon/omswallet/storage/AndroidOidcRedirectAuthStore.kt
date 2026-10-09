@@ -11,7 +11,7 @@ import java.io.IOException
 
 internal class AndroidOidcRedirectAuthStore(
     context: Context,
-    private val fileName: String = DEFAULT_FILE_NAME,
+    private val fileName: String,
 ) : OidcRedirectAuthStore {
     private val pendingFile = File(context.noBackupFilesDir, fileName)
 
@@ -32,9 +32,5 @@ internal class AndroidOidcRedirectAuthStore(
         if (pendingFile.exists() && !pendingFile.delete()) {
             throw IOException("Unable to delete OMS Wallet OIDC redirect auth state")
         }
-    }
-
-    companion object {
-        private const val DEFAULT_FILE_NAME = "oms-wallet-oidc-redirect-auth.json"
     }
 }
