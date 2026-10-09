@@ -585,7 +585,8 @@ class AuthDemoActivity : AppCompatActivity() {
                         }
                     }
                 lastTronTransactionHash = result.txnHash
-                tronTransactionHashView.text = "Last tx hash: ${result.txnHash ?: result.txnId}"
+                tronTransactionHashView.text =
+                    result.txnHash?.let { "Last tx hash: $it" } ?: "Last transaction ID: ${result.txnId}"
                 tronTransactionStatusView.text =
                     when (result.status) {
                         TransactionStatus.Executed, TransactionStatus.Failed -> "Transfer status: transfer ${result.status}."
@@ -730,7 +731,8 @@ class AuthDemoActivity : AppCompatActivity() {
                         selectFeeOption = ::selectFeeOption,
                     )
                 lastSolanaTransactionSignature = result.txnHash
-                solanaTransactionSignatureView.text = "Last tx signature: ${result.txnHash ?: result.txnId}"
+                solanaTransactionSignatureView.text =
+                    result.txnHash?.let { "Last tx signature: $it" } ?: "Last transaction ID: ${result.txnId}"
                 solanaTransactionStatusView.text =
                     when (result.status) {
                         TransactionStatus.Executed, TransactionStatus.Failed -> "Transfer status: transfer ${result.status}."

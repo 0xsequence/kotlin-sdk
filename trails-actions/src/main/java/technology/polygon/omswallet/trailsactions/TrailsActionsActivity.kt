@@ -580,7 +580,7 @@ class TrailsActionsActivity : AppCompatActivity() {
             val initialBalances = balances
             val latest = sendPreparedSwap(prepared)
             val hash = latest.txnHash ?: latest.txnId
-            lastTransactionHash = hash
+            lastTransactionHash = latest.txnHash
             renderLastTransaction()
             swapStatusView.text = "Swap status: sent ${shortHash(hash)}. Refreshing balances..."
             waitForUsdcBalanceIncrease(
@@ -657,7 +657,7 @@ class TrailsActionsActivity : AppCompatActivity() {
             val initialBalances = balances
             val swapResponse = sendPreparedSwap(plan.swap)
             val swapHash = swapResponse.txnHash ?: swapResponse.txnId
-            lastTransactionHash = swapHash
+            lastTransactionHash = swapResponse.txnHash
             renderLastTransaction()
             val didReceiveSwapOutput =
                 waitForUsdcBalanceIncrease(
@@ -709,7 +709,7 @@ class TrailsActionsActivity : AppCompatActivity() {
                     renderEarnPositions(EarnPositionsResult(earnPositions, emptyList()))
                 }
             val hash = response.txnHash ?: response.txnId
-            lastTransactionHash = hash
+            lastTransactionHash = response.txnHash
             lastWithdrawTransactionHashes[position.id] = hash
             renderLastTransaction()
             withdrawStatusesByPosition[position.id] = "Withdraw status: sent ${shortHash(hash)}. Refreshing..."
