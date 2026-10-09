@@ -195,9 +195,9 @@ result.
   `https://github.com/0xsequence/waas` project; update this generated client
   from upstream as needed.
 - `WalletClient.kt`, `WalletRequestSigner.kt`, `WalletAuthChallenge.kt`,
-  `AndroidKeystoreP256CredentialSigner.kt`, and `AndroidKeystoreSessionStore.kt`
-  handle auth state, credentials, nonces, signing, and persisted sessions. Treat
-  behavior changes here as security-sensitive and add regression tests.
+  `AndroidKeystoreP256CredentialSigner.kt`, `AndroidSessionMetadataStore.kt`, and
+  `PersistedSessionRecord.kt` handle auth state, credentials, nonces, signing, and
+  persisted sessions. Treat behavior changes here as security-sensitive and add regression tests.
 - Wallet auth, signing, access, session, and transaction tests live under
   `oms-wallet-kotlin-sdk/src/test/java/technology/polygon/omswallet/wallet/`. Add
   narrowly scoped tests near the behavior being changed instead of broad setup

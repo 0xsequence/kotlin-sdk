@@ -119,6 +119,7 @@ under `technology.polygon.omswallet`:
 - Android Keystore-backed request signing
 - persisted wallet session metadata
 - wallet selection and wallet creation flows
+- Ethereum, Solana, and Tron wallets (create, import, select)
 - message and typed-data signing
 - transaction sending, contract calls, and transaction status lookup
 - wallet access listing and revocation
@@ -678,7 +679,7 @@ The selector receives `FeeOptionWithBalance` values. For Ethereum fees, `balance
 contains the matching `TokenBalance` when available. For Ethereum, Solana, and Tron
 fees, `available` is formatted with the token decimals, while `availableRaw` keeps
 the raw integer value. `decimals` is exposed as `Int?`, allowing
-`FeeOptionSelector.firstAvailable` to select the first affordable option on either
+`FeeOptionSelector.firstAvailable` to select the first affordable option on any
 network family. `selection` preserves the quoted option index and the API-provided
 `tokenID` when present, falling back to the token symbol. Sponsored
 transactions invoke the selector with an empty list; return `null` after acknowledging
@@ -712,9 +713,9 @@ Tron wallets are EOAs and always execute in native mode, so the Tron methods tak
 with `walletType = WalletType.Tron`, or import a secp256k1 private key with
 `WalletImportPrivateKey.Tron`. Tron addresses are Base58Check strings (`T…`). Supported
 networks are `TronNetwork.Mainnet` (`tron:mainnet`) and `TronNetwork.Nile`
-(`tron:nile`). TRC-10 tokens are not supported. Tron wallets are rejected by the EVM,
-Solana, and smart-session methods (and vice versa) with `OMSWalletValidationException`
-before any request, based on the stored wallet type.
+(`tron:nile`). TRC-10 tokens are not supported. Tron wallets are rejected by the EVM
+and Solana signing and transaction methods and by `authorizeRemoteAccess` (and vice versa)
+with `OMSWalletValidationException` before any request, based on the stored wallet type.
 
 ```kotlin
 val wallet = omsWallet.wallet.createWallet(walletType = WalletType.Tron).wallet
@@ -727,11 +728,14 @@ val isValid =
         walletAddress = wallet.address,
     )
 
+// Replace with the Base58Check (`T…`) address that should receive the funds.
+val recipient = "<recipient T… address>"
+
 // TRX transfer. Values are in sun (1 TRX = 1,000,000 sun).
 val trxTransfer =
     omsWallet.wallet.sendTronTransaction(
         network = TronNetwork.Nile,
-        to = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+        to = recipient,
         value = java.math.BigInteger("1000000"),
     )
 
@@ -743,7 +747,7 @@ val trc20Transfer =
         method = "transfer",
         args =
             listOf(
-                AbiArg(type = "address", value = JsonPrimitive("TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")),
+                AbiArg(type = "address", value = JsonPrimitive(recipient)),
                 AbiArg(type = "uint256", value = JsonPrimitive("1000000")),
             ),
     )
@@ -917,6 +921,8 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 - wallet selection after sign-in
 - message signing and verification
 - transaction sending
+- Solana Devnet balances, message signing, and transfers
+- Tron Nile balances, message signing, and TRX/TRC-20 transfers
 
 The repository also includes a [`trails-actions/`](trails-actions/) sample
 module, a separate Android app for Trails swap and Earn flows built on the SDK.

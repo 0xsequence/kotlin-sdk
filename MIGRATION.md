@@ -93,8 +93,10 @@ now also sends `networkFamily = "evm"`.
   an active Ethereum wallet for `isValidSolanaMessageSignature`, or an active Tron wallet for
   `isValidTypedDataSignature`), they now throw `OMSWalletValidationException` before any request.
   Previously such calls reached the wallet service, which rejected them with an
-  `OMSWalletRequestException` or, for `isValidTypedDataSignature` with an active Tron wallet,
-  verified the signature as Tron typed data.
+  `OMSWalletRequestException`.
+- A given but empty or whitespace-only `walletAddress` throws `OMSWalletValidationException`
+  (`walletAddress must not be empty`) before any request. Omit `walletAddress` to verify against
+  the active wallet.
 
 ```kotlin
 // 0.3.x: always the active wallet, which had to be signed in
