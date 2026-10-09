@@ -4,8 +4,8 @@
   "private": true,
   "main": "index.js",
   "dependencies": {
-    "expo": "57.0.27",
-    "react": "19.2.3",
-    "react-native": "0.86.3"
+    "expo": "58.0.5",
+    "react": "19.3.0",
+    "react-native": "0.87.1"
   }
 }
