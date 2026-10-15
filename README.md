@@ -921,8 +921,9 @@ This repository includes an Android sample app in [`app/`](app/) that demonstrat
 - wallet selection after sign-in
 - message signing and verification
 - transaction sending
-- Solana Devnet balances, message signing, and transfers
-- Tron Nile balances, message signing, and TRX/TRC-20 transfers
+- Solana balances, message signing, and transfers on Devnet (default) or mainnet
+- Tron balances, message signing, and TRX/TRC-20 transfers on Nile (default) or
+  mainnet
 
 The repository also includes a [`trails-actions/`](trails-actions/) sample
 module, a separate Android app for Trails swap and Earn flows built on the SDK.

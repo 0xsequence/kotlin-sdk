@@ -549,10 +549,25 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Tron (Nile testnet)"
+                            android:text="Tron"
                             android:textColor="@color/slate_900"
                             android:textSize="20sp"
                             android:textStyle="bold" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:hint="Network"
+                            app:endIconMode="dropdown_menu">
+
+                            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                                android:id="@+id/tronNetworkInput"
+                                style="@style/Widget.Kotlinsdk.Dropdown"
+                                android:layout_width="match_parent"
+                                android:inputType="none" />
+                        </com.google.android.material.textfield.TextInputLayout>
 
                         <TextView
                             android:layout_width="match_parent"
@@ -563,11 +578,21 @@
                             android:textSize="13sp" />
 
                         <TextView
+                            android:id="@+id/tronMainnetWarningView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Mainnet transfers move real funds."
+                            android:textColor="@color/slate_500"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
+
+                        <TextView
                             android:id="@+id/tronBalancesView"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:text="Nile TRX: -\nNile USDT: -"
+                            android:text="TRX: -\nUSDT: -"
                             android:textColor="@color/forest_700"
                             android:textIsSelectable="true"
                             android:textSize="13sp"
@@ -589,6 +614,7 @@
                                 android:text="Refresh" />
 
                             <Space
+                                android:id="@+id/tronFaucetSpacer"
                                 android:layout_width="12dp"
                                 android:layout_height="1dp" />
 
@@ -777,7 +803,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="14dp"
-                            android:text="Send On Tron Nile" />
+                            android:text="Send on Tron Nile" />
 
                         <TextView
                             android:id="@+id/tronTransactionHashView"
@@ -833,10 +859,35 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Solana (Devnet)"
+                            android:text="Solana"
                             android:textColor="@color/slate_900"
                             android:textSize="20sp"
                             android:textStyle="bold" />
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            style="@style/Widget.Kotlinsdk.TextInputLayout"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="12dp"
+                            android:hint="Network"
+                            app:endIconMode="dropdown_menu">
+
+                            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                                android:id="@+id/solanaNetworkInput"
+                                style="@style/Widget.Kotlinsdk.Dropdown"
+                                android:layout_width="match_parent"
+                                android:inputType="none" />
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <TextView
+                            android:id="@+id/solanaMainnetWarningView"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Mainnet transfers move real funds."
+                            android:textColor="@color/slate_500"
+                            android:textSize="13sp"
+                            android:visibility="gone" />
 
                         <TextView
                             android:layout_width="match_parent"
@@ -851,7 +902,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="12dp"
-                            android:text="Devnet SOL: -\nDevnet USDC: -"
+                            android:text="SOL: -\nUSDC: -"
                             android:textColor="@color/forest_700"
                             android:textIsSelectable="true"
                             android:textSize="13sp"
@@ -886,6 +937,7 @@
                         </LinearLayout>
 
                         <LinearLayout
+                            android:id="@+id/solanaFaucetRow"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="10dp"
@@ -1099,7 +1151,7 @@
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="14dp"
-                            android:text="Send On Solana Devnet" />
+                            android:text="Send on Solana Devnet" />
 
                         <TextView
                             android:id="@+id/solanaTransactionSignatureView"
