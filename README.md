@@ -769,7 +769,8 @@ runtime because the service endpoints require TLS 1.3.
 
 Release CI also builds the locally published SDK through the current stable
 Expo release and its default Kotlin toolchain. The fixture is updated from the
-npm `latest` tag and must be current before a release can pass. A second
+npm `latest` tag and must match its major and minor version before a release
+can pass. A second
 fixture builds through Expo SDK 56, the oldest Expo SDK the React Native SDK
 supports.
 
