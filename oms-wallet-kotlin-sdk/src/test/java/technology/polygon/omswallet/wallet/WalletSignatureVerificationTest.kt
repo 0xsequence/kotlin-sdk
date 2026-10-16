@@ -70,6 +70,10 @@ class WalletSignatureVerificationTest {
                 val request = requireNotNull(server.takeRequest())
 
                 assertEquals(method.path, request.target)
+                // Public verification stays unsigned even with an active session.
+                assertEquals("test-publishable-key", request.headers[OMSWalletEnvironment.accessKeyHeaderName])
+                assertNull(request.headers["Authorization"])
+                assertNull(request.headers[OMSWalletEnvironment.walletSignatureHeaderName])
                 assertEquals(method.expectedBody(method.address), request.jsonBody())
                 assertFalse(request.jsonBody().containsKey("walletId"))
             }

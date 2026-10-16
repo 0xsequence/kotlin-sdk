@@ -42,6 +42,7 @@ class WalletSessionTest {
         assertTrue(restored)
         assertEquals(snapshot, client.snapshotSession())
         assertEquals(snapshot.wallet, client.activeWallet)
+        assertFalse(client.hasPendingSignIn)
         assertEquals(TEST_SESSION_EXPIRES_AT, client.session?.expiresAt)
         assertEmailSessionAuth(client.session?.auth)
         assertEquals(
@@ -502,87 +503,6 @@ class WalletSessionTest {
     }
 
     @Test
-    fun sessionStateOnlyReflectsCompletedWalletSession() {
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = testEnvironment(),
-                sessionStore = InMemorySessionStore(),
-                credentialSigner = TrackingCredentialSigner(),
-            )
-        client.restoreSession(
-            OMSWalletSessionSnapshot(
-                challenge = "challenge",
-                verifier = "verifier-123",
-                signerAddress = TEST_CREDENTIAL_ID,
-                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                expiresAt = "2099-01-01T00:00:00Z",
-                auth = emailSessionAuth(),
-            ),
-        )
-
-        assertNull(client.activeWallet)
-        assertNull(client.session)
-    }
-
-    @Test
-    fun signOutClearsPersistedStore() {
-        val snapshot =
-            OMSWalletSessionSnapshot(
-                wallet = testWallet("wallet-abc", "0xabc0000000000000000000000000000000000000"),
-                expiresAt = TEST_SESSION_EXPIRES_AT,
-                signerAddress = TEST_CREDENTIAL_ID,
-                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                auth = emailSessionAuth(),
-            )
-        val store = InMemorySessionStore(snapshot)
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = testEnvironment(),
-                sessionStore = store,
-                credentialSigner = TrackingCredentialSigner(),
-            )
-        assertTrue(client.restorePersistedSession())
-
-        client.signOut()
-
-        assertNull(client.snapshotSession())
-        assertNull(store.snapshot)
-        assertNull(client.activeWallet)
-        assertNull(client.activeWallet)
-        assertNull(client.signerAddress)
-    }
-
-    @Test
-    fun addressReturnsSelectedWallet() {
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = testEnvironment(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSWalletSessionSnapshot(
-                                wallet = testWallet("wallet-main", "0xwallet"),
-                                expiresAt = TEST_SESSION_EXPIRES_AT,
-                                signerAddress = TEST_CREDENTIAL_ID,
-                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                auth = emailSessionAuth(),
-                            ),
-                    ),
-                credentialSigner = TrackingCredentialSigner(),
-            )
-        assertTrue(client.restorePersistedSession())
-
-        assertEquals("0xwallet", client.activeWallet?.address)
-        assertFalse(client.hasPendingSignIn)
-    }
-
-    @Test
     fun restorePersistedSessionClearsPendingSnapshots() {
         val store =
             InMemorySessionStore(
@@ -621,10 +541,14 @@ class WalletSessionTest {
                 credentialSigner = TrackingCredentialSigner(),
             )
         client.restoreSession(
+            // Pending auth exposes no wallet or public session even when expiry and auth are present.
             OMSWalletSessionSnapshot(
                 challenge = "challenge",
                 verifier = "verifier-123",
                 signerAddress = TEST_CREDENTIAL_ID,
+                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                expiresAt = "2099-01-01T00:00:00Z",
+                auth = emailSessionAuth(),
             ),
         )
 

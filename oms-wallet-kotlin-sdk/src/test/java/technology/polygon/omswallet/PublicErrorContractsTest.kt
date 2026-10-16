@@ -229,6 +229,37 @@ class PublicErrorContractsTest {
                     serverPanicClient.wallet.startEmailAuth("user@example.com")
                 },
             )
+
+            // The generated client reports WebrpcRequestFailed with status 400; the SDK drops that status.
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body("""{"error":"WebrpcRequestFailed","code":-1,"msg":"request failed","status":400}""")
+                    .build(),
+            )
+
+            val requestFailedClient = createOmsClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_REQUEST_FAILED",
+                    operation = "wallet.startEmailAuth",
+                    message = "request failed",
+                    retryable = true,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "WebrpcRequestFailed",
+                            code = "-1",
+                            message = "request failed",
+                        ),
+                ),
+                publicError {
+                    requestFailedClient.wallet.startEmailAuth("user@example.com")
+                },
+            )
         }
 
     @Test

@@ -170,6 +170,8 @@ class OMSWalletTest {
         assertNull(sdk.wallet.activeWallet)
         assertNull(sdk.wallet.activeWallet)
         assertNull(sdk.wallet.session)
+        assertNull(sdk.wallet.snapshotSession())
+        assertNull(sdk.wallet.signerAddress)
         assertNull(store.snapshot)
         assertEquals(1, store.clearCalls)
     }

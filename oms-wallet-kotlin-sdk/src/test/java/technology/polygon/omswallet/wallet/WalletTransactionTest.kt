@@ -51,50 +51,6 @@ class WalletTransactionTest {
     }
 
     @Test
-    fun sendTransactionRejectsNegativeValue() =
-        runBlocking {
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore =
-                        InMemorySessionStore(
-                            snapshot =
-                                OMSWalletSessionSnapshot(
-                                    wallet = testWallet("wallet-main", "0xwallet"),
-                                    expiresAt = TEST_SESSION_EXPIRES_AT,
-                                    signerAddress = TEST_CREDENTIAL_ID,
-                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                    auth = emailSessionAuth(),
-                                ),
-                        ),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000106"),
-                )
-            assertTrue(client.restorePersistedSession())
-
-            val error =
-                runCatching {
-                    client.sendTransaction(
-                        network = Network.AMOY,
-                        request =
-                            SendTransactionRequest(
-                                to = "0xabc0000000000000000000000000000000000000",
-                                value = BigInteger.ONE.negate(),
-                            ),
-                    )
-                }.exceptionOrNull()
-
-            assertTrue(error is OMSWalletException)
-            assertEquals(OMSWalletErrorCode.ValidationError, (error as OMSWalletException).code)
-        }
-
-    @Test
     fun sendTransactionMatchesWaasRequestShape() =
         runBlocking {
             server.enqueue(
@@ -368,88 +324,55 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionSponsoredInvokesCustomFeeSelectorWithEmptyOptions() =
         runBlocking {
-            enqueueJson(
-                prepareResponse(
-                    txnId = "txn-sponsored",
-                    feeOptions =
-                        """
-                        [
-                          ${feeOptionJson(
-                            symbol = "USDC",
-                            value = "1000",
-                            contractAddress = "0xusdc",
-                            tokenId = "usdc",
-                        )}
-                        ]
-                        """.trimIndent(),
-                    sponsored = true,
-                ),
-            )
-            enqueueJson("""{"status":"executed"}""")
-            val client = restoredWalletClient(nonceValue = "1710000116")
+            val usdcFeeOptions =
+                """
+                [
+                  ${feeOptionJson(
+                    symbol = "USDC",
+                    value = "1000",
+                    contractAddress = "0xusdc",
+                    tokenId = "usdc",
+                )}
+                ]
+                """.trimIndent()
             val selectorInputs = mutableListOf<List<technology.polygon.omswallet.models.FeeOptionWithBalance>>()
+            val recordingSelector =
+                FeeOptionSelector {
+                    selectorInputs += it
+                    it.firstOrNull()?.selection
+                }
+            // A custom selector over a quote that still lists fee options, and the built-in
+            // firstAvailable selector over an empty quote: both must execute without a fee option.
+            listOf(
+                Triple("txn-sponsored", usdcFeeOptions, recordingSelector),
+                Triple("txn-sponsored-first-available", "[]", FeeOptionSelector.firstAvailable),
+            ).forEach { (txnId, feeOptions, selector) ->
+                enqueueJson(prepareResponse(txnId = txnId, feeOptions = feeOptions, sponsored = true))
+                enqueueJson("""{"status":"executed"}""")
+                val requestsBefore = server.requestCount
+                val client = restoredWalletClient(nonceValue = "1710000116")
 
-            val result =
-                client.sendTransaction(
-                    network = Network.AMOY,
-                    request =
-                        SendTransactionRequest(
-                            to = "0xabc0000000000000000000000000000000000000",
-                            value = BigInteger.ZERO,
-                        ),
-                    waitForStatus = false,
-                    selectFeeOption =
-                        FeeOptionSelector {
-                            selectorInputs += it
-                            it.firstOrNull()?.selection
-                        },
-                )
-            requireNotNull(server.takeRequest())
-            val executeRequest = requireNotNull(server.takeRequest())
+                val result =
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        request =
+                            SendTransactionRequest(
+                                to = "0xabc0000000000000000000000000000000000000",
+                                value = BigInteger.ZERO,
+                            ),
+                        waitForStatus = false,
+                        selectFeeOption = selector,
+                    )
+                requireNotNull(server.takeRequest())
+                val executeRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("txn-sponsored", result.txnId)
-            assertEquals(TransactionStatus.Executed, result.status)
+                assertEquals(txnId, result.txnId)
+                assertEquals(TransactionStatus.Executed, result.status)
+                assertEquals("""{"txnId":"$txnId"}""", requireNotNull(executeRequest.body).utf8())
+                assertEquals(2, server.requestCount - requestsBefore)
+            }
             // Sponsored sends acknowledge the selector with no options, even when WaaS quotes some.
             assertEquals(listOf(emptyList<technology.polygon.omswallet.models.FeeOptionWithBalance>()), selectorInputs)
-            assertEquals(
-                WaasApi.Execute.encodeRequest(
-                    ExecuteRequest(txnId = "txn-sponsored"),
-                ),
-                requireNotNull(executeRequest.body).utf8(),
-            )
-            assertEquals(2, server.requestCount)
-        }
-
-    @Test
-    fun sendTransactionSponsoredContinuesWithFirstAvailable() =
-        runBlocking {
-            enqueueJson(
-                prepareResponse(
-                    txnId = "txn-sponsored-first-available",
-                    feeOptions = "[]",
-                    sponsored = true,
-                ),
-            )
-            enqueueJson("""{"status":"executed"}""")
-            val client = restoredWalletClient(nonceValue = "1710000117")
-
-            val result =
-                client.sendTransaction(
-                    network = Network.AMOY,
-                    request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
-                    waitForStatus = false,
-                    selectFeeOption = FeeOptionSelector.firstAvailable,
-                )
-
-            requireNotNull(server.takeRequest())
-            val executeRequest = requireNotNull(server.takeRequest())
-            assertEquals("txn-sponsored-first-available", result.txnId)
-            assertEquals(
-                WaasApi.Execute.encodeRequest(
-                    ExecuteRequest(txnId = "txn-sponsored-first-available"),
-                ),
-                requireNotNull(executeRequest.body).utf8(),
-            )
         }
 
     @Test
@@ -991,10 +914,6 @@ class WalletTransactionTest {
         assertEquals(5, options.fastPollCount)
         assertEquals(2_000L, options.intervalMs)
         assertEquals(60_000L, options.timeoutMs)
-        assertEquals(
-            TransactionStatusPollingOptions(fastIntervalMs = 400L, fastPollCount = 5, intervalMs = 2_000L, timeoutMs = 60_000L),
-            options,
-        )
     }
 
     @Test

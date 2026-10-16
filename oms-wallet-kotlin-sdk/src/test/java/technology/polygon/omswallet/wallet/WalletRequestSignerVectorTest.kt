@@ -86,6 +86,19 @@ class WalletRequestSignerVectorTest {
         assertEquals(expectedPayload, payload)
         assertEquals(expectedPreimage, preimage)
         assertEquals(expectedHeader, header)
+        assertEquals(
+            "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"to\":\"0xabc\",\"value\":\"0\",\"data\":\"0x1234\",\"mode\":\"native\"}",
+            WaasApi.PrepareEthereumTransaction.encodeRequest(
+                PrepareEthereumTransactionRequest(
+                    network = "80002",
+                    walletId = "wallet-0",
+                    to = "0xabc",
+                    value = "0",
+                    data = "0x1234",
+                    mode = TransactionMode.Native,
+                ),
+            ),
+        )
     }
 
     @Test
@@ -101,17 +114,14 @@ class WalletRequestSignerVectorTest {
         val expectedHeader =
             "OMS-Wallet-Signature: alg=\"ecdsa-p256-sha256\", scope=\"prj_project\", cred=\"$TEST_CREDENTIAL_ID\"," +
                 " nonce=1710000002, sig=\"$TEST_SIGNATURE\""
+        val answer = WalletAuthChallenge.hashAnswer(challenge = "challenge", code = "123456")
         val payload =
             WaasApi.CompleteAuth.encodeRequest(
                 CompleteAuthRequest(
                     identityType = IdentityType.Email,
                     authMode = AuthMode.OTP,
                     verifier = "verifier-123",
-                    answer =
-                        WalletAuthChallenge.hashAnswer(
-                            challenge = "challenge",
-                            code = "123456",
-                        ),
+                    answer = answer,
                 ),
             )
         val preimage = WalletRequestSigner.buildWalletRequestPreimage(endpoint, nonce, scope, payload)
@@ -124,6 +134,7 @@ class WalletRequestSignerVectorTest {
                 signature = TEST_SIGNATURE,
             )
 
+        assertEquals("2oXiHHjzvN3XzdxGxWTK_c9hZf7pom0OovssPvI7q3M", answer)
         assertEquals(expectedPayload, payload)
         assertEquals(expectedPreimage, preimage)
         assertEquals(expectedHeader, header)
