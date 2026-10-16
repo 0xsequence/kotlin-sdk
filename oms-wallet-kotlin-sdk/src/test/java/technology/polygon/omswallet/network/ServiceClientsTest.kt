@@ -24,6 +24,10 @@ import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.models.BalancesResult
 import technology.polygon.omswallet.models.SolanaBalance
+import technology.polygon.omswallet.models.SolanaNetworkError
+import technology.polygon.omswallet.models.SolanaTokenProgram
+import technology.polygon.omswallet.models.SolanaVerificationSource
+import technology.polygon.omswallet.models.SolanaVerificationStatus
 import technology.polygon.omswallet.models.SortBy
 import technology.polygon.omswallet.models.SortOrder
 import technology.polygon.omswallet.models.TokenBalancesPage
@@ -273,8 +277,52 @@ class ServiceClientsTest {
                 "webrpc@v0.31.2;gen-kotlin@v0.3.2;solana-indexer-gateway@v1",
                 request.headers["Webrpc"],
             )
-            assertTrue(result.balances[1] is SolanaBalance.FungibleToken)
-            assertEquals(SolanaNetwork.Devnet, result.errors.first().network)
+            assertEquals("test-publishable-key", request.headers["Api-Key"])
+            assertEquals(
+                "{\"networks\":[\"solana:mainnet\",\"solana:devnet\"],\"filter\":{\"accountAddresses\":[\"solana-wallet\"]," +
+                    "\"omitNativeBalances\":false,\"contractWhitelist\":[\"usdc-mint\"]," +
+                    "\"contractBlacklist\":[\"spam-mint\"]},\"omitMetadata\":true}",
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals(200, result.status)
+            assertEquals(
+                listOf(
+                    SolanaBalance.Native(
+                        network = SolanaNetwork.Mainnet,
+                        accountAddress = "solana-wallet",
+                        name = "Solana",
+                        symbol = "SOL",
+                        decimals = 9,
+                        balance = "1",
+                        formattedBalance = "0.000000001",
+                        imageUrl = null,
+                        metadataUri = null,
+                        verificationStatus = SolanaVerificationStatus.Unknown,
+                        verificationSource = SolanaVerificationSource.None,
+                        priceUSD = null,
+                        balanceUSD = null,
+                    ),
+                    SolanaBalance.FungibleToken(
+                        network = SolanaNetwork.Mainnet,
+                        accountAddress = "solana-wallet",
+                        tokenProgram = SolanaTokenProgram.SplToken,
+                        mintAddress = "usdc-mint",
+                        name = "USD Coin",
+                        symbol = "USDC",
+                        decimals = 6,
+                        balance = "10",
+                        formattedBalance = "0.00001",
+                        imageUrl = null,
+                        metadataUri = null,
+                        verificationStatus = SolanaVerificationStatus.Verified,
+                        verificationSource = SolanaVerificationSource.Jupiter,
+                        priceUSD = null,
+                        balanceUSD = null,
+                    ),
+                ),
+                result.balances,
+            )
+            assertEquals(listOf(SolanaNetworkError(SolanaNetwork.Devnet, "RPC unavailable")), result.errors)
         }
 
     @Test

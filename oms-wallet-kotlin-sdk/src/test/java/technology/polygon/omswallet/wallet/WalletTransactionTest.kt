@@ -1279,8 +1279,8 @@ class WalletTransactionTest {
     @Test
     fun solanaOperationsUseSolanaRequestShapes() =
         runBlocking {
+            val recipient = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"
             enqueueJson("""{"signature":"solana-signature"}""")
-            enqueueJson("""{"isValid":true}""")
             enqueueJson(
                 """{"txnId":"solana-txn","status":"quoted","feeOptions":[],"sponsored":true,"expiresAt":"2099-01-01T00:00:00Z"}""",
             )
@@ -1293,28 +1293,33 @@ class WalletTransactionTest {
                 )
 
             val signature = client.signSolanaMessage("hello")
-            val valid = client.isValidSolanaMessageSignature("hello", signature)
             val transaction =
                 client.sendSolanaTransfer(
                     network = SolanaNetwork.Devnet,
                     asset = "SOL",
-                    to = "recipient",
+                    to = recipient,
                     amount = BigInteger("1000000"),
                     waitForStatus = false,
                 )
             val sign = requireNotNull(server.takeRequest())
-            val verify = requireNotNull(server.takeRequest())
             val prepare = requireNotNull(server.takeRequest())
             val execute = requireNotNull(server.takeRequest())
 
+            assertEquals("solana-signature", signature)
             assertEquals("/v1/Waas/SignMessage", sign.target)
-            assertTrue(requireNotNull(sign.body).utf8().contains("\"network\":\"\""))
-            assertEquals("/v1/WaasPublic/IsValidMessageSignature", verify.target)
-            assertTrue(requireNotNull(verify.body).utf8().contains("\"networkFamily\":\"solana\""))
-            assertTrue(valid)
+            assertEquals(
+                """{"network":"","walletId":"wallet-main","message":"hello"}""",
+                requireNotNull(sign.body).utf8(),
+            )
             assertEquals("/v1/Waas/PrepareSolanaTransfer", prepare.target)
-            assertTrue(requireNotNull(prepare.body).utf8().contains("\"network\":\"solana:devnet\""))
+            assertEquals(
+                """{"network":"solana:devnet","walletId":"wallet-main","asset":"SOL",""" +
+                    """"recipient":{"address":"$recipient"},"amount":"1000000","mode":"relayer"}""",
+                requireNotNull(prepare.body).utf8(),
+            )
             assertEquals("/v1/Waas/Execute", execute.target)
+            assertEquals("""{"txnId":"solana-txn"}""", requireNotNull(execute.body).utf8())
+            assertEquals(3, server.requestCount)
             assertEquals("solana-txn", transaction.txnId)
             assertEquals(TransactionStatusResolution.NotRequested, transaction.statusResolution)
         }

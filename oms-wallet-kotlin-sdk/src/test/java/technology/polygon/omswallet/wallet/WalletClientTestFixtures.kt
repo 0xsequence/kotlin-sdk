@@ -168,13 +168,9 @@ internal fun expectedWalletSignatureHeader(
     signature: String = TEST_SIGNATURE,
     signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256,
 ): String =
-    WalletRequestSigner.buildWalletSignatureHeader(
-        signingAlgorithm = signingAlgorithm,
-        scope = scope,
-        credentialId = credentialId,
-        nonce = nonce,
-        signature = signature,
-    )
+    // Spelled out literally so the expected wire format is not derived from the production builder.
+    "OMS-Wallet-Signature: alg=\"${signingAlgorithm.wireValue}\", scope=\"$scope\", cred=\"$credentialId\"," +
+        " nonce=$nonce, sig=\"$signature\""
 
 internal fun uriOriginAndPath(url: String): String {
     val uri = URI(url)

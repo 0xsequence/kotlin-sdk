@@ -314,12 +314,26 @@ class WalletAccessTest {
 
             assertEquals("Example", metadata.appName)
             assertEquals("/v1/WaasPublic/InspectCredential", inspect.target)
+            assertEquals(
+                """{"scope":"test-project-id","credentialId":"remote-credential"}""",
+                requireNotNull(inspect.body).utf8(),
+            )
             assertEquals("/v1/Waas/AuthorizeRemoteAccess", authorize.target)
-            assertTrue(requireNotNull(authorize.body).utf8().contains("\"chainId\":\"137\""))
+            assertEquals(
+                """{"credentialId":"remote-credential","walletId":"wallet-main",""" +
+                    """"grants":{"entries":[{"kind":"nativeTransfer",""" +
+                    """"nativeTransfer":{"to":"0x2222222222222222222222222222222222222222","limit":"100"}}]},""" +
+                    """"expiry":"2099-01-01T00:00:00Z","chainId":"137"}""",
+                requireNotNull(authorize.body).utf8(),
+            )
+            assertEquals("wallet-main", authorization.walletId)
+            assertEquals("session-1", authorization.sessionId)
             assertEquals("/v1/Waas/GetSession", getSession.target)
+            assertEquals("""{"sessionId":"session-1"}""", requireNotNull(getSession.body).utf8())
             assertEquals(137, session.chainId)
             assertEquals(listOf(grant), session.grants)
             assertEquals("/v1/Waas/GetSessionUsage", getUsage.target)
+            assertEquals("""{"sessionId":"session-1","network":"137"}""", requireNotNull(getUsage.body).utf8())
             assertEquals(BigInteger("25"), usage.single().used)
         }
 

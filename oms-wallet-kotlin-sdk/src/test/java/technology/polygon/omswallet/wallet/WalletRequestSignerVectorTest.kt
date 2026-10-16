@@ -24,7 +24,9 @@ class WalletRequestSignerVectorTest {
         val expectedPreimage =
             "POST /v1/Waas/SignMessage\nnonce: 1710000000\nscope: prj_project\n\n" +
                 expectedPayload
-        val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
+        val expectedHeader =
+            "OMS-Wallet-Signature: alg=\"ecdsa-p256-sha256\", scope=\"prj_project\", cred=\"$TEST_CREDENTIAL_ID\"," +
+                " nonce=1710000000, sig=\"$TEST_SIGNATURE\""
         val payload =
             WaasApi.SignMessage.encodeRequest(
                 SignMessageRequest(
@@ -58,7 +60,9 @@ class WalletRequestSignerVectorTest {
         val expectedPreimage =
             "POST /v1/Waas/PrepareEthereumTransaction\nnonce: 1710000001\nscope: prj_project\n\n" +
                 expectedPayload
-        val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
+        val expectedHeader =
+            "OMS-Wallet-Signature: alg=\"ecdsa-p256-sha256\", scope=\"prj_project\", cred=\"$TEST_CREDENTIAL_ID\"," +
+                " nonce=1710000001, sig=\"$TEST_SIGNATURE\""
         val payload =
             WaasApi.PrepareEthereumTransaction.encodeRequest(
                 PrepareEthereumTransactionRequest(
@@ -94,7 +98,9 @@ class WalletRequestSignerVectorTest {
         val expectedPreimage =
             "POST /v1/Waas/CompleteAuth\nnonce: 1710000002\nscope: prj_project\n\n" +
                 expectedPayload
-        val expectedHeader = expectedWalletSignatureHeader(nonce = nonce, scope = scope)
+        val expectedHeader =
+            "OMS-Wallet-Signature: alg=\"ecdsa-p256-sha256\", scope=\"prj_project\", cred=\"$TEST_CREDENTIAL_ID\"," +
+                " nonce=1710000002, sig=\"$TEST_SIGNATURE\""
         val payload =
             WaasApi.CompleteAuth.encodeRequest(
                 CompleteAuthRequest(
