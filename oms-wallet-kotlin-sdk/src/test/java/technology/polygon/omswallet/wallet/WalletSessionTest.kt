@@ -131,7 +131,7 @@ class WalletSessionTest {
                 projectId = "test-project-id",
                 environment = testEnvironment(),
                 sessionStore = store,
-                credentialSigner = MockWebCryptoCredentialSigner(available = false),
+                credentialSigner = TrackingCredentialSigner(available = false, nonceValue = "42"),
             )
 
         val restored = client.restorePersistedSession()

@@ -211,7 +211,7 @@ class WalletEmailAuthTest {
                     walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
-            val signer = MockWebCryptoCredentialSigner()
+            val signer = TrackingCredentialSigner(nonceValue = "42")
             val client =
                 WalletClient.create(
                     publishableKey = "test-publishable-key",

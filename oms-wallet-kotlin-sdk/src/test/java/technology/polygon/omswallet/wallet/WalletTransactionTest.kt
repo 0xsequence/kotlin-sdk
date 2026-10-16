@@ -272,7 +272,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionDefaultSelectionUsesFeeTokenIdWhenPresent() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-token-id",
                     feeOptions =
@@ -289,7 +289,7 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson("""{"status":"executed"}""")
 
             val client = restoredWalletClient(nonceValue = "1710000115")
 
@@ -347,8 +347,8 @@ class WalletTransactionTest {
                 Triple("txn-sponsored", usdcFeeOptions, recordingSelector),
                 Triple("txn-sponsored-first-available", "[]", FeeOptionSelector.firstAvailable),
             ).forEach { (txnId, feeOptions, selector) ->
-                enqueueJson(prepareResponse(txnId = txnId, feeOptions = feeOptions, sponsored = true))
-                enqueueJson("""{"status":"executed"}""")
+                server.enqueueJson(prepareResponse(txnId = txnId, feeOptions = feeOptions, sponsored = true))
+                server.enqueueJson("""{"status":"executed"}""")
                 val requestsBefore = server.requestCount
                 val client = restoredWalletClient(nonceValue = "1710000116")
 
@@ -378,7 +378,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionSponsoredDoesNotExecuteWhenAcknowledgementThrows() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-sponsored-cancelled",
                     feeOptions = "[]",
@@ -407,14 +407,14 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionUnsponsoredWithoutFeeOptionsFailsBeforeExecute() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-no-fees",
                     feeOptions = "[]",
                     sponsored = false,
                 ),
             )
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson("""{"status":"executed"}""")
             val client = restoredWalletClient(nonceValue = "1710000117")
 
             val error =
@@ -438,7 +438,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionUnsponsoredCustomSelectorRequiresSelection() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-no-selection",
                     feeOptions =
@@ -455,8 +455,8 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "2000"))
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "2000"))
+            server.enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -492,7 +492,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionFirstAvailableSelectsFirstAffordableFeeTokenId() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-first-available",
                     feeOptions =
@@ -515,8 +515,8 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(gatewayTokenBalancesResponse("0xDAI" to "100", "0xUSDC" to "2000"))
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson(gatewayTokenBalancesResponse("0xDAI" to "100", "0xUSDC" to "2000"))
+            server.enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -561,7 +561,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionFirstAvailableRequiresAffordableFeeOption() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-no-affordable-fee",
                     feeOptions =
@@ -578,8 +578,8 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "100"))
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "100"))
+            server.enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -697,16 +697,16 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionTreatsFailedStatusAsTerminal() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-failed",
                     feeOptions = "[]",
                     sponsored = true,
                 ),
             )
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"failed"}""")
-            enqueueJson("""{"status":"executed","txnHash":"0xshould-not-be-read"}""")
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"failed"}""")
+            server.enqueueJson("""{"status":"executed","txnHash":"0xshould-not-be-read"}""")
 
             val delays = mutableListOf<Long>()
             val client =
@@ -849,15 +849,15 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionReportsWhenStatusPollingTimesOut() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-timeout",
                     feeOptions = "[]",
                     sponsored = true,
                 ),
             )
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending"}""")
 
             val client = restoredWalletClient(nonceValue = "1710000121")
             val result =
@@ -881,15 +881,15 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionKeepsUnknownStatusUnresolvedUntilTimeout() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-unknown-timeout",
                     feeOptions = "[]",
                     sponsored = true,
                 ),
             )
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"future-status"}""")
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"future-status"}""")
 
             val client = restoredWalletClient(nonceValue = "1710000122")
             val result =
@@ -920,8 +920,8 @@ class WalletTransactionTest {
     fun sendTransactionValueOverloadForwardsMode() =
         runBlocking {
             listOf(null, TransactionMode.Native, TransactionMode.Relayer).forEachIndexed { index, mode ->
-                enqueueJson(prepareResponse(txnId = "txn-mode-$index", feeOptions = "[]", sponsored = true))
-                enqueueJson("""{"status":"pending"}""")
+                server.enqueueJson(prepareResponse(txnId = "txn-mode-$index", feeOptions = "[]", sponsored = true))
+                server.enqueueJson("""{"status":"pending"}""")
                 val client = restoredWalletClient(nonceValue = "17100003$index")
 
                 if (mode == null) {
@@ -964,7 +964,7 @@ class WalletTransactionTest {
                 )
 
             invalidOptions.forEachIndexed { index, options ->
-                enqueueJson(
+                server.enqueueJson(
                     prepareResponse(
                         txnId = "txn-invalid-polling-$index",
                         feeOptions = "[]",
@@ -1196,11 +1196,11 @@ class WalletTransactionTest {
     fun solanaOperationsUseSolanaRequestShapes() =
         runBlocking {
             val recipient = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"
-            enqueueJson("""{"signature":"solana-signature"}""")
-            enqueueJson(
+            server.enqueueJson("""{"signature":"solana-signature"}""")
+            server.enqueueJson(
                 """{"txnId":"solana-txn","status":"quoted","feeOptions":[],"sponsored":true,"expiresAt":"2099-01-01T00:00:00Z"}""",
             )
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson("""{"status":"executed"}""")
             val client =
                 restoredWalletClient(
                     nonceValue = "1710000120",
@@ -1245,7 +1245,7 @@ class WalletTransactionTest {
         runBlocking {
             val walletAddress = "4Nd1mYQbqjVU2aR7cJNPyqW9XjHnBYvWQd7ZxYxvT6uP"
             val usdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-            enqueueJson(
+            server.enqueueJson(
                 """
                 {
                   "txnId": "solana-first-available",
@@ -1278,7 +1278,7 @@ class WalletTransactionTest {
                 }
                 """.trimIndent(),
             )
-            enqueueJson(
+            server.enqueueJson(
                 """
                 {
                   "balances": [
@@ -1313,7 +1313,7 @@ class WalletTransactionTest {
                 }
                 """.trimIndent(),
             )
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending"}""")
             val client =
                 restoredWalletClient(
                     nonceValue = "1710000121",
@@ -1355,16 +1355,6 @@ class WalletTransactionTest {
             )
         }
 
-    private fun enqueueJson(body: String) {
-        server.enqueue(
-            MockResponse
-                .Builder()
-                .code(200)
-                .body(body)
-                .build(),
-        )
-    }
-
     private fun restoredWalletClient(
         nonceValue: String,
         walletAddress: String = "0xwallet",
@@ -1374,29 +1364,7 @@ class WalletTransactionTest {
                 walletApiUrl = server.url("/v1/Waas/").toString(),
                 indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
             ),
-    ): WalletClient {
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = environment,
-                transport = OMSWalletHttpClient(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSWalletSessionSnapshot(
-                                wallet = testWallet("wallet-main", walletAddress, walletType),
-                                expiresAt = TEST_SESSION_EXPIRES_AT,
-                                signerAddress = TEST_CREDENTIAL_ID,
-                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                auth = emailSessionAuth(),
-                            ),
-                    ),
-                credentialSigner = TrackingCredentialSigner(nonceValue = nonceValue),
-            )
-        assertTrue(client.restorePersistedSession())
-        return client
-    }
+    ): WalletClient = restoredTestWalletClient(environment, testWallet("wallet-main", walletAddress, walletType), nonceValue)
 
     private fun prepareResponse(
         txnId: String,

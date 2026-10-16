@@ -7,9 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
-import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,8 +30,6 @@ import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.models.WalletKeyOrigin
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletEnvironment
-import technology.polygon.omswallet.network.OMSWalletHttpClient
-import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import java.math.BigInteger
 import technology.polygon.omswallet.internal.generated.waas.WalletType as WaasWalletType
 
@@ -54,9 +50,9 @@ class WalletTronTest {
     @Test
     fun sendTronTransactionSendsPlainTrxTransferWithoutDataInNativeMode() =
         runBlocking {
-            enqueueJson(sponsoredPrepareResponse("txn-trx"))
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"executed","txnHash":"tron-txid"}""")
+            server.enqueueJson(sponsoredPrepareResponse("txn-trx"))
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"executed","txnHash":"tron-txid"}""")
             val client = tronWalletClient()
 
             val result =
@@ -84,8 +80,8 @@ class WalletTronTest {
     @Test
     fun sendTronTransactionForwardsEmptyHexDataAsPayableFallbackCall() =
         runBlocking {
-            enqueueJson(sponsoredPrepareResponse("txn-fallback"))
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson(sponsoredPrepareResponse("txn-fallback"))
+            server.enqueueJson("""{"status":"pending"}""")
             val client = tronWalletClient()
 
             val result =
@@ -109,9 +105,9 @@ class WalletTronTest {
     fun sendTronTransactionReportsSubmittedTransactionOncePendingStatusHasHash() =
         runBlocking {
             // Tron transactions stay pending until solidified (~1 minute); a hash ends polling.
-            enqueueJson(sponsoredPrepareResponse("txn-pending"))
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"pending","txnHash":"tron-pending-txid"}""")
+            server.enqueueJson(sponsoredPrepareResponse("txn-pending"))
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending","txnHash":"tron-pending-txid"}""")
             val client = tronWalletClient()
 
             val result = client.sendTronTransaction(TronNetwork.Nile, TRON_RECIPIENT, BigInteger.ONE)
@@ -124,8 +120,8 @@ class WalletTronTest {
     @Test
     fun callTronContractPreparesTrc20CallThroughWalletServiceAbiEncoder() =
         runBlocking {
-            enqueueJson(sponsoredPrepareResponse("txn-trc20"))
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson(sponsoredPrepareResponse("txn-trc20"))
+            server.enqueueJson("""{"status":"pending"}""")
             val client = tronWalletClient()
 
             client.callTronContract(
@@ -177,8 +173,8 @@ class WalletTronTest {
     @Test
     fun sponsoredTronTransactionAcknowledgesEmptyFeeOptionList() =
         runBlocking {
-            enqueueJson(sponsoredPrepareResponse("txn-sponsored"))
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson(sponsoredPrepareResponse("txn-sponsored"))
+            server.enqueueJson("""{"status":"pending"}""")
             val client = tronWalletClient()
             val seenOptions = mutableListOf<List<FeeOptionWithBalance>>()
 
@@ -202,7 +198,7 @@ class WalletTronTest {
     @Test
     fun firstAvailablePaysUnsponsoredTronFeeUsingTrxBalance() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 """
                 {
                   "txnId": "txn-burn",
@@ -219,7 +215,7 @@ class WalletTronTest {
                 }
                 """.trimIndent(),
             )
-            enqueueJson(
+            server.enqueueJson(
                 """
                 {
                   "balances": [
@@ -240,7 +236,7 @@ class WalletTronTest {
                 }
                 """.trimIndent(),
             )
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending"}""")
             val client = tronWalletClient()
             var seenOptions: List<FeeOptionWithBalance> = emptyList()
 
@@ -273,8 +269,8 @@ class WalletTronTest {
     @Test
     fun signsTronMessagesAndTypedDataWithoutEvmNetwork() =
         runBlocking {
-            enqueueJson("""{"signature":"0xtron-signature"}""")
-            enqueueJson("""{"signature":"0xtron-signature"}""")
+            server.enqueueJson("""{"signature":"0xtron-signature"}""")
+            server.enqueueJson("""{"signature":"0xtron-signature"}""")
             val client = tronWalletClient()
             val typedData =
                 buildJsonObject {
@@ -303,8 +299,8 @@ class WalletTronTest {
     @Test
     fun validatesTronSignaturesWithTronNetworkFamily() =
         runBlocking {
-            enqueueJson("""{"isValid":true}""")
-            enqueueJson("""{"isValid":true}""")
+            server.enqueueJson("""{"isValid":true}""")
+            server.enqueueJson("""{"isValid":true}""")
             val client = tronWalletClient()
             val typedData = buildJsonObject { put("primaryType", "Mail") }
 
@@ -423,7 +419,7 @@ class WalletTronTest {
     @Test
     fun createsAndActivatesTronWalletThroughTronNetworkFamily() =
         runBlocking {
-            enqueueJson(walletResponseBody(walletId = "wallet-new-tron", address = TRON_WALLET, type = WaasWalletType.Tron))
+            server.enqueueJson(walletResponseBody(walletId = "wallet-new-tron", address = TRON_WALLET, type = WaasWalletType.Tron))
             val client = walletClient(testWallet("wallet-eth", ETHEREUM_ADDRESS))
 
             val result = client.createWallet(walletType = WalletType.Tron)
@@ -445,7 +441,7 @@ class WalletTronTest {
     @Test
     fun rejectsEthereumWalletResponsesWithNonHexAddress() =
         runBlocking {
-            enqueueJson(walletResponseBody(walletId = "wallet-bad", address = TRON_WALLET))
+            server.enqueueJson(walletResponseBody(walletId = "wallet-bad", address = TRON_WALLET))
             val client = tronWalletClient()
 
             val error = runCatching { client.useWallet("wallet-bad") }.exceptionOrNull()
@@ -459,45 +455,18 @@ class WalletTronTest {
 
     private fun tronWalletClient(): WalletClient = walletClient(testWallet("wallet-tron", TRON_WALLET, WalletType.Tron))
 
-    private fun walletClient(wallet: Wallet): WalletClient {
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment =
-                    OMSWalletEnvironment(
-                        walletApiUrl = server.url("/v1/Waas/").toString(),
-                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        solanaIndexerGatewayUrl = server.url("/v1/SolanaIndexerGateway/").toString(),
-                        tronIndexerGatewayUrl = server.url("/v1/TronIndexerGateway/").toString(),
-                    ),
-                transport = OMSWalletHttpClient(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSWalletSessionSnapshot(
-                                wallet = wallet,
-                                expiresAt = TEST_SESSION_EXPIRES_AT,
-                                signerAddress = TEST_CREDENTIAL_ID,
-                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                auth = emailSessionAuth(),
-                            ),
-                    ),
-                credentialSigner = TrackingCredentialSigner(nonceValue = "1710000300"),
-            )
-        assertTrue(client.restorePersistedSession())
-        return client
-    }
-
-    private fun enqueueJson(body: String) {
-        server.enqueue(
-            MockResponse
-                .Builder()
-                .code(200)
-                .body(body)
-                .build(),
+    private fun walletClient(wallet: Wallet): WalletClient =
+        restoredTestWalletClient(
+            environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                    solanaIndexerGatewayUrl = server.url("/v1/SolanaIndexerGateway/").toString(),
+                    tronIndexerGatewayUrl = server.url("/v1/TronIndexerGateway/").toString(),
+                ),
+            wallet = wallet,
+            nonceValue = "1710000300",
         )
-    }
 
     private fun sponsoredPrepareResponse(txnId: String): String =
         """{"txnId":"$txnId","status":"quoted","feeOptions":[],"sponsored":true,"expiresAt":"2099-01-01T00:00:00Z"}"""
@@ -511,10 +480,6 @@ class WalletTronTest {
         assertEquals(OMSWalletErrorCode.ValidationError, error.code)
         assertEquals(operation, error.operation)
     }
-
-    private fun RecordedRequest.utf8Body(): String = requireNotNull(body).utf8()
-
-    private fun RecordedRequest.jsonBody(): JsonObject = parseJson(utf8Body())
 
     private fun parseJson(value: String): JsonObject = Json.parseToJsonElement(value).jsonObject
 

@@ -1,14 +1,10 @@
 package technology.polygon.omswallet.wallet
 
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
-import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -25,7 +21,6 @@ import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
-import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 
 class WalletSignatureVerificationTest {
     private lateinit var server: MockWebServer
@@ -44,7 +39,7 @@ class WalletSignatureVerificationTest {
     @Test
     fun verifiesExplicitWalletAddressesWhileSignedOutWithoutWalletId() =
         runBlocking {
-            repeat(VerificationMethod.entries.size) { enqueueJson("""{"isValid":true}""") }
+            repeat(VerificationMethod.entries.size) { server.enqueueJson("""{"isValid":true}""") }
             val client = signedOutWalletClient()
 
             VerificationMethod.entries.forEach { method ->
@@ -63,7 +58,7 @@ class WalletSignatureVerificationTest {
     fun verifiesAgainstActiveWalletAddressWhenAddressIsOmitted() =
         runBlocking {
             VerificationMethod.entries.forEach { method ->
-                enqueueJson("""{"isValid":false}""")
+                server.enqueueJson("""{"isValid":false}""")
                 val client = activeWalletClient(testWallet("wallet-${method.name}", method.address, method.walletType))
 
                 assertFalse(method.verify(client, null))
@@ -276,47 +271,13 @@ class WalletSignatureVerificationTest {
             transport = OMSWalletHttpClient(),
         )
 
-    private fun activeWalletClient(wallet: Wallet): WalletClient {
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = environment(),
-                transport = OMSWalletHttpClient(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSWalletSessionSnapshot(
-                                wallet = wallet,
-                                expiresAt = TEST_SESSION_EXPIRES_AT,
-                                signerAddress = TEST_CREDENTIAL_ID,
-                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                auth = emailSessionAuth(),
-                            ),
-                    ),
-                credentialSigner = TrackingCredentialSigner(nonceValue = "1710000400"),
-            )
-        assertTrue(client.restorePersistedSession())
-        return client
-    }
+    private fun activeWalletClient(wallet: Wallet): WalletClient = restoredTestWalletClient(environment(), wallet, "1710000400")
 
     private fun environment(): OMSWalletEnvironment =
         OMSWalletEnvironment(
             walletApiUrl = server.url("/v1/Waas/").toString(),
             indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
         )
-
-    private fun enqueueJson(body: String) {
-        server.enqueue(
-            MockResponse
-                .Builder()
-                .code(200)
-                .body(body)
-                .build(),
-        )
-    }
-
-    private fun RecordedRequest.jsonBody(): JsonObject = Json.parseToJsonElement(requireNotNull(body).utf8()).jsonObject
 
     private companion object {
         const val ETHEREUM_ADDRESS: String = "0x9999999999999999999999999999999999999999"

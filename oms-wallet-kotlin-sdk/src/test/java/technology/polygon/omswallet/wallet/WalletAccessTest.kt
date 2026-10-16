@@ -415,7 +415,7 @@ class WalletAccessTest {
                             indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
-                    credentialSigner = MockWebCryptoCredentialSigner(available = false),
+                    credentialSigner = TrackingCredentialSigner(available = false, nonceValue = "42"),
                 )
             client.restoreSession(activeSessionSnapshot())
 
@@ -430,27 +430,13 @@ class WalletAccessTest {
         }
 
     private fun restoredWalletClient(nonce: String): WalletClient =
-        WalletClient
-            .create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment =
-                    OMSWalletEnvironment(
-                        walletApiUrl = server.url("/v1/Waas/").toString(),
-                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                    ),
-                transport = OMSWalletHttpClient(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSWalletSessionSnapshot(
-                                wallet = testWallet("wallet-main", "0x1111111111111111111111111111111111111111"),
-                                expiresAt = TEST_SESSION_EXPIRES_AT,
-                                signerAddress = TEST_CREDENTIAL_ID,
-                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                auth = emailSessionAuth(),
-                            ),
-                    ),
-                credentialSigner = TrackingCredentialSigner(nonceValue = nonce),
-            ).also { assertTrue(it.restorePersistedSession()) }
+        restoredTestWalletClient(
+            environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                ),
+            wallet = testWallet("wallet-main", "0x1111111111111111111111111111111111111111"),
+            nonceValue = nonce,
+        )
 }

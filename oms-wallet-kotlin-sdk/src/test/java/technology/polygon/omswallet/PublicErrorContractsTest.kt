@@ -41,6 +41,7 @@ import technology.polygon.omswallet.wallet.WalletSelectionBehavior
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 import technology.polygon.omswallet.wallet.activeSessionSnapshot
 import technology.polygon.omswallet.wallet.completeAuthResponseBody
+import technology.polygon.omswallet.wallet.enqueueJson
 import technology.polygon.omswallet.wallet.testWallet
 import technology.polygon.omswallet.wallet.walletFixture
 import java.io.IOException
@@ -120,7 +121,7 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsWaasDomainErrorsWithUpstreamDetails() =
         runBlocking {
-            enqueueJson("""{"verifier":"verifier-1","loginHint":"user@example.com","challenge":"challenge-1"}""")
+            server.enqueueJson("""{"verifier":"verifier-1","loginHint":"user@example.com","challenge":"challenge-1"}""")
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -306,8 +307,8 @@ class PublicErrorContractsTest {
         runBlocking {
             val errors = mutableListOf<LabeledError>()
 
-            enqueueJson("""{"verifier":"verifier-unavailable","loginHint":"user@example.com","challenge":"challenge"}""")
-            enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-1", "0x1111111111111111111111111111111111111111"))))
+            server.enqueueJson("""{"verifier":"verifier-unavailable","loginHint":"user@example.com","challenge":"challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-1", "0x1111111111111111111111111111111111111111"))))
             val unavailableClient = createOmsClient()
             unavailableClient.wallet.startEmailAuth("user@example.com")
             val unavailableSelection =
@@ -325,10 +326,10 @@ class PublicErrorContractsTest {
                     },
                 )
 
-            enqueueJson("""{"verifier":"old-verifier","loginHint":"old@example.com","challenge":"old-challenge"}""")
-            enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-old", "0x2222222222222222222222222222222222222222"))))
-            enqueueJson("""{"verifier":"new-verifier","loginHint":"new@example.com","challenge":"new-challenge"}""")
-            enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-new", "0x3333333333333333333333333333333333333333"))))
+            server.enqueueJson("""{"verifier":"old-verifier","loginHint":"old@example.com","challenge":"old-challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-old", "0x2222222222222222222222222222222222222222"))))
+            server.enqueueJson("""{"verifier":"new-verifier","loginHint":"new@example.com","challenge":"new-challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-new", "0x3333333333333333333333333333333333333333"))))
             val staleClient = createOmsClient()
             staleClient.wallet.startEmailAuth("old@example.com")
             val staleSelection =
@@ -358,8 +359,8 @@ class PublicErrorContractsTest {
                     },
                 )
 
-            enqueueJson("""{"verifier":"in-flight-verifier","loginHint":"user@example.com","challenge":"challenge"}""")
-            enqueueJson(completeAuthResponseBody(emptyList()))
+            server.enqueueJson("""{"verifier":"in-flight-verifier","loginHint":"user@example.com","challenge":"challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(emptyList()))
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -547,7 +548,7 @@ class PublicErrorContractsTest {
                         ),
                 )
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val providerErrorStart =
                 providerErrorClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
@@ -561,7 +562,7 @@ class PublicErrorContractsTest {
                     )
                 }
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val invalidLifetimeStart =
                 invalidLifetimeClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
@@ -574,7 +575,7 @@ class PublicErrorContractsTest {
                     )
                 }
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val signerMismatchStart =
                 signerMismatchClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
@@ -589,7 +590,7 @@ class PublicErrorContractsTest {
                     )
                 }
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val storageFailure =
                 publicError {
                     storageFailureClient.wallet.startOidcRedirectAuth(
@@ -849,7 +850,7 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsTransactionLocalValidationErrorsWithoutUpstreamDetails() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-no-fee-options", feeOptions = "[]", sponsored = false))
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-no-fee-options", feeOptions = "[]", sponsored = false))
 
             val client = createRestoredWalletClient()
 
@@ -876,7 +877,7 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsTransactionExecuteFailuresAsUnconfirmedWrites() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-execute", feeOptions = "[]", sponsored = true))
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-execute", feeOptions = "[]", sponsored = true))
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -921,8 +922,8 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsTransactionStatusPollingFailuresWithTxnAndUpstreamDetails() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-status", feeOptions = "[]", sponsored = true))
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-status", feeOptions = "[]", sponsored = true))
+            server.enqueueJson("""{"status":"pending"}""")
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -967,8 +968,8 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsTransactionStatusPollingTransportFailuresWithTxnAndUpstreamDetails() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-transport", feeOptions = "[]", sponsored = true))
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-transport", feeOptions = "[]", sponsored = true))
+            server.enqueueJson("""{"status":"pending"}""")
 
             val client = createRestoredWalletClient(okHttpClient = failingOnRequestOkHttpClient(3, "request failed"))
 
@@ -1345,16 +1346,6 @@ class PublicErrorContractsTest {
                     chain.proceed(chain.request())
                 },
             ).build()
-    }
-
-    private fun enqueueJson(body: String) {
-        server.enqueue(
-            MockResponse
-                .Builder()
-                .code(200)
-                .body(body)
-                .build(),
-        )
     }
 
     private fun prepareTransactionResponse(
