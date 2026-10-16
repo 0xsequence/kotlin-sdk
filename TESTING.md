@@ -35,7 +35,7 @@ Key subdirectories:
 
 - **Scope:** `tools/check-expo-compatibility.sh` publishes the SDK to Maven Local as
   `<version>-expo-compat`, then prebuilds and assembles two Expo Android consumers against it:
-  `compatibility-tests/expo/` (current stable Expo; fails if npm's `latest` tag is newer) and
+  `compatibility-tests/expo/` (current stable Expo; fails if npm's `latest` tag has a newer major or minor version) and
   `compatibility-tests/expo-min/` (the React Native SDK's supported minimum, Expo SDK 56; never
   freshness-checked). Catches Kotlin toolchain or artifact metadata changes that break Expo apps.
   Pass `current` or `minimum` to build one fixture; CI runs each in its own parallel job.

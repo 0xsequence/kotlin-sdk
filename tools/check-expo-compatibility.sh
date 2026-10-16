@@ -22,10 +22,12 @@ sdk_version="${release_version}-expo-compat"
 
 # Only the current-stable fixture tracks npm's latest tag; the minimum fixture
 # mirrors the React Native SDK's supported minimum and is never freshness-checked.
+# The fixture must be on the same major.minor as latest; a newer patch release
+# does not make it stale.
 if [[ "$target" != "minimum" ]]; then
   locked_expo_version="$(node -p "require('$fixture_dir/package-lock.json').packages['node_modules/expo'].version")"
   latest_expo_version="$(npm view expo dist-tags.latest)"
-  if [[ "$locked_expo_version" != "$latest_expo_version" ]]; then
+  if [[ "${locked_expo_version%.*}" != "${latest_expo_version%.*}" ]]; then
     echo "Expo compatibility fixture is stale: locked=$locked_expo_version latest=$latest_expo_version" >&2
     echo "Update it with: cd compatibility-tests/expo && npm install --save-exact expo@latest && npx expo install --fix" >&2
     exit 1

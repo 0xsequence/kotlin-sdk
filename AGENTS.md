@@ -125,7 +125,8 @@ current-stable and supported-minimum Expo compatibility.
   - Publish a temporary local SDK version and compile it through the locked
     current-stable and supported-minimum Expo fixtures (both when no argument
     is given). The command fails if
-    npm's `latest` Expo tag has moved ahead of the current-stable fixture; the
+    npm's `latest` Expo tag is on a newer major or minor version than the
+    current-stable fixture (a newer patch release is allowed); the
     minimum fixture is never freshness-checked and is prebuilt with a pinned
     SDK 56 `expo-template-bare-minimum` template.
 
