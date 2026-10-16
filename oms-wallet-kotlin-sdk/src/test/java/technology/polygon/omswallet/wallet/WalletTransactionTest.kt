@@ -387,7 +387,7 @@ class WalletTransactionTest {
             )
             enqueueJson("""{"status":"executed"}""")
             val client = restoredWalletClient(nonceValue = "1710000116")
-            var selectorCalled = false
+            val selectorInputs = mutableListOf<List<technology.polygon.omswallet.models.FeeOptionWithBalance>>()
 
             val result =
                 client.sendTransaction(
@@ -400,7 +400,7 @@ class WalletTransactionTest {
                     waitForStatus = false,
                     selectFeeOption =
                         FeeOptionSelector {
-                            selectorCalled = true
+                            selectorInputs += it
                             it.firstOrNull()?.selection
                         },
                 )
@@ -409,7 +409,8 @@ class WalletTransactionTest {
 
             assertEquals("txn-sponsored", result.txnId)
             assertEquals(TransactionStatus.Executed, result.status)
-            assertEquals(true, selectorCalled)
+            // Sponsored sends acknowledge the selector with no options, even when WaaS quotes some.
+            assertEquals(listOf(emptyList<technology.polygon.omswallet.models.FeeOptionWithBalance>()), selectorInputs)
             assertEquals(
                 WaasApi.Execute.encodeRequest(
                     ExecuteRequest(txnId = "txn-sponsored"),
@@ -829,7 +830,7 @@ class WalletTransactionTest {
         }
 
     @Test
-    fun sendTransactionAppliesFastPollsWhenSlowPollingIsDisabled() =
+    fun sendTransactionSwitchesFromFastToSlowIntervalAfterFastPollCount() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -854,20 +855,15 @@ class WalletTransactionTest {
                     .body("""{"status":"pending"}""")
                     .build(),
             )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"status":"pending"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"status":"pending"}""")
-                    .build(),
-            )
+            repeat(4) {
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(200)
+                        .body("""{"status":"pending"}""")
+                        .build(),
+                )
+            }
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -913,17 +909,18 @@ class WalletTransactionTest {
                         ),
                     statusPolling =
                         TransactionStatusPollingOptions(
-                            fastIntervalMs = 1L,
-                            fastPollCount = 3,
-                            intervalMs = 1L,
+                            fastIntervalMs = 10L,
+                            fastPollCount = 2,
+                            intervalMs = 50L,
                             timeoutMs = 1_000L,
                         ),
                 )
 
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("0xdeadbeef", result.txnHash)
-            assertEquals(listOf(1L, 1L), delays)
-            assertEquals(5, server.requestCount)
+            // Two fast polls (one fast delay between them), then the slow interval for the rest.
+            assertEquals(listOf(10L, 50L, 50L, 50L), delays)
+            assertEquals(7, server.requestCount)
         }
 
     @Test

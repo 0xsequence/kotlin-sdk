@@ -1,7 +1,10 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import technology.polygon.omswallet.internal.generated.waas.AbiArg
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
@@ -144,13 +147,21 @@ class WalletPayloadBuilderTest {
     @Test
     fun prepareEthereumContractCallPayloadMatchesWaasRequestShape() {
         assertEquals(
-            "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"contract\":\"0xcontract\",\"method\":\"mint\",\"mode\":\"relayer\"}",
+            "{\"network\":\"80002\",\"walletId\":\"wallet-0\",\"contract\":\"0xcontract\",\"method\":\"mint\"," +
+                "\"args\":[{\"type\":\"address\",\"value\":\"0xabc\"},{\"type\":\"uint256\",\"value\":\"1000\"}," +
+                "{\"type\":\"uint256[]\",\"value\":[\"1\",\"2\"]}],\"mode\":\"relayer\"}",
             WaasApi.PrepareEthereumContractCall.encodeRequest(
                 PrepareEthereumContractCallRequest(
                     network = "80002",
                     walletId = "wallet-0",
                     contract = "0xcontract",
                     method = "mint",
+                    args =
+                        listOf(
+                            AbiArg(type = "address", value = JsonPrimitive("0xabc")),
+                            AbiArg(type = "uint256", value = JsonPrimitive("1000")),
+                            AbiArg(type = "uint256[]", value = JsonArray(listOf(JsonPrimitive("1"), JsonPrimitive("2")))),
+                        ),
                     mode = TransactionMode.Relayer,
                 ),
             ),

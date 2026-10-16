@@ -527,6 +527,23 @@ class WalletOidcIdTokenAuthTest {
 
             val activeSession = activeSessionSnapshot()
             val store = InMemorySessionStore(activeSession)
+            // Records the persisted wallet each time a request is signed, so the CommitVerifier entry
+            // shows whether the previous session was gone before the new sign-in reached WaaS.
+            val persistedWalletAtSign = mutableListOf<Pair<String, String?>>()
+            val trackingSigner = TrackingCredentialSigner()
+            var signerClears = 0
+            val signer =
+                object : CredentialSigner by trackingSigner {
+                    override fun sign(preimage: String): String {
+                        persistedWalletAtSign += preimage.substringBefore('\n') to store.snapshot?.walletId
+                        return trackingSigner.sign(preimage)
+                    }
+
+                    override fun clear() {
+                        signerClears += 1
+                        trackingSigner.clear()
+                    }
+                }
             val client =
                 WalletClient.create(
                     publishableKey = "test-publishable-key",
@@ -538,9 +555,10 @@ class WalletOidcIdTokenAuthTest {
                         ),
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,
-                    credentialSigner = TrackingCredentialSigner(),
+                    credentialSigner = signer,
                 )
             client.restoreSession(activeSession)
+            assertEquals("wallet-active", client.snapshotSession()?.walletId)
 
             val result =
                 client.signInWithOidcIdToken(
@@ -553,6 +571,15 @@ class WalletOidcIdTokenAuthTest {
             val completeAuthRequest = requireNotNull(server.takeRequest())
             val useWalletRequest = requireNotNull(server.takeRequest())
 
+            assertEquals(
+                listOf(
+                    "POST /v1/Waas/CommitVerifier" to null,
+                    "POST /v1/Waas/CompleteAuth" to null,
+                    "POST /v1/Waas/UseWallet" to null,
+                ),
+                persistedWalletAtSign,
+            )
+            assertEquals(1, signerClears)
             assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
             assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
