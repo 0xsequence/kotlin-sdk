@@ -1,6 +1,9 @@
 package technology.polygon.omswallet.wallet
 
 import com.upokecenter.cbor.CBORObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.bouncycastle.crypto.hpke.HPKE
 import org.bouncycastle.crypto.util.SubjectPublicKeyInfoFactory
 import org.junit.Assert.assertArrayEquals
@@ -12,6 +15,7 @@ import technology.polygon.omswallet.OMSWalletAttestationException
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.models.WalletImportPrivateKey
 import java.security.MessageDigest
+import java.time.Instant
 
 class WalletImportCryptoTest {
     @Test
@@ -157,6 +161,58 @@ class WalletImportCryptoTest {
                 responseBody = responseBody,
                 trustedPcr0s = trustedPcr0s,
                 now = now,
+            )
+        }
+    }
+
+    @Test
+    fun attestationVerifierAcceptsRealNitroDocument() {
+        // Real AWS Nitro document captured from WaaS /v1/WaasPublic/Status; shared with the Swift SDK fixture.
+        val fixtureText =
+            requireNotNull(javaClass.classLoader?.getResource("fixtures/attestation.json")) {
+                "missing fixtures/attestation.json"
+            }.readText()
+        val fixture = Json.parseToJsonElement(fixtureText).jsonObject
+
+        fun field(name: String): String = requireNotNull(fixture[name]).jsonPrimitive.content
+
+        AttestationVerifier.verify(
+            encodedDocument = field("encodedDocument").trim(),
+            method = field("method"),
+            path = field("path"),
+            requestBody = field("requestBody"),
+            responseBody = field("responseBody"),
+            nonce = field("nonce"),
+            trustedPcr0s = setOf(field("pcr0")),
+            nowMillis = Instant.parse(field("now")).toEpochMilli(),
+        )
+
+        expectAttestationFailure("PCR0 is not trusted") {
+            AttestationVerifier.verify(
+                encodedDocument = field("encodedDocument").trim(),
+                method = field("method"),
+                path = field("path"),
+                requestBody = field("requestBody"),
+                responseBody = field("responseBody"),
+                nonce = field("nonce"),
+                trustedPcr0s = setOf("11".repeat(48)),
+                nowMillis = Instant.parse(field("now")).toEpochMilli(),
+            )
+        }
+
+        // The COSE_Sign1 may be untagged or carry tag 18; any other tag is rejected.
+        val cose = CBORObject.DecodeFromBytes(WalletImportBase64.decodeCanonical(field("encodedDocument").trim(), "fixture"))
+        val wronglyTagged = CBORObject.FromObjectAndTag(if (cose.isTagged) cose.UntagOne() else cose, 17)
+        expectAttestationFailure("invalid COSE_Sign1 structure") {
+            AttestationVerifier.verify(
+                encodedDocument = WalletImportBase64.encode(wronglyTagged.EncodeToBytes()),
+                method = field("method"),
+                path = field("path"),
+                requestBody = field("requestBody"),
+                responseBody = field("responseBody"),
+                nonce = field("nonce"),
+                trustedPcr0s = setOf(field("pcr0")),
+                nowMillis = Instant.parse(field("now")).toEpochMilli(),
             )
         }
     }

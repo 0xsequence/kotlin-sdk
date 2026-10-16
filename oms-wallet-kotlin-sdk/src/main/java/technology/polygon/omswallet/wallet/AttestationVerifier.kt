@@ -30,8 +30,9 @@ internal object AttestationVerifier {
         try {
             val documentBytes = WalletImportBase64.decodeCanonical(encodedDocument, "attestation document")
             val decoded = CBORObject.DecodeFromBytes(documentBytes)
-            require(decoded.HasOneTag(18)) { "WaaS attestation has an invalid COSE_Sign1 structure" }
-            val cose = decoded.UntagOne()
+            // COSE_Sign1 may be sent untagged or with its single tag 18; any other tag is rejected.
+            require(!decoded.isTagged || decoded.HasOneTag(18)) { "WaaS attestation has an invalid COSE_Sign1 structure" }
+            val cose = if (decoded.isTagged) decoded.UntagOne() else decoded
             require(cose.type == CBORType.Array && cose.size() == 4) {
                 "WaaS attestation has an invalid COSE_Sign1 structure"
             }
@@ -130,16 +131,19 @@ internal object AttestationVerifier {
         fun certificate(bytes: ByteArray): X509Certificate = factory.generateCertificate(ByteArrayInputStream(bytes)) as X509Certificate
 
         val leaf = certificate(leafBytes)
+        // AWS orders cabundle root first ([ROOT, INTERM_1, ..., INTERM_N]); a cert path runs from the
+        // leaf towards the root, so the intermediates are reversed and the root is the trust anchor.
         val authorities = authoritiesBytes.map(::certificate)
-        val chain = listOf(leaf) + authorities.drop(1)
+        val root = authorities.first()
+        val chain = listOf(leaf) + authorities.drop(1).reversed()
         val parameters =
-            PKIXParameters(setOf(TrustAnchor(authorities.first(), null))).apply {
+            PKIXParameters(setOf(TrustAnchor(root, null))).apply {
                 isRevocationEnabled = false
                 date = java.util.Date(nowMillis)
             }
         CertPathValidator.getInstance("PKIX").validate(factory.generateCertPath(chain), parameters)
 
-        (listOf(leaf) + authorities).forEachIndexed { index, certificate ->
+        (chain + root).forEachIndexed { index, certificate ->
             certificate.checkValidity(java.util.Date(nowMillis))
             val usages = certificate.keyUsage
             if (index == 0) {
