@@ -43,13 +43,13 @@ class WalletSigningTest {
                     .build(),
             )
 
-            val signer = TrackingCredentialSigner()
+            val signer = TrackingCredentialSigner(nonceValue = "1710000108")
             val store =
                 InMemorySessionStore(
                     snapshot =
                         OMSWalletSessionSnapshot(
-                            walletId = "wallet-main",
-                            walletAddress = "0xwallet",
+                            wallet = testWallet("wallet-main", "0xwallet"),
+                            expiresAt = TEST_SESSION_EXPIRES_AT,
                             signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                             auth = emailSessionAuth(),
@@ -78,7 +78,20 @@ class WalletSigningTest {
                     message = "hello",
                 )
 
+            val request = requireNotNull(server.takeRequest())
+
             assertEquals("0xsigned", result)
+            assertEquals("/v1/Waas/SignMessage", request.target)
+            assertEquals(
+                """{"network":"80002","walletId":"wallet-main","message":"hello"}""",
+                requireNotNull(request.body).utf8(),
+            )
+            assertEquals("test-publishable-key", request.headers[OMSWalletEnvironment.accessKeyHeaderName])
+            assertEquals(
+                expectedWalletSignatureHeader(nonce = "1710000108").removePrefix(OMSWalletEnvironment.walletSignatureHeaderPrefix),
+                request.headers[OMSWalletEnvironment.walletSignatureHeaderName],
+            )
+            assertEquals(1, server.requestCount)
             assertEquals(1, signer.signCalls)
             assertEquals(0, store.saveCalls)
         }
@@ -108,8 +121,8 @@ class WalletSigningTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),

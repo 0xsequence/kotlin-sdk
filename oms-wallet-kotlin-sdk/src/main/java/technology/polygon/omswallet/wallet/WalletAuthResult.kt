@@ -10,10 +10,9 @@ import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.runOMSWalletOperation
 
 /**
- * Result returned after selecting or creating a wallet.
+ * Result returned after selecting, creating, or importing a wallet.
  */
-data class WalletSelectionResult(
-    val walletAddress: String,
+data class WalletActivationResult(
     val wallet: Wallet,
 )
 
@@ -43,15 +42,15 @@ class PendingWalletSelection internal constructor(
     val walletType: WalletType,
     val wallets: List<Wallet>,
     val credential: WalletCredential,
-    private val selectWalletAction: suspend (String) -> WalletSelectionResult,
-    private val createAndSelectWalletAction: suspend (String?) -> WalletSelectionResult,
+    private val selectWalletAction: suspend (String) -> WalletActivationResult,
+    private val createAndSelectWalletAction: suspend (String?) -> WalletActivationResult,
 ) {
     private val selectionMutex = Mutex()
 
     /**
      * Selects one of [wallets] and persists it as the active wallet session.
      */
-    suspend fun selectWallet(walletId: String): WalletSelectionResult {
+    suspend fun selectWallet(walletId: String): WalletActivationResult {
         val operation = OMSWalletOperation.PendingWalletSelectionSelectWallet
         return runOMSWalletOperation(operation) {
             lockSelection(operation)
@@ -74,7 +73,7 @@ class PendingWalletSelection internal constructor(
      * Creates a new wallet for [walletType], selects it, and persists it as the
      * active wallet session.
      */
-    suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult {
+    suspend fun createAndSelectWallet(reference: String? = null): WalletActivationResult {
         val operation = OMSWalletOperation.PendingWalletSelectionCreateAndSelectWallet
         return runOMSWalletOperation(operation) {
             lockSelection(operation)
@@ -102,14 +101,25 @@ class PendingWalletSelection internal constructor(
  * or app-driven.
  */
 sealed interface CompleteAuthResult {
+    /** The credential issued by auth completion. */
+    val credential: WalletCredential
+
+    /** The selected wallet, or `null` while wallet selection is pending. */
+    val wallet: Wallet?
+
     data class WalletSelected(
-        val walletAddress: String,
-        val wallet: Wallet,
+        override val wallet: Wallet,
         val wallets: List<Wallet>,
-        val credential: WalletCredential,
+        override val credential: WalletCredential,
     ) : CompleteAuthResult
 
     data class WalletSelection(
         val pendingSelection: PendingWalletSelection,
-    ) : CompleteAuthResult
+    ) : CompleteAuthResult {
+        override val credential: WalletCredential
+            get() = pendingSelection.credential
+
+        override val wallet: Wallet?
+            get() = null
+    }
 }

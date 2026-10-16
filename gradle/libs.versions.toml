@@ -18,7 +18,9 @@ ktlintGradle = "14.2.0"
 ktlint = "1.8.0"
 browser = "1.8.0"
 bouncyCastle = "1.85"
-cbor = "4.4.4"
+cbor = "4.5.6"
+binaryCompatibilityValidator = "0.18.1"
+kotlinMetadataJvm = "2.2.10"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,6 +42,8 @@ androidx-browser = { group = "androidx.browser", name = "browser", version.ref =
 kotlin-compiler-embeddable = { group = "org.jetbrains.kotlin", name = "kotlin-compiler-embeddable", version.ref = "kotlinCompilerEmbeddable" }
 bouncy-castle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncyCastle" }
 cbor = { group = "com.upokecenter", name = "cbor", version.ref = "cbor" }
+binary-compatibility-validator = { group = "org.jetbrains.kotlinx", name = "binary-compatibility-validator", version.ref = "binaryCompatibilityValidator" }
+kotlin-metadata-jvm = { group = "org.jetbrains.kotlin", name = "kotlin-metadata-jvm", version.ref = "kotlinMetadataJvm" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

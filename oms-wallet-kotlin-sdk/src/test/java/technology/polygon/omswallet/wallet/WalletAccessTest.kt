@@ -104,8 +104,8 @@ class WalletAccessTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -215,8 +215,8 @@ class WalletAccessTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -314,12 +314,26 @@ class WalletAccessTest {
 
             assertEquals("Example", metadata.appName)
             assertEquals("/v1/WaasPublic/InspectCredential", inspect.target)
+            assertEquals(
+                """{"scope":"test-project-id","credentialId":"remote-credential"}""",
+                requireNotNull(inspect.body).utf8(),
+            )
             assertEquals("/v1/Waas/AuthorizeRemoteAccess", authorize.target)
-            assertTrue(requireNotNull(authorize.body).utf8().contains("\"chainId\":\"137\""))
+            assertEquals(
+                """{"credentialId":"remote-credential","walletId":"wallet-main",""" +
+                    """"grants":{"entries":[{"kind":"nativeTransfer",""" +
+                    """"nativeTransfer":{"to":"0x2222222222222222222222222222222222222222","limit":"100"}}]},""" +
+                    """"expiry":"2099-01-01T00:00:00Z","chainId":"137"}""",
+                requireNotNull(authorize.body).utf8(),
+            )
+            assertEquals("wallet-main", authorization.walletId)
+            assertEquals("session-1", authorization.sessionId)
             assertEquals("/v1/Waas/GetSession", getSession.target)
+            assertEquals("""{"sessionId":"session-1"}""", requireNotNull(getSession.body).utf8())
             assertEquals(137, session.chainId)
             assertEquals(listOf(grant), session.grants)
             assertEquals("/v1/Waas/GetSessionUsage", getUsage.target)
+            assertEquals("""{"sessionId":"session-1","network":"137"}""", requireNotNull(getUsage.body).utf8())
             assertEquals(BigInteger("25"), usage.single().used)
         }
 
@@ -348,8 +362,8 @@ class WalletAccessTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -401,7 +415,7 @@ class WalletAccessTest {
                             indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                         ),
                     transport = OMSWalletHttpClient(),
-                    credentialSigner = MockWebCryptoCredentialSigner(available = false),
+                    credentialSigner = TrackingCredentialSigner(available = false, nonceValue = "42"),
                 )
             client.restoreSession(activeSessionSnapshot())
 
@@ -416,27 +430,13 @@ class WalletAccessTest {
         }
 
     private fun restoredWalletClient(nonce: String): WalletClient =
-        WalletClient
-            .create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment =
-                    OMSWalletEnvironment(
-                        walletApiUrl = server.url("/v1/Waas/").toString(),
-                        indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                    ),
-                transport = OMSWalletHttpClient(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSWalletSessionSnapshot(
-                                walletId = "wallet-main",
-                                walletAddress = "0x1111111111111111111111111111111111111111",
-                                signerAddress = TEST_CREDENTIAL_ID,
-                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                auth = emailSessionAuth(),
-                            ),
-                    ),
-                credentialSigner = TrackingCredentialSigner(nonceValue = nonce),
-            ).also { assertTrue(it.restorePersistedSession()) }
+        restoredTestWalletClient(
+            environment =
+                OMSWalletEnvironment(
+                    walletApiUrl = server.url("/v1/Waas/").toString(),
+                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                ),
+            wallet = testWallet("wallet-main", "0x1111111111111111111111111111111111111111"),
+            nonceValue = nonce,
+        )
 }

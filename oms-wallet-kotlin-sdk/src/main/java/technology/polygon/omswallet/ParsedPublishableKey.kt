@@ -8,6 +8,7 @@ internal data class ParsedPublishableKey(
     val walletApiUrl: String,
     val indexerGatewayUrl: String,
     val solanaIndexerGatewayUrl: String = "${walletApiUrl.trimEnd('/')}/v1/SolanaIndexerGateway/",
+    val tronIndexerGatewayUrl: String = "${walletApiUrl.trimEnd('/')}/v1/TronIndexerGateway/",
     val walletImportTrustedPcr0s: Set<String>,
 )
 
@@ -30,6 +31,7 @@ internal fun parsePublishableKey(publishableKey: String): ParsedPublishableKey {
         walletApiUrl = route.apiUrl,
         indexerGatewayUrl = "${route.apiUrl}/v1/IndexerGateway/",
         solanaIndexerGatewayUrl = "${route.apiUrl}/v1/SolanaIndexerGateway/",
+        tronIndexerGatewayUrl = "${route.apiUrl}/v1/TronIndexerGateway/",
         walletImportTrustedPcr0s = route.walletImportTrustedPcr0s,
     )
 }

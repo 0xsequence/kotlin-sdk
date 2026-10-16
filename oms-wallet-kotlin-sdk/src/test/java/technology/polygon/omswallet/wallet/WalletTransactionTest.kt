@@ -51,50 +51,6 @@ class WalletTransactionTest {
     }
 
     @Test
-    fun sendTransactionRejectsNegativeValue() =
-        runBlocking {
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore =
-                        InMemorySessionStore(
-                            snapshot =
-                                OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
-                                    signerAddress = TEST_CREDENTIAL_ID,
-                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                    auth = emailSessionAuth(),
-                                ),
-                        ),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000106"),
-                )
-            assertTrue(client.restorePersistedSession())
-
-            val error =
-                runCatching {
-                    client.sendTransaction(
-                        network = Network.AMOY,
-                        request =
-                            SendTransactionRequest(
-                                to = "0xabc",
-                                value = BigInteger.ONE.negate(),
-                            ),
-                    )
-                }.exceptionOrNull()
-
-            assertTrue(error is OMSWalletException)
-            assertEquals(OMSWalletErrorCode.ValidationError, (error as OMSWalletException).code)
-        }
-
-    @Test
     fun sendTransactionMatchesWaasRequestShape() =
         runBlocking {
             server.enqueue(
@@ -219,17 +175,15 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
                                 ),
                         ),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000107"),
-                    fastTransactionStatusPollIntervalMillis = 1L,
-                    transactionStatusPollIntervalMillis = 1L,
-                    transactionStatusPollTimeoutMillis = 1_000L,
+                    defaultStatusPolling = TransactionStatusPollingOptions(fastIntervalMs = 1L, intervalMs = 1L, timeoutMs = 1_000L),
                 )
             assertTrue(client.restorePersistedSession())
 
@@ -238,7 +192,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                             data = "0x1234",
                             mode = TransactionMode.Native,
@@ -273,7 +227,7 @@ class WalletTransactionTest {
                     technology.polygon.omswallet.internal.generated.waas.PrepareEthereumTransactionRequest(
                         walletId = "wallet-main",
                         network = "80002",
-                        to = "0xabc",
+                        to = "0xabc0000000000000000000000000000000000000",
                         value = "0",
                         data = "0x1234",
                         mode = WaasTransactionMode.Native,
@@ -318,7 +272,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionDefaultSelectionUsesFeeTokenIdWhenPresent() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-token-id",
                     feeOptions =
@@ -335,7 +289,7 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson("""{"status":"executed"}""")
 
             val client = restoredWalletClient(nonceValue = "1710000115")
 
@@ -344,7 +298,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                     waitForStatus = false,
@@ -370,93 +324,61 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionSponsoredInvokesCustomFeeSelectorWithEmptyOptions() =
         runBlocking {
-            enqueueJson(
-                prepareResponse(
-                    txnId = "txn-sponsored",
-                    feeOptions =
-                        """
-                        [
-                          ${feeOptionJson(
-                            symbol = "USDC",
-                            value = "1000",
-                            contractAddress = "0xusdc",
-                            tokenId = "usdc",
-                        )}
-                        ]
-                        """.trimIndent(),
-                    sponsored = true,
-                ),
-            )
-            enqueueJson("""{"status":"executed"}""")
-            val client = restoredWalletClient(nonceValue = "1710000116")
-            var selectorCalled = false
+            val usdcFeeOptions =
+                """
+                [
+                  ${feeOptionJson(
+                    symbol = "USDC",
+                    value = "1000",
+                    contractAddress = "0xusdc",
+                    tokenId = "usdc",
+                )}
+                ]
+                """.trimIndent()
+            val selectorInputs = mutableListOf<List<technology.polygon.omswallet.models.FeeOptionWithBalance>>()
+            val recordingSelector =
+                FeeOptionSelector {
+                    selectorInputs += it
+                    it.firstOrNull()?.selection
+                }
+            // A custom selector over a quote that still lists fee options, and the built-in
+            // firstAvailable selector over an empty quote: both must execute without a fee option.
+            listOf(
+                Triple("txn-sponsored", usdcFeeOptions, recordingSelector),
+                Triple("txn-sponsored-first-available", "[]", FeeOptionSelector.firstAvailable),
+            ).forEach { (txnId, feeOptions, selector) ->
+                server.enqueueJson(prepareResponse(txnId = txnId, feeOptions = feeOptions, sponsored = true))
+                server.enqueueJson("""{"status":"executed"}""")
+                val requestsBefore = server.requestCount
+                val client = restoredWalletClient(nonceValue = "1710000116")
 
-            val result =
-                client.sendTransaction(
-                    network = Network.AMOY,
-                    request =
-                        SendTransactionRequest(
-                            to = "0xabc",
-                            value = BigInteger.ZERO,
-                        ),
-                    waitForStatus = false,
-                    selectFeeOption =
-                        FeeOptionSelector {
-                            selectorCalled = true
-                            it.firstOrNull()?.selection
-                        },
-                )
-            requireNotNull(server.takeRequest())
-            val executeRequest = requireNotNull(server.takeRequest())
+                val result =
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        request =
+                            SendTransactionRequest(
+                                to = "0xabc0000000000000000000000000000000000000",
+                                value = BigInteger.ZERO,
+                            ),
+                        waitForStatus = false,
+                        selectFeeOption = selector,
+                    )
+                requireNotNull(server.takeRequest())
+                val executeRequest = requireNotNull(server.takeRequest())
 
-            assertEquals("txn-sponsored", result.txnId)
-            assertEquals(TransactionStatus.Executed, result.status)
-            assertEquals(true, selectorCalled)
-            assertEquals(
-                WaasApi.Execute.encodeRequest(
-                    ExecuteRequest(txnId = "txn-sponsored"),
-                ),
-                requireNotNull(executeRequest.body).utf8(),
-            )
-            assertEquals(2, server.requestCount)
-        }
-
-    @Test
-    fun sendTransactionSponsoredContinuesWithFirstAvailable() =
-        runBlocking {
-            enqueueJson(
-                prepareResponse(
-                    txnId = "txn-sponsored-first-available",
-                    feeOptions = "[]",
-                    sponsored = true,
-                ),
-            )
-            enqueueJson("""{"status":"executed"}""")
-            val client = restoredWalletClient(nonceValue = "1710000117")
-
-            val result =
-                client.sendTransaction(
-                    network = Network.AMOY,
-                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
-                    waitForStatus = false,
-                    selectFeeOption = FeeOptionSelector.firstAvailable,
-                )
-
-            requireNotNull(server.takeRequest())
-            val executeRequest = requireNotNull(server.takeRequest())
-            assertEquals("txn-sponsored-first-available", result.txnId)
-            assertEquals(
-                WaasApi.Execute.encodeRequest(
-                    ExecuteRequest(txnId = "txn-sponsored-first-available"),
-                ),
-                requireNotNull(executeRequest.body).utf8(),
-            )
+                assertEquals(txnId, result.txnId)
+                assertEquals(TransactionStatus.Executed, result.status)
+                assertEquals("""{"txnId":"$txnId"}""", requireNotNull(executeRequest.body).utf8())
+                assertEquals(2, server.requestCount - requestsBefore)
+            }
+            // Sponsored sends acknowledge the selector with no options, even when WaaS quotes some.
+            assertEquals(listOf(emptyList<technology.polygon.omswallet.models.FeeOptionWithBalance>()), selectorInputs)
         }
 
     @Test
     fun sendTransactionSponsoredDoesNotExecuteWhenAcknowledgementThrows() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-sponsored-cancelled",
                     feeOptions = "[]",
@@ -469,7 +391,7 @@ class WalletTransactionTest {
                 runCatching {
                     client.sendTransaction(
                         network = Network.AMOY,
-                        request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                        request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                         selectFeeOption =
                             FeeOptionSelector { feeOptions ->
                                 assertTrue(feeOptions.isEmpty())
@@ -485,14 +407,14 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionUnsponsoredWithoutFeeOptionsFailsBeforeExecute() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-no-fees",
                     feeOptions = "[]",
                     sponsored = false,
                 ),
             )
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson("""{"status":"executed"}""")
             val client = restoredWalletClient(nonceValue = "1710000117")
 
             val error =
@@ -501,7 +423,7 @@ class WalletTransactionTest {
                         network = Network.AMOY,
                         request =
                             SendTransactionRequest(
-                                to = "0xabc",
+                                to = "0xabc0000000000000000000000000000000000000",
                                 value = BigInteger.ZERO,
                             ),
                         waitForStatus = false,
@@ -516,7 +438,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionUnsponsoredCustomSelectorRequiresSelection() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-no-selection",
                     feeOptions =
@@ -533,8 +455,8 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "2000"))
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "2000"))
+            server.enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -549,7 +471,7 @@ class WalletTransactionTest {
                         network = Network.AMOY,
                         request =
                             SendTransactionRequest(
-                                to = "0xabc",
+                                to = "0xabc0000000000000000000000000000000000000",
                                 value = BigInteger.ZERO,
                             ),
                         waitForStatus = false,
@@ -570,7 +492,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionFirstAvailableSelectsFirstAffordableFeeTokenId() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-first-available",
                     feeOptions =
@@ -593,8 +515,8 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(gatewayTokenBalancesResponse("0xDAI" to "100", "0xUSDC" to "2000"))
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson(gatewayTokenBalancesResponse("0xDAI" to "100", "0xUSDC" to "2000"))
+            server.enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -607,7 +529,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                     waitForStatus = false,
@@ -639,7 +561,7 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionFirstAvailableRequiresAffordableFeeOption() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-no-affordable-fee",
                     feeOptions =
@@ -656,8 +578,8 @@ class WalletTransactionTest {
                     sponsored = false,
                 ),
             )
-            enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "100"))
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson(gatewayTokenBalancesResponse("0xUSDC" to "100"))
+            server.enqueueJson("""{"status":"executed"}""")
             val environment =
                 OMSWalletEnvironment(
                     walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -671,7 +593,7 @@ class WalletTransactionTest {
                         network = Network.AMOY,
                         request =
                             SendTransactionRequest(
-                                to = "0xabc",
+                                to = "0xabc0000000000000000000000000000000000000",
                                 value = BigInteger.ZERO,
                             ),
                         waitForStatus = false,
@@ -742,8 +664,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -759,7 +681,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                 )
@@ -775,16 +697,16 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionTreatsFailedStatusAsTerminal() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-failed",
                     feeOptions = "[]",
                     sponsored = true,
                 ),
             )
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"failed"}""")
-            enqueueJson("""{"status":"executed","txnHash":"0xshould-not-be-read"}""")
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"failed"}""")
+            server.enqueueJson("""{"status":"executed","txnHash":"0xshould-not-be-read"}""")
 
             val delays = mutableListOf<Long>()
             val client =
@@ -801,8 +723,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -818,7 +740,7 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                 )
@@ -831,7 +753,7 @@ class WalletTransactionTest {
         }
 
     @Test
-    fun sendTransactionAppliesFastPollsWhenSlowPollingIsDisabled() =
+    fun sendTransactionSwitchesFromFastToSlowIntervalAfterFastPollCount() =
         runBlocking {
             server.enqueue(
                 MockResponse
@@ -856,20 +778,15 @@ class WalletTransactionTest {
                     .body("""{"status":"pending"}""")
                     .build(),
             )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"status":"pending"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"status":"pending"}""")
-                    .build(),
-            )
+            repeat(4) {
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(200)
+                        .body("""{"status":"pending"}""")
+                        .build(),
+                )
+            }
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -893,8 +810,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -910,46 +827,47 @@ class WalletTransactionTest {
                     network = Network.AMOY,
                     request =
                         SendTransactionRequest(
-                            to = "0xabc",
+                            to = "0xabc0000000000000000000000000000000000000",
                             value = BigInteger.ZERO,
                         ),
                     statusPolling =
                         TransactionStatusPollingOptions(
-                            fastPollIntervalMillis = 1L,
-                            fastPollCount = 3,
-                            pollIntervalMillis = 1L,
-                            timeoutMillis = 1_000L,
+                            fastIntervalMs = 10L,
+                            fastPollCount = 2,
+                            intervalMs = 50L,
+                            timeoutMs = 1_000L,
                         ),
                 )
 
             assertEquals(TransactionStatus.Executed, result.status)
             assertEquals("0xdeadbeef", result.txnHash)
-            assertEquals(listOf(1L, 1L), delays)
-            assertEquals(5, server.requestCount)
+            // Two fast polls (one fast delay between them), then the slow interval for the rest.
+            assertEquals(listOf(10L, 50L, 50L, 50L), delays)
+            assertEquals(7, server.requestCount)
         }
 
     @Test
     fun sendTransactionReportsWhenStatusPollingTimesOut() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-timeout",
                     feeOptions = "[]",
                     sponsored = true,
                 ),
             )
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending"}""")
 
             val client = restoredWalletClient(nonceValue = "1710000121")
             val result =
                 client.sendTransaction(
                     network = Network.AMOY,
-                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                    request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                     statusPolling =
                         TransactionStatusPollingOptions(
                             fastPollCount = 0,
-                            timeoutMillis = 0L,
+                            timeoutMs = 0L,
                         ),
                 )
 
@@ -963,22 +881,22 @@ class WalletTransactionTest {
     @Test
     fun sendTransactionKeepsUnknownStatusUnresolvedUntilTimeout() =
         runBlocking {
-            enqueueJson(
+            server.enqueueJson(
                 prepareResponse(
                     txnId = "txn-unknown-timeout",
                     feeOptions = "[]",
                     sponsored = true,
                 ),
             )
-            enqueueJson("""{"status":"pending"}""")
-            enqueueJson("""{"status":"future-status"}""")
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"future-status"}""")
 
             val client = restoredWalletClient(nonceValue = "1710000122")
             val result =
                 client.sendTransaction(
                     network = Network.AMOY,
-                    request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
-                    statusPolling = TransactionStatusPollingOptions(timeoutMillis = 0L),
+                    request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
+                    statusPolling = TransactionStatusPollingOptions(timeoutMs = 0L),
                 )
 
             assertEquals("txn-unknown-timeout", result.txnId)
@@ -989,18 +907,64 @@ class WalletTransactionTest {
         }
 
     @Test
+    fun transactionStatusPollingOptionsKeepDefaults() {
+        val options = TransactionStatusPollingOptions()
+
+        assertEquals(400L, options.fastIntervalMs)
+        assertEquals(5, options.fastPollCount)
+        assertEquals(2_000L, options.intervalMs)
+        assertEquals(60_000L, options.timeoutMs)
+    }
+
+    @Test
+    fun sendTransactionValueOverloadForwardsMode() =
+        runBlocking {
+            listOf(null, TransactionMode.Native, TransactionMode.Relayer).forEachIndexed { index, mode ->
+                server.enqueueJson(prepareResponse(txnId = "txn-mode-$index", feeOptions = "[]", sponsored = true))
+                server.enqueueJson("""{"status":"pending"}""")
+                val client = restoredWalletClient(nonceValue = "17100003$index")
+
+                if (mode == null) {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        to = "0xabc0000000000000000000000000000000000000",
+                        value = BigInteger.ONE,
+                        waitForStatus = false,
+                    )
+                } else {
+                    client.sendTransaction(
+                        network = Network.AMOY,
+                        to = "0xabc0000000000000000000000000000000000000",
+                        value = BigInteger.ONE,
+                        mode = mode,
+                        waitForStatus = false,
+                    )
+                }
+                val prepare = requireNotNull(server.takeRequest())
+                requireNotNull(server.takeRequest())
+
+                assertEquals("/v1/Waas/PrepareEthereumTransaction", prepare.target)
+                assertTrue(
+                    requireNotNull(prepare.body)
+                        .utf8()
+                        .contains("\"mode\":\"${(mode ?: TransactionMode.Relayer).wireValue}\""),
+                )
+            }
+        }
+
+    @Test
     fun sendTransactionRejectsInvalidPollingOptionsBeforeExecute() =
         runBlocking {
             val invalidOptions =
                 listOf(
-                    TransactionStatusPollingOptions(fastPollIntervalMillis = 0L),
+                    TransactionStatusPollingOptions(fastIntervalMs = 0L),
                     TransactionStatusPollingOptions(fastPollCount = -1),
-                    TransactionStatusPollingOptions(pollIntervalMillis = 0L),
-                    TransactionStatusPollingOptions(timeoutMillis = -1L),
+                    TransactionStatusPollingOptions(intervalMs = 0L),
+                    TransactionStatusPollingOptions(timeoutMs = -1L),
                 )
 
             invalidOptions.forEachIndexed { index, options ->
-                enqueueJson(
+                server.enqueueJson(
                     prepareResponse(
                         txnId = "txn-invalid-polling-$index",
                         feeOptions = "[]",
@@ -1013,7 +977,7 @@ class WalletTransactionTest {
                     runCatching {
                         client.sendTransaction(
                             network = Network.AMOY,
-                            request = SendTransactionRequest(to = "0xabc", value = BigInteger.ZERO),
+                            request = SendTransactionRequest(to = "0xabc0000000000000000000000000000000000000", value = BigInteger.ZERO),
                             statusPolling = options,
                         )
                     }.exceptionOrNull() as OMSWalletException
@@ -1073,8 +1037,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -1092,8 +1056,8 @@ class WalletTransactionTest {
             val result =
                 client.callContract(
                     network = Network.AMOY,
-                    contract = "0xcontract",
-                    method = "transfer(address,uint256)",
+                    contractAddress = "0xcontract",
+                    method = "transfer",
                     args = args,
                     mode = TransactionMode.Native,
                 )
@@ -1111,7 +1075,7 @@ class WalletTransactionTest {
                         walletId = "wallet-main",
                         network = "80002",
                         contract = "0xcontract",
-                        method = "transfer(address,uint256)",
+                        method = "transfer",
                         args = args.map { WaasAbiArg(type = it.type, value = it.value) },
                         mode = WaasTransactionMode.Native,
                     ),
@@ -1151,8 +1115,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -1208,8 +1172,8 @@ class WalletTransactionTest {
                         InMemorySessionStore(
                             snapshot =
                                 OMSWalletSessionSnapshot(
-                                    walletId = "wallet-main",
-                                    walletAddress = "0xwallet",
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
                                     signerAddress = TEST_CREDENTIAL_ID,
                                     signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                                     auth = emailSessionAuth(),
@@ -1231,41 +1195,47 @@ class WalletTransactionTest {
     @Test
     fun solanaOperationsUseSolanaRequestShapes() =
         runBlocking {
-            enqueueJson("""{"signature":"solana-signature"}""")
-            enqueueJson("""{"isValid":true}""")
-            enqueueJson(
+            val recipient = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"
+            server.enqueueJson("""{"signature":"solana-signature"}""")
+            server.enqueueJson(
                 """{"txnId":"solana-txn","status":"quoted","feeOptions":[],"sponsored":true,"expiresAt":"2099-01-01T00:00:00Z"}""",
             )
-            enqueueJson("""{"status":"executed"}""")
+            server.enqueueJson("""{"status":"executed"}""")
             val client =
                 restoredWalletClient(
                     nonceValue = "1710000120",
                     walletAddress = "3gFktQX6vki5M2DzN8Y1ESPUJ4fJ8o6hVQWf8vYvPypD",
+                    walletType = technology.polygon.omswallet.models.WalletType.Solana,
                 )
 
             val signature = client.signSolanaMessage("hello")
-            val valid = client.isValidSolanaMessageSignature("hello", signature)
             val transaction =
                 client.sendSolanaTransfer(
                     network = SolanaNetwork.Devnet,
                     asset = "SOL",
-                    to = "recipient",
+                    to = recipient,
                     amount = BigInteger("1000000"),
                     waitForStatus = false,
                 )
             val sign = requireNotNull(server.takeRequest())
-            val verify = requireNotNull(server.takeRequest())
             val prepare = requireNotNull(server.takeRequest())
             val execute = requireNotNull(server.takeRequest())
 
+            assertEquals("solana-signature", signature)
             assertEquals("/v1/Waas/SignMessage", sign.target)
-            assertTrue(requireNotNull(sign.body).utf8().contains("\"network\":\"\""))
-            assertEquals("/v1/WaasPublic/IsValidMessageSignature", verify.target)
-            assertTrue(requireNotNull(verify.body).utf8().contains("\"networkFamily\":\"solana\""))
-            assertTrue(valid)
+            assertEquals(
+                """{"network":"","walletId":"wallet-main","message":"hello"}""",
+                requireNotNull(sign.body).utf8(),
+            )
             assertEquals("/v1/Waas/PrepareSolanaTransfer", prepare.target)
-            assertTrue(requireNotNull(prepare.body).utf8().contains("\"network\":\"solana:devnet\""))
+            assertEquals(
+                """{"network":"solana:devnet","walletId":"wallet-main","asset":"SOL",""" +
+                    """"recipient":{"address":"$recipient"},"amount":"1000000","mode":"relayer"}""",
+                requireNotNull(prepare.body).utf8(),
+            )
             assertEquals("/v1/Waas/Execute", execute.target)
+            assertEquals("""{"txnId":"solana-txn"}""", requireNotNull(execute.body).utf8())
+            assertEquals(3, server.requestCount)
             assertEquals("solana-txn", transaction.txnId)
             assertEquals(TransactionStatusResolution.NotRequested, transaction.statusResolution)
         }
@@ -1275,7 +1245,7 @@ class WalletTransactionTest {
         runBlocking {
             val walletAddress = "4Nd1mYQbqjVU2aR7cJNPyqW9XjHnBYvWQd7ZxYxvT6uP"
             val usdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
-            enqueueJson(
+            server.enqueueJson(
                 """
                 {
                   "txnId": "solana-first-available",
@@ -1308,7 +1278,7 @@ class WalletTransactionTest {
                 }
                 """.trimIndent(),
             )
-            enqueueJson(
+            server.enqueueJson(
                 """
                 {
                   "balances": [
@@ -1343,11 +1313,12 @@ class WalletTransactionTest {
                 }
                 """.trimIndent(),
             )
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"pending"}""")
             val client =
                 restoredWalletClient(
                     nonceValue = "1710000121",
                     walletAddress = walletAddress,
+                    walletType = technology.polygon.omswallet.models.WalletType.Solana,
                     environment =
                         OMSWalletEnvironment(
                             walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -1384,47 +1355,16 @@ class WalletTransactionTest {
             )
         }
 
-    private fun enqueueJson(body: String) {
-        server.enqueue(
-            MockResponse
-                .Builder()
-                .code(200)
-                .body(body)
-                .build(),
-        )
-    }
-
     private fun restoredWalletClient(
         nonceValue: String,
         walletAddress: String = "0xwallet",
+        walletType: technology.polygon.omswallet.models.WalletType = technology.polygon.omswallet.models.WalletType.Ethereum,
         environment: OMSWalletEnvironment =
             OMSWalletEnvironment(
                 walletApiUrl = server.url("/v1/Waas/").toString(),
                 indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
             ),
-    ): WalletClient {
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = environment,
-                transport = OMSWalletHttpClient(),
-                sessionStore =
-                    InMemorySessionStore(
-                        snapshot =
-                            OMSWalletSessionSnapshot(
-                                walletId = "wallet-main",
-                                walletAddress = walletAddress,
-                                signerAddress = TEST_CREDENTIAL_ID,
-                                signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                                auth = emailSessionAuth(),
-                            ),
-                    ),
-                credentialSigner = TrackingCredentialSigner(nonceValue = nonceValue),
-            )
-        assertTrue(client.restorePersistedSession())
-        return client
-    }
+    ): WalletClient = restoredTestWalletClient(environment, testWallet("wallet-main", walletAddress, walletType), nonceValue)
 
     private fun prepareResponse(
         txnId: String,
