@@ -2,6 +2,7 @@ package technology.polygon.omswallet.wallet
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -18,6 +19,7 @@ import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletResponseException
 import technology.polygon.omswallet.OMSWalletValidationException
 import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.models.AbiArg
@@ -439,18 +441,38 @@ class WalletTronTest {
         }
 
     @Test
-    fun rejectsEthereumWalletResponsesWithNonHexAddress() =
+    fun rejectsInvalidWalletResponsesAndKeepsActiveWallet() =
         runBlocking {
-            server.enqueueJson(walletResponseBody(walletId = "wallet-bad", address = TRON_WALLET))
-            val client = tronWalletClient()
+            val validEthereumAddress = "0x" + "ab".repeat(20)
 
-            val error = runCatching { client.useWallet("wallet-bad") }.exceptionOrNull()
+            fun wallet(
+                address: String = validEthereumAddress,
+                edit: MutableMap<String, JsonElement>.() -> Unit = {},
+            ): String {
+                val fields = parseJson(walletResponseBody(walletId = "wallet-bad", address = address))["wallet"]!!.jsonObject
+                return JsonObject(mapOf("wallet" to JsonObject(fields.toMutableMap().apply(edit)))).toString()
+            }
 
-            assertTrue(error is OMSWalletException)
-            error as OMSWalletException
-            assertEquals(OMSWalletErrorCode.InvalidResponse, error.code)
-            assertEquals("Ethereum wallet response has an invalid address", error.message)
-            assertEquals(TRON_WALLET, client.activeWallet?.address)
+            val cases =
+                listOf(
+                    "Ethereum wallet response has an invalid address" to wallet(address = TRON_WALLET),
+                    "Wallet response is missing keyOrigin" to wallet { remove("keyOrigin") },
+                    "Wallet response is missing networkFamily" to wallet { remove("networkFamily") },
+                    "Wallet response has an invalid networkFamily" to wallet { put("networkFamily", JsonPrimitive("not-a-family")) },
+                    "Wallet response has an invalid keyOrigin" to wallet { put("keyOrigin", JsonPrimitive("not-an-origin")) },
+                )
+            for ((expectedMessage, body) in cases) {
+                server.enqueueJson(body)
+                val client = tronWalletClient()
+
+                val error = runCatching { client.useWallet("wallet-bad") }.exceptionOrNull()
+
+                assertTrue("$expectedMessage: got $error", error is OMSWalletResponseException)
+                error as OMSWalletException
+                assertEquals(expectedMessage, OMSWalletErrorCode.InvalidResponse, error.code)
+                assertEquals(expectedMessage, error.message)
+                assertEquals(expectedMessage, TRON_WALLET, client.activeWallet?.address)
+            }
         }
 
     private fun tronWalletClient(): WalletClient = walletClient(testWallet("wallet-tron", TRON_WALLET, WalletType.Tron))
