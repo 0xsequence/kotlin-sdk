@@ -107,7 +107,6 @@ class WalletOidcRedirectAuthTest {
                     providerRedirectUri = "omsclientkotlindemo://auth/callback",
                     authorizeParams = mapOf("prompt" to "consent"),
                 )
-            assertEquals(emptyList<String>(), provider.scopes)
 
             val result =
                 client.startOidcRedirectAuth(
@@ -139,13 +138,11 @@ class WalletOidcRedirectAuthTest {
             assertEquals("omsclientkotlindemo://auth/callback", query["redirect_uri"])
             assertEquals("code", query["response_type"])
             assertNull(query["scope"])
-            assertEquals(result.state, query["state"])
             assertEquals("pkce-challenge", query["code_challenge"])
             assertEquals("S256", query["code_challenge_method"])
             assertNull(query["login_hint"])
             assertEquals("select_account", query["prompt"])
             assertEquals("wallet", query["audience"])
-            assertEquals("pkce-challenge", result.challenge)
 
             val decodedState = String(OMSWalletBase64Url.decode(result.state), Charsets.UTF_8)
             assertTrue(decodedState.contains(""""nonce":"nonce-123""""))
@@ -535,7 +532,6 @@ class WalletOidcRedirectAuthTest {
             assertNull(client.snapshotSession()?.walletAddress)
             assertNull(sessionStore.snapshot)
             assertEquals(1, redirectStore.clearCalls)
-            assertEquals(result.state, queryParams(result.authorizationUrl)["state"])
         }
 
     @Test

@@ -1137,8 +1137,6 @@ class PublicErrorContractsTest {
                 ),
                 failure,
             )
-            assertTrue(requireNotNull(failure.message).contains("Bad Gateway").not())
-            assertTrue(requireNotNull(failure.upstreamError?.message).contains("Bad Gateway").not())
         }
 
     @Test

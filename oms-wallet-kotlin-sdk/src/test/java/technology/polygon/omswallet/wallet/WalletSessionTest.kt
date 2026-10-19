@@ -558,7 +558,6 @@ class WalletSessionTest {
             client.signerAddress,
         )
         assertNull(client.activeWallet)
-        assertNull(client.activeWallet)
         assertNull(client.session)
     }
 }

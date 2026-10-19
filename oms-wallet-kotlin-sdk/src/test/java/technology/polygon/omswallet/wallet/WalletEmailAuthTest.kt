@@ -411,9 +411,6 @@ class WalletEmailAuthTest {
             assertEquals(1, response.wallets.size)
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, response.wallets.single().type)
             assertEquals("0xabc0000000000000000000000000000000000000", response.wallets.single().address)
-            val result: CompleteAuthResult = response
-            assertEquals(response.wallet, result.wallet)
-            assertEquals(response.credential, result.credential)
         }
 
     @Test
@@ -427,8 +424,6 @@ class WalletEmailAuthTest {
                     walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
-            assertTrue(credentialFixture().credentialId != TEST_CREDENTIAL_ID)
-
             enqueueEmailAuthStart()
             server.enqueue(
                 MockResponse

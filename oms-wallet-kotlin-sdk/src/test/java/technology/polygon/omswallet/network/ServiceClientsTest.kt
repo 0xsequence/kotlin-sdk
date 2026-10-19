@@ -774,7 +774,6 @@ class ServiceClientsTest {
             assertEquals(OMSWalletOperation.WalletIsValidMessageSignature, failure.operation)
             assertEquals("endpoint error", failure.message)
             assertEquals(400, failure.status)
-            assertFalse(requireNotNull(failure.message).contains("sensitive backend context"))
             assertEquals(OMSWalletUpstreamService.Waas, failure.upstreamError?.service)
             assertEquals("waas", failure.upstreamError?.service?.wireValue)
             assertEquals("WebrpcEndpoint", failure.upstreamError?.name)

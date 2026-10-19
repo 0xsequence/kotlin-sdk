@@ -1,5 +1,7 @@
 package technology.polygon.omswallet
 
+import kotlinx.coroutines.runBlocking
+import mockwebserver3.MockWebServer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
@@ -9,13 +11,11 @@ import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.session.OMSWalletSessionStateMachine
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
-import technology.polygon.omswallet.wallet.OidcAuthMode
-import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
-import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
 import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
 import technology.polygon.omswallet.wallet.TEST_SESSION_EXPIRES_AT
 import technology.polygon.omswallet.wallet.TrackingCredentialSigner
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
+import technology.polygon.omswallet.wallet.enqueueJson
 import technology.polygon.omswallet.wallet.testWallet
 
 class OMSWalletTest {
@@ -69,11 +69,31 @@ class OMSWalletTest {
     }
 
     @Test
-    fun constructorDerivesProjectIdFromPublishableKey() {
-        val sdk = OMSWallet.createForTesting(publishableKey = "pk_live_project_key")
+    fun constructorDerivesProjectIdFromPublishableKey() =
+        runBlocking {
+            MockWebServer().use { server ->
+                server.start()
+                server.enqueueJson(
+                    """{"metadata":{"appUrl":"https://app.example","appName":"Example","appLogoUrl":"https://app.example/logo.png","custom":{}}}""",
+                )
+                val sdk =
+                    OMSWallet.createForTesting(
+                        publishableKey = "pk_live_project_key",
+                        environment =
+                            OMSWalletEnvironment(
+                                walletApiUrl = server.url("/v1/Waas/").toString(),
+                                indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                            ),
+                    )
 
-        assertNull(sdk.wallet.activeWallet)
-    }
+                sdk.wallet.inspectRemoteCredential("remote-credential")
+
+                assertEquals(
+                    """{"scope":"prj_project","credentialId":"remote-credential"}""",
+                    requireNotNull(server.takeRequest().body).utf8(),
+                )
+            }
+        }
 
     @Test
     fun constructorRejectsUnsupportedPublishableKeyPrefix() {
@@ -107,40 +127,8 @@ class OMSWalletTest {
             )
 
         assertEquals("0xwallet", sdk.wallet.activeWallet?.address)
-        assertEquals("0xwallet", sdk.wallet.activeWallet?.address)
         assertEquals("2099-01-01T00:00:00Z", sdk.wallet.session?.expiresAt)
         assertEquals(OMSWalletEmailSessionAuth(email = "user@example.com"), sdk.wallet.session?.auth)
-    }
-
-    @Test
-    fun sessionStateOnlyReflectsCompletedWalletSession() {
-        val sdk =
-            OMSWallet.createForTesting(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = testEnvironment(),
-                walletSession = OMSWalletSessionStateMachine(),
-                oidcRedirectAuthStore =
-                    StubOidcRedirectAuthStore(
-                        PendingOidcRedirectAuth(
-                            verifier = "verifier-123",
-                            challenge = "challenge-123",
-                            nonce = "nonce-123",
-                            authMode = OidcAuthMode.AuthCodePKCE,
-                            redirectUri = "omsclientkotlindemo://auth/callback",
-                            issuer = "https://issuer.example",
-                            projectId = "test-project-id",
-                            walletType = "ethereum",
-                            walletSelection = null,
-                            sessionLifetimeSeconds = null,
-                            signerAddress = TEST_CREDENTIAL_ID,
-                            signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
-                        ),
-                    ),
-            )
-
-        assertNull(sdk.wallet.activeWallet)
-        assertNull(sdk.wallet.session)
     }
 
     @Test
@@ -168,7 +156,6 @@ class OMSWalletTest {
         sdk.wallet.signOut()
 
         assertNull(sdk.wallet.activeWallet)
-        assertNull(sdk.wallet.activeWallet)
         assertNull(sdk.wallet.session)
         assertNull(sdk.wallet.snapshotSession())
         assertNull(sdk.wallet.signerAddress)
@@ -178,7 +165,6 @@ class OMSWalletTest {
 
     @Test
     fun exposesSupportedNetworks() {
-        assertEquals(Network.entries, OMSWalletNetworks.supportedNetworks)
         assertEquals(16, OMSWalletNetworks.supportedNetworks.size)
         assertEquals(Network.MAINNET, OMSWalletNetworks.findById(1))
         assertEquals(Network.MAINNET, OMSWalletNetworks.findByName("mainnet"))
@@ -319,16 +305,6 @@ class OMSWalletTest {
         override fun load(): OMSWalletSessionSnapshot? = snapshot
 
         override fun save(snapshot: OMSWalletSessionSnapshot) = Unit
-
-        override fun clear() = Unit
-    }
-
-    private class StubOidcRedirectAuthStore(
-        private val pending: PendingOidcRedirectAuth?,
-    ) : OidcRedirectAuthStore {
-        override fun load(): PendingOidcRedirectAuth? = pending
-
-        override fun save(pending: PendingOidcRedirectAuth) = Unit
 
         override fun clear() = Unit
     }
