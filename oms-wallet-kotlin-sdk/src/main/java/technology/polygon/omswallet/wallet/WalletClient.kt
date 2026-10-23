@@ -4005,8 +4005,10 @@ private class WaasWalletGateway(
         )
 
     companion object {
+        // Mirrors the generated TypeScript/Swift WebrpcHeaderValue; the Kotlin target emits no
+        // header constant, so the generator versions come from the WaasWalletClient.kt header.
         private const val waasWebrpcHeaderValue =
-            "webrpc@v0.37.2;gen-kotlin@v0.3.2;waas@$WEBRPC_SCHEMA_VERSION"
+            "webrpc@v0.47.0;kotlin@v0.47.0;waas@$WEBRPC_SCHEMA_VERSION"
     }
 }
 
