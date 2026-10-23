@@ -3,10 +3,14 @@ package technology.polygon.omswallet.wallet
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import technology.polygon.omswallet.Network
@@ -17,14 +21,15 @@ import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
 import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletResponseException
 import technology.polygon.omswallet.OMSWalletSelectionException
+import technology.polygon.omswallet.OMSWalletSession
 import technology.polygon.omswallet.OMSWalletSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionException
 import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
-import technology.polygon.omswallet.OMSWalletSessionState
 import technology.polygon.omswallet.OMSWalletStorageException
 import technology.polygon.omswallet.OMSWalletTransactionException
 import technology.polygon.omswallet.OMSWalletValidationException
 import technology.polygon.omswallet.SolanaNetwork
+import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.AuthorizeRemoteAccessRequest
@@ -34,6 +39,7 @@ import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthResponse
 import technology.polygon.omswallet.internal.generated.waas.CreateWalletRequest
 import technology.polygon.omswallet.internal.generated.waas.ERC20TransferGrant
+import technology.polygon.omswallet.internal.generated.waas.ErrorKind
 import technology.polygon.omswallet.internal.generated.waas.ExecuteRequest
 import technology.polygon.omswallet.internal.generated.waas.GetIDTokenRequest
 import technology.polygon.omswallet.internal.generated.waas.GetRecipientKeyRequest
@@ -58,6 +64,8 @@ import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumContr
 import technology.polygon.omswallet.internal.generated.waas.PrepareEthereumTransactionRequest
 import technology.polygon.omswallet.internal.generated.waas.PrepareResponse
 import technology.polygon.omswallet.internal.generated.waas.PrepareSolanaTransferRequest
+import technology.polygon.omswallet.internal.generated.waas.PrepareTronContractCallRequest
+import technology.polygon.omswallet.internal.generated.waas.PrepareTronTransactionRequest
 import technology.polygon.omswallet.internal.generated.waas.RevokeAccessRequest
 import technology.polygon.omswallet.internal.generated.waas.SignMessageRequest
 import technology.polygon.omswallet.internal.generated.waas.SignTypedDataRequest
@@ -69,7 +77,10 @@ import technology.polygon.omswallet.internal.generated.waas.WEBRPC_SCHEMA_VERSIO
 import technology.polygon.omswallet.internal.generated.waas.WaasApi
 import technology.polygon.omswallet.internal.generated.waas.WaasClient
 import technology.polygon.omswallet.internal.generated.waas.WaasPublicClient
+import technology.polygon.omswallet.internal.generated.waas.WebRpcError
 import technology.polygon.omswallet.internal.generated.waas.WebRpcHttpResponse
+import technology.polygon.omswallet.internal.generated.waas.WebRpcTransportException
+import technology.polygon.omswallet.internal.generated.waas.decodeWebRpcError
 import technology.polygon.omswallet.models.AbiArg
 import technology.polygon.omswallet.models.AccessGrant
 import technology.polygon.omswallet.models.AccessGrantPage
@@ -95,6 +106,7 @@ import technology.polygon.omswallet.models.TransactionStatus
 import technology.polygon.omswallet.models.TransactionStatusPollingOptions
 import technology.polygon.omswallet.models.TransactionStatusResolution
 import technology.polygon.omswallet.models.TransactionStatusResponse
+import technology.polygon.omswallet.models.TronBalance
 import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.models.WalletCredential
 import technology.polygon.omswallet.models.WalletImportCipherSuite
@@ -105,8 +117,8 @@ import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.runOMSWalletOperation
-import technology.polygon.omswallet.session.OMSWalletSession
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+import technology.polygon.omswallet.session.OMSWalletSessionStateMachine
 import technology.polygon.omswallet.storage.InvalidSessionMetadataException
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import technology.polygon.omswallet.toOMSWalletException
@@ -143,12 +155,13 @@ private class PendingEmailAuth(
 )
 
 private class WalletScopeRuntime(
-    val walletSession: OMSWalletSession,
+    val walletSession: OMSWalletSessionStateMachine,
     val sessionStore: OMSWalletSessionMetadataStore?,
     val oidcRedirectAuthStore: OidcRedirectAuthStore?,
     val signer: CredentialSigner,
     val sessionExpiryScheduler: SessionExpiryScheduler,
     val sessionExpiryDispatcher: SessionExpiryDispatcher,
+    val credentialRefreshLauncher: CredentialRefreshLauncher,
     val now: () -> Long,
 ) {
     val lifecycleLock = Any()
@@ -159,7 +172,116 @@ private class WalletScopeRuntime(
     var latestSessionExpiredRevision: Long? = null
     var sessionExpiryTask: SessionExpiryTask? = null
     var pendingEmailAuth: PendingEmailAuth? = null
+
+    /** The single in-flight GetCredential refresh shared by concurrent callers. */
+    var credentialRefresh: CredentialRefreshInFlight? = null
+
+    /** Set once a WaaS server answers GetCredential with WebrpcBadRoute (pre-sliding expiry). */
+    var credentialRefreshUnsupported = false
+
+    /** When the current credential's expiry was last read: sign-in, restore, or a refresh attempt. */
+    var credentialCheckedAt: Long? = null
+
+    /** Next offline retry delay after the expiry timer could not reach WaaS. */
+    var credentialRetryDelayMillis: Long? = null
+
+    /** Keeps credential refreshes from overlapping other signed session requests. */
+    val signedRequestGate = SignedRequestGate()
 }
+
+/**
+ * WaaS rejects a credential nonce that is not above the last one it accepted, so a credential
+ * refresh must not race another signed session request: requests wait for an in-flight refresh
+ * before signing, and a refresh starts only once no request is in flight.
+ */
+private class SignedRequestGate {
+    private val lock = Any()
+    private var requestsInFlight = 0
+    private var refresh: CompletableDeferred<Unit>? = null
+    private var idle: CompletableDeferred<Unit>? = null
+
+    suspend fun <T> request(block: suspend () -> T): T {
+        while (true) {
+            val refreshInFlight =
+                synchronized(lock) {
+                    refresh ?: run {
+                        requestsInFlight += 1
+                        null
+                    }
+                } ?: break
+            refreshInFlight.await()
+        }
+        try {
+            return block()
+        } finally {
+            synchronized(lock) {
+                requestsInFlight -= 1
+                if (requestsInFlight == 0) idle.also { idle = null } else null
+            }?.complete(Unit)
+        }
+    }
+
+    /** Starts a refresh only when the gate is idle; returns null when it is busy. */
+    fun tryBeginRefresh(): CompletableDeferred<Unit>? =
+        synchronized(lock) {
+            if (requestsInFlight > 0 || refresh != null) null else CompletableDeferred<Unit>().also { refresh = it }
+        }
+
+    /** Waits for in-flight requests and refreshes to finish, then starts a refresh. */
+    suspend fun beginRefresh(): CompletableDeferred<Unit> {
+        while (true) {
+            val wait =
+                synchronized(lock) {
+                    when {
+                        refresh != null -> refresh
+                        requestsInFlight > 0 -> idle ?: CompletableDeferred<Unit>().also { idle = it }
+                        else -> return CompletableDeferred<Unit>().also { refresh = it }
+                    }
+                }
+            requireNotNull(wait).await()
+        }
+    }
+
+    fun endRefresh(started: CompletableDeferred<Unit>) {
+        synchronized(lock) {
+            if (refresh === started) refresh = null
+        }
+        started.complete(Unit)
+    }
+}
+
+private class CredentialRefreshInFlight(
+    val revision: Long,
+    val result: CompletableDeferred<CredentialRefreshOutcome>,
+)
+
+/** Result of reading the session credential's current expiry with GetCredential. */
+private sealed interface CredentialRefreshOutcome {
+    /** WaaS confirmed the credential; a parseable expiry was applied to the session. */
+    data object Refreshed : CredentialRefreshOutcome
+
+    /** WaaS rejected the credential (7202/7203) and the session was ended. */
+    data object Ended : CredentialRefreshOutcome
+
+    /** The server has no GetCredential; local expiry stays authoritative. */
+    data object Unsupported : CredentialRefreshOutcome
+
+    /** WaaS could not be reached or failed; the session is unchanged. */
+    data class Unavailable(
+        val cause: Throwable,
+    ) : CredentialRefreshOutcome
+
+    /** The session changed while the refresh ran; its result was not applied. */
+    data object Stale : CredentialRefreshOutcome
+
+    /** A background refresh was skipped because a signed session request was in flight. */
+    data object Busy : CredentialRefreshOutcome
+}
+
+/** Control flow for a session check that found the session locally expired. */
+private class LocallyExpiredSession(
+    val revision: Long,
+) : RuntimeException(null, null, false, false)
 
 private object WalletScopeRuntimeRegistry {
     private val registryLock = Any()
@@ -192,10 +314,7 @@ class WalletClient private constructor(
     private val transport: OMSWalletHttpClient,
     private val runtime: WalletScopeRuntime,
     private val oidcNonceGenerator: () -> String,
-    private val fastTransactionStatusPollIntervalMillis: Long,
-    private val fastTransactionStatusPollCount: Int,
-    private val transactionStatusPollIntervalMillis: Long,
-    private val transactionStatusPollTimeoutMillis: Long,
+    private val defaultStatusPolling: TransactionStatusPollingOptions,
     private val transactionStatusDelay: suspend (Long) -> Unit,
     private val walletImportTrustedPcr0s: Set<String>?,
 ) {
@@ -206,9 +325,10 @@ class WalletClient private constructor(
         const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 604_800L
 
         /**
-         * Maximum requested WaaS wallet session lifetime in seconds.
+         * Maximum requested WaaS wallet session lifetime in seconds (180 days). WaaS extends a
+         * session's expiry with use up to the requested lifetime.
          */
-        const val MAX_SESSION_LIFETIME_SECONDS: Long = 2_592_000L
+        const val MAX_SESSION_LIFETIME_SECONDS: Long = 15_552_000L
 
         @JvmSynthetic
         internal fun create(
@@ -216,30 +336,29 @@ class WalletClient private constructor(
             projectId: String,
             environment: OMSWalletEnvironment,
             transport: OMSWalletHttpClient = OMSWalletHttpClient(),
-            walletSession: OMSWalletSession? = null,
+            walletSession: OMSWalletSessionStateMachine? = null,
             sessionStore: OMSWalletSessionMetadataStore? = null,
             oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
             oidcNonceGenerator: () -> String = OidcRedirectAuth::generateNonce,
             credentialSigner: CredentialSigner? = null,
-            fastTransactionStatusPollIntervalMillis: Long = 400L,
-            fastTransactionStatusPollCount: Int = 5,
-            transactionStatusPollIntervalMillis: Long = 2_000L,
-            transactionStatusPollTimeoutMillis: Long = 60_000L,
+            defaultStatusPolling: TransactionStatusPollingOptions = TransactionStatusPollingOptions(),
             transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
             sessionExpiryScheduler: SessionExpiryScheduler = TimerSessionExpiryScheduler,
             sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
+            credentialRefreshLauncher: CredentialRefreshLauncher = BackgroundCredentialRefreshLauncher,
             now: () -> Long = OMSWalletTimestamps::nowMilliseconds,
             projectScopeKey: String? = null,
             walletImportTrustedPcr0s: Set<String>? = null,
         ): WalletClient {
             val createRuntime = {
                 WalletScopeRuntime(
-                    walletSession = walletSession ?: OMSWalletSession(),
+                    walletSession = walletSession ?: OMSWalletSessionStateMachine(),
                     sessionStore = sessionStore,
                     oidcRedirectAuthStore = oidcRedirectAuthStore,
                     signer = credentialSigner ?: MissingCredentialSigner,
                     sessionExpiryScheduler = sessionExpiryScheduler,
                     sessionExpiryDispatcher = sessionExpiryDispatcher,
+                    credentialRefreshLauncher = credentialRefreshLauncher,
                     now = now,
                 )
             }
@@ -254,17 +373,14 @@ class WalletClient private constructor(
                 transport = transport,
                 runtime = runtime,
                 oidcNonceGenerator = oidcNonceGenerator,
-                fastTransactionStatusPollIntervalMillis = fastTransactionStatusPollIntervalMillis,
-                fastTransactionStatusPollCount = fastTransactionStatusPollCount,
-                transactionStatusPollIntervalMillis = transactionStatusPollIntervalMillis,
-                transactionStatusPollTimeoutMillis = transactionStatusPollTimeoutMillis,
+                defaultStatusPolling = defaultStatusPolling,
                 transactionStatusDelay = transactionStatusDelay,
                 walletImportTrustedPcr0s = walletImportTrustedPcr0s,
             )
         }
     }
 
-    private val walletSession: OMSWalletSession = runtime.walletSession
+    private val walletSession: OMSWalletSessionStateMachine = runtime.walletSession
     private val sessionStore: OMSWalletSessionMetadataStore? = runtime.sessionStore
     private val oidcRedirectAuthStore: OidcRedirectAuthStore? = runtime.oidcRedirectAuthStore
     private val signer: CredentialSigner = runtime.signer
@@ -274,6 +390,9 @@ class WalletClient private constructor(
             environment = environment,
             transport = transport,
             authorizeSignedRequest = ::authorizeSignedRequest,
+            onSessionCredentialRejected = ::endSessionRejectedByServer,
+            onSessionCredentialAccepted = ::refreshCredentialIfDue,
+            signedRequestGate = runtime.signedRequestGate,
             walletImportTrustedPcr0s = walletImportTrustedPcr0s,
         )
     private val indexerClient: IndexerClient =
@@ -290,19 +409,23 @@ class WalletClient private constructor(
             }
 
     /**
-     * Address of the currently selected wallet, or null when no wallet is selected.
+     * The active wallet, or null until auth completes or a session is restored,
+     * and after sign-out or session expiry. Same shape as [listWallets] entries;
+     * branch on [Wallet.type] before using [Wallet.address] with family-specific
+     * code.
      */
-    val walletAddress: String?
-        get() = synchronized(runtime.lifecycleLock) { walletSession.snapshot()?.walletAddress }
+    val activeWallet: Wallet?
+        get() = synchronized(runtime.lifecycleLock) { walletSession.snapshot()?.wallet }
 
     /**
-     * Snapshot of the current completed wallet-session state.
+     * Expiry and auth metadata for the active wallet session. Non-null exactly
+     * when [activeWallet] is.
      *
      * Pending email OTP, OIDC redirect, and manual wallet-selection state are
      * intentionally not exposed here.
      */
-    val session: OMSWalletSessionState
-        get() = synchronized(runtime.lifecycleLock) { walletSession.snapshot().toSessionState() }
+    val session: OMSWalletSession?
+        get() = synchronized(runtime.lifecycleLock) { walletSession.snapshot()?.toPublicSession() }
 
     /**
      * Registers a listener for expired wallet sessions.
@@ -337,6 +460,7 @@ class WalletClient private constructor(
             runtime.initialized = true
             clearLatestSessionExpiredEventLocked()
             val revision = walletSession.restore(snapshot)
+            markCredentialCheckedLocked()
             scheduleSessionExpiryLocked(snapshot, revision)
         }
     }
@@ -345,6 +469,7 @@ class WalletClient private constructor(
 
     internal fun restorePersistedSession(): Boolean {
         var expiredNotification: ExpiryNotification? = null
+        var restoredRevision: Long? = null
         val restored =
             synchronized(runtime.lifecycleLock) {
                 if (runtime.initialized) {
@@ -395,8 +520,8 @@ class WalletClient private constructor(
                         )
                     }
                 val isRestorable =
-                    !snapshot.walletId.isNullOrBlank() &&
-                        !snapshot.walletAddress.isNullOrBlank() &&
+                    snapshot.wallet != null &&
+                        !snapshot.expiresAt.isNullOrBlank() &&
                         !snapshot.signerAddress.isNullOrBlank() &&
                         snapshot.auth != null &&
                         snapshot.signerKeyType == signer.signingAlgorithm &&
@@ -410,20 +535,22 @@ class WalletClient private constructor(
                 }
                 clearLatestSessionExpiredEventLocked()
                 val revision = walletSession.restore(snapshot)
+                markCredentialCheckedLocked()
                 scheduleSessionExpiryLocked(snapshot, revision)
                 clearConsumedOidcRedirectAuthLocked()
                 runtime.initialized = true
+                restoredRevision = revision
                 true
             }
         expiredNotification?.let(::dispatchSessionExpiredNotification)
+        // The stored expiry may predate server-side sliding; read the current one in the background.
+        restoredRevision?.let { revision -> launchCredentialRefresh(revision) }
         return restored
     }
 
     private fun clearInvalidPersistedSessionLocked() {
         clearSessionUnlocked(
             clearOidcRedirectAuth = true,
-            clearSessionStore = true,
-            clearExpiredEvent = true,
             operation = null,
             throwOnFailure = true,
             requiredSessionRevision = null,
@@ -447,8 +574,6 @@ class WalletClient private constructor(
 
     private fun clearSession(
         clearOidcRedirectAuth: Boolean,
-        clearSessionStore: Boolean = true,
-        clearExpiredEvent: Boolean = true,
         operation: OMSWalletOperation? = null,
         throwOnFailure: Boolean = true,
         requiredSessionRevision: Long? = null,
@@ -457,8 +582,6 @@ class WalletClient private constructor(
             runtime.initialized = true
             clearSessionUnlocked(
                 clearOidcRedirectAuth = clearOidcRedirectAuth,
-                clearSessionStore = clearSessionStore,
-                clearExpiredEvent = clearExpiredEvent,
                 operation = operation,
                 throwOnFailure = throwOnFailure,
                 requiredSessionRevision = requiredSessionRevision,
@@ -467,8 +590,6 @@ class WalletClient private constructor(
 
     private fun clearSessionUnlocked(
         clearOidcRedirectAuth: Boolean,
-        clearSessionStore: Boolean,
-        clearExpiredEvent: Boolean,
         operation: OMSWalletOperation?,
         throwOnFailure: Boolean,
         requiredSessionRevision: Long?,
@@ -490,16 +611,12 @@ class WalletClient private constructor(
             }
         }
 
-        if (clearSessionStore) {
-            attemptCleanup { sessionStore?.clear() }
-        }
+        attemptCleanup { sessionStore?.clear() }
         if (clearOidcRedirectAuth) {
             attemptCleanup { oidcRedirectAuthStore?.clear() }
         }
         attemptCleanup(signer::clear)
-        if (clearExpiredEvent) {
-            clearLatestSessionExpiredEventLocked()
-        }
+        clearLatestSessionExpiredEventLocked()
 
         if (throwOnFailure) {
             cleanupFailure?.let { failure ->
@@ -522,12 +639,6 @@ class WalletClient private constructor(
             throwOnFailure = false,
             requiredSessionRevision = requiredSessionRevision,
         )
-    }
-
-    private fun clearPendingOidcRedirectAuth() {
-        synchronized(runtime.lifecycleLock) {
-            oidcRedirectAuthStore?.clear()
-        }
     }
 
     private fun saveNewPendingOidcRedirectAuth(
@@ -649,8 +760,8 @@ class WalletClient private constructor(
         idToken: String,
         issuer: String,
         audience: String,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         walletType: WalletType = WalletType.Ethereum,
+        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
         sessionLifetimeSeconds: Long = DEFAULT_SESSION_LIFETIME_SECONDS,
         provider: String? = null,
         providerLabel: String? = null,
@@ -764,7 +875,7 @@ class WalletClient private constructor(
                             "access_type" to "offline",
                             "prompt" to "consent",
                         ),
-                    authMode = OidcRedirectAuthMode.AuthCodePKCE,
+                    authMode = OidcAuthMode.AuthCodePKCE,
                     redirectUris = redirectUris,
                     walletType = walletType,
                     walletSelection = walletSelection,
@@ -776,14 +887,14 @@ class WalletClient private constructor(
 
             "apple" -> {
                 startOidcRedirectAuth(
-                    issuer = "https://appleid.apple.com",
+                    issuer = APPLE_ISSUER,
                     clientId = DEFAULT_APPLE_OIDC_CLIENT_ID,
                     authorizationUrl = "https://appleid.apple.com/auth/authorize",
                     providerName = "apple",
                     providerLabel = "Apple",
                     scopes = listOf("openid", "email"),
                     providerAuthorizeParams = mapOf("response_mode" to "form_post"),
-                    authMode = OidcRedirectAuthMode.AuthCodePKCE,
+                    authMode = OidcAuthMode.AuthCodePKCE,
                     redirectUris = redirectUris,
                     walletType = walletType,
                     walletSelection = walletSelection,
@@ -804,8 +915,8 @@ class WalletClient private constructor(
         walletType: WalletType = WalletType.Ethereum,
         walletSelection: WalletSelectionBehavior? = null,
         sessionLifetimeSeconds: Long? = null,
-        authorizeParams: Map<String, String> = emptyMap(),
         loginHint: String? = null,
+        authorizeParams: Map<String, String> = emptyMap(),
     ): StartOidcRedirectAuthResult {
         require(provider.providerRedirectUri.isNotBlank()) { "providerRedirectUri must not be blank" }
         return startOidcRedirectAuth(
@@ -839,7 +950,7 @@ class WalletClient private constructor(
         providerLabel: String?,
         scopes: List<String>,
         providerAuthorizeParams: Map<String, String>,
-        authMode: OidcRedirectAuthMode,
+        authMode: OidcAuthMode,
         redirectUris: OidcRedirectUris,
         walletType: WalletType,
         walletSelection: WalletSelectionBehavior?,
@@ -870,8 +981,8 @@ class WalletClient private constructor(
                         redirectUri = redirectUris.oauthRedirectUri,
                         authMode =
                             when (authMode) {
-                                OidcRedirectAuthMode.AuthCode -> AuthMode.AuthCode
-                                OidcRedirectAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
+                                OidcAuthMode.AuthCode -> AuthMode.AuthCode
+                                OidcAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
                             },
                         requiredSessionRevision = ownedSessionRevision,
                     )
@@ -1010,9 +1121,7 @@ class WalletClient private constructor(
             var ownedSessionRevision =
                 synchronized(runtime.lifecycleLock) { walletSession.revision() }
 
-            var clearPendingAuth = false
             try {
-                clearPendingAuth = true
                 callback.error?.let { error ->
                     throw OMSWalletValidationException(
                         message = callback.errorDescription ?: "OIDC provider returned error: $error",
@@ -1037,8 +1146,8 @@ class WalletClient private constructor(
                         code = code,
                         authMode =
                             when (pending.authMode) {
-                                OidcRedirectAuthMode.AuthCode -> AuthMode.AuthCode
-                                OidcRedirectAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
+                                OidcAuthMode.AuthCode -> AuthMode.AuthCode
+                                OidcAuthMode.AuthCodePKCE -> AuthMode.AuthCodePKCE
                             },
                         sessionLifetimeSeconds = validatedSessionLifetimeSeconds,
                         requiredSessionRevision = ownedSessionRevision,
@@ -1063,9 +1172,7 @@ class WalletClient private constructor(
                 clearSessionAfterOidcRedirectFailure(pending, ownedSessionRevision)
                 throw failure
             } finally {
-                if (clearPendingAuth) {
-                    clearPendingOidcRedirectAuthBestEffort(redirectAuthStore, pending)
-                }
+                clearPendingOidcRedirectAuthBestEffort(redirectAuthStore, pending)
             }
         }
 
@@ -1158,7 +1265,7 @@ class WalletClient private constructor(
     /**
      * Selects an existing wallet by its WaaS wallet id.
      */
-    suspend fun useWallet(walletId: String): WalletSelectionResult =
+    suspend fun useWallet(walletId: String): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletUseWallet) {
             useWalletForCurrentSession(walletId, requireWalletSelectionOrActiveSession())
         }
@@ -1168,14 +1275,13 @@ class WalletClient private constructor(
         requiredSessionRevision: Long,
         oidcRedirectAuthOwnership: PendingOidcRedirectAuth? = null,
         onSessionRevisionChanged: ((Long) -> Unit)? = null,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         requireWalletSelectionOrActiveSession(requiredSessionRevision)
         val wallet = requestUseWallet(walletId, requiredSessionRevision)
         return withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
             val selectedSessionRevision =
                 walletSession.selectWallet(
-                    walletId = wallet.id,
-                    walletAddress = wallet.address,
+                    wallet = wallet,
                     requiredRevision = requiredSessionRevision,
                 )
             onSessionRevisionChanged?.invoke(selectedSessionRevision)
@@ -1189,7 +1295,7 @@ class WalletClient private constructor(
     suspend fun createWallet(
         walletType: WalletType = WalletType.Ethereum,
         reference: String? = null,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletCreateWallet) {
             createWalletForCurrentSession(
                 walletType,
@@ -1198,11 +1304,11 @@ class WalletClient private constructor(
             )
         }
 
-    /** Imports and activates an Ethereum or Solana private key through the attested import transport. */
+    /** Imports and activates an Ethereum, Solana, or Tron private key through the attested import transport. */
     suspend fun importWallet(
         privateKey: WalletImportPrivateKey,
         reference: String? = null,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletImportWallet) {
             val context = walletImportActivationContext(privateKey.walletType)
             WalletImportCrypto.validateReference(reference)
@@ -1251,7 +1357,7 @@ class WalletClient private constructor(
         walletType: WalletType,
         keyMaterial: EncryptedWalletImportKeyMaterial,
         reference: String? = null,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletImportEncryptedWallet) {
             val context = walletImportActivationContext(walletType)
             WalletImportCrypto.validateReference(reference)
@@ -1259,9 +1365,9 @@ class WalletClient private constructor(
             activateImportedWallet(wallet, context)
         }
 
-    private fun walletImportActivationContext(walletType: WalletType): WalletImportActivationContext =
-        synchronized(runtime.lifecycleLock) {
-            val revision = requireWalletSelectionOrActiveSession()
+    private suspend fun walletImportActivationContext(walletType: WalletType): WalletImportActivationContext {
+        val revision = requireWalletSelectionOrActiveSession()
+        return synchronized(runtime.lifecycleLock) {
             val snapshot = walletSession.requireSnapshot(revision)
             val pendingId = snapshot.pendingWalletSelectionId
             if (pendingId != null) {
@@ -1283,18 +1389,19 @@ class WalletClient private constructor(
                 )
             }
         }
+    }
 
     private fun activateImportedWallet(
         wallet: Wallet,
         context: WalletImportActivationContext,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         synchronized(runtime.lifecycleLock) {
             walletSession.requireRevision(context.revision)
             val selectedRevision =
                 when (context) {
                     is WalletImportActivationContext.Active -> {
                         check(walletSession.requireSnapshot().walletId == context.walletId) { "Active wallet session changed" }
-                        walletSession.selectWallet(wallet.id, wallet.address, context.revision)
+                        walletSession.selectWallet(wallet, context.revision)
                     }
 
                     is WalletImportActivationContext.Pending -> {
@@ -1302,8 +1409,7 @@ class WalletClient private constructor(
                             pendingWalletSelectionId = context.id,
                             signerAddress = context.signerAddress,
                             signerKeyType = context.signerKeyType,
-                            walletId = wallet.id,
-                            walletAddress = wallet.address,
+                            wallet = wallet,
                         )
                     }
                 }
@@ -1316,14 +1422,13 @@ class WalletClient private constructor(
         requiredSessionRevision: Long,
         oidcRedirectAuthOwnership: PendingOidcRedirectAuth? = null,
         onSessionRevisionChanged: ((Long) -> Unit)? = null,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         requireWalletSelectionOrActiveSession(requiredSessionRevision)
         val wallet = requestCreateWallet(walletType, reference, requiredSessionRevision)
         return withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
             val selectedSessionRevision =
                 walletSession.selectWallet(
-                    walletId = wallet.id,
-                    walletAddress = wallet.address,
+                    wallet = wallet,
                     requiredRevision = requiredSessionRevision,
                 )
             onSessionRevisionChanged?.invoke(selectedSessionRevision)
@@ -1336,7 +1441,7 @@ class WalletClient private constructor(
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
         walletId: String,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         val requiredSessionRevision =
             requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         val wallet = requestUseWallet(walletId, requiredSessionRevision)
@@ -1347,8 +1452,7 @@ class WalletClient private constructor(
                     pendingWalletSelectionId = pendingWalletSelectionId,
                     signerAddress = signerAddress,
                     signerKeyType = signerKeyType,
-                    walletId = wallet.id,
-                    walletAddress = wallet.address,
+                    wallet = wallet,
                 )
             persistSelectedWallet(wallet, selectedSessionRevision)
         }
@@ -1360,7 +1464,7 @@ class WalletClient private constructor(
         signerKeyType: WalletSigningAlgorithm?,
         walletType: WalletType,
         reference: String?,
-    ): WalletSelectionResult {
+    ): WalletActivationResult {
         val requiredSessionRevision =
             requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
         val wallet = requestCreateWallet(walletType, reference, requiredSessionRevision)
@@ -1371,23 +1475,33 @@ class WalletClient private constructor(
                     pendingWalletSelectionId = pendingWalletSelectionId,
                     signerAddress = signerAddress,
                     signerKeyType = signerKeyType,
-                    walletId = wallet.id,
-                    walletAddress = wallet.address,
+                    wallet = wallet,
                 )
             persistSelectedWallet(wallet, selectedSessionRevision)
         }
     }
 
-    private fun requirePendingWalletSelection(
+    private suspend fun requirePendingWalletSelection(
         pendingWalletSelectionId: Long,
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
+    ): Long =
+        refreshingLocalExpiry(OMSWalletOperation.PendingWalletSelection) { expireLocally ->
+            checkPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType, expireLocally)
+        }
+
+    private fun checkPendingWalletSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: WalletSigningAlgorithm?,
+        expireLocally: Boolean,
     ): Long {
         var expiredNotification: ExpiryNotification? = null
         val revision =
             synchronized(runtime.lifecycleLock) {
                 val snapshot = walletSession.snapshot()
                 if (snapshot?.isExpired(runtime.now()) == true) {
+                    if (!expireLocally) throw LocallyExpiredSession(walletSession.revision())
                     expiredNotification = expireSessionLocked(snapshot, walletSession.revision())
                     return@synchronized null
                 }
@@ -1432,14 +1546,11 @@ class WalletClient private constructor(
     private fun persistSelectedWallet(
         wallet: Wallet,
         selectedSessionRevision: Long,
-    ): WalletSelectionResult =
+    ): WalletActivationResult =
         synchronized(runtime.lifecycleLock) {
             try {
                 persistCurrentSession(selectedSessionRevision)
-                WalletSelectionResult(
-                    walletAddress = wallet.address,
-                    wallet = wallet,
-                )
+                WalletActivationResult(wallet = wallet)
             } catch (throwable: Throwable) {
                 clearSessionAfterFailure(requiredSessionRevision = selectedSessionRevision)
                 throw throwable
@@ -1500,6 +1611,7 @@ class WalletClient private constructor(
             withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
                 walletSession.requireRevision(pendingSessionRevision)
                 walletSession.requireSnapshot().also {
+                    markCredentialCheckedLocked()
                     scheduleSessionExpiryLocked(it, pendingSessionRevision)
                 }
             }
@@ -1560,7 +1672,6 @@ class WalletClient private constructor(
                         }
                     }
                 CompleteAuthResult.WalletSelected(
-                    walletAddress = selected.walletAddress,
                     wallet = selected.wallet,
                     wallets = if (candidateWallets.isEmpty()) wallets + selected.wallet else wallets,
                     credential = completeAuth.credential,
@@ -1640,9 +1751,7 @@ class WalletClient private constructor(
     ): String =
         runOMSWalletOperation(OMSWalletOperation.WalletSignMessage) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignMessage)
-            require(activeSession.walletAddress.isEthereumAddress()) {
-                "An active Ethereum wallet is required"
-            }
+            activeSession.requireWalletType(WalletType.Ethereum)
             gateway.signMessage(
                 walletId = activeSession.walletId,
                 network = network,
@@ -1655,9 +1764,7 @@ class WalletClient private constructor(
     suspend fun signSolanaMessage(message: String): String =
         runOMSWalletOperation(OMSWalletOperation.WalletSignSolanaMessage) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignSolanaMessage)
-            require(!activeSession.walletAddress.isEthereumAddress()) {
-                "An active Solana wallet is required"
-            }
+            activeSession.requireWalletType(WalletType.Solana)
             gateway.signSolanaMessage(
                 walletId = activeSession.walletId,
                 message = message,
@@ -1674,9 +1781,7 @@ class WalletClient private constructor(
     ): String =
         runOMSWalletOperation(OMSWalletOperation.WalletSignTypedData) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignTypedData)
-            require(activeSession.walletAddress.isEthereumAddress()) {
-                "An active Ethereum wallet is required"
-            }
+            activeSession.requireWalletType(WalletType.Ethereum)
             gateway.signTypedData(
                 walletId = activeSession.walletId,
                 network = network,
@@ -1687,75 +1792,184 @@ class WalletClient private constructor(
 
     /**
      * Validates [signature] for [message] through the WaaS public wallet RPC.
+     * Pass the `0x` [walletAddress] to verify any Ethereum wallet without a
+     * session; when it is omitted, the active Ethereum wallet's address is used.
      */
     suspend fun isValidMessageSignature(
         network: Network,
         message: String,
         signature: String,
+        walletAddress: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidMessageSignature) {
-            val activeSession =
-                requireActiveWalletSession(
-                    OMSWalletOperation.WalletIsValidMessageSignature,
-                    requireCredential = false,
-                )
             gateway.isValidMessageSignature(
-                walletId = activeSession.walletId,
+                walletAddress = verifierWalletAddress(walletAddress, WalletType.Ethereum, OMSWalletOperation.WalletIsValidMessageSignature),
                 network = network,
                 message = message,
                 signature = signature,
             )
         }
 
-    /** Validates [signature] for a Solana [message] through the WaaS public wallet RPC. */
+    /**
+     * Validates [signature] for a Solana [message] through the WaaS public wallet
+     * RPC. Pass the base58 [walletAddress] to verify any Solana wallet without a
+     * session; when it is omitted, the active Solana wallet's address is used.
+     */
     suspend fun isValidSolanaMessageSignature(
         message: String,
         signature: String,
+        walletAddress: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidSolanaMessageSignature) {
-            val activeSession =
-                requireActiveWalletSession(
-                    OMSWalletOperation.WalletIsValidSolanaMessageSignature,
-                    requireCredential = false,
-                )
             gateway.isValidSolanaMessageSignature(
-                walletId = activeSession.walletId,
+                walletAddress =
+                    verifierWalletAddress(
+                        walletAddress,
+                        WalletType.Solana,
+                        OMSWalletOperation.WalletIsValidSolanaMessageSignature,
+                    ),
                 message = message,
                 signature = signature,
             )
         }
 
     /**
-     * Validates [signature] for EIP-712 [typedData] through the WaaS public wallet RPC.
+     * Validates [signature] for EIP-712 [typedData] through the WaaS public
+     * wallet RPC. Pass the `0x` [walletAddress] to verify any Ethereum wallet
+     * without a session; when it is omitted, the active Ethereum wallet's address
+     * is used.
      */
     suspend fun isValidTypedDataSignature(
         network: Network,
         typedData: JsonElement,
         signature: String,
+        walletAddress: String? = null,
     ): Boolean =
         runOMSWalletOperation(OMSWalletOperation.WalletIsValidTypedDataSignature) {
-            val activeSession =
-                requireActiveWalletSession(
-                    OMSWalletOperation.WalletIsValidTypedDataSignature,
-                    requireCredential = false,
-                )
             gateway.isValidTypedDataSignature(
-                walletId = activeSession.walletId,
+                walletAddress =
+                    verifierWalletAddress(
+                        walletAddress,
+                        WalletType.Ethereum,
+                        OMSWalletOperation.WalletIsValidTypedDataSignature,
+                    ),
                 network = network,
                 typedData = typedData,
                 signature = signature,
             )
         }
 
+    /** Signs [message] with the currently selected Tron wallet. */
+    suspend fun signTronMessage(message: String): String =
+        runOMSWalletOperation(OMSWalletOperation.WalletSignTronMessage) {
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignTronMessage)
+            activeSession.requireWalletType(WalletType.Tron)
+            gateway.signTronMessage(
+                walletId = activeSession.walletId,
+                message = message,
+                requiredSessionRevision = activeSession.revision,
+            )
+        }
+
+    /**
+     * Signs TIP-712 [typedData] with the currently selected Tron wallet. Address
+     * values may be Base58Check (`T…`).
+     */
+    suspend fun signTronTypedData(typedData: JsonElement): String =
+        runOMSWalletOperation(OMSWalletOperation.WalletSignTronTypedData) {
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSignTronTypedData)
+            activeSession.requireWalletType(WalletType.Tron)
+            gateway.signTronTypedData(
+                walletId = activeSession.walletId,
+                typedData = typedData,
+                requiredSessionRevision = activeSession.revision,
+            )
+        }
+
+    /**
+     * Validates a Tron [signature] for [message] through the WaaS public wallet
+     * RPC. Pass the Base58Check [walletAddress] (`T…`) to verify any Tron wallet
+     * without a session; when it is omitted, the active Tron wallet's address is
+     * used.
+     */
+    suspend fun isValidTronMessageSignature(
+        message: String,
+        signature: String,
+        walletAddress: String? = null,
+    ): Boolean =
+        runOMSWalletOperation(OMSWalletOperation.WalletIsValidTronMessageSignature) {
+            gateway.isValidTronMessageSignature(
+                walletAddress = verifierWalletAddress(walletAddress, WalletType.Tron, OMSWalletOperation.WalletIsValidTronMessageSignature),
+                message = message,
+                signature = signature,
+            )
+        }
+
+    /**
+     * Validates a Tron [signature] for TIP-712 [typedData] through the WaaS
+     * public wallet RPC. Pass the Base58Check [walletAddress] (`T…`) to verify
+     * any Tron wallet without a session; when it is omitted, the active Tron
+     * wallet's address is used.
+     */
+    suspend fun isValidTronTypedDataSignature(
+        typedData: JsonElement,
+        signature: String,
+        walletAddress: String? = null,
+    ): Boolean =
+        runOMSWalletOperation(OMSWalletOperation.WalletIsValidTronTypedDataSignature) {
+            gateway.isValidTronTypedDataSignature(
+                walletAddress =
+                    verifierWalletAddress(
+                        walletAddress,
+                        WalletType.Tron,
+                        OMSWalletOperation.WalletIsValidTronTypedDataSignature,
+                    ),
+                typedData = typedData,
+                signature = signature,
+            )
+        }
+
+    /**
+     * Returns the address to verify against: [walletAddress] when provided (it
+     * must not be blank), otherwise the active wallet's address.
+     */
+    private suspend fun verifierWalletAddress(
+        walletAddress: String?,
+        walletType: WalletType,
+        operation: OMSWalletOperation,
+    ): String {
+        if (walletAddress != null) {
+            require(walletAddress.isNotBlank()) { "walletAddress must not be empty" }
+            return walletAddress
+        }
+        return activeVerifierWalletAddress(walletType, operation)
+    }
+
+    /**
+     * Returns the active wallet's address for signature verification. Requires an
+     * active session (not a usable credential) and rejects a wallet of another
+     * family before any request.
+     */
+    private suspend fun activeVerifierWalletAddress(
+        walletType: WalletType,
+        operation: OMSWalletOperation,
+    ): String {
+        val activeSession = requireActiveWalletSession(operation, requireCredential = false)
+        activeSession.requireWalletType(walletType)
+        return activeSession.walletAddress
+    }
+
     /**
      * Sends a transaction from the currently selected wallet on [network].
      *
-     * This overload sends [value] to [to] without calldata.
+     * This overload sends [value] to [to] without calldata. [mode] defaults to
+     * [TransactionMode.Relayer].
      */
     suspend fun sendTransaction(
         network: Network,
         to: String,
         value: BigInteger,
+        mode: TransactionMode = TransactionMode.Relayer,
         waitForStatus: Boolean = true,
         statusPolling: TransactionStatusPollingOptions? = null,
         selectFeeOption: FeeOptionSelector? = null,
@@ -1766,6 +1980,7 @@ class WalletClient private constructor(
                 SendTransactionRequest(
                     to = to,
                     value = value,
+                    mode = mode,
                 ),
             selectFeeOption = selectFeeOption,
             waitForStatus = waitForStatus,
@@ -1788,9 +2003,7 @@ class WalletClient private constructor(
     ): SendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletSendTransaction) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSendTransaction)
-            require(activeSession.walletAddress.isEthereumAddress()) {
-                "An active Ethereum wallet is required"
-            }
+            activeSession.requireWalletType(WalletType.Ethereum)
             require(request.value.signum() >= 0) { "Transaction value must be non-negative" }
             val prepared =
                 gateway.prepareEthereumTransaction(
@@ -1800,9 +2013,7 @@ class WalletClient private constructor(
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = network,
-                solanaNetwork = null,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -1824,9 +2035,7 @@ class WalletClient private constructor(
     ): SendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletSendSolanaTransfer) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSendSolanaTransfer)
-            require(!activeSession.walletAddress.isEthereumAddress()) {
-                "An active Solana wallet is required"
-            }
+            activeSession.requireWalletType(WalletType.Solana)
             require(amount.signum() >= 0) { "Transfer amount must be non-negative" }
             val prepared =
                 gateway.prepareSolanaTransfer(
@@ -1839,9 +2048,89 @@ class WalletClient private constructor(
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = null,
-                solanaNetwork = network,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichSolanaFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
+                prepared = prepared,
+                requiredSessionRevision = activeSession.revision,
+                selectFeeOption = selectFeeOption,
+                waitForStatus = waitForStatus,
+                statusPolling = statusPolling,
+            )
+        }
+
+    /**
+     * Sends a Tron transaction from the selected Tron wallet. Tron wallets are
+     * EOAs and always execute in native mode.
+     *
+     * [to] is a Base58Check address (`T…`) and [value] is in sun
+     * (1 TRX = 1,000,000 sun). Omitting [data] sends a plain TRX transfer; any
+     * [data] value, including `"0x"`, makes the transaction a contract call, and
+     * `"0x"` calls the contract's payable fallback.
+     */
+    suspend fun sendTronTransaction(
+        network: TronNetwork,
+        to: String,
+        value: BigInteger = BigInteger.ZERO,
+        data: String? = null,
+        waitForStatus: Boolean = true,
+        statusPolling: TransactionStatusPollingOptions? = null,
+        selectFeeOption: FeeOptionSelector? = null,
+    ): SendTransactionResponse =
+        runOMSWalletOperation(OMSWalletOperation.WalletSendTronTransaction) {
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletSendTronTransaction)
+            activeSession.requireWalletType(WalletType.Tron)
+            require(value.signum() >= 0) { "Transaction value must be non-negative" }
+            val prepared =
+                gateway.prepareTronTransaction(
+                    walletId = activeSession.walletId,
+                    network = network,
+                    to = to,
+                    value = value,
+                    data = data,
+                    requiredSessionRevision = activeSession.revision,
+                )
+            executePreparedTransaction(
+                enrichFeeOptions = { feeOptions -> enrichTronFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
+                prepared = prepared,
+                requiredSessionRevision = activeSession.revision,
+                selectFeeOption = selectFeeOption,
+                waitForStatus = waitForStatus,
+                statusPolling = statusPolling,
+            )
+        }
+
+    /**
+     * Calls a state-changing Tron contract function from the selected Tron
+     * wallet in native mode. The wallet service ABI-encodes [args];
+     * address-typed arguments accept Base58Check (`T…`) addresses.
+     *
+     * [contractAddress] is a Base58Check address. [method] is the function name
+     * only, such as `"transfer"`; the wallet service builds the signature from
+     * the [args] types.
+     */
+    suspend fun callTronContract(
+        network: TronNetwork,
+        contractAddress: String,
+        method: String,
+        args: List<AbiArg>? = null,
+        waitForStatus: Boolean = true,
+        statusPolling: TransactionStatusPollingOptions? = null,
+        selectFeeOption: FeeOptionSelector? = null,
+    ): SendTransactionResponse =
+        runOMSWalletOperation(OMSWalletOperation.WalletCallTronContract) {
+            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletCallTronContract)
+            activeSession.requireWalletType(WalletType.Tron)
+            requireContractMethodName(method)
+            val prepared =
+                gateway.prepareTronContractCall(
+                    walletId = activeSession.walletId,
+                    network = network,
+                    contract = contractAddress,
+                    method = method,
+                    args = args,
+                    requiredSessionRevision = activeSession.revision,
+                )
+            executePreparedTransaction(
+                enrichFeeOptions = { feeOptions -> enrichTronFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -1853,10 +2142,13 @@ class WalletClient private constructor(
     /**
      * Calls a state-changing smart contract function through the WaaS
      * prepare/execute flow.
+     *
+     * [method] is the function name only, such as `"transfer"`; the wallet
+     * service builds the signature from the [args] types.
      */
     suspend fun callContract(
         network: Network,
-        contract: String,
+        contractAddress: String,
         method: String,
         args: List<AbiArg>? = null,
         mode: TransactionMode = TransactionMode.Relayer,
@@ -1866,23 +2158,20 @@ class WalletClient private constructor(
     ): SendTransactionResponse =
         runOMSWalletOperation(OMSWalletOperation.WalletCallContract) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletCallContract)
-            require(activeSession.walletAddress.isEthereumAddress()) {
-                "An active Ethereum wallet is required"
-            }
+            activeSession.requireWalletType(WalletType.Ethereum)
+            requireContractMethodName(method)
             val prepared =
                 gateway.prepareEthereumContractCall(
                     walletId = activeSession.walletId,
                     network = network,
-                    contract = contract,
+                    contract = contractAddress,
                     method = method,
                     args = args,
                     mode = mode,
                     requiredSessionRevision = activeSession.revision,
                 )
             executePreparedTransaction(
-                network = network,
-                solanaNetwork = null,
-                walletAddress = activeSession.walletAddress,
+                enrichFeeOptions = { feeOptions -> enrichFeeOptionsWithBalances(network, activeSession.walletAddress, feeOptions) },
                 prepared = prepared,
                 requiredSessionRevision = activeSession.revision,
                 selectFeeOption = selectFeeOption,
@@ -1923,9 +2212,7 @@ class WalletClient private constructor(
     ): AuthorizedRemoteAccess =
         runOMSWalletOperation(OMSWalletOperation.WalletAuthorizeRemoteAccess) {
             val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletAuthorizeRemoteAccess)
-            require(activeSession.walletAddress.isEthereumAddress()) {
-                "An active Ethereum wallet is required"
-            }
+            activeSession.requireWalletType(WalletType.Ethereum)
             require(grants.isNotEmpty()) { "At least one grant is required" }
             val result =
                 gateway.authorizeRemoteAccess(
@@ -1966,7 +2253,10 @@ class WalletClient private constructor(
         type: AccessGrantType? = null,
     ): Flow<AccessGrantPage> =
         flow {
-            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletListAccessPages)
+            val activeSession =
+                runOMSWalletOperation(OMSWalletOperation.WalletListAccessPages) {
+                    requireActiveWalletSession(OMSWalletOperation.WalletListAccessPages)
+                }
             var cursor: String? = null
             do {
                 val response =
@@ -2076,9 +2366,18 @@ class WalletClient private constructor(
             )
         }
 
-    private fun requireActiveWalletSession(
+    private suspend fun requireActiveWalletSession(
         operation: OMSWalletOperation?,
         requireCredential: Boolean = true,
+    ): ActiveWalletSession =
+        refreshingLocalExpiry(operation) { expireLocally ->
+            checkActiveWalletSession(operation, requireCredential, expireLocally)
+        }
+
+    private fun checkActiveWalletSession(
+        operation: OMSWalletOperation?,
+        requireCredential: Boolean,
+        expireLocally: Boolean,
     ): ActiveWalletSession {
         var expiredNotification: ExpiryNotification? = null
         val activeSession =
@@ -2088,19 +2387,17 @@ class WalletClient private constructor(
                         ?: throw OMSWalletSessionException(operation = operation)
                 val revision = walletSession.revision()
                 if (snapshot.isExpired(runtime.now())) {
+                    if (!expireLocally) throw LocallyExpiredSession(revision)
                     expiredNotification = expireSessionLocked(snapshot, revision)
                     return@synchronized null
                 }
-                val walletId =
-                    snapshot.walletId?.takeIf(String::isNotBlank)
-                        ?: throw OMSWalletSessionException(operation = operation, message = "No wallet selected")
-                val walletAddress =
-                    snapshot.walletAddress?.takeIf(String::isNotBlank)
+                val wallet =
+                    snapshot.wallet
                         ?: throw OMSWalletSessionException(operation = operation, message = "No wallet selected")
                 if (requireCredential) {
                     requireActiveCredentialLocked(revision, snapshot)
                 }
-                ActiveWalletSession(walletId, walletAddress, revision)
+                ActiveWalletSession(wallet, revision)
             }
         expiredNotification?.let(::dispatchSessionExpiredNotification)
         return activeSession
@@ -2111,7 +2408,15 @@ class WalletClient private constructor(
             )
     }
 
-    private fun requireWalletSelectionOrActiveSession(requiredSessionRevision: Long? = null): Long {
+    private suspend fun requireWalletSelectionOrActiveSession(requiredSessionRevision: Long? = null): Long =
+        refreshingLocalExpiry(operation = null) { expireLocally ->
+            checkWalletSelectionOrActiveSession(requiredSessionRevision, expireLocally)
+        }
+
+    private fun checkWalletSelectionOrActiveSession(
+        requiredSessionRevision: Long?,
+        expireLocally: Boolean,
+    ): Long {
         var expiredNotification: ExpiryNotification? = null
         val revision =
             synchronized(runtime.lifecycleLock) {
@@ -2119,6 +2424,7 @@ class WalletClient private constructor(
                 val snapshot = walletSession.requireSnapshot()
                 val currentRevision = walletSession.revision()
                 if (snapshot.isExpired(runtime.now())) {
+                    if (!expireLocally) throw LocallyExpiredSession(currentRevision)
                     expiredNotification = expireSessionLocked(snapshot, currentRevision)
                     return@synchronized null
                 }
@@ -2148,8 +2454,6 @@ class WalletClient private constructor(
         ) {
             clearSessionUnlocked(
                 clearOidcRedirectAuth = true,
-                clearSessionStore = true,
-                clearExpiredEvent = true,
                 operation = null,
                 throwOnFailure = false,
                 requiredSessionRevision = requiredSessionRevision,
@@ -2169,19 +2473,268 @@ class WalletClient private constructor(
         val task =
             runtime.sessionExpiryScheduler.schedule(delayMillis) {
                 runtime.sessionExpiryDispatcher.dispatch {
-                    expireSessionFromTimer(requiredSessionRevision)
+                    onSessionExpiryTimer(requiredSessionRevision)
                 }
             }
         runtime.sessionExpiryTask = task
+    }
+
+    /** Schedules a recheck after the expiry timer could not reach WaaS, backing off to a cap. */
+    private fun scheduleCredentialRetry(requiredSessionRevision: Long) {
+        synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) return
+            clearSessionExpiryTaskLocked()
+            val delayMillis = runtime.credentialRetryDelayMillis ?: CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS
+            runtime.credentialRetryDelayMillis = minOf(delayMillis * 2, CREDENTIAL_RETRY_MAX_DELAY_MILLIS)
+            runtime.sessionExpiryTask =
+                runtime.sessionExpiryScheduler.schedule(delayMillis) {
+                    runtime.sessionExpiryDispatcher.dispatch {
+                        onSessionExpiryTimer(requiredSessionRevision)
+                    }
+                }
+        }
     }
 
     private fun clearSessionExpiryTaskLocked() {
         runtime.sessionExpiryTask.also { runtime.sessionExpiryTask = null }?.cancel()
     }
 
+    private fun markCredentialCheckedLocked() {
+        runtime.credentialCheckedAt = runtime.now()
+        runtime.credentialRetryDelayMillis = null
+    }
+
+    /** Runs a session check; when it finds the session locally expired, refreshes the expiry first. */
+    private suspend fun <T> refreshingLocalExpiry(
+        operation: OMSWalletOperation?,
+        check: (expireLocally: Boolean) -> T,
+    ): T {
+        val locallyExpired =
+            try {
+                return check(false)
+            } catch (expired: LocallyExpiredSession) {
+                expired
+            }
+        when (val outcome = refreshSessionCredential(locallyExpired.revision, background = false)) {
+            is CredentialRefreshOutcome.Unavailable -> {
+                throw outcome.cause
+            }
+
+            CredentialRefreshOutcome.Ended -> {
+                throw OMSWalletSessionException(
+                    code = OMSWalletErrorCode.SessionExpired,
+                    operation = operation,
+                    message = "Wallet session expired",
+                )
+            }
+
+            else -> {
+                Unit
+            }
+        }
+        return check(true)
+    }
+
+    private fun launchCredentialRefresh(
+        requiredSessionRevision: Long,
+        onOutcome: (CredentialRefreshOutcome) -> Unit = {},
+    ) {
+        try {
+            runtime.credentialRefreshLauncher.launch {
+                onOutcome(refreshSessionCredential(requiredSessionRevision, background = true))
+            }
+        } catch (_: Throwable) {
+            // Background refresh is best effort; local expiry stays in effect.
+        }
+    }
+
+    /**
+     * Reads the session credential's current expiry from WaaS. Concurrent callers for the same
+     * session share one request, and the result is applied only while that session is current.
+     */
+    private suspend fun refreshSessionCredential(
+        requiredSessionRevision: Long,
+        background: Boolean,
+    ): CredentialRefreshOutcome {
+        var owner = false
+        val inFlight =
+            synchronized(runtime.lifecycleLock) {
+                if (
+                    walletSession.revision() != requiredSessionRevision ||
+                    walletSession.snapshot()?.expiresAt.isNullOrBlank()
+                ) {
+                    return CredentialRefreshOutcome.Stale
+                }
+                if (runtime.credentialRefreshUnsupported) {
+                    return CredentialRefreshOutcome.Unsupported
+                }
+                runtime.credentialRefresh?.takeIf { it.revision == requiredSessionRevision }
+                    ?: CredentialRefreshInFlight(requiredSessionRevision, CompletableDeferred()).also {
+                        runtime.credentialRefresh = it
+                        runtime.credentialCheckedAt = runtime.now()
+                        owner = true
+                    }
+            }
+        if (!owner) {
+            val shared = inFlight.result.await()
+            // An awaited check must not settle for a background attempt that was skipped.
+            return if (shared == CredentialRefreshOutcome.Busy && !background) {
+                refreshSessionCredential(requiredSessionRevision, background = false)
+            } else {
+                shared
+            }
+        }
+        val outcome =
+            try {
+                val gate =
+                    if (background) {
+                        runtime.signedRequestGate.tryBeginRefresh()
+                    } else {
+                        runtime.signedRequestGate.beginRefresh()
+                    }
+                if (gate == null) {
+                    CredentialRefreshOutcome.Busy
+                } else {
+                    try {
+                        requestCredentialRefresh(requiredSessionRevision)
+                    } finally {
+                        runtime.signedRequestGate.endRefresh(gate)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                CredentialRefreshOutcome.Unavailable(throwable)
+            }
+        synchronized(runtime.lifecycleLock) {
+            if (runtime.credentialRefresh === inFlight) {
+                runtime.credentialRefresh = null
+            }
+        }
+        inFlight.result.complete(outcome)
+        if (outcome is CredentialRefreshOutcome.Unavailable && outcome.cause is CancellationException) {
+            throw outcome.cause
+        }
+        return outcome
+    }
+
+    private suspend fun requestCredentialRefresh(requiredSessionRevision: Long): CredentialRefreshOutcome {
+        val expiresAt =
+            try {
+                gateway.getCredential(requiredSessionRevision).expiresAt
+            } catch (throwable: CancellationException) {
+                throw throwable
+            } catch (throwable: WebRpcError) {
+                if (throwable.errorKind != ErrorKind.WEBRPC_BAD_ROUTE) {
+                    return CredentialRefreshOutcome.Unavailable(throwable)
+                }
+                // Servers without sliding expiry have no GetCredential; their local expiry is exact.
+                synchronized(runtime.lifecycleLock) { runtime.credentialRefreshUnsupported = true }
+                return CredentialRefreshOutcome.Unsupported
+            } catch (throwable: WebRpcTransportException) {
+                return when (val cause = throwable.cause) {
+                    is OMSWalletSessionException -> {
+                        if (cause.code == OMSWalletErrorCode.SessionExpired) {
+                            CredentialRefreshOutcome.Ended
+                        } else {
+                            CredentialRefreshOutcome.Stale
+                        }
+                    }
+
+                    is IllegalStateException -> {
+                        CredentialRefreshOutcome.Stale
+                    }
+
+                    else -> {
+                        CredentialRefreshOutcome.Unavailable(throwable)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                return CredentialRefreshOutcome.Unavailable(throwable)
+            }
+        return synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) {
+                return@synchronized CredentialRefreshOutcome.Stale
+            }
+            if (OMSWalletIsoTimestamps.parseEpochMillis(expiresAt) == null) {
+                return@synchronized CredentialRefreshOutcome.Refreshed
+            }
+            val updated =
+                walletSession.updateExpiresAt(expiresAt, requiredSessionRevision)
+                    ?: return@synchronized CredentialRefreshOutcome.Stale
+            if (updated.wallet != null) {
+                try {
+                    sessionStore?.save(updated)
+                } catch (_: Throwable) {
+                    // The in-memory expiry is still current; the next refresh persists it again.
+                }
+            }
+            markCredentialCheckedLocked()
+            scheduleSessionExpiryLocked(updated, requiredSessionRevision)
+            CredentialRefreshOutcome.Refreshed
+        }
+    }
+
+    /** Ends the session when WaaS rejects its credential (7202 KeyNotFound, 7203 KeyExpired). */
+    private fun endSessionRejectedByServer(requiredSessionRevision: Long) {
+        val notification =
+            synchronized(runtime.lifecycleLock) {
+                if (walletSession.revision() != requiredSessionRevision) return
+                val snapshot = walletSession.snapshot() ?: return
+                expireSessionLocked(snapshot, requiredSessionRevision).also { notification ->
+                    if (notification == null) {
+                        // Without a parseable expiry there is no event to report; still end the session.
+                        clearSessionUnlocked(
+                            clearOidcRedirectAuth = true,
+                            operation = null,
+                            throwOnFailure = false,
+                            requiredSessionRevision = requiredSessionRevision,
+                        )
+                    }
+                }
+            }
+        notification?.let(::dispatchSessionExpiredNotification)
+    }
+
+    /** After a successful authenticated call, refreshes the expiry in the background when due. */
+    private fun refreshCredentialIfDue(requiredSessionRevision: Long) {
+        val due =
+            synchronized(runtime.lifecycleLock) {
+                val checkedAt = runtime.credentialCheckedAt
+                !runtime.credentialRefreshUnsupported &&
+                    runtime.credentialRefresh == null &&
+                    walletSession.revision() == requiredSessionRevision &&
+                    checkedAt != null &&
+                    runtime.now() - checkedAt >= CREDENTIAL_REFRESH_INTERVAL_MILLIS
+            }
+        if (due) {
+            launchCredentialRefresh(requiredSessionRevision)
+        }
+    }
+
     private fun clearLatestSessionExpiredEventLocked() {
         runtime.latestSessionExpiredEvent = null
         runtime.latestSessionExpiredRevision = null
+    }
+
+    /**
+     * Expiry timer: a locally expired session is first refreshed from WaaS, which may have slid
+     * the expiry. When WaaS is unreachable the session is kept and rechecked later.
+     */
+    private fun onSessionExpiryTimer(requiredSessionRevision: Long) {
+        synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) return
+            val snapshot = walletSession.snapshot() ?: return
+            if (!snapshot.isExpired(runtime.now())) {
+                scheduleSessionExpiryLocked(snapshot, requiredSessionRevision)
+                return
+            }
+        }
+        launchCredentialRefresh(requiredSessionRevision) { outcome ->
+            if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
+                scheduleCredentialRetry(requiredSessionRevision)
+            } else {
+                runtime.sessionExpiryDispatcher.dispatch { expireSessionFromTimer(requiredSessionRevision) }
+            }
+        }
     }
 
     private fun expireSessionFromTimer(requiredSessionRevision: Long) {
@@ -2332,7 +2885,7 @@ class WalletClient private constructor(
         allowCredentialCreation: Boolean,
         endpoint: String,
         body: String,
-    ): String =
+    ): SignedRequestAuthorization =
         synchronized(runtime.lifecycleLock) {
             walletSession.requireRevision(requiredSessionRevision)
             val snapshot = walletSession.snapshot()
@@ -2350,8 +2903,6 @@ class WalletClient private constructor(
             ) {
                 clearSessionUnlocked(
                     clearOidcRedirectAuth = true,
-                    clearSessionStore = true,
-                    clearExpiredEvent = true,
                     operation = null,
                     throwOnFailure = false,
                     requiredSessionRevision = requiredSessionRevision,
@@ -2367,19 +2918,26 @@ class WalletClient private constructor(
                     payload = body,
                     requestPathPrefix = WaasApi.basePath,
                 )
-            WalletRequestSigner.buildWalletSignatureHeader(
-                signingAlgorithm = signer.signingAlgorithm,
-                scope = projectId,
-                credentialId = actualSignerAddress,
-                nonce = nonce,
-                signature = signer.sign(preimage),
+            SignedRequestAuthorization(
+                walletSignatureHeader =
+                    WalletRequestSigner.buildWalletSignatureHeader(
+                        signingAlgorithm = signer.signingAlgorithm,
+                        scope = projectId,
+                        credentialId = actualSignerAddress,
+                        nonce = nonce,
+                        signature = signer.sign(preimage),
+                    ),
+                // Sign-in requests run before WaaS has verified the credential.
+                usesSessionCredential = !snapshot?.expiresAt.isNullOrBlank(),
             )
         }
 
+    /**
+     * Executes [prepared]. [enrichFeeOptions] adds the wallet's balances to the
+     * fee options; it is only called when the caller passes [selectFeeOption].
+     */
     private suspend fun executePreparedTransaction(
-        network: Network?,
-        solanaNetwork: SolanaNetwork?,
-        walletAddress: String?,
+        enrichFeeOptions: suspend (List<FeeOption>) -> List<FeeOptionWithBalance>,
         prepared: PreparedWalletTransaction,
         requiredSessionRevision: Long,
         selectFeeOption: FeeOptionSelector?,
@@ -2388,7 +2946,7 @@ class WalletClient private constructor(
     ): SendTransactionResponse {
         if (waitForStatus) {
             requireValidTransactionStatusPollingOptions(
-                statusPolling ?: defaultTransactionStatusPollingOptions(),
+                statusPolling ?: defaultStatusPolling,
             )
         }
         val feeOption =
@@ -2409,27 +2967,7 @@ class WalletClient private constructor(
                 }
 
                 else -> {
-                    val options =
-                        if (network != null && walletAddress != null) {
-                            enrichFeeOptionsWithBalances(
-                                network = network,
-                                walletAddress = walletAddress,
-                                feeOptions = prepared.feeOptions,
-                            )
-                        } else if (solanaNetwork != null && walletAddress != null) {
-                            enrichSolanaFeeOptionsWithBalances(
-                                network = solanaNetwork,
-                                walletAddress = walletAddress,
-                                feeOptions = prepared.feeOptions,
-                            )
-                        } else {
-                            prepared.feeOptions.mapIndexed { index, feeOption ->
-                                FeeOptionWithBalance(
-                                    feeOption = feeOption,
-                                    selection = FeeOptionSelection(feeOption, index.toUInt()),
-                                )
-                            }
-                        }
+                    val options = enrichFeeOptions(prepared.feeOptions)
                     selectFeeOption.select(options) ?: throw IllegalArgumentException(
                         "No fee option selected for unsponsored transaction",
                     )
@@ -2442,6 +2980,10 @@ class WalletClient private constructor(
                 throw throwable
             } catch (throwable: Throwable) {
                 val sdkError = throwable.toOMSWalletException(OMSWalletOperation.WalletExecute)
+                if (sdkError.code == OMSWalletErrorCode.SessionExpired) {
+                    // WaaS rejected the credential before running Execute, so nothing was sent.
+                    throw sdkError
+                }
                 throw OMSWalletTransactionException(
                     code = OMSWalletErrorCode.TransactionExecutionUnconfirmed,
                     operation = OMSWalletOperation.WalletExecute,
@@ -2465,7 +3007,7 @@ class WalletClient private constructor(
             waitForTransactionStatus(
                 txnId = prepared.txnId,
                 fallbackStatus = executed.status,
-                options = statusPolling ?: defaultTransactionStatusPollingOptions(),
+                options = statusPolling ?: defaultStatusPolling,
                 requiredSessionRevision = requiredSessionRevision,
             )
         return SendTransactionResponse(
@@ -2545,20 +3087,14 @@ class WalletClient private constructor(
         walletAddress: String,
         feeOptions: List<FeeOption>,
     ): List<FeeOptionWithBalance> {
-        val mintAddresses =
-            feeOptions
-                .filterNot { it.token.isNativeToken() }
-                .mapNotNull { it.token.contractAddress.normalizeSolanaAddress() }
-                .distinct()
-        val includesNative = feeOptions.any { it.token.isNativeToken() }
         val balances =
             runCatching {
                 indexerClient.getSolanaBalances(
                     walletAddress = walletAddress,
                     networks = listOf(network),
                     includeMetadata = false,
-                    omitNativeBalances = !includesNative,
-                    mintAddresses = mintAddresses,
+                    omitNativeBalances = !feeOptions.includesNativeToken(),
+                    mintAddresses = feeOptions.gatewayTokenAddresses(),
                 )
             }.getOrNull()
         val nativeBalance =
@@ -2572,26 +3108,76 @@ class WalletClient private constructor(
                 ?.filter { it.network == network }
                 ?.associateBy { it.mintAddress }
                 .orEmpty()
+        return feeOptions.withGatewayBalances(nativeBalance, balancesByMint, { it.balance }, { it.decimals })
+    }
 
-        return feeOptions.mapIndexed { index, feeOption ->
+    private suspend fun enrichTronFeeOptionsWithBalances(
+        network: TronNetwork,
+        walletAddress: String,
+        feeOptions: List<FeeOption>,
+    ): List<FeeOptionWithBalance> {
+        val balances =
+            runCatching {
+                indexerClient.getTronBalances(
+                    walletAddress = walletAddress,
+                    networks = listOf(network),
+                    includeMetadata = false,
+                    omitNativeBalances = !feeOptions.includesNativeToken(),
+                    contractAddresses = feeOptions.gatewayTokenAddresses(),
+                )
+            }.getOrNull()
+        val nativeBalance =
+            balances?.balances?.firstOrNull { balance ->
+                balance is TronBalance.Native && balance.network == network
+            }
+        val balancesByContract =
+            balances
+                ?.balances
+                ?.filterIsInstance<TronBalance.FungibleToken>()
+                ?.filter { it.network == network }
+                ?.associateBy { it.contractAddress }
+                .orEmpty()
+        return feeOptions.withGatewayBalances(nativeBalance, balancesByContract, { it.balance }, { it.decimals })
+    }
+
+    private fun List<FeeOption>.includesNativeToken(): Boolean = any { it.token.isNativeToken() }
+
+    /** Distinct case-sensitive token addresses (Solana mints, Tron contracts) of the non-native fee options. */
+    private fun List<FeeOption>.gatewayTokenAddresses(): List<String> =
+        filterNot { it.token.isNativeToken() }
+            .mapNotNull { it.token.contractAddress.normalizeCaseSensitiveAddress() }
+            .distinct()
+
+    /**
+     * Pairs each fee option with its Solana or Tron gateway balance: [nativeBalance]
+     * for the native token, otherwise the [balancesByAddress] entry for its
+     * case-sensitive token address.
+     */
+    private fun <B : Any> List<FeeOption>.withGatewayBalances(
+        nativeBalance: B?,
+        balancesByAddress: Map<String, B>,
+        rawBalance: (B) -> String,
+        balanceDecimals: (B) -> Int,
+    ): List<FeeOptionWithBalance> =
+        mapIndexed { index, feeOption ->
             val balance =
                 if (feeOption.token.isNativeToken()) {
                     nativeBalance
                 } else {
                     feeOption.token.contractAddress
-                        .normalizeSolanaAddress()
-                        ?.let { balancesByMint[it] }
+                        .normalizeCaseSensitiveAddress()
+                        ?.let { balancesByAddress[it] }
                 }
-            val decimals = balance?.decimals ?: feeOption.token.decimals?.toInt()
+            val decimals = balance?.let(balanceDecimals) ?: feeOption.token.decimals?.toInt()
+            val available = balance?.let(rawBalance)
             FeeOptionWithBalance(
                 feeOption = feeOption,
                 selection = FeeOptionSelection(feeOption, index.toUInt()),
-                available = balance?.balance?.formatTokenAmount(decimals),
-                availableRaw = balance?.balance,
+                available = available?.formatTokenAmount(decimals),
+                availableRaw = available,
                 decimals = decimals,
             )
         }
-    }
 
     private fun String?.normalizeAddress(): String? =
         this
@@ -2599,7 +3185,7 @@ class WalletClient private constructor(
             ?.takeIf { it.isNotEmpty() }
             ?.lowercase()
 
-    private fun String?.normalizeSolanaAddress(): String? =
+    private fun String?.normalizeCaseSensitiveAddress(): String? =
         this
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -2617,15 +3203,13 @@ class WalletClient private constructor(
 
     private fun List<FeeOption>.defaultSelection(): FeeOptionSelection = FeeOptionSelection(first(), 0u)
 
-    private fun String.isEthereumAddress(): Boolean = startsWith("0x")
-
     private suspend fun waitForTransactionStatus(
         txnId: String,
         fallbackStatus: TransactionStatus,
         options: TransactionStatusPollingOptions,
         requiredSessionRevision: Long,
     ): ResolvedTransactionStatus {
-        val deadline = System.currentTimeMillis() + options.timeoutMillis
+        val deadline = System.currentTimeMillis() + options.timeoutMs
         var lastStatus = TransactionStatusResponse(status = fallbackStatus)
         var completedStatusPolls = 0
 
@@ -2666,26 +3250,26 @@ class WalletClient private constructor(
             }
             val nextDelayMillis =
                 if (completedStatusPolls < options.fastPollCount) {
-                    options.fastPollIntervalMillis
+                    options.fastIntervalMs
                 } else {
-                    options.pollIntervalMillis
+                    options.intervalMs
                 }
             transactionStatusDelay(minOf(nextDelayMillis, remainingMillis))
         } while (true)
     }
 
     private fun requireValidTransactionStatusPollingOptions(options: TransactionStatusPollingOptions) {
-        require(options.fastPollIntervalMillis > 0L) {
-            "fastPollIntervalMillis must be greater than zero"
+        require(options.fastIntervalMs > 0L) {
+            "fastIntervalMs must be greater than zero"
         }
         require(options.fastPollCount >= 0) {
             "fastPollCount must not be negative"
         }
-        require(options.pollIntervalMillis > 0L) {
-            "pollIntervalMillis must be greater than zero"
+        require(options.intervalMs > 0L) {
+            "intervalMs must be greater than zero"
         }
-        require(options.timeoutMillis >= 0L) {
-            "timeoutMillis must not be negative"
+        require(options.timeoutMs >= 0L) {
+            "timeoutMs must not be negative"
         }
     }
 
@@ -2693,14 +3277,6 @@ class WalletClient private constructor(
         val response: TransactionStatusResponse,
         val resolution: TransactionStatusResolution,
     )
-
-    private fun defaultTransactionStatusPollingOptions(): TransactionStatusPollingOptions =
-        TransactionStatusPollingOptions(
-            fastPollIntervalMillis = fastTransactionStatusPollIntervalMillis,
-            fastPollCount = fastTransactionStatusPollCount,
-            pollIntervalMillis = transactionStatusPollIntervalMillis,
-            timeoutMillis = transactionStatusPollTimeoutMillis,
-        )
 }
 
 private data class VerifierCommitment(
@@ -2729,10 +3305,36 @@ private data class PreparedWalletTransaction(
 )
 
 private data class ActiveWalletSession(
-    val walletId: String,
-    val walletAddress: String,
+    val wallet: Wallet,
     val revision: Long,
-)
+) {
+    val walletId: String get() = wallet.id
+
+    val walletAddress: String get() = wallet.address
+
+    /** Rejects the operation before any request when the stored wallet type differs. */
+    fun requireWalletType(type: WalletType) {
+        require(wallet.type == type) { "An active ${type.label} wallet is required" }
+    }
+}
+
+private val WalletType.label: String
+    get() =
+        when (this) {
+            WalletType.Ethereum -> "Ethereum"
+            WalletType.Solana -> "Solana"
+            WalletType.Tron -> "Tron"
+            WalletType.UNKNOWN_DEFAULT -> wireValue
+        }
+
+// Mirrors the wallet service: it builds the signature from the arg types and accepts a bare name.
+private val contractMethodNamePattern = Regex("^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+private fun requireContractMethodName(method: String) {
+    require(contractMethodNamePattern.matches(method)) {
+        "method must be a function name such as 'transfer', not a signature; got '$method'"
+    }
+}
 
 private sealed interface WalletImportActivationContext {
     val revision: Long
@@ -2756,6 +3358,12 @@ private data class ExpiryNotification(
     val listeners: List<(OMSWalletSessionExpiredEvent) -> Unit>,
 )
 
+private class SignedRequestAuthorization(
+    val walletSignatureHeader: String,
+    /** True when the request carries the authenticated wallet session's credential. */
+    val usesSessionCredential: Boolean,
+)
+
 private data class ExecutedWalletTransaction(
     val status: TransactionStatus,
 )
@@ -2775,7 +3383,10 @@ private class WaasWalletGateway(
         allowCredentialCreation: Boolean,
         endpoint: String,
         body: String,
-    ) -> String,
+    ) -> SignedRequestAuthorization,
+    private val onSessionCredentialRejected: (requiredSessionRevision: Long) -> Unit,
+    private val onSessionCredentialAccepted: (requiredSessionRevision: Long) -> Unit,
+    private val signedRequestGate: SignedRequestGate,
     private val walletImportTrustedPcr0s: Set<String>?,
 ) {
     private val publicClient: WaasPublicClient =
@@ -3033,6 +3644,34 @@ private class WaasWalletGateway(
                 ),
             ).signature
 
+    suspend fun signTronMessage(
+        walletId: String,
+        message: String,
+        requiredSessionRevision: Long,
+    ): String =
+        signedClient(requiredSessionRevision)
+            .signMessage(
+                SignMessageRequest(
+                    walletId = walletId,
+                    network = "",
+                    message = message,
+                ),
+            ).signature
+
+    suspend fun signTronTypedData(
+        walletId: String,
+        typedData: JsonElement,
+        requiredSessionRevision: Long,
+    ): String =
+        signedClient(requiredSessionRevision)
+            .signTypedData(
+                SignTypedDataRequest(
+                    walletId = walletId,
+                    network = "",
+                    typedData = typedData,
+                ),
+            ).signature
+
     suspend fun signTypedData(
         walletId: String,
         network: Network,
@@ -3049,7 +3688,7 @@ private class WaasWalletGateway(
             ).signature
 
     suspend fun isValidMessageSignature(
-        walletId: String,
+        walletAddress: String,
         network: Network,
         message: String,
         signature: String,
@@ -3059,14 +3698,14 @@ private class WaasWalletGateway(
                 IsValidMessageSignatureRequest(
                     network = network.id.toString(),
                     networkFamily = WaasNetworkFamily.EVM,
-                    walletId = walletId,
+                    walletAddress = walletAddress,
                     message = message,
                     signature = signature,
                 ),
             ).isValid
 
     suspend fun isValidSolanaMessageSignature(
-        walletId: String,
+        walletAddress: String,
         message: String,
         signature: String,
     ): Boolean =
@@ -3074,14 +3713,14 @@ private class WaasWalletGateway(
             .isValidMessageSignature(
                 IsValidMessageSignatureRequest(
                     networkFamily = WaasNetworkFamily.Solana,
-                    walletId = walletId,
+                    walletAddress = walletAddress,
                     message = message,
                     signature = signature,
                 ),
             ).isValid
 
     suspend fun isValidTypedDataSignature(
-        walletId: String,
+        walletAddress: String,
         network: Network,
         typedData: JsonElement,
         signature: String,
@@ -3090,7 +3729,38 @@ private class WaasWalletGateway(
             .isValidTypedDataSignature(
                 IsValidTypedDataSignatureRequest(
                     network = network.id.toString(),
-                    walletId = walletId,
+                    networkFamily = WaasNetworkFamily.EVM,
+                    walletAddress = walletAddress,
+                    typedData = typedData,
+                    signature = signature,
+                ),
+            ).isValid
+
+    suspend fun isValidTronMessageSignature(
+        walletAddress: String,
+        message: String,
+        signature: String,
+    ): Boolean =
+        publicClient
+            .isValidMessageSignature(
+                IsValidMessageSignatureRequest(
+                    networkFamily = WaasNetworkFamily.Tron,
+                    walletAddress = walletAddress,
+                    message = message,
+                    signature = signature,
+                ),
+            ).isValid
+
+    suspend fun isValidTronTypedDataSignature(
+        walletAddress: String,
+        typedData: JsonElement,
+        signature: String,
+    ): Boolean =
+        publicClient
+            .isValidTypedDataSignature(
+                IsValidTypedDataSignatureRequest(
+                    networkFamily = WaasNetworkFamily.Tron,
+                    walletAddress = walletAddress,
                     typedData = typedData,
                     signature = signature,
                 ),
@@ -3153,6 +3823,48 @@ private class WaasWalletGateway(
                     recipient = SolanaRecipient(address = to),
                     amount = amount.toString(),
                     mode = mode.toWaas(),
+                ),
+            ).toPreparedWalletTransaction()
+
+    suspend fun prepareTronTransaction(
+        walletId: String,
+        network: TronNetwork,
+        to: String,
+        value: BigInteger,
+        data: String?,
+        requiredSessionRevision: Long,
+    ): PreparedWalletTransaction =
+        signedClient(requiredSessionRevision)
+            .prepareTronTransaction(
+                // `data` is forwarded as given: null is omitted from the request (a TRX
+                // transfer), while any value, even "0x", makes this a contract call.
+                PrepareTronTransactionRequest(
+                    network = network.wireValue,
+                    walletId = walletId,
+                    to = to,
+                    value = value.toString(),
+                    data = data,
+                    mode = WaasTransactionMode.Native,
+                ),
+            ).toPreparedWalletTransaction()
+
+    suspend fun prepareTronContractCall(
+        walletId: String,
+        network: TronNetwork,
+        contract: String,
+        method: String,
+        args: List<AbiArg>?,
+        requiredSessionRevision: Long,
+    ): PreparedWalletTransaction =
+        signedClient(requiredSessionRevision)
+            .prepareTronContractCall(
+                PrepareTronContractCallRequest(
+                    network = network.wireValue,
+                    walletId = walletId,
+                    contract = contract,
+                    method = method,
+                    args = args?.map { it.toWaas() },
+                    mode = WaasTransactionMode.Native,
                 ),
             ).toPreparedWalletTransaction()
 
@@ -3275,6 +3987,9 @@ private class WaasWalletGateway(
                 ),
             ).idToken
 
+    suspend fun getCredential(requiredSessionRevision: Long): WaasCredentialInfo =
+        signedClient(requiredSessionRevision).getCredential().credential
+
     suspend fun revokeAccess(
         walletId: String,
         targetCredentialId: String,
@@ -3314,38 +4029,42 @@ private class WaasWalletGateway(
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
             val requestPath = WaasApi.basePath + endpoint
-            val walletSignatureHeader =
-                withContext(Dispatchers.IO) {
-                    authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
-                }
-            val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
-            val nonce = WalletImportBase64.encode(nonceBytes)
-            val requestHeaders =
-                defaultSignedHeaders(headers, walletSignatureHeader).toMutableMap().apply {
-                    put("X-Attestation-Nonce", nonce)
-                }
-            val response =
-                transport.postJsonWithStatus(
-                    baseUrl = baseUrl,
-                    path = requestPath,
-                    body = body,
-                    headers = requestHeaders,
-                )
-            val document =
-                response.headers["x-attestation-document"]
-                    ?: throw technology.polygon.omswallet.OMSWalletAttestationException(
-                        message = "WaaS response is missing its attestation document",
+            gatedSignedRequest(requiredSessionRevision, endpoint) {
+                val authorization =
+                    withContext(Dispatchers.IO) {
+                        authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
+                    }
+                val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
+                val nonce = WalletImportBase64.encode(nonceBytes)
+                val requestHeaders =
+                    defaultSignedHeaders(headers, authorization.walletSignatureHeader).toMutableMap().apply {
+                        put("X-Attestation-Nonce", nonce)
+                    }
+                val response =
+                    transport.postJsonWithStatus(
+                        baseUrl = baseUrl,
+                        path = requestPath,
+                        body = body,
+                        headers = requestHeaders,
                     )
-            AttestationVerifier.verify(
-                encodedDocument = document,
-                method = "POST",
-                path = requestPath,
-                requestBody = body,
-                responseBody = response.body,
-                nonce = nonce,
-                trustedPcr0s = trustedPcr0s,
-            )
-            WebRpcHttpResponse(response.statusCode, response.body)
+                val document =
+                    response.headers["x-attestation-document"]
+                        ?: throw technology.polygon.omswallet.OMSWalletAttestationException(
+                            message = "WaaS response is missing its attestation document",
+                        )
+                AttestationVerifier.verify(
+                    encodedDocument = document,
+                    method = "POST",
+                    path = requestPath,
+                    requestBody = body,
+                    responseBody = response.body,
+                    nonce = nonce,
+                    trustedPcr0s = trustedPcr0s,
+                )
+                val accepted =
+                    observeSessionCredentialResponse(requiredSessionRevision, authorization, endpoint, response.statusCode, response.body)
+                WebRpcHttpResponse(response.statusCode, response.body) to accepted
+            }
         }
 
     private fun signedTransport(
@@ -3354,27 +4073,77 @@ private class WaasWalletGateway(
     ): LambdaWebRpcTransport =
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
-            val walletSignatureHeader =
-                withContext(Dispatchers.IO) {
-                    authorizeSignedRequest(
-                        requiredSessionRevision,
-                        allowCredentialCreation,
-                        endpoint,
-                        body,
+            gatedSignedRequest(requiredSessionRevision, endpoint) {
+                val authorization =
+                    withContext(Dispatchers.IO) {
+                        authorizeSignedRequest(
+                            requiredSessionRevision,
+                            allowCredentialCreation,
+                            endpoint,
+                            body,
+                        )
+                    }
+                val response =
+                    transport.postJsonWithStatus(
+                        baseUrl = baseUrl,
+                        path = WaasApi.basePath + endpoint,
+                        body = body,
+                        headers = defaultSignedHeaders(headers, authorization.walletSignatureHeader),
                     )
-                }
-            val response =
-                transport.postJsonWithStatus(
-                    baseUrl = baseUrl,
-                    path = WaasApi.basePath + endpoint,
-                    body = body,
-                    headers = defaultSignedHeaders(headers, walletSignatureHeader),
-                )
-            WebRpcHttpResponse(
-                statusCode = response.statusCode,
-                body = response.body,
+                val accepted =
+                    observeSessionCredentialResponse(requiredSessionRevision, authorization, endpoint, response.statusCode, response.body)
+                WebRpcHttpResponse(
+                    statusCode = response.statusCode,
+                    body = response.body,
+                ) to accepted
+            }
+        }
+
+    /**
+     * Signs and sends one request through [signedRequestGate] (GetCredential is the refresh the
+     * gate serializes, so it bypasses it), then reports an accepted session credential once the
+     * request has left the gate so a due background refresh can start.
+     */
+    private suspend fun gatedSignedRequest(
+        requiredSessionRevision: Long,
+        endpoint: String,
+        block: suspend () -> Pair<WebRpcHttpResponse, Boolean>,
+    ): WebRpcHttpResponse {
+        val (response, accepted) =
+            if (endpoint == WaasApi.GetCredential.path) block() else signedRequestGate.request(block)
+        if (accepted) {
+            onSessionCredentialAccepted(requiredSessionRevision)
+        }
+        return response
+    }
+
+    /**
+     * Reports how WaaS answered a request signed with the wallet session's credential: true when
+     * it was accepted. A 7202 KeyNotFound or 7203 KeyExpired rejection ends the session and fails
+     * the request as expired.
+     */
+    private fun observeSessionCredentialResponse(
+        requiredSessionRevision: Long,
+        authorization: SignedRequestAuthorization,
+        endpoint: String,
+        statusCode: Int,
+        body: String,
+    ): Boolean {
+        if (!authorization.usesSessionCredential) return false
+        if (statusCode in 200..299) {
+            return endpoint != WaasApi.GetCredential.path
+        }
+        val error = decodeWebRpcError(statusCode, body)
+        if (error.errorKind == ErrorKind.KEY_NOT_FOUND || error.errorKind == ErrorKind.KEY_EXPIRED) {
+            onSessionCredentialRejected(requiredSessionRevision)
+            throw OMSWalletSessionException(
+                code = OMSWalletErrorCode.SessionExpired,
+                message = "Wallet session expired",
+                cause = error,
             )
         }
+        return false
+    }
 
     private fun resolveEndpoint(path: String): String =
         when {
@@ -3424,6 +4193,7 @@ private class WaasWalletGateway(
         when (this) {
             WalletType.Ethereum -> WaasWalletType.Ethereum
             WalletType.Solana -> WaasWalletType.Solana
+            WalletType.Tron -> WaasWalletType.Tron
             WalletType.UNKNOWN_DEFAULT -> WaasWalletType.UNKNOWN_DEFAULT
         }
 
@@ -3431,6 +4201,7 @@ private class WaasWalletGateway(
         when (this) {
             WalletType.Ethereum -> WaasNetworkFamily.EVM
             WalletType.Solana -> WaasNetworkFamily.Solana
+            WalletType.Tron -> WaasNetworkFamily.Tron
             WalletType.UNKNOWN_DEFAULT -> WaasNetworkFamily.UNKNOWN_DEFAULT
         }
 
@@ -3446,6 +4217,7 @@ private class WaasWalletGateway(
         when (this) {
             WaasWalletType.Ethereum -> WalletType.Ethereum
             WaasWalletType.Solana -> WalletType.Solana
+            WaasWalletType.Tron -> WalletType.Tron
             WaasWalletType.UNKNOWN_DEFAULT -> WalletType.UNKNOWN_DEFAULT
         }
 
@@ -3454,6 +4226,8 @@ private class WaasWalletGateway(
             WaasNetworkFamily.EVM -> WalletType.Ethereum
 
             WaasNetworkFamily.Solana -> WalletType.Solana
+
+            WaasNetworkFamily.Tron -> WalletType.Tron
 
             WaasNetworkFamily.UNKNOWN_DEFAULT -> throw OMSWalletResponseException(
                 message = "Wallet response has an invalid networkFamily",
@@ -3487,13 +4261,18 @@ private class WaasWalletGateway(
             WaasTransactionStatus.UNKNOWN_DEFAULT -> TransactionStatus.UNKNOWN_DEFAULT
         }
 
-    private fun WaasWallet.toModel(): Wallet =
-        Wallet(
+    private fun WaasWallet.toModel(): Wallet {
+        val type =
+            networkFamily?.toWalletType() ?: throw OMSWalletResponseException(
+                message = "Wallet response is missing networkFamily",
+            )
+        // Checks the shape only; EIP-55 checksum casing is not enforced.
+        if (type == WalletType.Ethereum && !address.isEthereumHexAddress()) {
+            throw OMSWalletResponseException(message = "Ethereum wallet response has an invalid address")
+        }
+        return Wallet(
             id = id,
-            type =
-                networkFamily?.toWalletType() ?: throw OMSWalletResponseException(
-                    message = "Wallet response is missing networkFamily",
-                ),
+            type = type,
             address = address,
             reference = reference,
             keyOrigin =
@@ -3501,6 +4280,7 @@ private class WaasWalletGateway(
                     message = "Wallet response is missing keyOrigin",
                 ),
         )
+    }
 
     private fun WaasFeeToken.toModel(): FeeToken =
         FeeToken(
@@ -3601,7 +4381,7 @@ private class WaasWalletGateway(
     private fun SmartSessionGrant.toWaas(): Grant =
         when (this) {
             is SmartSessionGrant.NativeTransfer -> {
-                require(to.isEthereumAddressValue()) { "Invalid native transfer recipient" }
+                require(to.isEthereumHexAddress()) { "Invalid native transfer recipient" }
                 require(limit.signum() >= 0) { "Native transfer limit must be non-negative" }
                 Grant(
                     kind = GrantKind.NativeTransfer,
@@ -3610,8 +4390,8 @@ private class WaasWalletGateway(
             }
 
             is SmartSessionGrant.Erc20Transfer -> {
-                require(token.isEthereumAddressValue()) { "Invalid ERC-20 token address" }
-                require(to?.isEthereumAddressValue() != false) { "Invalid ERC-20 recipient" }
+                require(token.isEthereumHexAddress()) { "Invalid ERC-20 token address" }
+                require(to?.isEthereumHexAddress() != false) { "Invalid ERC-20 recipient" }
                 require(limit.signum() >= 0) { "ERC-20 transfer limit must be non-negative" }
                 Grant(
                     kind = GrantKind.ERC20Transfer,
@@ -3695,13 +4475,10 @@ private class WaasWalletGateway(
         value: String,
         field: String,
     ) {
-        if (!value.isEthereumAddressValue()) {
+        if (!value.isEthereumHexAddress()) {
             throw OMSWalletResponseException(message = "Session contains an invalid $field")
         }
     }
-
-    private fun String.isEthereumAddressValue(): Boolean =
-        length == 42 && startsWith("0x") && drop(2).all { it.digitToIntOrNull(16) != null }
 
     private fun WaasTransactionStatusResponse.toModel(): TransactionStatusResponse =
         TransactionStatusResponse(
@@ -3717,8 +4494,10 @@ private class WaasWalletGateway(
         )
 
     companion object {
+        // Mirrors the generated TypeScript/Swift WebrpcHeaderValue; the Kotlin target emits no
+        // header constant, so the generator versions come from the WaasWalletClient.kt header.
         private const val waasWebrpcHeaderValue =
-            "webrpc@v0.37.2;gen-kotlin@v0.3.2;waas@$WEBRPC_SCHEMA_VERSION"
+            "webrpc@v0.47.0;kotlin@v0.47.0;waas@$WEBRPC_SCHEMA_VERSION"
     }
 }
 
@@ -3726,8 +4505,13 @@ private fun String.toWalletType(): WalletType =
     when (this) {
         WalletType.Ethereum.wireValue -> WalletType.Ethereum
         WalletType.Solana.wireValue -> WalletType.Solana
+        WalletType.Tron.wireValue -> WalletType.Tron
         else -> WalletType.UNKNOWN_DEFAULT
     }
+
+/** Shape-only `0x` + 40 hex check; EIP-55 checksum casing is not enforced. */
+@JvmSynthetic
+internal fun String.isEthereumHexAddress(): Boolean = length == 42 && startsWith("0x") && drop(2).all { it.digitToIntOrNull(16) != null }
 
 internal fun interface SessionExpiryScheduler {
     fun schedule(
@@ -3742,6 +4526,25 @@ internal fun interface SessionExpiryTask {
 
 internal fun interface SessionExpiryDispatcher {
     fun dispatch(action: () -> Unit)
+}
+
+/** Starts fire-and-forget credential expiry refreshes off the caller's thread. */
+internal fun interface CredentialRefreshLauncher {
+    fun launch(block: suspend () -> Unit)
+}
+
+private object BackgroundCredentialRefreshLauncher : CredentialRefreshLauncher {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun launch(block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (_: Throwable) {
+                // Refresh outcomes are handled by the block; nothing may escape to the app.
+            }
+        }
+    }
 }
 
 private object TimerSessionExpiryScheduler : SessionExpiryScheduler {
@@ -3786,27 +4589,29 @@ private fun OMSWalletSessionSnapshot.isExpired(referenceTime: Long): Boolean {
 
 private fun OMSWalletSessionSnapshot.expiresAtEpochMillis(): Long? = expiresAt?.let(OMSWalletIsoTimestamps::parseEpochMillis)
 
-private fun OMSWalletSessionSnapshot?.toSessionState(): OMSWalletSessionState {
-    val snapshot = this ?: return OMSWalletSessionState(walletAddress = null)
-    val walletAddress = snapshot.walletAddress
-    if (snapshot.walletId.isNullOrBlank() || walletAddress.isNullOrBlank()) {
-        return OMSWalletSessionState(walletAddress = null)
-    }
-    return OMSWalletSessionState(
-        walletAddress = walletAddress,
-        expiresAt = snapshot.expiresAt,
-        auth = snapshot.auth,
-    )
+/** Public session metadata for an active wallet session; null while signed out or pending. */
+private fun OMSWalletSessionSnapshot.toPublicSession(): OMSWalletSession? {
+    if (wallet == null) return null
+    val expiresAt = expiresAt?.takeIf(String::isNotBlank) ?: return null
+    val auth = auth ?: return null
+    return OMSWalletSession(expiresAt = expiresAt, auth = auth)
 }
 
+/** [OMSWalletSessionExpiredEvent.wallet] is null when a manual wallet selection was pending. */
 private fun OMSWalletSessionSnapshot.toSessionExpiredEvent(): OMSWalletSessionExpiredEvent? {
     expiresAtEpochMillis() ?: return null
     val expiredAt = expiresAt ?: return null
+    val auth = auth ?: return null
     return OMSWalletSessionExpiredEvent(
-        session = toSessionState(),
+        wallet = wallet,
+        session = OMSWalletSession(expiresAt = expiredAt, auth = auth),
         expiredAt = expiredAt,
     )
 }
+
+private const val CREDENTIAL_REFRESH_INTERVAL_MILLIS: Long = 6 * 60 * 60 * 1000L
+private const val CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS: Long = 60_000L
+private const val CREDENTIAL_RETRY_MAX_DELAY_MILLIS: Long = 15 * 60_000L
 
 private const val GOOGLE_ISSUER: String = "https://accounts.google.com"
 private const val APPLE_ISSUER: String = "https://appleid.apple.com"

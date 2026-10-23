@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal class AndroidKeystoreP256CredentialSigner(
     context: Context,
-    private val alias: String = DEFAULT_KEY_ALIAS,
-    nonceStoreName: String = DEFAULT_NONCE_STORE_NAME,
+    private val alias: String,
+    nonceStoreName: String,
 ) : CredentialSigner {
     override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
 
@@ -158,7 +158,5 @@ internal class AndroidKeystoreP256CredentialSigner(
         private const val SECP256R1 = "secp256r1"
         private const val SHA256_WITH_ECDSA = "SHA256withECDSA"
         private const val P256_FIELD_SIZE_BYTES = 32
-        private const val DEFAULT_KEY_ALIAS = "oms-wallet-webcrypto-p256"
-        private const val DEFAULT_NONCE_STORE_NAME = "oms-wallet-credential-nonces"
     }
 }

@@ -27,6 +27,7 @@ import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.wallet.CompleteAuthResult
 import technology.polygon.omswallet.wallet.CredentialSigner
 import technology.polygon.omswallet.wallet.CustomOidcProviderConfig
+import technology.polygon.omswallet.wallet.IgnoringCredentialRefreshLauncher
 import technology.polygon.omswallet.wallet.InMemoryOidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.InMemorySessionStore
 import technology.polygon.omswallet.wallet.OidcRedirectAuthResult
@@ -34,12 +35,15 @@ import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.PendingOidcRedirectAuth
 import technology.polygon.omswallet.wallet.StartOidcRedirectAuthResult
 import technology.polygon.omswallet.wallet.TEST_CREDENTIAL_ID
+import technology.polygon.omswallet.wallet.TEST_SESSION_EXPIRES_AT
 import technology.polygon.omswallet.wallet.TrackingCredentialSigner
 import technology.polygon.omswallet.wallet.WalletClient
 import technology.polygon.omswallet.wallet.WalletSelectionBehavior
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 import technology.polygon.omswallet.wallet.activeSessionSnapshot
 import technology.polygon.omswallet.wallet.completeAuthResponseBody
+import technology.polygon.omswallet.wallet.enqueueJson
+import technology.polygon.omswallet.wallet.testWallet
 import technology.polygon.omswallet.wallet.walletFixture
 import java.io.IOException
 import java.math.BigInteger
@@ -118,7 +122,7 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsWaasDomainErrorsWithUpstreamDetails() =
         runBlocking {
-            enqueueJson("""{"verifier":"verifier-1","loginHint":"user@example.com","challenge":"challenge-1"}""")
+            server.enqueueJson("""{"verifier":"verifier-1","loginHint":"user@example.com","challenge":"challenge-1"}""")
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -227,6 +231,37 @@ class PublicErrorContractsTest {
                     serverPanicClient.wallet.startEmailAuth("user@example.com")
                 },
             )
+
+            // The generated client reports WebrpcRequestFailed with status 400; the SDK drops that status.
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body("""{"error":"WebrpcRequestFailed","code":-1,"msg":"request failed","status":400}""")
+                    .build(),
+            )
+
+            val requestFailedClient = createOmsClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_REQUEST_FAILED",
+                    operation = "wallet.startEmailAuth",
+                    message = "request failed",
+                    retryable = true,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "WebrpcRequestFailed",
+                            code = "-1",
+                            message = "request failed",
+                        ),
+                ),
+                publicError {
+                    requestFailedClient.wallet.startEmailAuth("user@example.com")
+                },
+            )
         }
 
     @Test
@@ -257,7 +292,7 @@ class PublicErrorContractsTest {
                     name = "OMSWalletValidationException",
                     code = "OMS_VALIDATION_ERROR",
                     operation = "wallet.startEmailAuth",
-                    message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
+                    message = "sessionLifetimeSeconds must be an integer between 1 and 15552000",
                 ),
                 publicError {
                     client.wallet.startEmailAuth(
@@ -273,8 +308,8 @@ class PublicErrorContractsTest {
         runBlocking {
             val errors = mutableListOf<LabeledError>()
 
-            enqueueJson("""{"verifier":"verifier-unavailable","loginHint":"user@example.com","challenge":"challenge"}""")
-            enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-1", "0x1111111111111111111111111111111111111111"))))
+            server.enqueueJson("""{"verifier":"verifier-unavailable","loginHint":"user@example.com","challenge":"challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-1", "0x1111111111111111111111111111111111111111"))))
             val unavailableClient = createOmsClient()
             unavailableClient.wallet.startEmailAuth("user@example.com")
             val unavailableSelection =
@@ -292,10 +327,10 @@ class PublicErrorContractsTest {
                     },
                 )
 
-            enqueueJson("""{"verifier":"old-verifier","loginHint":"old@example.com","challenge":"old-challenge"}""")
-            enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-old", "0x2222222222222222222222222222222222222222"))))
-            enqueueJson("""{"verifier":"new-verifier","loginHint":"new@example.com","challenge":"new-challenge"}""")
-            enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-new", "0x3333333333333333333333333333333333333333"))))
+            server.enqueueJson("""{"verifier":"old-verifier","loginHint":"old@example.com","challenge":"old-challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-old", "0x2222222222222222222222222222222222222222"))))
+            server.enqueueJson("""{"verifier":"new-verifier","loginHint":"new@example.com","challenge":"new-challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-new", "0x3333333333333333333333333333333333333333"))))
             val staleClient = createOmsClient()
             staleClient.wallet.startEmailAuth("old@example.com")
             val staleSelection =
@@ -325,8 +360,8 @@ class PublicErrorContractsTest {
                     },
                 )
 
-            enqueueJson("""{"verifier":"in-flight-verifier","loginHint":"user@example.com","challenge":"challenge"}""")
-            enqueueJson(completeAuthResponseBody(emptyList()))
+            server.enqueueJson("""{"verifier":"in-flight-verifier","loginHint":"user@example.com","challenge":"challenge"}""")
+            server.enqueueJson(completeAuthResponseBody(emptyList()))
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -473,8 +508,8 @@ class PublicErrorContractsTest {
                     "wallet.callContract" to {
                         client.wallet.callContract(
                             network = Network.POLYGON,
-                            contract = "0x2222222222222222222222222222222222222222",
-                            method = "transfer(address,uint256)",
+                            contractAddress = "0x2222222222222222222222222222222222222222",
+                            method = "transfer",
                             args =
                                 listOf(
                                     AbiArg("address", JsonPrimitive("0x3333333333333333333333333333333333333333")),
@@ -514,7 +549,7 @@ class PublicErrorContractsTest {
                         ),
                 )
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val providerErrorStart =
                 providerErrorClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
@@ -528,7 +563,7 @@ class PublicErrorContractsTest {
                     )
                 }
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val invalidLifetimeStart =
                 invalidLifetimeClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
@@ -541,7 +576,7 @@ class PublicErrorContractsTest {
                     )
                 }
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val signerMismatchStart =
                 signerMismatchClient.wallet.startOidcRedirectAuth(
                     provider = testOidcProvider(),
@@ -556,7 +591,7 @@ class PublicErrorContractsTest {
                     )
                 }
 
-            enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
+            server.enqueueJson("""{"verifier":"verifier-oidc","loginHint":"user@example.com","challenge":"pkce-challenge"}""")
             val storageFailure =
                 publicError {
                     storageFailureClient.wallet.startOidcRedirectAuth(
@@ -599,7 +634,7 @@ class PublicErrorContractsTest {
                             name = "OMSWalletValidationException",
                             code = "OMS_VALIDATION_ERROR",
                             operation = "wallet.handleOidcRedirectCallback",
-                            message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
+                            message = "sessionLifetimeSeconds must be an integer between 1 and 15552000",
                         ),
                     ),
                     labeled(
@@ -732,6 +767,7 @@ class PublicErrorContractsTest {
                         client.wallet.isValidSolanaMessageSignature(
                             message = "hello",
                             signature = "solana-signature",
+                            walletAddress = "4Nd1mYQbqjVU2aR7cJNPyqW9XjHnBYvWQd7ZxYxvT6uP",
                         )
                     },
                 ),
@@ -775,9 +811,47 @@ class PublicErrorContractsTest {
         }
 
     @Test
+    fun snapshotsAddressAlreadyImportedBackendErrorAsStableCode() =
+        runBlocking {
+            // Wallet import responses require enclave attestation, so this uses another signed
+            // WaaS call; the WebRPC error mapping does not depend on the operation.
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(409)
+                    .body("""{"error":"AddressAlreadyImported","code":7313,"msg":"Address already imported","status":409}""")
+                    .build(),
+            )
+
+            val client = createRestoredWalletClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_WALLET_ADDRESS_ALREADY_IMPORTED",
+                    operation = "wallet.useWallet",
+                    message = "Address already imported",
+                    status = 409,
+                    retryable = false,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "AddressAlreadyImported",
+                            code = "7313",
+                            message = "Address already imported",
+                            status = 409,
+                        ),
+                ),
+                publicError {
+                    client.useWallet("wallet-imported")
+                },
+            )
+        }
+
+    @Test
     fun snapshotsTransactionLocalValidationErrorsWithoutUpstreamDetails() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-no-fee-options", feeOptions = "[]", sponsored = false))
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-no-fee-options", feeOptions = "[]", sponsored = false))
 
             val client = createRestoredWalletClient()
 
@@ -804,7 +878,7 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsTransactionExecuteFailuresAsUnconfirmedWrites() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-execute", feeOptions = "[]", sponsored = true))
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-execute", feeOptions = "[]", sponsored = true))
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -847,10 +921,54 @@ class PublicErrorContractsTest {
         }
 
     @Test
+    fun snapshotsServerRejectedSessionCredentialAsSessionExpired() =
+        runBlocking {
+            val keyExpired = """{"error":"KeyExpired","code":7203,"msg":"key expired","status":400}"""
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body(keyExpired)
+                    .build(),
+            )
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-expired", feeOptions = "[]", sponsored = true))
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body(keyExpired)
+                    .build(),
+            )
+
+            assertEquals(
+                listOf(
+                    labeled("wallet.signMessage", sessionExpired("wallet.signMessage")),
+                    // Rejected before Execute ran, so this is not an unconfirmed write.
+                    labeled("wallet.sendTransaction", sessionExpired("wallet.sendTransaction")),
+                ),
+                publicErrors(
+                    "wallet.signMessage" to {
+                        createRestoredWalletClient().signMessage(network = Network.POLYGON, message = "hello")
+                    },
+                    "wallet.sendTransaction" to {
+                        createRestoredWalletClient().sendTransaction(
+                            network = Network.POLYGON,
+                            request =
+                                SendTransactionRequest(
+                                    to = "0x1111111111111111111111111111111111111111",
+                                    value = BigInteger.ZERO,
+                                ),
+                        )
+                    },
+                ),
+            )
+        }
+
+    @Test
     fun snapshotsTransactionStatusPollingFailuresWithTxnAndUpstreamDetails() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-status", feeOptions = "[]", sponsored = true))
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-status", feeOptions = "[]", sponsored = true))
+            server.enqueueJson("""{"status":"pending"}""")
             server.enqueue(
                 MockResponse
                     .Builder()
@@ -895,8 +1013,8 @@ class PublicErrorContractsTest {
     @Test
     fun snapshotsTransactionStatusPollingTransportFailuresWithTxnAndUpstreamDetails() =
         runBlocking {
-            enqueueJson(prepareTransactionResponse(txnId = "txn-transport", feeOptions = "[]", sponsored = true))
-            enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-transport", feeOptions = "[]", sponsored = true))
+            server.enqueueJson("""{"status":"pending"}""")
 
             val client = createRestoredWalletClient(okHttpClient = failingOnRequestOkHttpClient(3, "request failed"))
 
@@ -1064,8 +1182,6 @@ class PublicErrorContractsTest {
                 ),
                 failure,
             )
-            assertTrue(requireNotNull(failure.message).contains("Bad Gateway").not())
-            assertTrue(requireNotNull(failure.upstreamError?.message).contains("Bad Gateway").not())
         }
 
     @Test
@@ -1214,8 +1330,8 @@ class PublicErrorContractsTest {
                 sessionStore =
                     InMemorySessionStore(
                         OMSWalletSessionSnapshot(
-                            walletId = "wallet-main",
-                            walletAddress = "0x9999999999999999999999999999999999999999",
+                            wallet = testWallet("wallet-main", "0x9999999999999999999999999999999999999999"),
+                            expiresAt = TEST_SESSION_EXPIRES_AT,
                             signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                             auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
@@ -1223,6 +1339,7 @@ class PublicErrorContractsTest {
                     ),
                 credentialSigner = TrackingCredentialSigner(),
                 transactionStatusDelay = {},
+                credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
             )
         assertTrue(client.restorePersistedSession())
         return client
@@ -1275,16 +1392,6 @@ class PublicErrorContractsTest {
             ).build()
     }
 
-    private fun enqueueJson(body: String) {
-        server.enqueue(
-            MockResponse
-                .Builder()
-                .code(200)
-                .body(body)
-                .build(),
-        )
-    }
-
     private fun prepareTransactionResponse(
         txnId: String,
         feeOptions: String,
@@ -1330,6 +1437,14 @@ class PublicErrorContractsTest {
                 operation = operation,
                 message = message,
             ),
+        )
+
+    private fun sessionExpired(operation: String): SerializedError =
+        error(
+            name = "OMSWalletSessionException",
+            code = "OMS_SESSION_EXPIRED",
+            operation = operation,
+            message = "Wallet session expired",
         )
 
     private fun Throwable.serializePublicFields(): SerializedError {

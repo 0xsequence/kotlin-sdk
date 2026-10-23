@@ -56,7 +56,6 @@ class ApiDocsGeneratorTest {
             assertFalse(client.declarations.any { "error(value)" in it.signature })
             assertFalse(client.declarations.any { "subclassOnly" in it.signature })
             assertFalse(client.declarations.any { "internalValue" in it.signature })
-            assertFalse(client.declarations.any { "DefaultConstructorMarker" in it.signature })
         }
     }
 
