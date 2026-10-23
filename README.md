@@ -135,8 +135,14 @@ OTP state is kept in memory. OIDC redirect state is stored only to complete the
 browser redirect flow and is cleared when the flow completes, fails, or is
 replaced.
 
-Expired sessions are made inactive before protected wallet operations and throw
-`OMSWalletSessionException` with `code = OMSWalletErrorCode.SessionExpired`. The SDK
+Before treating a session as expired, the SDK asks the wallet API for the credential's
+current expiry, which may have been extended with use. If the device is offline at that
+point, the session is kept: the expiry check is retried later, and protected operations
+fail with the network error instead. Sessions the wallet API reports as expired or unknown
+(and sessions that are past their expiry on wallet API versions without expiry refresh) are
+made inactive before protected wallet operations and throw
+`OMSWalletSessionException` with `code = OMSWalletErrorCode.SessionExpired`. The same
+happens when the wallet API rejects the session's credential during a request. The SDK
 clears the active signer/session state, but keeps expired completed-session
 metadata in storage until the app starts a new auth flow or calls `signOut()`.
 Subscribe with `omsWallet.wallet.onSessionExpired { event -> ... }` to route users
@@ -162,9 +168,10 @@ Completed auth requests ask the wallet API for a one-week session lifetime by de
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds).
 Pass `sessionLifetimeSeconds` to `startEmailAuth`, `signInWithOidcIdToken`,
 `startOidcRedirectAuth`, or `handleOidcRedirectCallback` to request a different
-value from 1 through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000`
-seconds, 30 days). Invalid lifetimes are reported as
-`OMSWalletErrorCode.ValidationError`.
+value from 1 through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`15_552_000`
+seconds, 180 days). Invalid lifetimes are reported as
+`OMSWalletErrorCode.ValidationError`. The lifetime is a ceiling: the wallet API keeps a
+session alive with use, extending its expiry up to that ceiling.
 
 ### OIDC ID-Token Auth
 
@@ -336,7 +343,11 @@ when (activeWallet?.type) {
 
 `activeWallet` has the same shape as `listWallets()` entries (`id`, `type`,
 `address`, `reference`, `keyOrigin`). `session` is non-null exactly when
-`activeWallet` is. `expiresAt` is an ISO-8601 timestamp string returned by the wallet API. OIDC
+`activeWallet` is. `expiresAt` is an ISO-8601 timestamp string with the session's current
+expiry: the wallet API extends it with use up to the requested lifetime, and the SDK refreshes it
+after a session is restored, before treating the session as expired, and periodically while the
+session is in use, so the value can change while the session stays active. `CompleteAuthResult.credential.expiresAt`
+is the same current expiry at sign-in. OIDC
 sessions include issuer/provider metadata on `OMSWalletOidcSessionAuth`, so apps
 can display built-in Google and Apple sessions by provider label.
 
@@ -360,7 +371,7 @@ Completed auth requests ask the wallet API for a one-week session lifetime by
 default. For email auth, pass `sessionLifetimeSeconds` to `startEmailAuth`; the
 SDK stores it with the pending OTP attempt and uses it when
 `completeEmailAuth` succeeds. Custom values must be from 1 through
-`WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`2_592_000` seconds, 30 days). For
+`WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`15_552_000` seconds, 180 days). For
 OIDC redirects, values passed to `startOidcRedirectAuth` are stored with the
 pending redirect state and used on callback completion unless
 `handleOidcRedirectCallback` overrides them.

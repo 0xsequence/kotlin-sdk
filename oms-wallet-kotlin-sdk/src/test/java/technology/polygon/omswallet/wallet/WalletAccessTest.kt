@@ -112,6 +112,7 @@ class WalletAccessTest {
                                 ),
                         ),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000111"),
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                 )
             assertTrue(client.restorePersistedSession())
 
@@ -223,6 +224,7 @@ class WalletAccessTest {
                                 ),
                         ),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                 )
             assertTrue(client.restorePersistedSession())
 
@@ -370,6 +372,7 @@ class WalletAccessTest {
                                 ),
                         ),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000113"),
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                 )
             assertTrue(client.restorePersistedSession())
 

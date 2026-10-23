@@ -47,6 +47,15 @@ val email = omsWallet.wallet.session?.auth?.email
 manual wallet selection was still pending. `wallet` is the first constructor property, so code that
 creates or destructures the event positionally must account for it; prefer named arguments.
 
+### Sliding session expiry
+
+The wallet API now extends a session's expiry with use, up to the requested lifetime, and
+`WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
+(`15_552_000`); the default lifetime is unchanged. `OMSWalletSession.expiresAt` and
+`WalletCredential.expiresAt` are the current expiry, which the SDK refreshes, so do not cache them
+as a fixed end time. A session also ends with `OMS_SESSION_EXPIRED` (and an `onSessionExpired`
+event) when the wallet API reports its credential expired or unknown.
+
 ### One-time sign-in after upgrading
 
 Saved sessions now record the full active wallet, including its type. Sessions saved by 0.3.x do

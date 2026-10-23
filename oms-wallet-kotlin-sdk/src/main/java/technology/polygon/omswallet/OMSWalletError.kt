@@ -285,9 +285,9 @@ internal suspend fun <T> runOMSWalletOperation(
     } catch (throwable: WebRpcError) {
         throw throwable.toOMSWalletException(operation)
     } catch (throwable: WebRpcTransportException) {
-        val attestationFailure = throwable.attestationFailure(operation)
-        if (attestationFailure != null) {
-            throw attestationFailure
+        val sdkFailure = throwable.sdkFailure(operation)
+        if (sdkFailure != null) {
+            throw sdkFailure
         }
         throw OMSWalletRequestException(
             operation = operation,
@@ -394,7 +394,7 @@ internal fun Throwable.toOMSWalletException(operation: OMSWalletOperation): OMSW
         }
 
         is WebRpcTransportException -> {
-            attestationFailure(operation)
+            sdkFailure(operation)
                 ?: OMSWalletRequestException(
                     operation = operation,
                     upstreamError = toWaasUpstreamError(),
@@ -508,8 +508,16 @@ private fun OMSWalletException.withOperation(operation: OMSWalletOperation): OMS
         }
     }
 
-private fun WebRpcTransportException.attestationFailure(operation: OMSWalletOperation): OMSWalletException? =
-    (cause as? OMSWalletAttestationException)?.let { failure ->
+/**
+ * SDK failures raised inside a WaaS transport: attestation failures, and the session-expired
+ * error raised when WaaS rejects the active session's credential (7202 KeyNotFound or 7203
+ * KeyExpired). The generated client wraps both in [WebRpcTransportException].
+ */
+private fun WebRpcTransportException.sdkFailure(operation: OMSWalletOperation): OMSWalletException? =
+    (
+        (cause as? OMSWalletAttestationException)
+            ?: (cause as? OMSWalletSessionException)?.takeIf { it.code == OMSWalletErrorCode.SessionExpired }
+    )?.let { failure ->
         if (failure.operation == operation) failure else failure.withOperation(operation)
     }
 

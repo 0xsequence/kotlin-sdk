@@ -225,6 +225,26 @@ internal class OMSWalletSessionStateMachine {
             revision
         }
 
+    /**
+     * Replaces the authenticated session's expiry without bumping the revision: the credential
+     * is unchanged, so in-flight operations keep their session ownership. Returns the updated
+     * snapshot, or null when [requiredRevision] is stale or no credential has been verified.
+     */
+    fun updateExpiresAt(
+        expiresAt: String,
+        requiredRevision: Long,
+    ): OMSWalletSessionSnapshot? =
+        synchronized(lock) {
+            if (revision != requiredRevision) return@synchronized null
+            state =
+                when (val current = state) {
+                    is SessionState.ActiveSession -> current.copy(expiresAt = expiresAt)
+                    is SessionState.AwaitingWalletSelection -> current.copy(expiresAt = expiresAt)
+                    else -> return@synchronized null
+                }
+            state.snapshot()
+        }
+
     fun requireSnapshot(requiredRevision: Long? = null): OMSWalletSessionSnapshot =
         synchronized(lock) {
             requiredRevision?.let(::requireCurrentRevision)

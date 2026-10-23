@@ -27,6 +27,7 @@ import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.wallet.CompleteAuthResult
 import technology.polygon.omswallet.wallet.CredentialSigner
 import technology.polygon.omswallet.wallet.CustomOidcProviderConfig
+import technology.polygon.omswallet.wallet.IgnoringCredentialRefreshLauncher
 import technology.polygon.omswallet.wallet.InMemoryOidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.InMemorySessionStore
 import technology.polygon.omswallet.wallet.OidcRedirectAuthResult
@@ -291,7 +292,7 @@ class PublicErrorContractsTest {
                     name = "OMSWalletValidationException",
                     code = "OMS_VALIDATION_ERROR",
                     operation = "wallet.startEmailAuth",
-                    message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
+                    message = "sessionLifetimeSeconds must be an integer between 1 and 15552000",
                 ),
                 publicError {
                     client.wallet.startEmailAuth(
@@ -633,7 +634,7 @@ class PublicErrorContractsTest {
                             name = "OMSWalletValidationException",
                             code = "OMS_VALIDATION_ERROR",
                             operation = "wallet.handleOidcRedirectCallback",
-                            message = "sessionLifetimeSeconds must be an integer between 1 and 2592000",
+                            message = "sessionLifetimeSeconds must be an integer between 1 and 15552000",
                         ),
                     ),
                     labeled(
@@ -916,6 +917,50 @@ class PublicErrorContractsTest {
                             ),
                     )
                 },
+            )
+        }
+
+    @Test
+    fun snapshotsServerRejectedSessionCredentialAsSessionExpired() =
+        runBlocking {
+            val keyExpired = """{"error":"KeyExpired","code":7203,"msg":"key expired","status":400}"""
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body(keyExpired)
+                    .build(),
+            )
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-expired", feeOptions = "[]", sponsored = true))
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body(keyExpired)
+                    .build(),
+            )
+
+            assertEquals(
+                listOf(
+                    labeled("wallet.signMessage", sessionExpired("wallet.signMessage")),
+                    // Rejected before Execute ran, so this is not an unconfirmed write.
+                    labeled("wallet.sendTransaction", sessionExpired("wallet.sendTransaction")),
+                ),
+                publicErrors(
+                    "wallet.signMessage" to {
+                        createRestoredWalletClient().signMessage(network = Network.POLYGON, message = "hello")
+                    },
+                    "wallet.sendTransaction" to {
+                        createRestoredWalletClient().sendTransaction(
+                            network = Network.POLYGON,
+                            request =
+                                SendTransactionRequest(
+                                    to = "0x1111111111111111111111111111111111111111",
+                                    value = BigInteger.ZERO,
+                                ),
+                        )
+                    },
+                ),
             )
         }
 
@@ -1294,6 +1339,7 @@ class PublicErrorContractsTest {
                     ),
                 credentialSigner = TrackingCredentialSigner(),
                 transactionStatusDelay = {},
+                credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
             )
         assertTrue(client.restorePersistedSession())
         return client
@@ -1391,6 +1437,14 @@ class PublicErrorContractsTest {
                 operation = operation,
                 message = message,
             ),
+        )
+
+    private fun sessionExpired(operation: String): SerializedError =
+        error(
+            name = "OMSWalletSessionException",
+            code = "OMS_SESSION_EXPIRED",
+            operation = operation,
+            message = "Wallet session expired",
         )
 
     private fun Throwable.serializePublicFields(): SerializedError {

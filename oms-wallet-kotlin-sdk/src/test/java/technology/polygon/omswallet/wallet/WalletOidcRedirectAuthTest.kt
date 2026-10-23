@@ -316,7 +316,7 @@ class WalletOidcRedirectAuthTest {
                                 authorizationUrl = "https://issuer.example/oauth/authorize",
                                 providerRedirectUri = "omsclientkotlindemo://auth/callback",
                             ),
-                        sessionLifetimeSeconds = 2_592_001L,
+                        sessionLifetimeSeconds = 15_552_001L,
                     )
                 }.exceptionOrNull()
 
@@ -324,7 +324,7 @@ class WalletOidcRedirectAuthTest {
             error as OMSWalletException
             assertEquals(OMSWalletErrorCode.ValidationError, error.code)
             assertEquals("wallet.startOidcRedirectAuth", error.operation?.id)
-            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
+            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 15552000", error.message)
             assertEquals(0, server.requestCount)
             assertNull(redirectStore.pending)
         }

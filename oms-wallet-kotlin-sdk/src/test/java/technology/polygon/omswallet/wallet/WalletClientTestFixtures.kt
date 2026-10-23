@@ -1,5 +1,6 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -323,6 +324,12 @@ internal class RecordingSessionExpiryDispatcher : SessionExpiryDispatcher {
     }
 }
 
+/** Drops background credential refreshes so tests that restore a session control every request. */
+internal val IgnoringCredentialRefreshLauncher = CredentialRefreshLauncher { }
+
+/** Runs background credential refreshes synchronously on the launching thread. */
+internal val ImmediateCredentialRefreshLauncher = CredentialRefreshLauncher { block -> runBlocking { block() } }
+
 internal fun MockWebServer.enqueueJson(body: String) {
     enqueue(
         MockResponse
@@ -361,6 +368,7 @@ internal fun restoredTestWalletClient(
                         ),
                 ),
             credentialSigner = TrackingCredentialSigner(nonceValue = nonceValue),
+            credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
         )
     assertTrue(client.restorePersistedSession())
     return client

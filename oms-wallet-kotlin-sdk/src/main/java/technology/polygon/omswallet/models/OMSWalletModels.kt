@@ -93,6 +93,10 @@ data class AbiArg(
 /** A credential currently authorized to use the selected wallet. */
 data class WalletCredential(
     val credentialId: String,
+    /**
+     * ISO-8601 current expiry of the credential. WaaS extends it with use up to the requested
+     * lifetime, and the SDK refreshes the active session's copy.
+     */
     val expiresAt: String,
     val isCaller: Boolean,
 )

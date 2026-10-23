@@ -67,6 +67,7 @@ class WalletSigningTest {
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,
                     credentialSigner = signer,
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                 )
 
             assertTrue(client.restorePersistedSession())
@@ -129,6 +130,7 @@ class WalletSigningTest {
                                 ),
                         ),
                     credentialSigner = TrackingCredentialSigner(nonceValue = "1710000109"),
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                 )
             assertTrue(client.restorePersistedSession())
 

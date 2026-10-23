@@ -34,7 +34,10 @@ data class OMSWalletOidcSessionAuth(
  * unrelated links are reported through [OidcRedirectAuthResult] instead.
  */
 data class OMSWalletSession(
-    /** ISO-8601 expiration time of the wallet session. */
+    /**
+     * ISO-8601 current expiration time of the wallet session. WaaS extends it with use up to the
+     * requested lifetime, and the SDK refreshes it, so it can move while the session is active.
+     */
     val expiresAt: String,
     val auth: OMSWalletSessionAuth,
 )

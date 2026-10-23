@@ -472,6 +472,7 @@ class WalletEmailAuthTest {
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,
                     credentialSigner = signer,
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                 )
             assertTrue(restoredClient.restorePersistedSession())
             val restoredWallets = restoredClient.listWallets()
@@ -532,9 +533,10 @@ class WalletEmailAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
 
+            // The 180-day cap itself is a valid request.
             client.startEmailAuth(
                 email = "user@example.com",
-                sessionLifetimeSeconds = 120L,
+                sessionLifetimeSeconds = WalletClient.MAX_SESSION_LIFETIME_SECONDS,
             )
             assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
             client.completeEmailAuth(code = "123456")
@@ -551,7 +553,7 @@ class WalletEmailAuthTest {
                                 challenge = "challenge",
                                 code = "123456",
                             ),
-                        lifetime = 120u,
+                        lifetime = 15_552_000u,
                     ),
                 ),
                 requireNotNull(request.body).utf8(),

@@ -71,7 +71,10 @@ Expiry and auth metadata for the active wallet session of a `WalletClient`.
 
 ```kotlin
 data class OMSWalletSession(
-    /** ISO-8601 expiration time of the wallet session. */
+    /**
+     * ISO-8601 current expiration time of the wallet session. WaaS extends it with use up to the
+     * requested lifetime, and the SDK refreshes it, so it can move while the session is active.
+     */
     val expiresAt: String,
     val auth: OMSWalletSessionAuth,
 )
@@ -272,6 +275,10 @@ A credential currently authorized to use the selected wallet.
 ```kotlin
 data class WalletCredential(
     val credentialId: String,
+    /**
+     * ISO-8601 current expiry of the credential. WaaS extends it with use up to the requested
+     * lifetime, and the SDK refreshes the active session's copy.
+     */
     val expiresAt: String,
     val isCaller: Boolean,
 )
@@ -610,10 +617,11 @@ const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 604_800L
 
 ### `WalletClient.MAX_SESSION_LIFETIME_SECONDS`
 
-Maximum requested WaaS wallet session lifetime in seconds.
+Maximum requested WaaS wallet session lifetime in seconds (180 days). WaaS extends a
+session's expiry with use up to the requested lifetime.
 
 ```kotlin
-const val MAX_SESSION_LIFETIME_SECONDS: Long = 2_592_000L
+const val MAX_SESSION_LIFETIME_SECONDS: Long = 15_552_000L
 ```
 
 ### `WalletClient.activeWallet`

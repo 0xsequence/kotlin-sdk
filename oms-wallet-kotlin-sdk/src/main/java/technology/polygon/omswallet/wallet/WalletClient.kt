@@ -3,10 +3,14 @@ package technology.polygon.omswallet.wallet
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonElement
 import technology.polygon.omswallet.Network
@@ -35,6 +39,7 @@ import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthResponse
 import technology.polygon.omswallet.internal.generated.waas.CreateWalletRequest
 import technology.polygon.omswallet.internal.generated.waas.ERC20TransferGrant
+import technology.polygon.omswallet.internal.generated.waas.ErrorKind
 import technology.polygon.omswallet.internal.generated.waas.ExecuteRequest
 import technology.polygon.omswallet.internal.generated.waas.GetIDTokenRequest
 import technology.polygon.omswallet.internal.generated.waas.GetRecipientKeyRequest
@@ -72,7 +77,10 @@ import technology.polygon.omswallet.internal.generated.waas.WEBRPC_SCHEMA_VERSIO
 import technology.polygon.omswallet.internal.generated.waas.WaasApi
 import technology.polygon.omswallet.internal.generated.waas.WaasClient
 import technology.polygon.omswallet.internal.generated.waas.WaasPublicClient
+import technology.polygon.omswallet.internal.generated.waas.WebRpcError
 import technology.polygon.omswallet.internal.generated.waas.WebRpcHttpResponse
+import technology.polygon.omswallet.internal.generated.waas.WebRpcTransportException
+import technology.polygon.omswallet.internal.generated.waas.decodeWebRpcError
 import technology.polygon.omswallet.models.AbiArg
 import technology.polygon.omswallet.models.AccessGrant
 import technology.polygon.omswallet.models.AccessGrantPage
@@ -153,6 +161,7 @@ private class WalletScopeRuntime(
     val signer: CredentialSigner,
     val sessionExpiryScheduler: SessionExpiryScheduler,
     val sessionExpiryDispatcher: SessionExpiryDispatcher,
+    val credentialRefreshLauncher: CredentialRefreshLauncher,
     val now: () -> Long,
 ) {
     val lifecycleLock = Any()
@@ -163,7 +172,116 @@ private class WalletScopeRuntime(
     var latestSessionExpiredRevision: Long? = null
     var sessionExpiryTask: SessionExpiryTask? = null
     var pendingEmailAuth: PendingEmailAuth? = null
+
+    /** The single in-flight GetCredential refresh shared by concurrent callers. */
+    var credentialRefresh: CredentialRefreshInFlight? = null
+
+    /** Set once a WaaS server answers GetCredential with WebrpcBadRoute (pre-sliding expiry). */
+    var credentialRefreshUnsupported = false
+
+    /** When the current credential's expiry was last read: sign-in, restore, or a refresh attempt. */
+    var credentialCheckedAt: Long? = null
+
+    /** Next offline retry delay after the expiry timer could not reach WaaS. */
+    var credentialRetryDelayMillis: Long? = null
+
+    /** Keeps credential refreshes from overlapping other signed session requests. */
+    val signedRequestGate = SignedRequestGate()
 }
+
+/**
+ * WaaS rejects a credential nonce that is not above the last one it accepted, so a credential
+ * refresh must not race another signed session request: requests wait for an in-flight refresh
+ * before signing, and a refresh starts only once no request is in flight.
+ */
+private class SignedRequestGate {
+    private val lock = Any()
+    private var requestsInFlight = 0
+    private var refresh: CompletableDeferred<Unit>? = null
+    private var idle: CompletableDeferred<Unit>? = null
+
+    suspend fun <T> request(block: suspend () -> T): T {
+        while (true) {
+            val refreshInFlight =
+                synchronized(lock) {
+                    refresh ?: run {
+                        requestsInFlight += 1
+                        null
+                    }
+                } ?: break
+            refreshInFlight.await()
+        }
+        try {
+            return block()
+        } finally {
+            synchronized(lock) {
+                requestsInFlight -= 1
+                if (requestsInFlight == 0) idle.also { idle = null } else null
+            }?.complete(Unit)
+        }
+    }
+
+    /** Starts a refresh only when the gate is idle; returns null when it is busy. */
+    fun tryBeginRefresh(): CompletableDeferred<Unit>? =
+        synchronized(lock) {
+            if (requestsInFlight > 0 || refresh != null) null else CompletableDeferred<Unit>().also { refresh = it }
+        }
+
+    /** Waits for in-flight requests and refreshes to finish, then starts a refresh. */
+    suspend fun beginRefresh(): CompletableDeferred<Unit> {
+        while (true) {
+            val wait =
+                synchronized(lock) {
+                    when {
+                        refresh != null -> refresh
+                        requestsInFlight > 0 -> idle ?: CompletableDeferred<Unit>().also { idle = it }
+                        else -> return CompletableDeferred<Unit>().also { refresh = it }
+                    }
+                }
+            requireNotNull(wait).await()
+        }
+    }
+
+    fun endRefresh(started: CompletableDeferred<Unit>) {
+        synchronized(lock) {
+            if (refresh === started) refresh = null
+        }
+        started.complete(Unit)
+    }
+}
+
+private class CredentialRefreshInFlight(
+    val revision: Long,
+    val result: CompletableDeferred<CredentialRefreshOutcome>,
+)
+
+/** Result of reading the session credential's current expiry with GetCredential. */
+private sealed interface CredentialRefreshOutcome {
+    /** WaaS confirmed the credential; a parseable expiry was applied to the session. */
+    data object Refreshed : CredentialRefreshOutcome
+
+    /** WaaS rejected the credential (7202/7203) and the session was ended. */
+    data object Ended : CredentialRefreshOutcome
+
+    /** The server has no GetCredential; local expiry stays authoritative. */
+    data object Unsupported : CredentialRefreshOutcome
+
+    /** WaaS could not be reached or failed; the session is unchanged. */
+    data class Unavailable(
+        val cause: Throwable,
+    ) : CredentialRefreshOutcome
+
+    /** The session changed while the refresh ran; its result was not applied. */
+    data object Stale : CredentialRefreshOutcome
+
+    /** A background refresh was skipped because a signed session request was in flight. */
+    data object Busy : CredentialRefreshOutcome
+}
+
+/** Control flow for a session check that found the session locally expired. */
+private class LocallyExpiredSession(
+    val revision: Long,
+) : RuntimeException(null, null, false, false)
 
 private object WalletScopeRuntimeRegistry {
     private val registryLock = Any()
@@ -207,9 +325,10 @@ class WalletClient private constructor(
         const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 604_800L
 
         /**
-         * Maximum requested WaaS wallet session lifetime in seconds.
+         * Maximum requested WaaS wallet session lifetime in seconds (180 days). WaaS extends a
+         * session's expiry with use up to the requested lifetime.
          */
-        const val MAX_SESSION_LIFETIME_SECONDS: Long = 2_592_000L
+        const val MAX_SESSION_LIFETIME_SECONDS: Long = 15_552_000L
 
         @JvmSynthetic
         internal fun create(
@@ -226,6 +345,7 @@ class WalletClient private constructor(
             transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
             sessionExpiryScheduler: SessionExpiryScheduler = TimerSessionExpiryScheduler,
             sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
+            credentialRefreshLauncher: CredentialRefreshLauncher = BackgroundCredentialRefreshLauncher,
             now: () -> Long = OMSWalletTimestamps::nowMilliseconds,
             projectScopeKey: String? = null,
             walletImportTrustedPcr0s: Set<String>? = null,
@@ -238,6 +358,7 @@ class WalletClient private constructor(
                     signer = credentialSigner ?: MissingCredentialSigner,
                     sessionExpiryScheduler = sessionExpiryScheduler,
                     sessionExpiryDispatcher = sessionExpiryDispatcher,
+                    credentialRefreshLauncher = credentialRefreshLauncher,
                     now = now,
                 )
             }
@@ -269,6 +390,9 @@ class WalletClient private constructor(
             environment = environment,
             transport = transport,
             authorizeSignedRequest = ::authorizeSignedRequest,
+            onSessionCredentialRejected = ::endSessionRejectedByServer,
+            onSessionCredentialAccepted = ::refreshCredentialIfDue,
+            signedRequestGate = runtime.signedRequestGate,
             walletImportTrustedPcr0s = walletImportTrustedPcr0s,
         )
     private val indexerClient: IndexerClient =
@@ -336,6 +460,7 @@ class WalletClient private constructor(
             runtime.initialized = true
             clearLatestSessionExpiredEventLocked()
             val revision = walletSession.restore(snapshot)
+            markCredentialCheckedLocked()
             scheduleSessionExpiryLocked(snapshot, revision)
         }
     }
@@ -344,6 +469,7 @@ class WalletClient private constructor(
 
     internal fun restorePersistedSession(): Boolean {
         var expiredNotification: ExpiryNotification? = null
+        var restoredRevision: Long? = null
         val restored =
             synchronized(runtime.lifecycleLock) {
                 if (runtime.initialized) {
@@ -409,12 +535,16 @@ class WalletClient private constructor(
                 }
                 clearLatestSessionExpiredEventLocked()
                 val revision = walletSession.restore(snapshot)
+                markCredentialCheckedLocked()
                 scheduleSessionExpiryLocked(snapshot, revision)
                 clearConsumedOidcRedirectAuthLocked()
                 runtime.initialized = true
+                restoredRevision = revision
                 true
             }
         expiredNotification?.let(::dispatchSessionExpiredNotification)
+        // The stored expiry may predate server-side sliding; read the current one in the background.
+        restoredRevision?.let { revision -> launchCredentialRefresh(revision) }
         return restored
     }
 
@@ -1235,9 +1365,9 @@ class WalletClient private constructor(
             activateImportedWallet(wallet, context)
         }
 
-    private fun walletImportActivationContext(walletType: WalletType): WalletImportActivationContext =
-        synchronized(runtime.lifecycleLock) {
-            val revision = requireWalletSelectionOrActiveSession()
+    private suspend fun walletImportActivationContext(walletType: WalletType): WalletImportActivationContext {
+        val revision = requireWalletSelectionOrActiveSession()
+        return synchronized(runtime.lifecycleLock) {
             val snapshot = walletSession.requireSnapshot(revision)
             val pendingId = snapshot.pendingWalletSelectionId
             if (pendingId != null) {
@@ -1259,6 +1389,7 @@ class WalletClient private constructor(
                 )
             }
         }
+    }
 
     private fun activateImportedWallet(
         wallet: Wallet,
@@ -1350,16 +1481,27 @@ class WalletClient private constructor(
         }
     }
 
-    private fun requirePendingWalletSelection(
+    private suspend fun requirePendingWalletSelection(
         pendingWalletSelectionId: Long,
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
+    ): Long =
+        refreshingLocalExpiry(OMSWalletOperation.PendingWalletSelection) { expireLocally ->
+            checkPendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType, expireLocally)
+        }
+
+    private fun checkPendingWalletSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: WalletSigningAlgorithm?,
+        expireLocally: Boolean,
     ): Long {
         var expiredNotification: ExpiryNotification? = null
         val revision =
             synchronized(runtime.lifecycleLock) {
                 val snapshot = walletSession.snapshot()
                 if (snapshot?.isExpired(runtime.now()) == true) {
+                    if (!expireLocally) throw LocallyExpiredSession(walletSession.revision())
                     expiredNotification = expireSessionLocked(snapshot, walletSession.revision())
                     return@synchronized null
                 }
@@ -1469,6 +1611,7 @@ class WalletClient private constructor(
             withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
                 walletSession.requireRevision(pendingSessionRevision)
                 walletSession.requireSnapshot().also {
+                    markCredentialCheckedLocked()
                     scheduleSessionExpiryLocked(it, pendingSessionRevision)
                 }
             }
@@ -1790,7 +1933,7 @@ class WalletClient private constructor(
      * Returns the address to verify against: [walletAddress] when provided (it
      * must not be blank), otherwise the active wallet's address.
      */
-    private fun verifierWalletAddress(
+    private suspend fun verifierWalletAddress(
         walletAddress: String?,
         walletType: WalletType,
         operation: OMSWalletOperation,
@@ -1807,7 +1950,7 @@ class WalletClient private constructor(
      * active session (not a usable credential) and rejects a wallet of another
      * family before any request.
      */
-    private fun activeVerifierWalletAddress(
+    private suspend fun activeVerifierWalletAddress(
         walletType: WalletType,
         operation: OMSWalletOperation,
     ): String {
@@ -2110,7 +2253,10 @@ class WalletClient private constructor(
         type: AccessGrantType? = null,
     ): Flow<AccessGrantPage> =
         flow {
-            val activeSession = requireActiveWalletSession(OMSWalletOperation.WalletListAccessPages)
+            val activeSession =
+                runOMSWalletOperation(OMSWalletOperation.WalletListAccessPages) {
+                    requireActiveWalletSession(OMSWalletOperation.WalletListAccessPages)
+                }
             var cursor: String? = null
             do {
                 val response =
@@ -2220,9 +2366,18 @@ class WalletClient private constructor(
             )
         }
 
-    private fun requireActiveWalletSession(
+    private suspend fun requireActiveWalletSession(
         operation: OMSWalletOperation?,
         requireCredential: Boolean = true,
+    ): ActiveWalletSession =
+        refreshingLocalExpiry(operation) { expireLocally ->
+            checkActiveWalletSession(operation, requireCredential, expireLocally)
+        }
+
+    private fun checkActiveWalletSession(
+        operation: OMSWalletOperation?,
+        requireCredential: Boolean,
+        expireLocally: Boolean,
     ): ActiveWalletSession {
         var expiredNotification: ExpiryNotification? = null
         val activeSession =
@@ -2232,6 +2387,7 @@ class WalletClient private constructor(
                         ?: throw OMSWalletSessionException(operation = operation)
                 val revision = walletSession.revision()
                 if (snapshot.isExpired(runtime.now())) {
+                    if (!expireLocally) throw LocallyExpiredSession(revision)
                     expiredNotification = expireSessionLocked(snapshot, revision)
                     return@synchronized null
                 }
@@ -2252,7 +2408,15 @@ class WalletClient private constructor(
             )
     }
 
-    private fun requireWalletSelectionOrActiveSession(requiredSessionRevision: Long? = null): Long {
+    private suspend fun requireWalletSelectionOrActiveSession(requiredSessionRevision: Long? = null): Long =
+        refreshingLocalExpiry(operation = null) { expireLocally ->
+            checkWalletSelectionOrActiveSession(requiredSessionRevision, expireLocally)
+        }
+
+    private fun checkWalletSelectionOrActiveSession(
+        requiredSessionRevision: Long?,
+        expireLocally: Boolean,
+    ): Long {
         var expiredNotification: ExpiryNotification? = null
         val revision =
             synchronized(runtime.lifecycleLock) {
@@ -2260,6 +2424,7 @@ class WalletClient private constructor(
                 val snapshot = walletSession.requireSnapshot()
                 val currentRevision = walletSession.revision()
                 if (snapshot.isExpired(runtime.now())) {
+                    if (!expireLocally) throw LocallyExpiredSession(currentRevision)
                     expiredNotification = expireSessionLocked(snapshot, currentRevision)
                     return@synchronized null
                 }
@@ -2308,19 +2473,268 @@ class WalletClient private constructor(
         val task =
             runtime.sessionExpiryScheduler.schedule(delayMillis) {
                 runtime.sessionExpiryDispatcher.dispatch {
-                    expireSessionFromTimer(requiredSessionRevision)
+                    onSessionExpiryTimer(requiredSessionRevision)
                 }
             }
         runtime.sessionExpiryTask = task
+    }
+
+    /** Schedules a recheck after the expiry timer could not reach WaaS, backing off to a cap. */
+    private fun scheduleCredentialRetry(requiredSessionRevision: Long) {
+        synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) return
+            clearSessionExpiryTaskLocked()
+            val delayMillis = runtime.credentialRetryDelayMillis ?: CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS
+            runtime.credentialRetryDelayMillis = minOf(delayMillis * 2, CREDENTIAL_RETRY_MAX_DELAY_MILLIS)
+            runtime.sessionExpiryTask =
+                runtime.sessionExpiryScheduler.schedule(delayMillis) {
+                    runtime.sessionExpiryDispatcher.dispatch {
+                        onSessionExpiryTimer(requiredSessionRevision)
+                    }
+                }
+        }
     }
 
     private fun clearSessionExpiryTaskLocked() {
         runtime.sessionExpiryTask.also { runtime.sessionExpiryTask = null }?.cancel()
     }
 
+    private fun markCredentialCheckedLocked() {
+        runtime.credentialCheckedAt = runtime.now()
+        runtime.credentialRetryDelayMillis = null
+    }
+
+    /** Runs a session check; when it finds the session locally expired, refreshes the expiry first. */
+    private suspend fun <T> refreshingLocalExpiry(
+        operation: OMSWalletOperation?,
+        check: (expireLocally: Boolean) -> T,
+    ): T {
+        val locallyExpired =
+            try {
+                return check(false)
+            } catch (expired: LocallyExpiredSession) {
+                expired
+            }
+        when (val outcome = refreshSessionCredential(locallyExpired.revision, background = false)) {
+            is CredentialRefreshOutcome.Unavailable -> {
+                throw outcome.cause
+            }
+
+            CredentialRefreshOutcome.Ended -> {
+                throw OMSWalletSessionException(
+                    code = OMSWalletErrorCode.SessionExpired,
+                    operation = operation,
+                    message = "Wallet session expired",
+                )
+            }
+
+            else -> {
+                Unit
+            }
+        }
+        return check(true)
+    }
+
+    private fun launchCredentialRefresh(
+        requiredSessionRevision: Long,
+        onOutcome: (CredentialRefreshOutcome) -> Unit = {},
+    ) {
+        try {
+            runtime.credentialRefreshLauncher.launch {
+                onOutcome(refreshSessionCredential(requiredSessionRevision, background = true))
+            }
+        } catch (_: Throwable) {
+            // Background refresh is best effort; local expiry stays in effect.
+        }
+    }
+
+    /**
+     * Reads the session credential's current expiry from WaaS. Concurrent callers for the same
+     * session share one request, and the result is applied only while that session is current.
+     */
+    private suspend fun refreshSessionCredential(
+        requiredSessionRevision: Long,
+        background: Boolean,
+    ): CredentialRefreshOutcome {
+        var owner = false
+        val inFlight =
+            synchronized(runtime.lifecycleLock) {
+                if (
+                    walletSession.revision() != requiredSessionRevision ||
+                    walletSession.snapshot()?.expiresAt.isNullOrBlank()
+                ) {
+                    return CredentialRefreshOutcome.Stale
+                }
+                if (runtime.credentialRefreshUnsupported) {
+                    return CredentialRefreshOutcome.Unsupported
+                }
+                runtime.credentialRefresh?.takeIf { it.revision == requiredSessionRevision }
+                    ?: CredentialRefreshInFlight(requiredSessionRevision, CompletableDeferred()).also {
+                        runtime.credentialRefresh = it
+                        runtime.credentialCheckedAt = runtime.now()
+                        owner = true
+                    }
+            }
+        if (!owner) {
+            val shared = inFlight.result.await()
+            // An awaited check must not settle for a background attempt that was skipped.
+            return if (shared == CredentialRefreshOutcome.Busy && !background) {
+                refreshSessionCredential(requiredSessionRevision, background = false)
+            } else {
+                shared
+            }
+        }
+        val outcome =
+            try {
+                val gate =
+                    if (background) {
+                        runtime.signedRequestGate.tryBeginRefresh()
+                    } else {
+                        runtime.signedRequestGate.beginRefresh()
+                    }
+                if (gate == null) {
+                    CredentialRefreshOutcome.Busy
+                } else {
+                    try {
+                        requestCredentialRefresh(requiredSessionRevision)
+                    } finally {
+                        runtime.signedRequestGate.endRefresh(gate)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                CredentialRefreshOutcome.Unavailable(throwable)
+            }
+        synchronized(runtime.lifecycleLock) {
+            if (runtime.credentialRefresh === inFlight) {
+                runtime.credentialRefresh = null
+            }
+        }
+        inFlight.result.complete(outcome)
+        if (outcome is CredentialRefreshOutcome.Unavailable && outcome.cause is CancellationException) {
+            throw outcome.cause
+        }
+        return outcome
+    }
+
+    private suspend fun requestCredentialRefresh(requiredSessionRevision: Long): CredentialRefreshOutcome {
+        val expiresAt =
+            try {
+                gateway.getCredential(requiredSessionRevision).expiresAt
+            } catch (throwable: CancellationException) {
+                throw throwable
+            } catch (throwable: WebRpcError) {
+                if (throwable.errorKind != ErrorKind.WEBRPC_BAD_ROUTE) {
+                    return CredentialRefreshOutcome.Unavailable(throwable)
+                }
+                // Servers without sliding expiry have no GetCredential; their local expiry is exact.
+                synchronized(runtime.lifecycleLock) { runtime.credentialRefreshUnsupported = true }
+                return CredentialRefreshOutcome.Unsupported
+            } catch (throwable: WebRpcTransportException) {
+                return when (val cause = throwable.cause) {
+                    is OMSWalletSessionException -> {
+                        if (cause.code == OMSWalletErrorCode.SessionExpired) {
+                            CredentialRefreshOutcome.Ended
+                        } else {
+                            CredentialRefreshOutcome.Stale
+                        }
+                    }
+
+                    is IllegalStateException -> {
+                        CredentialRefreshOutcome.Stale
+                    }
+
+                    else -> {
+                        CredentialRefreshOutcome.Unavailable(throwable)
+                    }
+                }
+            } catch (throwable: Throwable) {
+                return CredentialRefreshOutcome.Unavailable(throwable)
+            }
+        return synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) {
+                return@synchronized CredentialRefreshOutcome.Stale
+            }
+            if (OMSWalletIsoTimestamps.parseEpochMillis(expiresAt) == null) {
+                return@synchronized CredentialRefreshOutcome.Refreshed
+            }
+            val updated =
+                walletSession.updateExpiresAt(expiresAt, requiredSessionRevision)
+                    ?: return@synchronized CredentialRefreshOutcome.Stale
+            if (updated.wallet != null) {
+                try {
+                    sessionStore?.save(updated)
+                } catch (_: Throwable) {
+                    // The in-memory expiry is still current; the next refresh persists it again.
+                }
+            }
+            markCredentialCheckedLocked()
+            scheduleSessionExpiryLocked(updated, requiredSessionRevision)
+            CredentialRefreshOutcome.Refreshed
+        }
+    }
+
+    /** Ends the session when WaaS rejects its credential (7202 KeyNotFound, 7203 KeyExpired). */
+    private fun endSessionRejectedByServer(requiredSessionRevision: Long) {
+        val notification =
+            synchronized(runtime.lifecycleLock) {
+                if (walletSession.revision() != requiredSessionRevision) return
+                val snapshot = walletSession.snapshot() ?: return
+                expireSessionLocked(snapshot, requiredSessionRevision).also { notification ->
+                    if (notification == null) {
+                        // Without a parseable expiry there is no event to report; still end the session.
+                        clearSessionUnlocked(
+                            clearOidcRedirectAuth = true,
+                            operation = null,
+                            throwOnFailure = false,
+                            requiredSessionRevision = requiredSessionRevision,
+                        )
+                    }
+                }
+            }
+        notification?.let(::dispatchSessionExpiredNotification)
+    }
+
+    /** After a successful authenticated call, refreshes the expiry in the background when due. */
+    private fun refreshCredentialIfDue(requiredSessionRevision: Long) {
+        val due =
+            synchronized(runtime.lifecycleLock) {
+                val checkedAt = runtime.credentialCheckedAt
+                !runtime.credentialRefreshUnsupported &&
+                    runtime.credentialRefresh == null &&
+                    walletSession.revision() == requiredSessionRevision &&
+                    checkedAt != null &&
+                    runtime.now() - checkedAt >= CREDENTIAL_REFRESH_INTERVAL_MILLIS
+            }
+        if (due) {
+            launchCredentialRefresh(requiredSessionRevision)
+        }
+    }
+
     private fun clearLatestSessionExpiredEventLocked() {
         runtime.latestSessionExpiredEvent = null
         runtime.latestSessionExpiredRevision = null
+    }
+
+    /**
+     * Expiry timer: a locally expired session is first refreshed from WaaS, which may have slid
+     * the expiry. When WaaS is unreachable the session is kept and rechecked later.
+     */
+    private fun onSessionExpiryTimer(requiredSessionRevision: Long) {
+        synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) return
+            val snapshot = walletSession.snapshot() ?: return
+            if (!snapshot.isExpired(runtime.now())) {
+                scheduleSessionExpiryLocked(snapshot, requiredSessionRevision)
+                return
+            }
+        }
+        launchCredentialRefresh(requiredSessionRevision) { outcome ->
+            if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
+                scheduleCredentialRetry(requiredSessionRevision)
+            } else {
+                runtime.sessionExpiryDispatcher.dispatch { expireSessionFromTimer(requiredSessionRevision) }
+            }
+        }
     }
 
     private fun expireSessionFromTimer(requiredSessionRevision: Long) {
@@ -2471,7 +2885,7 @@ class WalletClient private constructor(
         allowCredentialCreation: Boolean,
         endpoint: String,
         body: String,
-    ): String =
+    ): SignedRequestAuthorization =
         synchronized(runtime.lifecycleLock) {
             walletSession.requireRevision(requiredSessionRevision)
             val snapshot = walletSession.snapshot()
@@ -2504,12 +2918,17 @@ class WalletClient private constructor(
                     payload = body,
                     requestPathPrefix = WaasApi.basePath,
                 )
-            WalletRequestSigner.buildWalletSignatureHeader(
-                signingAlgorithm = signer.signingAlgorithm,
-                scope = projectId,
-                credentialId = actualSignerAddress,
-                nonce = nonce,
-                signature = signer.sign(preimage),
+            SignedRequestAuthorization(
+                walletSignatureHeader =
+                    WalletRequestSigner.buildWalletSignatureHeader(
+                        signingAlgorithm = signer.signingAlgorithm,
+                        scope = projectId,
+                        credentialId = actualSignerAddress,
+                        nonce = nonce,
+                        signature = signer.sign(preimage),
+                    ),
+                // Sign-in requests run before WaaS has verified the credential.
+                usesSessionCredential = !snapshot?.expiresAt.isNullOrBlank(),
             )
         }
 
@@ -2561,6 +2980,10 @@ class WalletClient private constructor(
                 throw throwable
             } catch (throwable: Throwable) {
                 val sdkError = throwable.toOMSWalletException(OMSWalletOperation.WalletExecute)
+                if (sdkError.code == OMSWalletErrorCode.SessionExpired) {
+                    // WaaS rejected the credential before running Execute, so nothing was sent.
+                    throw sdkError
+                }
                 throw OMSWalletTransactionException(
                     code = OMSWalletErrorCode.TransactionExecutionUnconfirmed,
                     operation = OMSWalletOperation.WalletExecute,
@@ -2935,6 +3358,12 @@ private data class ExpiryNotification(
     val listeners: List<(OMSWalletSessionExpiredEvent) -> Unit>,
 )
 
+private class SignedRequestAuthorization(
+    val walletSignatureHeader: String,
+    /** True when the request carries the authenticated wallet session's credential. */
+    val usesSessionCredential: Boolean,
+)
+
 private data class ExecutedWalletTransaction(
     val status: TransactionStatus,
 )
@@ -2954,7 +3383,10 @@ private class WaasWalletGateway(
         allowCredentialCreation: Boolean,
         endpoint: String,
         body: String,
-    ) -> String,
+    ) -> SignedRequestAuthorization,
+    private val onSessionCredentialRejected: (requiredSessionRevision: Long) -> Unit,
+    private val onSessionCredentialAccepted: (requiredSessionRevision: Long) -> Unit,
+    private val signedRequestGate: SignedRequestGate,
     private val walletImportTrustedPcr0s: Set<String>?,
 ) {
     private val publicClient: WaasPublicClient =
@@ -3555,6 +3987,9 @@ private class WaasWalletGateway(
                 ),
             ).idToken
 
+    suspend fun getCredential(requiredSessionRevision: Long): WaasCredentialInfo =
+        signedClient(requiredSessionRevision).getCredential().credential
+
     suspend fun revokeAccess(
         walletId: String,
         targetCredentialId: String,
@@ -3594,38 +4029,42 @@ private class WaasWalletGateway(
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
             val requestPath = WaasApi.basePath + endpoint
-            val walletSignatureHeader =
-                withContext(Dispatchers.IO) {
-                    authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
-                }
-            val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
-            val nonce = WalletImportBase64.encode(nonceBytes)
-            val requestHeaders =
-                defaultSignedHeaders(headers, walletSignatureHeader).toMutableMap().apply {
-                    put("X-Attestation-Nonce", nonce)
-                }
-            val response =
-                transport.postJsonWithStatus(
-                    baseUrl = baseUrl,
-                    path = requestPath,
-                    body = body,
-                    headers = requestHeaders,
-                )
-            val document =
-                response.headers["x-attestation-document"]
-                    ?: throw technology.polygon.omswallet.OMSWalletAttestationException(
-                        message = "WaaS response is missing its attestation document",
+            gatedSignedRequest(requiredSessionRevision, endpoint) {
+                val authorization =
+                    withContext(Dispatchers.IO) {
+                        authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
+                    }
+                val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
+                val nonce = WalletImportBase64.encode(nonceBytes)
+                val requestHeaders =
+                    defaultSignedHeaders(headers, authorization.walletSignatureHeader).toMutableMap().apply {
+                        put("X-Attestation-Nonce", nonce)
+                    }
+                val response =
+                    transport.postJsonWithStatus(
+                        baseUrl = baseUrl,
+                        path = requestPath,
+                        body = body,
+                        headers = requestHeaders,
                     )
-            AttestationVerifier.verify(
-                encodedDocument = document,
-                method = "POST",
-                path = requestPath,
-                requestBody = body,
-                responseBody = response.body,
-                nonce = nonce,
-                trustedPcr0s = trustedPcr0s,
-            )
-            WebRpcHttpResponse(response.statusCode, response.body)
+                val document =
+                    response.headers["x-attestation-document"]
+                        ?: throw technology.polygon.omswallet.OMSWalletAttestationException(
+                            message = "WaaS response is missing its attestation document",
+                        )
+                AttestationVerifier.verify(
+                    encodedDocument = document,
+                    method = "POST",
+                    path = requestPath,
+                    requestBody = body,
+                    responseBody = response.body,
+                    nonce = nonce,
+                    trustedPcr0s = trustedPcr0s,
+                )
+                val accepted =
+                    observeSessionCredentialResponse(requiredSessionRevision, authorization, endpoint, response.statusCode, response.body)
+                WebRpcHttpResponse(response.statusCode, response.body) to accepted
+            }
         }
 
     private fun signedTransport(
@@ -3634,27 +4073,77 @@ private class WaasWalletGateway(
     ): LambdaWebRpcTransport =
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
-            val walletSignatureHeader =
-                withContext(Dispatchers.IO) {
-                    authorizeSignedRequest(
-                        requiredSessionRevision,
-                        allowCredentialCreation,
-                        endpoint,
-                        body,
+            gatedSignedRequest(requiredSessionRevision, endpoint) {
+                val authorization =
+                    withContext(Dispatchers.IO) {
+                        authorizeSignedRequest(
+                            requiredSessionRevision,
+                            allowCredentialCreation,
+                            endpoint,
+                            body,
+                        )
+                    }
+                val response =
+                    transport.postJsonWithStatus(
+                        baseUrl = baseUrl,
+                        path = WaasApi.basePath + endpoint,
+                        body = body,
+                        headers = defaultSignedHeaders(headers, authorization.walletSignatureHeader),
                     )
-                }
-            val response =
-                transport.postJsonWithStatus(
-                    baseUrl = baseUrl,
-                    path = WaasApi.basePath + endpoint,
-                    body = body,
-                    headers = defaultSignedHeaders(headers, walletSignatureHeader),
-                )
-            WebRpcHttpResponse(
-                statusCode = response.statusCode,
-                body = response.body,
+                val accepted =
+                    observeSessionCredentialResponse(requiredSessionRevision, authorization, endpoint, response.statusCode, response.body)
+                WebRpcHttpResponse(
+                    statusCode = response.statusCode,
+                    body = response.body,
+                ) to accepted
+            }
+        }
+
+    /**
+     * Signs and sends one request through [signedRequestGate] (GetCredential is the refresh the
+     * gate serializes, so it bypasses it), then reports an accepted session credential once the
+     * request has left the gate so a due background refresh can start.
+     */
+    private suspend fun gatedSignedRequest(
+        requiredSessionRevision: Long,
+        endpoint: String,
+        block: suspend () -> Pair<WebRpcHttpResponse, Boolean>,
+    ): WebRpcHttpResponse {
+        val (response, accepted) =
+            if (endpoint == WaasApi.GetCredential.path) block() else signedRequestGate.request(block)
+        if (accepted) {
+            onSessionCredentialAccepted(requiredSessionRevision)
+        }
+        return response
+    }
+
+    /**
+     * Reports how WaaS answered a request signed with the wallet session's credential: true when
+     * it was accepted. A 7202 KeyNotFound or 7203 KeyExpired rejection ends the session and fails
+     * the request as expired.
+     */
+    private fun observeSessionCredentialResponse(
+        requiredSessionRevision: Long,
+        authorization: SignedRequestAuthorization,
+        endpoint: String,
+        statusCode: Int,
+        body: String,
+    ): Boolean {
+        if (!authorization.usesSessionCredential) return false
+        if (statusCode in 200..299) {
+            return endpoint != WaasApi.GetCredential.path
+        }
+        val error = decodeWebRpcError(statusCode, body)
+        if (error.errorKind == ErrorKind.KEY_NOT_FOUND || error.errorKind == ErrorKind.KEY_EXPIRED) {
+            onSessionCredentialRejected(requiredSessionRevision)
+            throw OMSWalletSessionException(
+                code = OMSWalletErrorCode.SessionExpired,
+                message = "Wallet session expired",
+                cause = error,
             )
         }
+        return false
+    }
 
     private fun resolveEndpoint(path: String): String =
         when {
@@ -4039,6 +4528,25 @@ internal fun interface SessionExpiryDispatcher {
     fun dispatch(action: () -> Unit)
 }
 
+/** Starts fire-and-forget credential expiry refreshes off the caller's thread. */
+internal fun interface CredentialRefreshLauncher {
+    fun launch(block: suspend () -> Unit)
+}
+
+private object BackgroundCredentialRefreshLauncher : CredentialRefreshLauncher {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    override fun launch(block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (_: Throwable) {
+                // Refresh outcomes are handled by the block; nothing may escape to the app.
+            }
+        }
+    }
+}
+
 private object TimerSessionExpiryScheduler : SessionExpiryScheduler {
     override fun schedule(
         delayMillis: Long,
@@ -4100,6 +4608,10 @@ private fun OMSWalletSessionSnapshot.toSessionExpiredEvent(): OMSWalletSessionEx
         expiredAt = expiredAt,
     )
 }
+
+private const val CREDENTIAL_REFRESH_INTERVAL_MILLIS: Long = 6 * 60 * 60 * 1000L
+private const val CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS: Long = 60_000L
+private const val CREDENTIAL_RETRY_MAX_DELAY_MILLIS: Long = 15 * 60_000L
 
 private const val GOOGLE_ISSUER: String = "https://accounts.google.com"
 private const val APPLE_ISSUER: String = "https://appleid.apple.com"

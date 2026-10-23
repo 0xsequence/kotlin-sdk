@@ -334,7 +334,7 @@ class WalletOidcIdTokenAuthTest {
                         idToken = fakeJwt(exp = 1910000100L),
                         issuer = "https://accounts.google.com",
                         audience = "970987756660-0dh5gubqfiugm452raf7mm39qaq639hn.apps.googleusercontent.com",
-                        sessionLifetimeSeconds = 2_592_001L,
+                        sessionLifetimeSeconds = 15_552_001L,
                     )
                 }.exceptionOrNull()
 
@@ -342,7 +342,7 @@ class WalletOidcIdTokenAuthTest {
             error as OMSWalletException
             assertEquals(OMSWalletErrorCode.ValidationError, error.code)
             assertEquals("wallet.signInWithOidcIdToken", error.operation?.id)
-            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
+            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 15552000", error.message)
             assertEquals(0, server.requestCount)
         }
 
