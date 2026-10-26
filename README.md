@@ -166,13 +166,15 @@ while a manual selection is pending.
 
 Completed auth requests ask the wallet API for the maximum session lifetime, 180 days, by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `15_552_000` seconds). The wallet API also ends a
-session after 10 days without use.
+session after 10 days without use. Wallet API versions without sliding expiry clamp the requested
+lifetime to their 30-day maximum and have no idle timeout, so the default gives a fixed 30-day
+session there.
 Pass `sessionLifetimeSeconds` to `startEmailAuth`, `signInWithOidcIdToken`,
 `startOidcRedirectAuth`, or `handleOidcRedirectCallback` to request a different
 value from 1 through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`15_552_000`
 seconds, 180 days). Invalid lifetimes are reported as
-`OMSWalletErrorCode.ValidationError`. The lifetime is a ceiling: the wallet API keeps a
-session alive with use, extending its expiry up to that ceiling.
+`OMSWalletErrorCode.ValidationError`. The lifetime is a ceiling: with sliding expiry, the wallet
+API keeps a session alive with use, extending its expiry up to that ceiling.
 
 ### OIDC ID-Token Auth
 
@@ -345,7 +347,7 @@ when (activeWallet?.type) {
 `activeWallet` has the same shape as `listWallets()` entries (`id`, `type`,
 `address`, `reference`, `keyOrigin`). `session` is non-null exactly when
 `activeWallet` is. `expiresAt` is an ISO-8601 timestamp string with the session's current
-expiry: the wallet API extends it with use up to the requested lifetime, and the SDK refreshes it
+expiry: with sliding expiry the wallet API extends it with use up to the requested lifetime, and the SDK refreshes it
 after a session is restored, before treating the session as expired, and periodically while the
 session is in use, so the value can change while the session stays active. `CompleteAuthResult.credential.expiresAt`
 is the same current expiry at sign-in. OIDC
@@ -368,14 +370,10 @@ so they are discarded on load and users sign in once after upgrading.
 active, or a null `wallet` when the credential expired while a manual wallet
 selection was still pending.
 
-Completed auth requests ask the wallet API for a 180-day session lifetime (the
-maximum) by default. For email auth, pass `sessionLifetimeSeconds` to `startEmailAuth`; the
-SDK stores it with the pending OTP attempt and uses it when
-`completeEmailAuth` succeeds. Custom values must be from 1 through
-`WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`15_552_000` seconds, 180 days). For
-OIDC redirects, values passed to `startOidcRedirectAuth` are stored with the
-pending redirect state and used on callback completion unless
-`handleOidcRedirectCallback` overrides them.
+For email auth, `startEmailAuth` stores `sessionLifetimeSeconds` with the pending OTP attempt and
+uses it when `completeEmailAuth` succeeds. For OIDC redirects, values passed to
+`startOidcRedirectAuth` are stored with the pending redirect state and used on callback completion
+unless `handleOidcRedirectCallback` overrides them.
 
 Auth completion loads all wallet pages before selecting or creating a wallet. If
 auth completes but wallet selection, wallet creation, or session persistence

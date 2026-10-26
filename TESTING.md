@@ -19,6 +19,7 @@ How testing works in this repo. AGENTS.md points here so agents know how to veri
 Key subdirectories:
 - `wallet/` — wallet auth, signing, access, session, and transaction tests
 - `network/` — indexer and service client tests using MockWebServer
+- `storage/` — persisted session record encoding/decoding tests
 - `utils/` — base64url, ISO timestamp, and unit conversion/formatting helper tests
 
 ## Instrumented (Android) Tests

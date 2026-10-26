@@ -49,14 +49,25 @@ creates or destructures the event positionally must account for it; prefer named
 
 ### Sliding session expiry
 
-The wallet API now extends a session's expiry with use, up to the requested lifetime, and
-`WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
-(`15_552_000`), and `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS` rose from 7 days (`604_800`) to the
-same maximum, so sign-in without `sessionLifetimeSeconds` now requests 180 days. A session still ends
-after 10 days without use; pass a shorter `sessionLifetimeSeconds` if you need a hard limit. `OMSWalletSession.expiresAt` and
-`WalletCredential.expiresAt` are the current expiry, which the SDK refreshes, so do not cache them
-as a fixed end time. A session also ends with `OMS_SESSION_EXPIRED` (and an `onSessionExpired`
-event) when the wallet API reports its credential expired or unknown.
+Wallet API versions with sliding expiry extend a session's expiry with use, up to the requested lifetime.
+`OMSWalletSession.expiresAt` and `WalletCredential.expiresAt` are the current expiry, which the SDK
+refreshes after restoring a session, while the session is in use, and before treating a locally
+expired session as ended; do not cache them as a fixed end time.
+
+- `WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
+  (`15_552_000`). `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS` rose from 7 days (`604_800`) to the
+  same maximum, so sign-in without `sessionLifetimeSeconds` now requests 180 days. A session still
+  ends after 10 days without use; pass a shorter `sessionLifetimeSeconds` if you need a hard limit.
+  Wallet API versions without sliding expiry clamp the requested lifetime to their 30-day maximum
+  and have no idle timeout, so the default gives a fixed 30-day session there.
+- When the wallet API rejects the session credential as unknown or expired (WaaS `KeyNotFound`
+  7202 or `KeyExpired` 7203), the session ends as on local expiry (`onSessionExpired` fires once) and
+  the call throws `OMSWalletSessionException` (`OMS_SESSION_EXPIRED`, no `upstreamError`) instead of
+  `OMSWalletRequestException`. This includes a rejected `Execute`, which never ran: it throws
+  `OMS_SESSION_EXPIRED` instead of `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. Status polling after a
+  submitted transaction keeps `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` and its `txnId`.
+- If the wallet API cannot be reached when a session reaches its local expiry, the session is kept
+  and protected operations throw the request error instead of `OMS_SESSION_EXPIRED`.
 
 ### Reverting transactions are request failures
 

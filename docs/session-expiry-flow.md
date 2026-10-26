@@ -51,7 +51,7 @@ Triggers:
   `OMS_SESSION_EXPIRED`; Unavailable throws the network error and keeps the
   session.
 - After a successful signed call (not `GetCredential`): background refresh when
-  the last refresh attempt or sign-in was at least 6 hours ago.
+  the last refresh attempt, sign-in, or restore was at least 6 hours ago.
 
 WaaS requires strictly increasing nonces per credential, so a refresh never
 overlaps another signed session request: background refreshes start only when

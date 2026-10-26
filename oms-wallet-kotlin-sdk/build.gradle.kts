@@ -363,6 +363,7 @@ tasks.register("dumpPublicApi") {
     group = "documentation"
     description = "Writes the public Kotlin/JVM API shipped in the release AAR."
     dependsOn("syncReleaseLibJars")
+    mustRunAfter(":api-docs-generator:generateApiDocs")
     inputs.file(packagedReleaseClassesJar)
     inputs.file(rootProject.layout.projectDirectory.file("docs/api.md"))
     outputs.file(publicApiBaseline)
@@ -378,7 +379,7 @@ tasks.register("checkPublicApiBaseline") {
     group = "verification"
     description = "Fails when the packaged public Kotlin/JVM API differs from the committed baseline."
     dependsOn("syncReleaseLibJars")
-    mustRunAfter("dumpPublicApi")
+    mustRunAfter("dumpPublicApi", ":api-docs-generator:generateApiDocs")
     inputs.file(packagedReleaseClassesJar)
     inputs.file(rootProject.layout.projectDirectory.file("docs/api.md"))
     inputs.file(publicApiBaseline)
