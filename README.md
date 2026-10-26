@@ -818,9 +818,12 @@ application logic on the SDK-level `code`.
 For transaction writes, `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` means the SDK
 has a `txnId` from preparation, but the execute request failed before the SDK
 could confirm whether the transaction was submitted; do not blindly resend the
-same write. `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was
-submitted but status polling failed, so retry status lookup with the returned
-`txnId`.
+same write. A transaction that the wallet API refuses to send because it would
+revert (WaaS `TransactionSimulationFailed`, code `7314`) throws
+`OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `400`) with that
+`upstreamError` instead; it was never sent.
+`OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was submitted but
+status polling failed, so retry status lookup with the returned `txnId`.
 `retryable` describes the failed SDK operation, not the whole user intent.
 
 ```kotlin

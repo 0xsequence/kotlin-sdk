@@ -58,6 +58,16 @@ after 10 days without use; pass a shorter `sessionLifetimeSeconds` if you need a
 as a fixed end time. A session also ends with `OMS_SESSION_EXPIRED` (and an `onSessionExpired`
 event) when the wallet API reports its credential expired or unknown.
 
+### Reverting transactions are request failures
+
+When the wallet API refuses to send a transaction because it would revert (WaaS
+`TransactionSimulationFailed`, code `7314`, HTTP 400), the transaction methods throw
+`OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `400`, `retryable = false`, no `txnId`) with
+`upstreamError.name = "TransactionSimulationFailed"` and `upstreamError.code = "7314"`. 0.3.x reported
+this as `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`; the transaction was closed as failed and never sent,
+so fix it before sending again. Every other Execute failure still throws
+`OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
+
 ### One-time sign-in after upgrading
 
 Saved sessions now record the full active wallet, including its type. Sessions saved by 0.3.x do

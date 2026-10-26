@@ -921,6 +921,53 @@ class PublicErrorContractsTest {
         }
 
     @Test
+    fun snapshotsSimulationRevertedExecuteAsRequestFailure() =
+        runBlocking {
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-reverts", feeOptions = "[]", sponsored = true))
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(400)
+                    .body(
+                        """{"error":"TransactionSimulationFailed","code":7314,""" +
+                            """"msg":"Transaction simulation failed; the call would revert on-chain","status":400}""",
+                    ).build(),
+            )
+
+            val client = createRestoredWalletClient()
+
+            // WaaS closed the transaction as failed without dispatching it, so this is not an unconfirmed write.
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_REQUEST_FAILED",
+                    operation = "wallet.sendTransaction",
+                    message = "Transaction simulation failed; the call would revert on-chain",
+                    status = 400,
+                    retryable = false,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "TransactionSimulationFailed",
+                            code = "7314",
+                            message = "Transaction simulation failed; the call would revert on-chain",
+                            status = 400,
+                        ),
+                ),
+                publicError {
+                    client.sendTransaction(
+                        network = Network.POLYGON,
+                        request =
+                            SendTransactionRequest(
+                                to = "0x1111111111111111111111111111111111111111",
+                                value = BigInteger.ZERO,
+                            ),
+                    )
+                },
+            )
+        }
+
+    @Test
     fun snapshotsServerRejectedSessionCredentialAsSessionExpired() =
         runBlocking {
             val keyExpired = """{"error":"KeyExpired","code":7203,"msg":"key expired","status":400}"""

@@ -2984,6 +2984,10 @@ class WalletClient private constructor(
                     // WaaS rejected the credential before running Execute, so nothing was sent.
                     throw sdkError
                 }
+                if (throwable is WebRpcError && throwable.errorKind == ErrorKind.TRANSACTION_SIMULATION_FAILED) {
+                    // The relayer refused to dispatch a reverting transaction; WaaS closed it as failed.
+                    throw sdkError
+                }
                 throw OMSWalletTransactionException(
                     code = OMSWalletErrorCode.TransactionExecutionUnconfirmed,
                     operation = OMSWalletOperation.WalletExecute,
