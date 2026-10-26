@@ -28,27 +28,33 @@ class OMSWalletTest {
                 Triple(
                     "pk_stg_sdbx_project_key",
                     "https://sandbox-api.stg.polygon-dev.technology",
-                    setOf("3d21c70519a0ea3d5e6af43c5323234d90755d1ca08431064bd9687ddde4a4788a0a4736701513eee6008f1ec17e0d23"),
+                    setOf(
+                        "3d21c70519a0ea3d5e6af43c5323234d90755d1ca08431064bd9687ddde4a4788a0a4736701513eee6008f1ec17e0d23",
+                        "67fe2a7e9254ad246dc504510279b7bfdc15b1e20ad0fc2ae0634059e60cf03db6d09415fb40a6cab5404ddecdf1b521",
+                    ),
                 ),
                 Triple(
                     "pk_stg_live_project_key",
                     "https://api.stg.polygon-dev.technology",
-                    setOf("3d21c70519a0ea3d5e6af43c5323234d90755d1ca08431064bd9687ddde4a4788a0a4736701513eee6008f1ec17e0d23"),
+                    setOf(
+                        "3d21c70519a0ea3d5e6af43c5323234d90755d1ca08431064bd9687ddde4a4788a0a4736701513eee6008f1ec17e0d23",
+                        "67fe2a7e9254ad246dc504510279b7bfdc15b1e20ad0fc2ae0634059e60cf03db6d09415fb40a6cab5404ddecdf1b521",
+                    ),
                 ),
                 Triple(
                     "pk_sdbx_project_key",
                     "https://sandbox-api.polygon.technology",
                     setOf(
-                        "1935cbc713f0b43060315689e87285f6ba76bcf06f26d0719735e8d674b71e0eff71dcf77fe90ab32870ef3c954973b7",
                         "66d0d20073ec8549b6eb1cd3cd53311495225ec79d68f168ab734b24a69a8ed0f890f85ff31d5f0a79486a4e3a303b3c",
+                        "3b5bd9130a7f27fa7ad17aecfe9d622cfc4e853c2488adaabb6ee9f31bcab218d25337d7d269b00967465bd5cae97f9e",
                     ),
                 ),
                 Triple(
                     "pk_live_project_key",
                     "https://api.polygon.technology",
                     setOf(
-                        "1935cbc713f0b43060315689e87285f6ba76bcf06f26d0719735e8d674b71e0eff71dcf77fe90ab32870ef3c954973b7",
                         "66d0d20073ec8549b6eb1cd3cd53311495225ec79d68f168ab734b24a69a8ed0f890f85ff31d5f0a79486a4e3a303b3c",
+                        "3b5bd9130a7f27fa7ad17aecfe9d622cfc4e853c2488adaabb6ee9f31bcab218d25337d7d269b00967465bd5cae97f9e",
                     ),
                 ),
             )
