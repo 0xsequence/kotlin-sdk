@@ -320,9 +320,9 @@ class WalletClient private constructor(
 ) {
     companion object {
         /**
-         * Default requested WaaS wallet session lifetime in seconds.
+         * Default requested WaaS wallet session lifetime in seconds (180 days, the maximum).
          */
-        const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 604_800L
+        const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 15_552_000L
 
         /**
          * Maximum requested WaaS wallet session lifetime in seconds (180 days). WaaS extends a

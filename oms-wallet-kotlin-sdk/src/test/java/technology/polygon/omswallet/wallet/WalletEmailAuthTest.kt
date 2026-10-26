@@ -390,7 +390,7 @@ class WalletEmailAuthTest {
                                 challenge = "challenge",
                                 code = "123456",
                             ),
-                        lifetime = 604_800u,
+                        lifetime = 15_552_000u,
                     ),
                 )
             val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000101")

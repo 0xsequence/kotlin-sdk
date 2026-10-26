@@ -164,8 +164,9 @@ mode for apps that need to let users choose between multiple wallets. Every
 `CompleteAuthResult` exposes `credential`, and `wallet` is the selected wallet or `null`
 while a manual selection is pending.
 
-Completed auth requests ask the wallet API for a one-week session lifetime by default
-(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `604_800` seconds).
+Completed auth requests ask the wallet API for the maximum session lifetime, 180 days, by default
+(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `15_552_000` seconds). The wallet API also ends a
+session after 10 days without use.
 Pass `sessionLifetimeSeconds` to `startEmailAuth`, `signInWithOidcIdToken`,
 `startOidcRedirectAuth`, or `handleOidcRedirectCallback` to request a different
 value from 1 through `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`15_552_000`
@@ -367,8 +368,8 @@ so they are discarded on load and users sign in once after upgrading.
 active, or a null `wallet` when the credential expired while a manual wallet
 selection was still pending.
 
-Completed auth requests ask the wallet API for a one-week session lifetime by
-default. For email auth, pass `sessionLifetimeSeconds` to `startEmailAuth`; the
+Completed auth requests ask the wallet API for a 180-day session lifetime (the
+maximum) by default. For email auth, pass `sessionLifetimeSeconds` to `startEmailAuth`; the
 SDK stores it with the pending OTP attempt and uses it when
 `completeEmailAuth` succeeds. Custom values must be from 1 through
 `WalletClient.MAX_SESSION_LIFETIME_SECONDS` (`15_552_000` seconds, 180 days). For

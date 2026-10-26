@@ -51,7 +51,9 @@ creates or destructures the event positionally must account for it; prefer named
 
 The wallet API now extends a session's expiry with use, up to the requested lifetime, and
 `WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
-(`15_552_000`); the default lifetime is unchanged. `OMSWalletSession.expiresAt` and
+(`15_552_000`), and `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS` rose from 7 days (`604_800`) to the
+same maximum, so sign-in without `sessionLifetimeSeconds` now requests 180 days. A session still ends
+after 10 days without use; pass a shorter `sessionLifetimeSeconds` if you need a hard limit. `OMSWalletSession.expiresAt` and
 `WalletCredential.expiresAt` are the current expiry, which the SDK refreshes, so do not cache them
 as a fixed end time. A session also ends with `OMS_SESSION_EXPIRED` (and an `onSessionExpired`
 event) when the wallet API reports its credential expired or unknown.

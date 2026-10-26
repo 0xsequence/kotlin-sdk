@@ -134,7 +134,7 @@ class WalletOidcIdTokenAuthTest {
                         authMode = AuthMode.IDToken,
                         verifier = "oidc-verifier-123",
                         answer = idToken,
-                        lifetime = 604_800u,
+                        lifetime = 15_552_000u,
                     ),
                 ),
                 requireNotNull(completeAuthRequest.body).utf8(),

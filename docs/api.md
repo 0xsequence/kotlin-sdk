@@ -609,10 +609,10 @@ class WalletClient
 
 ### `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`
 
-Default requested WaaS wallet session lifetime in seconds.
+Default requested WaaS wallet session lifetime in seconds (180 days, the maximum).
 
 ```kotlin
-const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 604_800L
+const val DEFAULT_SESSION_LIFETIME_SECONDS: Long = 15_552_000L
 ```
 
 ### `WalletClient.MAX_SESSION_LIFETIME_SECONDS`
