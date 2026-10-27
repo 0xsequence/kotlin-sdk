@@ -282,18 +282,21 @@ if (result is CompleteAuthResult.WalletSelection) {
     val selected = result.pendingSelection.selectWallet("wallet-id")
     // or:
     // val selected = result.pendingSelection.createAndSelectWallet()
+    // or, for one of result.pendingSelection.claimableWallets:
+    // val selected = result.pendingSelection.claimAndSelectWallet("claimable-wallet-id")
     println("Wallet address: ${selected.wallet.address}")
 }
 ```
 
 Manual mode completes auth but does not select or create a wallet until the app
-calls `pendingSelection.selectWallet(...)` or
-`pendingSelection.createAndSelectWallet(...)`. `pendingSelection.wallets` is
+calls `pendingSelection.selectWallet(...)`,
+`pendingSelection.createAndSelectWallet(...)`, or
+`pendingSelection.claimAndSelectWallet(...)`. `pendingSelection.wallets` is
 already filtered to the requested wallet type, so the app picker can show those
-wallets plus a "Create New Wallet" action. Both SDK calls return the selected
-wallet and persist it as the active wallet session. `pendingSelection.claimableWallets`
-lists claimable wallets of the requested type; claim one with
-`omsWallet.wallet.claimWallet(...)`, which completes the pending selection.
+wallets plus a "Create New Wallet" action. `pendingSelection.claimableWallets` lists
+claimable wallets of the requested type (see [Claimable Wallets](#claimable-wallets));
+`claimAndSelectWallet` accepts only those ids. Each of these SDK calls returns the selected
+wallet and persists it as the active wallet session.
 
 For OIDC redirect auth, pass the behavior when starting redirect auth to store it
 with the pending redirect state:
@@ -348,16 +351,19 @@ not fall back to creating a wallet. `CompleteAuthResult.WalletSelected.claimable
 lists the claimable wallets that sign-in did not claim, such as those of another wallet
 type.
 
-Claim one yourself with `claimWallet`. It works where `useWallet` does: during a pending
-manual selection it completes the selection, and with an active session it switches the
-active wallet to the claimed one. Claiming grants the signed-in credential access to the
-wallet and makes it one of the user's owned wallets:
+Claim one yourself during a manual selection with
+`pendingSelection.claimAndSelectWallet(walletId)`, which accepts only ids from
+`pendingSelection.claimableWallets` and completes the selection like `selectWallet`. With an
+active session, `omsWallet.wallet.claimWallet(walletId)` claims a wallet and switches the active
+wallet to it; like `useWallet`, it also completes a pending selection. Claiming grants the
+signed-in credential access to the wallet and makes it one of the user's owned wallets:
 
 ```kotlin
-val claimable = (result as? CompleteAuthResult.WalletSelection)?.pendingSelection?.claimableWallets
-claimable?.firstOrNull()?.let { wallet ->
-    val claimed = omsWallet.wallet.claimWallet(wallet.id)
-    println("Claimed wallet: ${claimed.wallet.address}")
+if (result is CompleteAuthResult.WalletSelection) {
+    result.pendingSelection.claimableWallets.firstOrNull()?.let { wallet ->
+        val claimed = result.pendingSelection.claimAndSelectWallet(wallet.id)
+        println("Claimed wallet: ${claimed.wallet.address}")
+    }
 }
 ```
 

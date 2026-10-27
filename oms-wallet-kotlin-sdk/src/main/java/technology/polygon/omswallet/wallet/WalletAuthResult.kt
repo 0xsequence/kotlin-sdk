@@ -41,7 +41,7 @@ enum class WalletSelectionBehavior {
  *
  * [claimableWallets] are wallets of [walletType] that were preallocated for the
  * signed-in user's verified email and not claimed yet; claim one with
- * `WalletClient.claimWallet`.
+ * [claimAndSelectWallet].
  */
 class PendingWalletSelection internal constructor(
     val walletType: WalletType,
@@ -50,6 +50,7 @@ class PendingWalletSelection internal constructor(
     val credential: WalletCredential,
     private val selectWalletAction: suspend (String) -> WalletActivationResult,
     private val createAndSelectWalletAction: suspend (String?) -> WalletActivationResult,
+    private val claimAndSelectWalletAction: suspend (String) -> WalletActivationResult,
 ) {
     private val selectionMutex = Mutex()
 
@@ -85,6 +86,29 @@ class PendingWalletSelection internal constructor(
             lockSelection(operation)
             try {
                 createAndSelectWalletAction(reference)
+            } finally {
+                selectionMutex.unlock()
+            }
+        }
+    }
+
+    /**
+     * Claims one of [claimableWallets], selects it, and persists it as the
+     * active wallet session.
+     */
+    suspend fun claimAndSelectWallet(walletId: String): WalletActivationResult {
+        val operation = OMSWalletOperation.PendingWalletSelectionClaimAndSelectWallet
+        return runOMSWalletOperation(operation) {
+            lockSelection(operation)
+            try {
+                if (claimableWallets.none { it.id == walletId }) {
+                    throw OMSWalletSelectionException(
+                        code = OMSWalletErrorCode.WalletSelectionUnavailable,
+                        operation = operation,
+                        message = "Selected wallet is not one of the available options",
+                    )
+                }
+                claimAndSelectWalletAction(walletId)
             } finally {
                 selectionMutex.unlock()
             }

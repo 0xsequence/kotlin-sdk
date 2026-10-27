@@ -257,7 +257,10 @@ still created when there is nothing to claim. A failed claim fails sign-in.
   wallets the sign-in did not claim. It is the last constructor property and defaults to an
   empty list.
 - `PendingWalletSelection` gained `claimableWallets: List<Wallet>`, filtered to the requested
-  wallet type like `wallets`.
+  wallet type like `wallets`, and `claimAndSelectWallet(walletId: String)`, which claims one of
+  them and completes the selection like `selectWallet`. Its errors carry
+  `OMSWalletOperation.PendingWalletSelectionClaimAndSelectWallet`
+  (`wallet.pendingWalletSelection.claimAndSelectWallet`).
 - `WalletClient.claimWallet(walletId: String): WalletActivationResult` claims and selects a
   claimable wallet, during a pending manual selection or with an active session. Its errors carry
   `OMSWalletOperation.WalletClaimWallet` (`wallet.claimWallet`).
@@ -269,8 +272,8 @@ These public enums gained cases. Update exhaustive `when` expressions over them:
 - `WalletType.Tron`
 - `OMSWalletOperation.WalletSignTronMessage`, `WalletSignTronTypedData`,
   `WalletIsValidTronMessageSignature`, `WalletIsValidTronTypedDataSignature`,
-  `WalletSendTronTransaction`, `WalletCallTronContract`, `IndexerGetTronBalances`, and
-  `WalletClaimWallet`
+  `WalletSendTronTransaction`, `WalletCallTronContract`, `IndexerGetTronBalances`,
+  `WalletClaimWallet`, and `PendingWalletSelectionClaimAndSelectWallet`
 - `OMSWalletErrorCode.WalletAddressAlreadyImported`
 
 `WalletImportPrivateKey` also gained the `Tron` and `TronBytes` subtypes; exhaustive `when`

@@ -326,9 +326,22 @@ class PublicErrorContractsTest {
                         unavailableSelection.selectWallet("wallet-missing")
                     },
                 )
+            errors +=
+                labeled(
+                    "wallet.pendingWalletSelection.claimAndSelectWallet.unavailable",
+                    publicError {
+                        // An owned wallet id is not one of the claimable options.
+                        unavailableSelection.claimAndSelectWallet("wallet-1")
+                    },
+                )
 
             server.enqueueJson("""{"verifier":"old-verifier","loginHint":"old@example.com","challenge":"old-challenge"}""")
-            server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-old", "0x2222222222222222222222222222222222222222"))))
+            server.enqueueJson(
+                completeAuthResponseBody(
+                    wallets = listOf(walletFixture("wallet-old", "0x2222222222222222222222222222222222222222")),
+                    claimable = listOf(walletFixture("wallet-old-claimable", "0x2222222222222222222222222222222222222223")),
+                ),
+            )
             server.enqueueJson("""{"verifier":"new-verifier","loginHint":"new@example.com","challenge":"new-challenge"}""")
             server.enqueueJson(completeAuthResponseBody(listOf(walletFixture("wallet-new", "0x3333333333333333333333333333333333333333"))))
             val staleClient = createOmsClient()
@@ -357,6 +370,13 @@ class PublicErrorContractsTest {
                     "wallet.pendingWalletSelection.createAndSelectWallet.stale",
                     publicError {
                         staleSelection.createAndSelectWallet("stale")
+                    },
+                )
+            errors +=
+                labeled(
+                    "wallet.pendingWalletSelection.claimAndSelectWallet.stale",
+                    publicError {
+                        staleSelection.claimAndSelectWallet("wallet-old-claimable")
                     },
                 )
 
@@ -399,6 +419,13 @@ class PublicErrorContractsTest {
                         inFlightSelection.createAndSelectWallet("duplicate")
                     },
                 )
+            errors +=
+                labeled(
+                    "wallet.pendingWalletSelection.claimAndSelectWallet.inFlight",
+                    publicError {
+                        inFlightSelection.claimAndSelectWallet("wallet-created")
+                    },
+                )
             firstSelection.await()
 
             assertEquals(
@@ -409,6 +436,15 @@ class PublicErrorContractsTest {
                             name = "OMSWalletSelectionException",
                             code = "OMS_WALLET_SELECTION_UNAVAILABLE",
                             operation = "wallet.pendingWalletSelection.selectWallet",
+                            message = "Selected wallet is not one of the available options",
+                        ),
+                    ),
+                    labeled(
+                        "wallet.pendingWalletSelection.claimAndSelectWallet.unavailable",
+                        error(
+                            name = "OMSWalletSelectionException",
+                            code = "OMS_WALLET_SELECTION_UNAVAILABLE",
+                            operation = "wallet.pendingWalletSelection.claimAndSelectWallet",
                             message = "Selected wallet is not one of the available options",
                         ),
                     ),
@@ -431,6 +467,15 @@ class PublicErrorContractsTest {
                         ),
                     ),
                     labeled(
+                        "wallet.pendingWalletSelection.claimAndSelectWallet.stale",
+                        error(
+                            name = "OMSWalletSelectionException",
+                            code = "OMS_WALLET_SELECTION_STALE",
+                            operation = "wallet.pendingWalletSelection.claimAndSelectWallet",
+                            message = "Pending wallet selection is no longer active",
+                        ),
+                    ),
+                    labeled(
                         "wallet.pendingWalletSelection.selectWallet.inFlight",
                         error(
                             name = "OMSWalletSelectionException",
@@ -445,6 +490,15 @@ class PublicErrorContractsTest {
                             name = "OMSWalletSelectionException",
                             code = "OMS_WALLET_SELECTION_IN_FLIGHT",
                             operation = "wallet.pendingWalletSelection.createAndSelectWallet",
+                            message = "Pending wallet selection already has an action in flight",
+                        ),
+                    ),
+                    labeled(
+                        "wallet.pendingWalletSelection.claimAndSelectWallet.inFlight",
+                        error(
+                            name = "OMSWalletSelectionException",
+                            code = "OMS_WALLET_SELECTION_IN_FLIGHT",
+                            operation = "wallet.pendingWalletSelection.claimAndSelectWallet",
                             message = "Pending wallet selection already has an action in flight",
                         ),
                     ),

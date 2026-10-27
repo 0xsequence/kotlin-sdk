@@ -1284,11 +1284,11 @@ class WalletClient private constructor(
     /**
      * Claims a preallocated wallet offered in [CompleteAuthResult.WalletSelected.claimableWallets] or
      * [PendingWalletSelection.claimableWallets] and selects it, like [useWallet]. Claiming links the
-     * wallet to the signed-in identity, so it is listed with the owned wallets afterwards.
+     * wallet to the signed-in identity, so it is listed with the owned wallets afterwards. During a
+     * pending manual selection, prefer [PendingWalletSelection.claimAndSelectWallet].
      */
     suspend fun claimWallet(walletId: String): WalletActivationResult =
         runOMSWalletOperation(OMSWalletOperation.WalletClaimWallet) {
-            require(walletId.isNotBlank()) { "walletId is required" }
             claimWalletForCurrentSession(walletId, requireWalletSelectionOrActiveSession())
         }
 
@@ -1465,10 +1465,31 @@ class WalletClient private constructor(
         signerAddress: String,
         signerKeyType: WalletSigningAlgorithm?,
         walletId: String,
+    ): WalletActivationResult =
+        activateWalletForPendingSelection(pendingWalletSelectionId, signerAddress, signerKeyType) { requiredSessionRevision ->
+            requestUseWallet(walletId, requiredSessionRevision)
+        }
+
+    private suspend fun claimWalletForPendingSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: WalletSigningAlgorithm?,
+        walletId: String,
+    ): WalletActivationResult =
+        activateWalletForPendingSelection(pendingWalletSelectionId, signerAddress, signerKeyType) { requiredSessionRevision ->
+            gateway.claimWallet(walletId, requiredSessionRevision)
+        }
+
+    /** Runs [requestWallet] and completes the pending selection with the wallet it returns. */
+    private suspend fun activateWalletForPendingSelection(
+        pendingWalletSelectionId: Long,
+        signerAddress: String,
+        signerKeyType: WalletSigningAlgorithm?,
+        requestWallet: suspend (requiredSessionRevision: Long) -> Wallet,
     ): WalletActivationResult {
         val requiredSessionRevision =
             requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
-        val wallet = requestUseWallet(walletId, requiredSessionRevision)
+        val wallet = requestWallet(requiredSessionRevision)
         return synchronized(runtime.lifecycleLock) {
             walletSession.requireRevision(requiredSessionRevision)
             val selectedSessionRevision =
@@ -1488,22 +1509,10 @@ class WalletClient private constructor(
         signerKeyType: WalletSigningAlgorithm?,
         walletType: WalletType,
         reference: String?,
-    ): WalletActivationResult {
-        val requiredSessionRevision =
-            requirePendingWalletSelection(pendingWalletSelectionId, signerAddress, signerKeyType)
-        val wallet = requestCreateWallet(walletType, reference, requiredSessionRevision)
-        return synchronized(runtime.lifecycleLock) {
-            walletSession.requireRevision(requiredSessionRevision)
-            val selectedSessionRevision =
-                walletSession.selectWalletForPendingSelection(
-                    pendingWalletSelectionId = pendingWalletSelectionId,
-                    signerAddress = signerAddress,
-                    signerKeyType = signerKeyType,
-                    wallet = wallet,
-                )
-            persistSelectedWallet(wallet, selectedSessionRevision)
+    ): WalletActivationResult =
+        activateWalletForPendingSelection(pendingWalletSelectionId, signerAddress, signerKeyType) { requiredSessionRevision ->
+            requestCreateWallet(walletType, reference, requiredSessionRevision)
         }
-    }
 
     private suspend fun requirePendingWalletSelection(
         pendingWalletSelectionId: Long,
@@ -1669,6 +1678,14 @@ class WalletClient private constructor(
                                     signerKeyType = pendingSignerKeyType,
                                     walletType = walletType,
                                     reference = reference,
+                                )
+                            },
+                            claimAndSelectWalletAction = { walletId ->
+                                claimWalletForPendingSelection(
+                                    pendingWalletSelectionId = pendingWalletSelectionId,
+                                    signerAddress = pendingSignerAddress,
+                                    signerKeyType = pendingSignerKeyType,
+                                    walletId = walletId,
                                 )
                             },
                         ),

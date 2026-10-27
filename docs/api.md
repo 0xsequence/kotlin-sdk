@@ -560,6 +560,12 @@ class PendingWalletSelection {
      * active wallet session.
      */
     suspend fun createAndSelectWallet(reference: String? = null): WalletActivationResult
+
+    /**
+     * Claims one of `claimableWallets`, selects it, and persists it as the
+     * active wallet session.
+     */
+    suspend fun claimAndSelectWallet(walletId: String): WalletActivationResult
 }
 ```
 
@@ -744,7 +750,8 @@ suspend fun useWallet(walletId: String): WalletActivationResult
 
 Claims a preallocated wallet offered in `CompleteAuthResult.WalletSelected.claimableWallets` or
 `PendingWalletSelection.claimableWallets` and selects it, like `useWallet`. Claiming links the
-wallet to the signed-in identity, so it is listed with the owned wallets afterwards.
+wallet to the signed-in identity, so it is listed with the owned wallets afterwards. During a
+pending manual selection, prefer `PendingWalletSelection.claimAndSelectWallet`.
 
 ```kotlin
 suspend fun claimWallet(walletId: String): WalletActivationResult
@@ -2080,6 +2087,7 @@ enum class OMSWalletOperation(
     val id: String,
 ) {
     PendingWalletSelection("wallet.pendingWalletSelection"),
+    PendingWalletSelectionClaimAndSelectWallet("wallet.pendingWalletSelection.claimAndSelectWallet"),
     PendingWalletSelectionCreateAndSelectWallet("wallet.pendingWalletSelection.createAndSelectWallet"),
     PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
     IndexerGetBalances("indexer.getBalances"),

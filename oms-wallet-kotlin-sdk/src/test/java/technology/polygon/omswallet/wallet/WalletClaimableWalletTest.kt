@@ -14,7 +14,7 @@ import org.junit.Test
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletRequestException
-import technology.polygon.omswallet.OMSWalletValidationException
+import technology.polygon.omswallet.OMSWalletSelectionException
 import technology.polygon.omswallet.internal.generated.waas.ClaimWalletRequest
 import technology.polygon.omswallet.internal.generated.waas.ClaimWalletResponse
 import technology.polygon.omswallet.internal.generated.waas.CreateWalletRequest
@@ -304,20 +304,78 @@ class WalletClaimableWalletTest {
         }
 
     @Test
-    fun claimWalletRejectsBlankWalletIdWithoutRequest() =
+    fun pendingSelectionClaimAndSelectWalletCompletesAndClosesSelection() =
         runBlocking {
-            val store = InMemorySessionStore(activeSessionSnapshot())
-            val client = createClient(store)
-            assertTrue(client.restorePersistedSession())
+            val (client, store, pending) = manualSelection()
 
-            val failure = runCatching { client.claimWallet(" ") }.exceptionOrNull()
+            server.enqueueJson(claimWalletResponseBody(CLAIMABLE_ETHEREUM))
+            val claimed = pending.claimAndSelectWallet("wallet-claim-evm")
 
-            val validationFailure = failure as OMSWalletValidationException
-            assertEquals(OMSWalletOperation.WalletClaimWallet, validationFailure.operation)
-            assertEquals("walletId is required", validationFailure.message)
-            assertEquals(0, server.requestCount)
-            assertEquals("wallet-active", client.activeWallet?.id)
+            requireNotNull(server.takeRequest())
+            requireNotNull(server.takeRequest())
+            val claimRequest = requireNotNull(server.takeRequest())
+            assertEquals("/v1/Waas/ClaimWallet", claimRequest.target)
+            assertEquals(
+                WaasApi.ClaimWallet.encodeRequest(ClaimWalletRequest(walletId = "wallet-claim-evm")),
+                claimRequest.utf8Body(),
+            )
+            assertEquals("wallet-claim-evm", claimed.wallet.id)
+            assertEquals("wallet-claim-evm", client.activeWallet?.id)
+            assertFalse(client.hasPendingSignIn)
+            assertEquals("wallet-claim-evm", store.snapshot?.walletId)
+            assertEquals(CLAIMABLE_ETHEREUM.address, store.snapshot?.walletAddress)
+            assertEmailSessionAuth(store.snapshot?.auth)
+
+            val requestCountAfterClaim = server.requestCount
+            val reuse = runCatching { pending.claimAndSelectWallet("wallet-claim-evm") }.exceptionOrNull()
+            val stale = reuse as OMSWalletSelectionException
+            assertEquals(OMSWalletErrorCode.WalletSelectionStale, stale.code)
+            assertEquals(OMSWalletOperation.PendingWalletSelectionClaimAndSelectWallet, stale.operation)
+            assertEquals(requestCountAfterClaim, server.requestCount)
+            assertEquals("wallet-claim-evm", client.activeWallet?.id)
         }
+
+    @Test
+    fun pendingSelectionClaimAndSelectWalletRejectsIdsNotClaimableWithoutRequest() =
+        runBlocking {
+            val (client, store, pending) = manualSelection()
+            val requestCount = server.requestCount
+
+            // An owned wallet, a claimable wallet of another type, and an unknown id.
+            listOf("wallet-owned-evm", "wallet-claim-sol", "wallet-unknown").forEach { walletId ->
+                val failure = runCatching { pending.claimAndSelectWallet(walletId) }.exceptionOrNull()
+                val unavailable = failure as OMSWalletSelectionException
+                assertEquals(OMSWalletErrorCode.WalletSelectionUnavailable, unavailable.code)
+                assertEquals(OMSWalletOperation.PendingWalletSelectionClaimAndSelectWallet, unavailable.operation)
+                assertEquals("Selected wallet is not one of the available options", unavailable.message)
+            }
+
+            assertEquals(requestCount, server.requestCount)
+            assertNull(client.activeWallet)
+            assertTrue(client.hasPendingSignIn)
+            assertNull(store.snapshot)
+        }
+
+    /** Completes email auth in manual mode with an owned and claimable Ethereum wallet and a claimable Solana one. */
+    private suspend fun manualSelection(): Triple<WalletClient, InMemorySessionStore, PendingWalletSelection> {
+        enqueueEmailAuthStart()
+        server.enqueueJson(
+            completeAuthResponseBody(
+                wallets = listOf(OWNED_ETHEREUM),
+                claimable = listOf(CLAIMABLE_ETHEREUM, CLAIMABLE_SOLANA),
+            ),
+        )
+        val store = InMemorySessionStore()
+        val client = createClient(store)
+        client.startEmailAuth("user@example.com")
+        val result =
+            client.completeEmailAuth(
+                code = "123456",
+                walletSelection = WalletSelectionBehavior.Manual,
+            ) as CompleteAuthResult.WalletSelection
+        assertEquals(listOf("wallet-claim-evm"), result.pendingSelection.claimableWallets.map { it.id })
+        return Triple(client, store, result.pendingSelection)
+    }
 
     private fun createClient(store: InMemorySessionStore): WalletClient =
         WalletClient.create(

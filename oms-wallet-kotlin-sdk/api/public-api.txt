@@ -130,6 +130,7 @@ public final class technology/polygon/omswallet/OMSWalletOperation : java/lang/E
 	public static final field IndexerGetTransactionHistory Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field IndexerGetTronBalances Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field PendingWalletSelection Ltechnology/polygon/omswallet/OMSWalletOperation;
+	public static final field PendingWalletSelectionClaimAndSelectWallet Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field PendingWalletSelectionCreateAndSelectWallet Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field PendingWalletSelectionSelectWallet Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field WalletAuthorizeRemoteAccess Ltechnology/polygon/omswallet/OMSWalletOperation;
@@ -1644,6 +1645,7 @@ public final class technology/polygon/omswallet/wallet/OmsRelayOidcProviders {
 }
 
 public final class technology/polygon/omswallet/wallet/PendingWalletSelection {
+	public final fun claimAndSelectWallet (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun createAndSelectWallet (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun createAndSelectWallet$default (Ltechnology/polygon/omswallet/wallet/PendingWalletSelection;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun getClaimableWallets ()Ljava/util/List;

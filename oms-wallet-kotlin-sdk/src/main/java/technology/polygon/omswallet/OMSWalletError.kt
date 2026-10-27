@@ -35,6 +35,7 @@ enum class OMSWalletOperation(
     val id: String,
 ) {
     PendingWalletSelection("wallet.pendingWalletSelection"),
+    PendingWalletSelectionClaimAndSelectWallet("wallet.pendingWalletSelection.claimAndSelectWallet"),
     PendingWalletSelectionCreateAndSelectWallet("wallet.pendingWalletSelection.createAndSelectWallet"),
     PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
     IndexerGetBalances("indexer.getBalances"),
