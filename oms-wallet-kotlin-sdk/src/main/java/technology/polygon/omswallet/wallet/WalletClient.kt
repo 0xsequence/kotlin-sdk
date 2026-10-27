@@ -34,6 +34,7 @@ import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.AuthorizeRemoteAccessRequest
 import technology.polygon.omswallet.internal.generated.waas.Ciphersuite
+import technology.polygon.omswallet.internal.generated.waas.ClaimWalletRequest
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthResponse
@@ -1275,9 +1276,41 @@ class WalletClient private constructor(
         requiredSessionRevision: Long,
         oidcRedirectAuthOwnership: PendingOidcRedirectAuth? = null,
         onSessionRevisionChanged: ((Long) -> Unit)? = null,
+    ): WalletActivationResult =
+        activateWalletForCurrentSession(requiredSessionRevision, oidcRedirectAuthOwnership, onSessionRevisionChanged) {
+            requestUseWallet(walletId, requiredSessionRevision)
+        }
+
+    /**
+     * Claims a preallocated wallet offered in [CompleteAuthResult.WalletSelected.claimableWallets] or
+     * [PendingWalletSelection.claimableWallets] and selects it, like [useWallet]. Claiming links the
+     * wallet to the signed-in identity, so it is listed with the owned wallets afterwards.
+     */
+    suspend fun claimWallet(walletId: String): WalletActivationResult =
+        runOMSWalletOperation(OMSWalletOperation.WalletClaimWallet) {
+            require(walletId.isNotBlank()) { "walletId is required" }
+            claimWalletForCurrentSession(walletId, requireWalletSelectionOrActiveSession())
+        }
+
+    private suspend fun claimWalletForCurrentSession(
+        walletId: String,
+        requiredSessionRevision: Long,
+        oidcRedirectAuthOwnership: PendingOidcRedirectAuth? = null,
+        onSessionRevisionChanged: ((Long) -> Unit)? = null,
+    ): WalletActivationResult =
+        activateWalletForCurrentSession(requiredSessionRevision, oidcRedirectAuthOwnership, onSessionRevisionChanged) {
+            gateway.claimWallet(walletId, requiredSessionRevision)
+        }
+
+    /** Runs [requestWallet] and selects and persists the wallet it returns as the active wallet. */
+    private suspend fun activateWalletForCurrentSession(
+        requiredSessionRevision: Long,
+        oidcRedirectAuthOwnership: PendingOidcRedirectAuth?,
+        onSessionRevisionChanged: ((Long) -> Unit)?,
+        requestWallet: suspend () -> Wallet,
     ): WalletActivationResult {
         requireWalletSelectionOrActiveSession(requiredSessionRevision)
-        val wallet = requestUseWallet(walletId, requiredSessionRevision)
+        val wallet = requestWallet()
         return withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
             val selectedSessionRevision =
                 walletSession.selectWallet(
@@ -1422,19 +1455,10 @@ class WalletClient private constructor(
         requiredSessionRevision: Long,
         oidcRedirectAuthOwnership: PendingOidcRedirectAuth? = null,
         onSessionRevisionChanged: ((Long) -> Unit)? = null,
-    ): WalletActivationResult {
-        requireWalletSelectionOrActiveSession(requiredSessionRevision)
-        val wallet = requestCreateWallet(walletType, reference, requiredSessionRevision)
-        return withOptionalOidcRedirectAuthOwnership(oidcRedirectAuthOwnership) {
-            val selectedSessionRevision =
-                walletSession.selectWallet(
-                    wallet = wallet,
-                    requiredRevision = requiredSessionRevision,
-                )
-            onSessionRevisionChanged?.invoke(selectedSessionRevision)
-            persistSelectedWallet(wallet, selectedSessionRevision)
+    ): WalletActivationResult =
+        activateWalletForCurrentSession(requiredSessionRevision, oidcRedirectAuthOwnership, onSessionRevisionChanged) {
+            requestCreateWallet(walletType, reference, requiredSessionRevision)
         }
-    }
 
     private suspend fun useWalletForPendingSelection(
         pendingWalletSelectionId: Long,
@@ -1628,6 +1652,7 @@ class WalletClient private constructor(
                         PendingWalletSelection(
                             walletType = walletType,
                             wallets = wallets.filter { it.type == walletType },
+                            claimableWallets = completeAuth.claimableWallets.filter { it.type == walletType },
                             credential = completeAuth.credential,
                             selectWalletAction = { walletId ->
                                 useWalletForPendingSelection(
@@ -1649,10 +1674,31 @@ class WalletClient private constructor(
                         ),
                 )
             } else {
-                val candidateWallets = wallets.filter { it.type == walletType }
+                // Owned wallet first, then a claimable (preallocated) one, then a new wallet.
+                val ownedWallet = wallets.firstOrNull { it.type == walletType }
+                val claimableWallet =
+                    if (ownedWallet == null) completeAuth.claimableWallets.firstOrNull { it.type == walletType } else null
                 val selected =
                     when {
-                        candidateWallets.isEmpty() -> {
+                        ownedWallet != null -> {
+                            useWalletForCurrentSession(
+                                walletId = ownedWallet.id,
+                                requiredSessionRevision = pendingSessionRevision,
+                                oidcRedirectAuthOwnership = oidcRedirectAuthOwnership,
+                                onSessionRevisionChanged = onSessionRevisionChanged,
+                            )
+                        }
+
+                        claimableWallet != null -> {
+                            claimWalletForCurrentSession(
+                                walletId = claimableWallet.id,
+                                requiredSessionRevision = pendingSessionRevision,
+                                oidcRedirectAuthOwnership = oidcRedirectAuthOwnership,
+                                onSessionRevisionChanged = onSessionRevisionChanged,
+                            )
+                        }
+
+                        else -> {
                             createWalletForCurrentSession(
                                 walletType = walletType,
                                 reference = null,
@@ -1661,20 +1707,12 @@ class WalletClient private constructor(
                                 onSessionRevisionChanged = onSessionRevisionChanged,
                             )
                         }
-
-                        else -> {
-                            useWalletForCurrentSession(
-                                walletId = candidateWallets.first().id,
-                                requiredSessionRevision = pendingSessionRevision,
-                                oidcRedirectAuthOwnership = oidcRedirectAuthOwnership,
-                                onSessionRevisionChanged = onSessionRevisionChanged,
-                            )
-                        }
                     }
                 CompleteAuthResult.WalletSelected(
                     wallet = selected.wallet,
-                    wallets = if (candidateWallets.isEmpty()) wallets + selected.wallet else wallets,
+                    wallets = if (ownedWallet == null) wallets + selected.wallet else wallets,
                     credential = completeAuth.credential,
+                    claimableWallets = completeAuth.claimableWallets.filter { it.id != claimableWallet?.id },
                 )
             }
         } catch (throwable: CancellationException) {
@@ -3292,6 +3330,7 @@ private data class VerifierCommitment(
 private data class WalletAuthCompletion(
     val wallets: List<Wallet>,
     val nextWalletsCursor: String?,
+    val claimableWallets: List<Wallet>,
     val email: String?,
     val identity: Identity,
     val credential: WalletCredential,
@@ -3533,6 +3572,18 @@ private class WaasWalletGateway(
         signedClient(requiredSessionRevision)
             .useWallet(
                 UseWalletRequest(
+                    walletId = walletId,
+                ),
+            ).wallet
+            .toModel()
+
+    suspend fun claimWallet(
+        walletId: String,
+        requiredSessionRevision: Long,
+    ): Wallet =
+        signedClient(requiredSessionRevision)
+            .claimWallet(
+                ClaimWalletRequest(
                     walletId = walletId,
                 ),
             ).wallet
@@ -4188,6 +4239,7 @@ private class WaasWalletGateway(
         WalletAuthCompletion(
             wallets = wallets.map { it.toModel() },
             nextWalletsCursor = page?.cursor?.takeIf { it.isNotBlank() },
+            claimableWallets = claimable.orEmpty().map { it.toModel() },
             email = email,
             identity = identity,
             credential = credential.toWalletCredential(),

@@ -157,8 +157,9 @@ or switch accounts.
 
 By default email OTP and OIDC ID-token auth completion use
 `WalletSelectionBehavior.Automatic`. They select a wallet for the requested
-wallet type, create one when none exists, and return
-`CompleteAuthResult.WalletSelected`. If more than one matching wallet exists,
+wallet type, claim a claimable wallet of that type when none exists (see
+[Claimable Wallets](#claimable-wallets)), create one when there is none to claim,
+and return `CompleteAuthResult.WalletSelected`. If more than one matching wallet exists,
 automatic mode selects the first matching wallet returned by the wallet API. Use manual
 mode for apps that need to let users choose between multiple wallets. Every
 `CompleteAuthResult` exposes `credential`, and `wallet` is the selected wallet or `null`
@@ -290,7 +291,9 @@ calls `pendingSelection.selectWallet(...)` or
 `pendingSelection.createAndSelectWallet(...)`. `pendingSelection.wallets` is
 already filtered to the requested wallet type, so the app picker can show those
 wallets plus a "Create New Wallet" action. Both SDK calls return the selected
-wallet and persist it as the active wallet session.
+wallet and persist it as the active wallet session. `pendingSelection.claimableWallets`
+lists claimable wallets of the requested type; claim one with
+`omsWallet.wallet.claimWallet(...)`, which completes the pending selection.
 
 For OIDC redirect auth, pass the behavior when starting redirect auth to store it
 with the pending redirect state:
@@ -325,6 +328,42 @@ when (
     OidcRedirectAuthResult.NoPendingAuth -> Unit
 }
 ```
+
+### Claimable Wallets
+
+A project can preallocate a receive-only wallet for an email address before that user
+signs in, for example to fund it ahead of time. When a user signs in and proves control
+of that email (email OTP, or an OIDC provider that reports it as verified), auth
+completion reports the wallet as claimable. Claimable wallets are only reported at
+sign-in; `listWallets()` does not include them until they are claimed.
+
+Automatic wallet selection picks, for the requested wallet type:
+
+1. the first wallet the user already owns,
+2. otherwise a claimable wallet, which it claims and selects,
+3. otherwise a new wallet, which it creates and selects.
+
+If the claim fails, sign-in fails the same way a failed wallet creation does; the SDK does
+not fall back to creating a wallet. `CompleteAuthResult.WalletSelected.claimableWallets`
+lists the claimable wallets that sign-in did not claim, such as those of another wallet
+type.
+
+Claim one yourself with `claimWallet`. It works where `useWallet` does: during a pending
+manual selection it completes the selection, and with an active session it switches the
+active wallet to the claimed one. Claiming grants the signed-in credential access to the
+wallet and makes it one of the user's owned wallets:
+
+```kotlin
+val claimable = (result as? CompleteAuthResult.WalletSelection)?.pendingSelection?.claimableWallets
+claimable?.firstOrNull()?.let { wallet ->
+    val claimed = omsWallet.wallet.claimWallet(wallet.id)
+    println("Claimed wallet: ${claimed.wallet.address}")
+}
+```
+
+A wallet that is not allocated to the signed-in user's verified email, or was already
+claimed, fails with `OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `404`) and
+`upstreamError.name == "AccountNotFound"`; the active wallet is unchanged.
 
 ### Session State
 

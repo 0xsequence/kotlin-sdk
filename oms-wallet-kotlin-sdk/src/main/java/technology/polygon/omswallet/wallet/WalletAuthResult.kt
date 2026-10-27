@@ -22,9 +22,10 @@ data class WalletActivationResult(
  */
 enum class WalletSelectionBehavior {
     /**
-     * Selects the first existing wallet for the requested wallet type, or
-     * creates and selects one when none exists. Use [Manual] when the app needs
-     * to present wallet choices.
+     * Selects the first existing wallet for the requested wallet type. When none
+     * exists, claims and selects a claimable (preallocated) wallet of that type,
+     * or creates and selects one when there is none to claim. Use [Manual] when
+     * the app needs to present wallet choices.
      */
     Automatic,
 
@@ -37,10 +38,15 @@ enum class WalletSelectionBehavior {
 
 /**
  * Authenticated state waiting for the app to select or create a wallet.
+ *
+ * [claimableWallets] are wallets of [walletType] that were preallocated for the
+ * signed-in user's verified email and not claimed yet; claim one with
+ * `WalletClient.claimWallet`.
  */
 class PendingWalletSelection internal constructor(
     val walletType: WalletType,
     val wallets: List<Wallet>,
+    val claimableWallets: List<Wallet>,
     val credential: WalletCredential,
     private val selectWalletAction: suspend (String) -> WalletActivationResult,
     private val createAndSelectWalletAction: suspend (String?) -> WalletActivationResult,
@@ -107,10 +113,16 @@ sealed interface CompleteAuthResult {
     /** The selected wallet, or `null` while wallet selection is pending. */
     val wallet: Wallet?
 
+    /**
+     * Auth completed and [wallet] is active. [claimableWallets] are wallets preallocated
+     * for the signed-in user's verified email that this sign-in did not claim; claim one
+     * with `WalletClient.claimWallet`.
+     */
     data class WalletSelected(
         override val wallet: Wallet,
         val wallets: List<Wallet>,
         override val credential: WalletCredential,
+        val claimableWallets: List<Wallet> = emptyList(),
     ) : CompleteAuthResult
 
     data class WalletSelection(

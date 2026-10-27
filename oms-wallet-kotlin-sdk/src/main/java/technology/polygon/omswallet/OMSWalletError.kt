@@ -43,6 +43,7 @@ enum class OMSWalletOperation(
     IndexerGetTransactionHistory("indexer.getTransactionHistory"),
     WalletCallContract("wallet.callContract"),
     WalletCallTronContract("wallet.callTronContract"),
+    WalletClaimWallet("wallet.claimWallet"),
     WalletAuthorizeRemoteAccess("wallet.authorizeRemoteAccess"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),

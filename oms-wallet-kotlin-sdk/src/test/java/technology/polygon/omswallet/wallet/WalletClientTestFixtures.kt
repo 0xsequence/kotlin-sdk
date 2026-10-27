@@ -78,6 +78,7 @@ internal fun completeAuthResponseBody(
     identity: Identity = identityFixture(IdentityType.Email),
     email: String? = "user@example.com",
     page: Page? = null,
+    claimable: List<Wallet>? = null,
 ): String =
     WebRpcJson.encodeToString(
         CompleteAuthResponse(
@@ -86,6 +87,7 @@ internal fun completeAuthResponseBody(
             page = page,
             email = email,
             credential = credentialFixture(),
+            claimable = claimable,
         ),
     )
 

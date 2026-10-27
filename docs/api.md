@@ -522,9 +522,10 @@ the app complete wallet selection.
 ```kotlin
 enum class WalletSelectionBehavior {
     /**
-     * Selects the first existing wallet for the requested wallet type, or
-     * creates and selects one when none exists. Use `Manual` when the app needs
-     * to present wallet choices.
+     * Selects the first existing wallet for the requested wallet type. When none
+     * exists, claims and selects a claimable (preallocated) wallet of that type,
+     * or creates and selects one when there is none to claim. Use `Manual` when
+     * the app needs to present wallet choices.
      */
     Automatic,
     /**
@@ -544,6 +545,8 @@ class PendingWalletSelection {
     val walletType: WalletType
 
     val wallets: List<Wallet>
+
+    val claimableWallets: List<Wallet>
 
     val credential: WalletCredential
 
@@ -581,11 +584,16 @@ sealed interface CompleteAuthResult {
 
 ### `CompleteAuthResult.WalletSelected`
 
+Auth completed and `wallet` is active. `claimableWallets` are wallets preallocated
+for the signed-in user's verified email that this sign-in did not claim; claim one
+with `WalletClient.claimWallet`.
+
 ```kotlin
 data class WalletSelected(
     override val wallet: Wallet,
     val wallets: List<Wallet>,
     override val credential: WalletCredential,
+    val claimableWallets: List<Wallet> = emptyList(),
 ) : CompleteAuthResult
 ```
 
@@ -730,6 +738,16 @@ Selects an existing wallet by its WaaS wallet id.
 
 ```kotlin
 suspend fun useWallet(walletId: String): WalletActivationResult
+```
+
+### `WalletClient.claimWallet`
+
+Claims a preallocated wallet offered in `CompleteAuthResult.WalletSelected.claimableWallets` or
+`PendingWalletSelection.claimableWallets` and selects it, like `useWallet`. Claiming links the
+wallet to the signed-in identity, so it is listed with the owned wallets afterwards.
+
+```kotlin
+suspend fun claimWallet(walletId: String): WalletActivationResult
 ```
 
 ### `WalletClient.createWallet`
@@ -2070,6 +2088,7 @@ enum class OMSWalletOperation(
     IndexerGetTransactionHistory("indexer.getTransactionHistory"),
     WalletCallContract("wallet.callContract"),
     WalletCallTronContract("wallet.callTronContract"),
+    WalletClaimWallet("wallet.claimWallet"),
     WalletAuthorizeRemoteAccess("wallet.authorizeRemoteAccess"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),

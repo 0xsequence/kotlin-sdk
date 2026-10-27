@@ -247,6 +247,21 @@ characters (checksum casing is not enforced). Other values fail with `OMSWalletR
 (`OMS_INVALID_RESPONSE`). Wallet-family checks now use the wallet's stored type instead of the
 address shape.
 
+### Claimable wallets
+
+Automatic wallet selection now claims a claimable (preallocated) wallet of the requested type
+when the user owns none, instead of creating a new one. Owned wallets still win, and a wallet is
+still created when there is nothing to claim. A failed claim fails sign-in.
+
+- `CompleteAuthResult.WalletSelected` gained `claimableWallets: List<Wallet>`, the claimable
+  wallets the sign-in did not claim. It is the last constructor property and defaults to an
+  empty list.
+- `PendingWalletSelection` gained `claimableWallets: List<Wallet>`, filtered to the requested
+  wallet type like `wallets`.
+- `WalletClient.claimWallet(walletId: String): WalletActivationResult` claims and selects a
+  claimable wallet, during a pending manual selection or with an active session. Its errors carry
+  `OMSWalletOperation.WalletClaimWallet` (`wallet.claimWallet`).
+
 ### Exhaustive `when` expressions
 
 These public enums gained cases. Update exhaustive `when` expressions over them:
@@ -254,7 +269,8 @@ These public enums gained cases. Update exhaustive `when` expressions over them:
 - `WalletType.Tron`
 - `OMSWalletOperation.WalletSignTronMessage`, `WalletSignTronTypedData`,
   `WalletIsValidTronMessageSignature`, `WalletIsValidTronTypedDataSignature`,
-  `WalletSendTronTransaction`, `WalletCallTronContract`, and `IndexerGetTronBalances`
+  `WalletSendTronTransaction`, `WalletCallTronContract`, `IndexerGetTronBalances`, and
+  `WalletClaimWallet`
 - `OMSWalletErrorCode.WalletAddressAlreadyImported`
 
 `WalletImportPrivateKey` also gained the `Tron` and `TronBytes` subtypes; exhaustive `when`

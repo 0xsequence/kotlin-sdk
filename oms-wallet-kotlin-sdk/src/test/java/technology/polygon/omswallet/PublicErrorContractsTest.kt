@@ -462,6 +462,7 @@ class PublicErrorContractsTest {
                 listOf(
                     missingSession("wallet.listWallets"),
                     missingSession("wallet.useWallet"),
+                    missingSession("wallet.claimWallet"),
                     missingSession("wallet.createWallet"),
                     missingSession("wallet.getIdToken"),
                     missingSession("wallet.signMessage"),
@@ -479,6 +480,9 @@ class PublicErrorContractsTest {
                     },
                     "wallet.useWallet" to {
                         client.wallet.useWallet("wallet-1")
+                    },
+                    "wallet.claimWallet" to {
+                        client.wallet.claimWallet("wallet-1")
                     },
                     "wallet.createWallet" to {
                         client.wallet.createWallet()
@@ -806,6 +810,42 @@ class PublicErrorContractsTest {
                 ),
                 publicError {
                     client.getTransactionStatus("txn-missing")
+                },
+            )
+        }
+
+    @Test
+    fun snapshotsClaimWalletAccountNotFoundAsRequestErrorWithUpstreamDetails() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(404)
+                    .body("""{"error":"AccountNotFound","code":7301,"msg":"Account not found","status":404}""")
+                    .build(),
+            )
+
+            val client = createRestoredWalletClient()
+
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_REQUEST_FAILED",
+                    operation = "wallet.claimWallet",
+                    message = "Account not found",
+                    status = 404,
+                    retryable = false,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "AccountNotFound",
+                            code = "7301",
+                            message = "Account not found",
+                            status = 404,
+                        ),
+                ),
+                publicError {
+                    client.claimWallet("wallet-claimed-elsewhere")
                 },
             )
         }

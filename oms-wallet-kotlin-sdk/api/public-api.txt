@@ -135,6 +135,7 @@ public final class technology/polygon/omswallet/OMSWalletOperation : java/lang/E
 	public static final field WalletAuthorizeRemoteAccess Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field WalletCallContract Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field WalletCallTronContract Ltechnology/polygon/omswallet/OMSWalletOperation;
+	public static final field WalletClaimWallet Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field WalletCompleteEmailAuth Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field WalletCreateWallet Ltechnology/polygon/omswallet/OMSWalletOperation;
 	public static final field WalletExecute Ltechnology/polygon/omswallet/OMSWalletOperation;
@@ -1534,13 +1535,16 @@ public abstract interface class technology/polygon/omswallet/wallet/CompleteAuth
 }
 
 public final class technology/polygon/omswallet/wallet/CompleteAuthResult$WalletSelected : technology/polygon/omswallet/wallet/CompleteAuthResult {
-	public fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ljava/util/List;Ltechnology/polygon/omswallet/models/WalletCredential;)V
+	public fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ljava/util/List;Ltechnology/polygon/omswallet/models/WalletCredential;Ljava/util/List;)V
+	public synthetic fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ljava/util/List;Ltechnology/polygon/omswallet/models/WalletCredential;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ltechnology/polygon/omswallet/models/Wallet;
 	public final fun component2 ()Ljava/util/List;
 	public final fun component3 ()Ltechnology/polygon/omswallet/models/WalletCredential;
-	public final fun copy (Ltechnology/polygon/omswallet/models/Wallet;Ljava/util/List;Ltechnology/polygon/omswallet/models/WalletCredential;)Ltechnology/polygon/omswallet/wallet/CompleteAuthResult$WalletSelected;
-	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/wallet/CompleteAuthResult$WalletSelected;Ltechnology/polygon/omswallet/models/Wallet;Ljava/util/List;Ltechnology/polygon/omswallet/models/WalletCredential;ILjava/lang/Object;)Ltechnology/polygon/omswallet/wallet/CompleteAuthResult$WalletSelected;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ltechnology/polygon/omswallet/models/Wallet;Ljava/util/List;Ltechnology/polygon/omswallet/models/WalletCredential;Ljava/util/List;)Ltechnology/polygon/omswallet/wallet/CompleteAuthResult$WalletSelected;
+	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/wallet/CompleteAuthResult$WalletSelected;Ltechnology/polygon/omswallet/models/Wallet;Ljava/util/List;Ltechnology/polygon/omswallet/models/WalletCredential;Ljava/util/List;ILjava/lang/Object;)Ltechnology/polygon/omswallet/wallet/CompleteAuthResult$WalletSelected;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClaimableWallets ()Ljava/util/List;
 	public fun getCredential ()Ltechnology/polygon/omswallet/models/WalletCredential;
 	public fun getWallet ()Ltechnology/polygon/omswallet/models/Wallet;
 	public final fun getWallets ()Ljava/util/List;
@@ -1642,6 +1646,7 @@ public final class technology/polygon/omswallet/wallet/OmsRelayOidcProviders {
 public final class technology/polygon/omswallet/wallet/PendingWalletSelection {
 	public final fun createAndSelectWallet (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun createAndSelectWallet$default (Ltechnology/polygon/omswallet/wallet/PendingWalletSelection;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun getClaimableWallets ()Ljava/util/List;
 	public final fun getCredential ()Ltechnology/polygon/omswallet/models/WalletCredential;
 	public final fun getWalletType ()Ltechnology/polygon/omswallet/models/WalletType;
 	public final fun getWallets ()Ljava/util/List;
@@ -1680,6 +1685,7 @@ public final class technology/polygon/omswallet/wallet/WalletClient {
 	public static synthetic fun callContract$default (Ltechnology/polygon/omswallet/wallet/WalletClient;Ltechnology/polygon/omswallet/Network;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ltechnology/polygon/omswallet/models/TransactionMode;ZLtechnology/polygon/omswallet/models/TransactionStatusPollingOptions;Ltechnology/polygon/omswallet/models/FeeOptionSelector;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun callTronContract (Ltechnology/polygon/omswallet/TronNetwork;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZLtechnology/polygon/omswallet/models/TransactionStatusPollingOptions;Ltechnology/polygon/omswallet/models/FeeOptionSelector;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun callTronContract$default (Ltechnology/polygon/omswallet/wallet/WalletClient;Ltechnology/polygon/omswallet/TronNetwork;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ZLtechnology/polygon/omswallet/models/TransactionStatusPollingOptions;Ltechnology/polygon/omswallet/models/FeeOptionSelector;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun claimWallet (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun completeEmailAuth (Ljava/lang/String;Ltechnology/polygon/omswallet/wallet/WalletSelectionBehavior;Ltechnology/polygon/omswallet/models/WalletType;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun completeEmailAuth$default (Ltechnology/polygon/omswallet/wallet/WalletClient;Ljava/lang/String;Ltechnology/polygon/omswallet/wallet/WalletSelectionBehavior;Ltechnology/polygon/omswallet/models/WalletType;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun createWallet (Ltechnology/polygon/omswallet/models/WalletType;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
