@@ -50,14 +50,17 @@ creates or destructures the event positionally must account for it; prefer named
 ### Sliding session expiry
 
 Wallet API versions with sliding expiry extend a session's expiry with use, up to the requested lifetime.
-`OMSWalletSession.expiresAt` and `WalletCredential.expiresAt` are the current expiry, which the SDK
-refreshes after restoring a session, while the session is in use, and before treating a locally
-expired session as ended; do not cache them as a fixed end time.
+`OMSWalletSession.expiresAt` is the current expiry, which the SDK refreshes after restoring a
+session, while the session is in use, and before treating a locally expired session that is active
+in memory as ended; do not cache it as a fixed end time. `WalletCredential.expiresAt` is the expiry
+as reported when the credential was returned and is not updated afterwards. A stored session that
+is already past its expiry when the SDK restores it is discarded without asking the wallet API.
 
 - `WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
   (`15_552_000`). `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS` rose from 7 days (`604_800`) to the
-  same maximum, so sign-in without `sessionLifetimeSeconds` now requests 180 days. A session still
-  ends after 10 days without use; pass a shorter `sessionLifetimeSeconds` if you need a hard limit.
+  same maximum, so sign-in without `sessionLifetimeSeconds` now requests 180 days. An idle session
+  still ends about 10 days after its last use; pass a shorter `sessionLifetimeSeconds` if you need a
+  hard limit.
   Wallet API versions without sliding expiry clamp the requested lifetime to their 30-day maximum
   and have no idle timeout, so the default gives a fixed 30-day session there.
 - When the wallet API rejects the session credential as unknown or expired (WaaS `KeyNotFound`
@@ -66,8 +69,35 @@ expired session as ended; do not cache them as a fixed end time.
   `OMSWalletRequestException`. This includes a rejected `Execute`, which never ran: it throws
   `OMS_SESSION_EXPIRED` instead of `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. Status polling after a
   submitted transaction keeps `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` and its `txnId`.
-- If the wallet API cannot be reached when a session reaches its local expiry, the session is kept
-  and protected operations throw the request error instead of `OMS_SESSION_EXPIRED`.
+- When the wallet API answers the SDK's expiry check (`GetCredential`) with `Unauthorized` 7207, the
+  credential was revoked, and the session ends the same way. 7207 from any other call stays a
+  request error and keeps the session.
+- Reading a credential's expiry extends an idle session, so the expiry timer no longer reads it as
+  soon as the session looks expired: it waits until 5 minutes past the expected server-side
+  expiry, which is later than the local one when the session was used after its expiry was last
+  read. Without
+  SDK activity, an idle session's `onSessionExpired` event can arrive up to 5 minutes after the
+  wallet API ended it. Protected operations on a locally expired session still check right away.
+- If the wallet API cannot be reached when a session reaches its local expiry, or returns an expiry
+  the SDK cannot parse, the session is kept: the check is retried later, and protected operations
+  throw the request error (`OMSWalletResponseException`, `OMS_INVALID_RESPONSE`, for an unparseable
+  expiry) instead of `OMS_SESSION_EXPIRED`.
+- Protected operations that find the session locally expired share one expiry check. Cancelling the
+  operation that started it no longer cancels the others; they run the check again.
+
+### Rejected nonces are resent
+
+WaaS needs every signed request's nonce to be higher than the last one it accepted, so concurrent
+calls can reach it out of order and be rejected with `PreconditionFailed` (code `7206`, HTTP 412).
+The SDK now signs such a request again with a fresh nonce and resends it, at most 2 times, before
+surfacing the rejection as before. WaaS rejects the nonce before running the method, so a resent
+`Execute` cannot send a transaction twice.
+
+### Wallet-import key strings are redacted
+
+`toString()` of `WalletImportPrivateKey.Ethereum`, `Tron`, and `Solana` no longer includes the key:
+it returns `Ethereum(value=<redacted>)` (and likewise for the others). They remain data classes, so
+`value`, equality, `copy`, and destructuring are unchanged.
 
 ### Reverting transactions are request failures
 

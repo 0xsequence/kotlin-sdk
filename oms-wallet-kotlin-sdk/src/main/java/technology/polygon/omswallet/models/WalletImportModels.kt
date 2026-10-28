@@ -19,6 +19,9 @@ sealed interface WalletImportPrivateKey {
         val value: String,
     ) : WalletImportPrivateKey {
         override val walletType: WalletType = WalletType.Ethereum
+
+        /** Redacted so the key does not reach logs or crash reports. */
+        override fun toString(): String = "Ethereum(value=<redacted>)"
     }
 
     /** Ethereum private key supplied as 32 raw bytes. */
@@ -33,6 +36,9 @@ sealed interface WalletImportPrivateKey {
         val value: String,
     ) : WalletImportPrivateKey {
         override val walletType: WalletType = WalletType.Tron
+
+        /** Redacted so the key does not reach logs or crash reports. */
+        override fun toString(): String = "Tron(value=<redacted>)"
     }
 
     /** Tron (secp256k1) private key supplied as 32 raw bytes. */
@@ -47,6 +53,9 @@ sealed interface WalletImportPrivateKey {
         val value: String,
     ) : WalletImportPrivateKey {
         override val walletType: WalletType = WalletType.Solana
+
+        /** Redacted so the key does not reach logs or crash reports. */
+        override fun toString(): String = "Solana(value=<redacted>)"
     }
 
     /** Solana seed or keypair supplied as 32 or 64 raw bytes. */

@@ -8,6 +8,7 @@ import org.bouncycastle.crypto.hpke.HPKE
 import org.bouncycastle.crypto.util.SubjectPublicKeyInfoFactory
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,6 +19,26 @@ import java.security.MessageDigest
 import java.time.Instant
 
 class WalletImportCryptoTest {
+    @Test
+    fun textPrivateKeysAreRedactedInStringForm() {
+        val ethereumKey = "ab".repeat(32)
+        val solanaKey = "3".repeat(88)
+        val keys =
+            listOf(
+                WalletImportPrivateKey.Ethereum(ethereumKey) to ethereumKey,
+                WalletImportPrivateKey.Tron(ethereumKey) to ethereumKey,
+                WalletImportPrivateKey.Solana(solanaKey) to solanaKey,
+            )
+
+        for ((key, value) in keys) {
+            assertFalse(key.toString(), key.toString().contains(value))
+            assertFalse("$key".contains(value))
+        }
+        assertEquals("Ethereum(value=<redacted>)", keys[0].first.toString())
+        assertEquals("Tron(value=<redacted>)", keys[1].first.toString())
+        assertEquals("Solana(value=<redacted>)", keys[2].first.toString())
+    }
+
     @Test
     fun privateKeyValidationCoversScalarAndLengthBoundaries() {
         val one = ByteArray(32).also { it[31] = 1 }

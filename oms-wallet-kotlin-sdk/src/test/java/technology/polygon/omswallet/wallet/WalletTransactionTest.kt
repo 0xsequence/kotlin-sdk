@@ -756,6 +756,67 @@ class WalletTransactionTest {
         }
 
     @Test
+    fun sendTransactionResendsExecuteWhenWaasRejectsItsNonce() =
+        runBlocking {
+            // WaaS rejects a stale nonce before running Execute, so the resent Execute is the only one that ran.
+            server.enqueueJson(prepareResponse(txnId = "txn-resent", feeOptions = "[]", sponsored = true))
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(412)
+                    .body("""{"error":"PreconditionFailed","code":7206,"msg":"nonce replay detected","status":412}""")
+                    .build(),
+            )
+            server.enqueueJson("""{"status":"pending"}""")
+            server.enqueueJson("""{"status":"executed","txnHash":"0xresent"}""")
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                        ),
+                    transport = OMSWalletHttpClient(),
+                    sessionStore =
+                        InMemorySessionStore(
+                            snapshot =
+                                OMSWalletSessionSnapshot(
+                                    wallet = testWallet("wallet-main", "0xwallet"),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                                    auth = emailSessionAuth(),
+                                ),
+                        ),
+                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000122"),
+                    transactionStatusDelay = { },
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
+                )
+            assertTrue(client.restorePersistedSession())
+
+            val result =
+                client.sendTransaction(
+                    network = Network.AMOY,
+                    request =
+                        SendTransactionRequest(
+                            to = "0xabc0000000000000000000000000000000000000",
+                            value = BigInteger.ZERO,
+                        ),
+                )
+
+            assertEquals("txn-resent", result.txnId)
+            assertEquals(TransactionStatus.Executed, result.status)
+            assertEquals("0xresent", result.txnHash)
+            val targets = List(server.requestCount) { requireNotNull(server.takeRequest()).target }
+            assertEquals(
+                listOf(WaasApi.Execute.urlPath, WaasApi.Execute.urlPath, WaasApi.TransactionStatusMethod.urlPath),
+                targets.drop(1),
+            )
+        }
+
+    @Test
     fun sendTransactionSwitchesFromFastToSlowIntervalAfterFastPollCount() =
         runBlocking {
             server.enqueue(

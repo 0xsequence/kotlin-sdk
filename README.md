@@ -135,14 +135,16 @@ OTP state is kept in memory. OIDC redirect state is stored only to complete the
 browser redirect flow and is cleared when the flow completes, fails, or is
 replaced.
 
-Before treating a session as expired, the SDK asks the wallet API for the credential's
-current expiry, which may have been extended with use. If the device is offline at that
-point, the session is kept: the expiry check is retried later, and protected operations
-fail with the network error instead. Sessions the wallet API reports as expired or unknown
-(and sessions that are past their expiry on wallet API versions without expiry refresh) are
-made inactive before protected wallet operations and throw
-`OMSWalletSessionException` with `code = OMSWalletErrorCode.SessionExpired`. The same
-happens when the wallet API rejects the session's credential during a request. The SDK
+A stored session that is already past its expiry when the SDK restores it is discarded
+without asking the wallet API. Before treating a session that is active in memory as
+expired, the SDK asks the wallet API for the credential's current expiry, which may have
+been extended with use. If the device is offline at that point, the session is kept: the
+expiry check is retried later, and protected operations fail with the network error
+instead. Sessions the wallet API reports as expired, unknown, or revoked (and sessions that
+are past their expiry on wallet API versions without expiry refresh) are made inactive
+before protected wallet operations and throw `OMSWalletSessionException` with
+`code = OMSWalletErrorCode.SessionExpired`. The same happens when the wallet API rejects
+the session's credential as unknown or expired during a request. The SDK
 clears the active signer/session state, but keeps expired completed-session
 metadata in storage until the app starts a new auth flow or calls `signOut()`.
 Subscribe with `omsWallet.wallet.onSessionExpired { event -> ... }` to route users
@@ -166,8 +168,9 @@ mode for apps that need to let users choose between multiple wallets. Every
 while a manual selection is pending.
 
 Completed auth requests ask the wallet API for the maximum session lifetime, 180 days, by default
-(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `15_552_000` seconds). The wallet API also ends a
-session after 10 days without use. Wallet API versions without sliding expiry clamp the requested
+(`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `15_552_000` seconds). The wallet API also ends an
+idle session about 10 days after its last use; without SDK activity, the SDK notices up to 5 minutes
+later. Wallet API versions without sliding expiry clamp the requested
 lifetime to their 30-day maximum and have no idle timeout, so the default gives a fixed 30-day
 session there.
 Pass `sessionLifetimeSeconds` to `startEmailAuth`, `signInWithOidcIdToken`,
@@ -393,7 +396,7 @@ when (activeWallet?.type) {
 `address`, `reference`, `keyOrigin`). `session` is non-null exactly when
 `activeWallet` is. `expiresAt` is an ISO-8601 timestamp string with the session's current
 expiry: with sliding expiry the wallet API extends it with use up to the requested lifetime, and the SDK refreshes it
-after a session is restored, before treating the session as expired, and periodically while the
+after a session is restored, before treating a session that is active in memory as expired, and periodically while the
 session is in use, so the value can change while the session stays active. `CompleteAuthResult.credential.expiresAt`
 is the same current expiry at sign-in. OIDC
 sessions include issuer/provider metadata on `OMSWalletOidcSessionAuth`, so apps
@@ -919,6 +922,11 @@ grants
 For an owner-approved smart session, inspect the remote credential before showing consent, then
 authorize bounded EVM transfer grants. Backend credential registration and execution stay outside
 this SDK surface. WaaS caps the requested session expiry at the remote credential's expiry.
+
+A wallet can have a limited number of active remote sessions (100 by default). When it is at the
+limit, `authorizeRemoteAccess` throws `OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `409`,
+`retryable = false`) with `upstreamError.name = "SessionCapExceeded"` and `upstreamError.code = "7208"`.
+Revoke an existing remote session with `revokeAccess` (find it with `listAccess`) and authorize again.
 
 ```kotlin
 val credentialId = "remote-credential-id"

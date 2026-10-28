@@ -614,7 +614,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     }
                 tronOpenExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
                 appendLog("Tron transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
-                // The transfer already succeeded; a balance refresh failure only updates the balance view.
+                // The transfer already succeeded; a balance refresh failure is shown in the balance view and logged.
                 runCatching { loadTronBalances(wallet) }
                     .onFailure { appendLog("!! Tron balance refresh failed: ${describeThrowable(it)}") }
             }
@@ -773,7 +773,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     }
                 solanaOpenExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
                 appendLog("Solana transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
-                // The transfer already succeeded; a balance refresh failure only updates the balance view.
+                // The transfer already succeeded; a balance refresh failure is shown in the balance view and logged.
                 runCatching { loadSolanaBalances(wallet) }
                     .onFailure { appendLog("!! Solana balance refresh failed: ${describeThrowable(it)}") }
             }

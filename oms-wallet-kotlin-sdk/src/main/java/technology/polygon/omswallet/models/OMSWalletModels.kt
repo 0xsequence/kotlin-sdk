@@ -94,8 +94,9 @@ data class AbiArg(
 data class WalletCredential(
     val credentialId: String,
     /**
-     * ISO-8601 current expiry of the credential. WaaS extends it with use up to the requested
-     * lifetime, and the SDK refreshes the active session's copy.
+     * ISO-8601 expiry of the credential as reported when this value was returned. It is not
+     * updated afterwards; WaaS extends the expiry with use up to the requested lifetime, and the
+     * live expiry is `WalletClient.session?.expiresAt`.
      */
     val expiresAt: String,
     val isCaller: Boolean,

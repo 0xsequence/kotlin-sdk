@@ -339,7 +339,7 @@ class WalletSessionTest {
 
     @Test
     fun expiryTimerRefreshExtendsPersistsAndReschedulesSession() {
-        server.enqueueJson(getCredentialResponseBody("2026-01-11T00:02:00Z"))
+        server.enqueueJson(getCredentialResponseBody("2026-01-11T00:07:00Z"))
         val scheduler = RecordingSessionExpiryScheduler()
         var currentTime = epochMillis("2026-01-01T00:00:00Z")
         val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
@@ -361,9 +361,14 @@ class WalletSessionTest {
 
         currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
+        // The idle check waits out the grace period before reading the credential.
+        assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
+        assertEquals(0, server.requestCount)
+        currentTime += IDLE_CHECK_GRACE_MILLIS
+        scheduler.scheduledTasks.single().action()
 
-        assertEquals("2026-01-11T00:02:00Z", client.session?.expiresAt)
-        assertEquals(snapshot.copy(expiresAt = "2026-01-11T00:02:00Z"), store.snapshot)
+        assertEquals("2026-01-11T00:07:00Z", client.session?.expiresAt)
+        assertEquals(snapshot.copy(expiresAt = "2026-01-11T00:07:00Z"), store.snapshot)
         assertEquals(10 * 24 * 60 * 60 * 1000L, scheduler.scheduledTasks.single().delayMillis)
         assertNull(expiredEvent)
         assertEquals(WaasApi.GetCredential.urlPath, requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target)
@@ -392,6 +397,9 @@ class WalletSessionTest {
         client.onSessionExpired { expiredEvent = it }
 
         currentTime = epochMillis("2026-01-01T00:02:00Z")
+        scheduler.scheduledTasks.single().action()
+        assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
+        currentTime += IDLE_CHECK_GRACE_MILLIS
         scheduler.scheduledTasks.single().action()
 
         assertEquals(snapshot, client.snapshotSession())
@@ -476,6 +484,330 @@ class WalletSessionTest {
         }
 
     @Test
+    fun expiryTimerEndsSessionWhenGetCredentialReportsRevokedCredential() {
+        // The gateway's own "Unauthorized" (code 1000) is not WaaS 7207: the session is kept and rechecked.
+        server.enqueue(errorResponse(401, "Unauthorized", 1000))
+        server.enqueue(errorResponse(401, "Unauthorized", 7207))
+        val scheduler = RecordingSessionExpiryScheduler()
+        var currentTime = epochMillis("2026-01-01T00:00:00Z")
+        val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
+        val store = InMemorySessionStore(snapshot)
+        val signer = TrackingCredentialSigner()
+        val client =
+            WalletClient.create(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = serverEnvironment(),
+                sessionStore = store,
+                credentialSigner = signer,
+                sessionExpiryScheduler = scheduler,
+                credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+        var expiredEvent: OMSWalletSessionExpiredEvent? = null
+        var notifications = 0
+        client.onSessionExpired {
+            expiredEvent = it
+            notifications += 1
+        }
+
+        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        scheduler.scheduledTasks.single().action()
+        assertEquals(snapshot, client.snapshotSession())
+        assertEquals(60_000L, scheduler.scheduledTasks.single().delayMillis)
+
+        currentTime += 60_000L
+        scheduler.scheduledTasks.single().action()
+
+        assertNull(client.snapshotSession())
+        assertEquals(snapshot, store.snapshot)
+        assertFalse(signer.hasCredential())
+        assertEquals("2026-01-01T00:02:00Z", requireNotNull(expiredEvent).expiredAt)
+        assertEquals(1, notifications)
+        assertTrue(scheduler.scheduledTasks.isEmpty())
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun locallyExpiredOperationThrowsSessionExpiredWhenGetCredentialReportsRevokedCredential() =
+        runBlocking {
+            server.enqueue(errorResponse(401, "Unauthorized", 7207))
+            val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:00:00Z")
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(snapshot),
+                    credentialSigner = TrackingCredentialSigner(),
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                    now = { epochMillis("2026-01-01T00:00:01Z") },
+                )
+            client.restoreSession(snapshot)
+            var notifications = 0
+            client.onSessionExpired { notifications += 1 }
+
+            val error = runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.exceptionOrNull()
+
+            assertEquals(OMSWalletErrorCode.SessionExpired, (error as OMSWalletException).code)
+            assertEquals("wallet.signMessage", error.operation?.id)
+            assertNull(error.upstreamError)
+            assertNull(client.snapshotSession())
+            assertEquals(1, notifications)
+            assertEquals(1, server.requestCount)
+        }
+
+    @Test
+    fun walletCallRejectedWith7207KeepsSession() =
+        runBlocking {
+            server.enqueue(errorResponse(401, "Unauthorized", 7207))
+            val snapshot = expiringSnapshot(expiresAt = TEST_SESSION_EXPIRES_AT)
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(snapshot),
+                    credentialSigner = TrackingCredentialSigner(),
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                )
+            client.restoreSession(snapshot)
+            var notifications = 0
+            client.onSessionExpired { notifications += 1 }
+
+            val error = runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.exceptionOrNull()
+
+            assertEquals(OMSWalletErrorCode.RequestFailed, (error as OMSWalletException).code)
+            assertEquals("7207", error.upstreamError?.code)
+            assertEquals(snapshot, client.snapshotSession())
+            assertEquals(0, notifications)
+        }
+
+    @Test
+    fun expiryTimerReschedulesWithoutReadingCredentialWhenSessionWasUsedAfterLastRead() =
+        runBlocking {
+            server.enqueueJson("""{"signature":"0xsigned"}""")
+            server.enqueue(errorResponse(400, "KeyExpired", 7203))
+            val scheduler = RecordingSessionExpiryScheduler()
+            var currentTime = epochMillis("2026-01-01T00:00:00Z")
+            val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(snapshot),
+                    credentialSigner = TrackingCredentialSigner(),
+                    sessionExpiryScheduler = scheduler,
+                    credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
+                    now = { currentTime },
+                )
+            client.restoreSession(snapshot)
+            var notifications = 0
+            client.onSessionExpired { notifications += 1 }
+            // Used one minute after its expiry was read, so WaaS slid the expiry by one minute.
+            currentTime += 60_000L
+            client.signMessage(network = Network.AMOY, message = "hello")
+
+            currentTime = epochMillis("2026-01-01T00:02:00Z")
+            scheduler.scheduledTasks.single().action()
+
+            assertEquals(snapshot, client.snapshotSession())
+            assertEquals(60_000L + IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
+            assertEquals(1, server.requestCount)
+
+            currentTime += 60_000L + IDLE_CHECK_GRACE_MILLIS
+            scheduler.scheduledTasks.single().action()
+
+            assertNull(client.snapshotSession())
+            assertEquals(1, notifications)
+            assertEquals(
+                listOf(WaasApi.SignMessage.urlPath, WaasApi.GetCredential.urlPath),
+                List(server.requestCount) { requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target },
+            )
+        }
+
+    @Test
+    fun expiryTimerReadsIdleSessionCredentialOnlyAfterGracePeriod() {
+        server.enqueue(errorResponse(400, "KeyExpired", 7203))
+        val scheduler = RecordingSessionExpiryScheduler()
+        var currentTime = epochMillis("2026-01-01T00:00:00Z")
+        val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
+        val client =
+            WalletClient.create(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = serverEnvironment(),
+                sessionStore = InMemorySessionStore(snapshot),
+                credentialSigner = TrackingCredentialSigner(),
+                sessionExpiryScheduler = scheduler,
+                credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+        var expiredEvent: OMSWalletSessionExpiredEvent? = null
+        client.onSessionExpired { expiredEvent = it }
+
+        currentTime = epochMillis("2026-01-01T00:02:00Z")
+        scheduler.scheduledTasks.single().action()
+        assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
+        // A timer that fires early is rescheduled again instead of reading the credential.
+        currentTime += IDLE_CHECK_GRACE_MILLIS - 1
+        scheduler.scheduledTasks.single().action()
+        assertEquals(1L, scheduler.scheduledTasks.single().delayMillis)
+        assertEquals(snapshot, client.snapshotSession())
+        assertEquals(0, server.requestCount)
+
+        currentTime += 1
+        scheduler.scheduledTasks.single().action()
+
+        assertNull(client.snapshotSession())
+        assertEquals("2026-01-01T00:02:00Z", requireNotNull(expiredEvent).expiredAt)
+        assertEquals(WaasApi.GetCredential.urlPath, requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun expiryTimerKeepsSessionAndRetriesWhenCredentialExpiryIsInvalid() {
+        server.enqueueJson(getCredentialResponseBody("not-a-timestamp"))
+        val scheduler = RecordingSessionExpiryScheduler()
+        var currentTime = epochMillis("2026-01-01T00:00:00Z")
+        val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
+        val store = InMemorySessionStore(snapshot)
+        val client =
+            WalletClient.create(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = serverEnvironment(),
+                sessionStore = store,
+                credentialSigner = TrackingCredentialSigner(),
+                sessionExpiryScheduler = scheduler,
+                credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+        var expiredEvent: OMSWalletSessionExpiredEvent? = null
+        client.onSessionExpired { expiredEvent = it }
+
+        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        scheduler.scheduledTasks.single().action()
+
+        assertEquals(snapshot, client.snapshotSession())
+        assertEquals(snapshot, store.snapshot)
+        assertNull(expiredEvent)
+        assertEquals(60_000L, scheduler.scheduledTasks.single().delayMillis)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun cancelledRefreshOwnerDoesNotCancelOperationSharingTheRefresh() =
+        runBlocking {
+            val firstRefreshArrived = CountDownLatch(1)
+            val releaseFirstRefresh = CountDownLatch(1)
+            val refreshes = AtomicInteger()
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse {
+                        if (request.target != WaasApi.GetCredential.urlPath) {
+                            return MockResponse
+                                .Builder()
+                                .code(200)
+                                .body("""{"signature":"0xsigned"}""")
+                                .build()
+                        }
+                        if (refreshes.incrementAndGet() == 1) {
+                            firstRefreshArrived.countDown()
+                            releaseFirstRefresh.await(5, TimeUnit.SECONDS)
+                        }
+                        return MockResponse
+                            .Builder()
+                            .code(200)
+                            .body(getCredentialResponseBody("2026-01-11T00:00:00Z"))
+                            .build()
+                    }
+                }
+            val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:00:00Z")
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(snapshot),
+                    credentialSigner = TrackingCredentialSigner(),
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                    now = { epochMillis("2026-01-01T00:00:01Z") },
+                )
+            client.restoreSession(snapshot)
+
+            val owner = async(Dispatchers.IO) { client.signMessage(network = Network.AMOY, message = "owner") }
+            assertTrue(firstRefreshArrived.await(5, TimeUnit.SECONDS))
+            val waiter = async(Dispatchers.IO) { client.signMessage(network = Network.AMOY, message = "waiter") }
+            // Let the second operation start waiting on the shared refresh.
+            Thread.sleep(300)
+            owner.cancel()
+            releaseFirstRefresh.countDown()
+
+            assertEquals("0xsigned", waiter.await())
+            assertTrue(owner.isCancelled)
+            assertEquals("2026-01-11T00:00:00Z", client.session?.expiresAt)
+        }
+
+    @Test
+    fun signedRequestIsResignedWithFreshNonceWhenWaasRejectsItsNonce() =
+        runBlocking {
+            server.enqueue(errorResponse(412, "PreconditionFailed", 7206))
+            server.enqueueJson("""{"signature":"0xsigned"}""")
+            val snapshot = expiringSnapshot(expiresAt = TEST_SESSION_EXPIRES_AT)
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(snapshot),
+                    credentialSigner = IncreasingNonceCredentialSigner(),
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                )
+            client.restoreSession(snapshot)
+
+            assertEquals("0xsigned", client.signMessage(network = Network.AMOY, message = "hello"))
+
+            assertEquals(2, server.requestCount)
+            val first = requireNotNull(server.takeRequest(1, TimeUnit.SECONDS))
+            val second = requireNotNull(server.takeRequest(1, TimeUnit.SECONDS))
+            assertEquals(WaasApi.SignMessage.urlPath, first.target)
+            assertEquals(WaasApi.SignMessage.urlPath, second.target)
+            assertEquals(first.utf8Body(), second.utf8Body())
+            assertTrue(first.signatureNonce() < second.signatureNonce())
+        }
+
+    @Test
+    fun signedRequestSurfacesNonceRejectionAfterTwoResends() =
+        runBlocking {
+            repeat(3) { server.enqueue(errorResponse(412, "PreconditionFailed", 7206)) }
+            server.enqueueJson("""{"signature":"0xsigned"}""")
+            val snapshot = expiringSnapshot(expiresAt = TEST_SESSION_EXPIRES_AT)
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(snapshot),
+                    credentialSigner = IncreasingNonceCredentialSigner(),
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                )
+            client.restoreSession(snapshot)
+
+            val error = runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.exceptionOrNull()
+
+            assertEquals(OMSWalletErrorCode.RequestFailed, (error as OMSWalletException).code)
+            assertEquals(412, error.status)
+            assertEquals("7206", error.upstreamError?.code)
+            assertEquals(3, server.requestCount)
+            assertEquals(snapshot, client.snapshotSession())
+        }
+
+    @Test
     fun signedRequestWaitsForInFlightBackgroundRefresh() =
         runBlocking {
             // WaaS needs increasing nonces per credential, so requests must not overlap a refresh.
@@ -525,7 +857,7 @@ class WalletSessionTest {
         }
 
     @Test
-    fun backgroundRefreshIsSkippedWhileSignedRequestIsInFlight() =
+    fun backgroundRefreshSkippedWhileSignedRequestIsInFlightRunsOnNextActivity() =
         runBlocking {
             // A refresh signs with the session credential, so it must not overlap another request's nonce.
             val heldArrived = CountDownLatch(1)
@@ -573,12 +905,18 @@ class WalletSessionTest {
             // This call makes a refresh due while the held request is still in flight.
             val signature = client.signMessage(network = Network.AMOY, message = "quick")
             val requestsWhileHeld = server.requestCount
+            assertEquals(snapshot, client.snapshotSession())
             releaseHeld.countDown()
 
             assertEquals("0xsigned", signature)
+            // The skipped refresh did not restart the 6-hour clock, so the held call's completion runs it.
             assertEquals("0xsigned", held.await())
             assertEquals(2, requestsWhileHeld)
-            assertEquals(snapshot, client.snapshotSession())
+            assertEquals(
+                listOf(WaasApi.SignMessage.urlPath, WaasApi.SignMessage.urlPath, WaasApi.GetCredential.urlPath),
+                List(server.requestCount) { requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target },
+            )
+            assertEquals("2026-01-11T00:00:00Z", client.session?.expiresAt)
         }
 
     @Test
@@ -718,12 +1056,12 @@ class WalletSessionTest {
             )
         client.restoreSession(snapshot)
 
-        currentTime = epochMillis("2026-01-01T00:02:00Z")
+        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
         scheduler.scheduledTasks.single().action()
 
         assertEquals(replacement, client.snapshotSession())
         assertEquals(snapshot, store.snapshot)
-        assertEquals(28 * 60 * 1000L, scheduler.scheduledTasks.single().delayMillis)
+        assertEquals(23 * 60 * 1000L, scheduler.scheduledTasks.single().delayMillis)
         assertEquals(1, server.requestCount)
     }
 
@@ -760,6 +1098,9 @@ class WalletSessionTest {
         assertEquals(1, scheduler.scheduledTasks.size)
         assertEquals(120_000L, scheduler.scheduledTasks.single().delayMillis)
         currentTime = epochMillis("2026-01-01T00:02:00Z")
+        scheduler.scheduledTasks.single().action()
+        assertEquals(snapshot, client.snapshotSession())
+        currentTime += IDLE_CHECK_GRACE_MILLIS
         scheduler.scheduledTasks.single().action()
 
         assertNull(client.snapshotSession())
@@ -841,6 +1182,9 @@ class WalletSessionTest {
 
         currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
+        dispatcher.runNext()
+        currentTime += IDLE_CHECK_GRACE_MILLIS
+        scheduler.scheduledTasks.single().action()
 
         assertEquals(snapshot, client.snapshotSession())
         assertNull(expiredEvent)
@@ -892,6 +1236,9 @@ class WalletSessionTest {
         val unsubscribe = client.onSessionExpired { notificationCount += 1 }
 
         currentTime = epochMillis("2026-01-01T00:02:00Z")
+        scheduler.scheduledTasks.single().action()
+        dispatcher.runNext()
+        currentTime += IDLE_CHECK_GRACE_MILLIS
         scheduler.scheduledTasks.single().action()
         dispatcher.runNext()
         dispatcher.runNext()
@@ -1055,6 +1402,7 @@ class WalletSessionTest {
 }
 
 private const val SIX_HOURS_MILLIS = 6 * 60 * 60 * 1000L
+private const val IDLE_CHECK_GRACE_MILLIS = 5 * 60 * 1000L
 
 private fun epochMillis(value: String): Long = requireNotNull(OMSWalletIsoTimestamps.parseEpochMillis(value))
 
@@ -1084,6 +1432,31 @@ private fun expiringSnapshot(expiresAt: String): OMSWalletSessionSnapshot =
 
 private fun getCredentialResponseBody(expiresAt: String): String =
     WebRpcJson.encodeToString(WaasApi.GetCredential.Response(credentialFixture().copy(expiresAt = expiresAt)))
+
+private fun errorResponse(
+    status: Int,
+    name: String,
+    code: Int,
+): MockResponse =
+    MockResponse
+        .Builder()
+        .code(status)
+        .body("""{"error":"$name","code":$code,"msg":"rejected","status":$status}""")
+        .build()
+
+/** Signs with a nonce that increases on every request, as the Android Keystore signer does. */
+private class IncreasingNonceCredentialSigner : TrackingCredentialSigner() {
+    private val nonce = AtomicInteger(1_000)
+
+    override fun nextNonce(): String = nonce.incrementAndGet().toString()
+
+    override fun sign(preimage: String): String = TEST_SIGNATURE
+}
+
+private fun RecordedRequest.signatureNonce(): Long =
+    requireNotNull(Regex("nonce=(\\d+)").find(requireNotNull(headers[OMSWalletEnvironment.walletSignatureHeaderName])))
+        .groupValues[1]
+        .toLong()
 
 /** What WaaS servers released before GetCredential return for an unknown method. */
 private fun badRouteResponse(): MockResponse =

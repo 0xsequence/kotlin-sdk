@@ -180,6 +180,11 @@ data class Ethereum(
     val value: String,
 ) : WalletImportPrivateKey {
     override val walletType: WalletType
+
+    /**
+     * Redacted so the key does not reach logs or crash reports.
+     */
+    override fun toString(): String
 }
 ```
 
@@ -204,6 +209,11 @@ data class Solana(
     val value: String,
 ) : WalletImportPrivateKey {
     override val walletType: WalletType
+
+    /**
+     * Redacted so the key does not reach logs or crash reports.
+     */
+    override fun toString(): String
 }
 ```
 
@@ -228,6 +238,11 @@ data class Tron(
     val value: String,
 ) : WalletImportPrivateKey {
     override val walletType: WalletType
+
+    /**
+     * Redacted so the key does not reach logs or crash reports.
+     */
+    override fun toString(): String
 }
 ```
 
@@ -276,8 +291,9 @@ A credential currently authorized to use the selected wallet.
 data class WalletCredential(
     val credentialId: String,
     /**
-     * ISO-8601 current expiry of the credential. WaaS extends it with use up to the requested
-     * lifetime, and the SDK refreshes the active session's copy.
+     * ISO-8601 expiry of the credential as reported when this value was returned. It is not
+     * updated afterwards; WaaS extends the expiry with use up to the requested lifetime, and the
+     * live expiry is `WalletClient.session?.expiresAt`.
      */
     val expiresAt: String,
     val isCaller: Boolean,
@@ -641,7 +657,8 @@ const val MAX_SESSION_LIFETIME_SECONDS: Long = 15_552_000L
 ### `WalletClient.activeWallet`
 
 The active wallet, or null until auth completes or a session is restored,
-and after sign-out or session expiry. Same shape as `listWallets` entries;
+while a manual wallet selection is pending, and after sign-out or session
+expiry. Same shape as `listWallets` entries;
 branch on `Wallet.type` before using `Wallet.address` with family-specific
 code.
 
