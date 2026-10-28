@@ -76,8 +76,9 @@ is already past its expiry when the SDK restores it is discarded without asking 
   soon as the session looks expired: it waits until 5 minutes past the expected server-side
   expiry, which is later than the local one when the session was used after its expiry was last
   read. Without
-  SDK activity, an idle session's `onSessionExpired` event can arrive up to 5 minutes after the
-  wallet API ended it, given an accurate device clock and the app running in the foreground.
+  SDK activity, an idle session's `onSessionExpired` event can arrive up to about 6 hours after the
+  wallet API ended it (it extends the expiry only in steps of at least 6 hours; within 5 minutes
+  when the lifetime is shorter than the idle window), given an accurate device clock and the app running in the foreground.
   Protected operations on a locally expired session still check right away.
 - If the wallet API cannot be reached when a session reaches its local expiry, or returns an expiry
   the SDK cannot parse, the session is kept: the check is retried later, and protected operations

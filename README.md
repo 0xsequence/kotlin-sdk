@@ -169,8 +169,9 @@ while a manual selection is pending.
 
 Completed auth requests ask the wallet API for the maximum session lifetime, 180 days, by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `15_552_000` seconds). The wallet API also ends an
-idle session about 10 days after its last use; without SDK activity, the SDK notices up to 5 minutes
-later, as long as the device clock is accurate and the app is running in the foreground (the timer
+idle session about 10 days after its last use; while the app makes no wallet calls, the SDK can
+notice this up to about 6 hours later, because the wallet API extends the expiry only in steps of at least 6 hours (within 5
+minutes when the lifetime is shorter than the idle window), as long as the device clock is accurate and the app is running in the foreground (the timer
 cannot fire while the app is suspended or not running). Wallet API versions without sliding expiry clamp the requested
 lifetime to their 30-day maximum and have no idle timeout, so the default gives a fixed 30-day
 session there.
