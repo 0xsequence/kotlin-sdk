@@ -907,7 +907,8 @@ revert (WaaS `TransactionSimulationFailed`, code `7314`) throws
 refuses the execute request before submitting it, or when the SDK never sent it.
 Signed wallet API requests time out after 30 seconds, counting the wait for their turn and their
 signing, and return within that time unless the device's signer itself is stuck; a signature that
-finishes after the deadline is never sent.
+finishes after the deadline is never sent. A shorter timeout on the `OkHttpClient` passed to
+`OMSWallet` still applies.
 `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was submitted but
 status polling failed, so retry status lookup with the returned `txnId`.
 `retryable` describes the failed SDK operation, not the whole user intent.

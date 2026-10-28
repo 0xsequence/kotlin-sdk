@@ -22,7 +22,10 @@ internal class OMSWalletHttpClient(
         path: String,
         body: String,
         headers: Map<String, String>,
-        /** Bounds the whole call, including reading the response; null keeps the client's own timeouts. */
+        /**
+         * Bounds the whole call, including reading the response, by the SDK's remaining time; an
+         * app client's shorter call timeout still applies. Null keeps the client's own timeouts.
+         */
         timeoutMillis: Long? = null,
     ): OMSWalletHttpResponse =
         withContext(Dispatchers.IO) {
@@ -36,7 +39,13 @@ internal class OMSWalletHttpClient(
                     }.build()
 
             val call = okHttpClient.newCall(request)
-            timeoutMillis?.let { call.timeout().timeout(it, TimeUnit.MILLISECONDS) }
+            timeoutMillis?.let { remainingMillis ->
+                // Zero means the client sets no call timeout.
+                val clientCallTimeoutMillis = okHttpClient.callTimeoutMillis.toLong()
+                val callTimeoutMillis =
+                    if (clientCallTimeoutMillis > 0) minOf(clientCallTimeoutMillis, remainingMillis) else remainingMillis
+                call.timeout().timeout(callTimeoutMillis, TimeUnit.MILLISECONDS)
+            }
             call.execute().use { response ->
                 val responseBody = response.body.string()
                 OMSWalletHttpResponse(

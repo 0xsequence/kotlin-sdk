@@ -113,8 +113,8 @@ because signing failed or its deadline passed first, also throws the request err
 ### Signed requests time out after 30 seconds
 
 Every signed wallet API request now fails if it has not finished within 30 seconds, counting its
-wait for its turn, signing, nonce resends, and the HTTP call, whatever timeouts the `OkHttpClient`
-passed to `OMSWallet` sets (shorter ones still apply). An operation on a locally expired session
+wait for its turn, signing, nonce resends, and the HTTP call. A shorter call, connect, read, or
+write timeout on the `OkHttpClient` passed to `OMSWallet` still applies. An operation on a locally expired session
 waits for its expiry read within the same 30 seconds; when they pass first, it fails with the
 request error and the session is kept. Signing runs under the session lock and cannot be
 interrupted, so a call returns within 30 seconds unless the device's signer itself is stuck; a

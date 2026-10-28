@@ -3,6 +3,7 @@ package technology.polygon.omswallet.wallet
 import kotlinx.coroutines.runBlocking
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -15,6 +16,8 @@ import technology.polygon.omswallet.OMSWalletTransactionException
 import technology.polygon.omswallet.models.SendTransactionRequest
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletEnvironment
+import technology.polygon.omswallet.network.OMSWalletHttpClient
+import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import java.math.BigInteger
 import java.security.KeyStoreException
 import java.util.concurrent.TimeUnit
@@ -89,20 +92,64 @@ class SignedRequestDeadlineTest {
             assertEquals(2, server.requestCount)
         }
 
+    @Test
+    fun appClientsShorterCallTimeoutStillAppliesToSignedRequests() =
+        runBlocking {
+            server.enqueue(
+                MockResponse
+                    .Builder()
+                    .code(200)
+                    .body("""{"signature":"0xsigned"}""")
+                    .headersDelay(2_000, TimeUnit.MILLISECONDS)
+                    .build(),
+            )
+            val client =
+                WalletClient
+                    .create(
+                        publishableKey = "test-publishable-key",
+                        projectId = "test-project-id",
+                        environment = environment(),
+                        transport = OMSWalletHttpClient(OkHttpClient.Builder().callTimeout(300, TimeUnit.MILLISECONDS).build()),
+                        sessionStore =
+                            InMemorySessionStore(
+                                OMSWalletSessionSnapshot(
+                                    wallet = testWallet("wallet-main", "0x9999999999999999999999999999999999999999", WalletType.Ethereum),
+                                    expiresAt = TEST_SESSION_EXPIRES_AT,
+                                    signerAddress = TEST_CREDENTIAL_ID,
+                                    signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                                    auth = emailSessionAuth(),
+                                ),
+                            ),
+                        credentialSigner = TrackingCredentialSigner(nonceValue = NONCE),
+                        credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
+                    ).also { assertTrue(it.restorePersistedSession()) }
+            val startedAt = System.nanoTime()
+
+            val error = runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.exceptionOrNull()
+
+            // The app's 300 ms call timeout ends the call, not the SDK's 30-second deadline.
+            val elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+            assertTrue("got $error", error is OMSWalletRequestException)
+            assertEquals(OMSWalletErrorCode.RequestFailed, (error as OMSWalletRequestException).code)
+            assertTrue("took $elapsedMillis ms", elapsedMillis < 1_500)
+        }
+
     private fun walletClient(
         signer: CredentialSigner,
         signedRequestTimeoutMillis: Long = 30_000L,
     ): WalletClient =
         restoredTestWalletClient(
-            environment =
-                OMSWalletEnvironment(
-                    walletApiUrl = server.url("/v1/Waas/").toString(),
-                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                ),
+            environment = environment(),
             wallet = testWallet("wallet-main", "0x9999999999999999999999999999999999999999", WalletType.Ethereum),
             nonceValue = NONCE,
             credentialSigner = signer,
             signedRequestTimeoutMillis = signedRequestTimeoutMillis,
+        )
+
+    private fun environment(): OMSWalletEnvironment =
+        OMSWalletEnvironment(
+            walletApiUrl = server.url("/v1/Waas/").toString(),
+            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
         )
 
     /** Runs [onSign] with the 1-based number of each signature before signing. */
