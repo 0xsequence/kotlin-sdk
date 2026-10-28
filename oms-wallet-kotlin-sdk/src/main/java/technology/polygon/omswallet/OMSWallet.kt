@@ -106,7 +106,7 @@ class OMSWallet private constructor(
             ),
         projectScopeKey = scopedSessionSuffix(publishableKey),
         walletImportTrustedPcr0s = parsePublishableKey(publishableKey).walletImportTrustedPcr0s,
-        foregroundRunner = AndroidForegroundRunner(context),
+        foregroundRunner = AndroidForegroundRunner(),
     )
 
     companion object {

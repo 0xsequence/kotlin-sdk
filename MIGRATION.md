@@ -84,9 +84,9 @@ is already past its expiry when the SDK restores it is discarded without asking 
   window (10 days) late, because the restore time stands in for the previous process's last request.
   Protected operations on a locally expired session still check right away.
 - After a restore, the SDK reads the session's current expiry once the app is in use: right away when
-  the process is visible, otherwise when its first activity starts. A process started in the
-  background (for example for a push message) does not read it, because the read would extend an
-  idle session.
+  the app has a started activity, otherwise when it next has one (the process lifecycle, through
+  `androidx.lifecycle:lifecycle-process`). A process started in the background (for example for a
+  push message or a broadcast) does not read it, because the read would extend an idle session.
 - If the wallet API cannot be reached when a session reaches its local expiry, or returns an expiry
   the SDK cannot parse, the session is kept: the check is retried later, and protected operations
   throw the request error (`OMSWalletResponseException`, `OMS_INVALID_RESPONSE`, for an unparseable

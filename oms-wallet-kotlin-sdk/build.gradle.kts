@@ -433,10 +433,12 @@ dependencies {
     api(libs.kotlinx.serialization.json)
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.lifecycle.process)
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver3)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.core)
 }
 
 publishing {

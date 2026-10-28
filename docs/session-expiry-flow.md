@@ -66,9 +66,11 @@ ownership). Outcomes:
 Triggers:
 
 - Restore (`restorePersistedSession`): background refresh after a session is
-  restored. The refresh extends an idle session, so a process started in the
-  background (a push message, a scheduled job, or boot) runs it only once an
-  activity starts, and skips it if the session changed meanwhile. A restore
+  restored. The refresh extends an idle session, so it runs only while the app
+  has a started activity (the process lifecycle, `ProcessLifecycleOwner`): a
+  process started in the background (a push message, a broadcast, a scheduled
+  job, or boot) runs it once an activity starts, and skips it if the session
+  changed meanwhile. A restore
   leaves the 6-hour refresh clock unset, and so does a restore refresh that is
   Busy or Unavailable, so until a read reaches WaaS the next successful signed
   call refreshes.

@@ -1,5 +1,6 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -2136,6 +2137,114 @@ class WalletSessionTest {
             assertTrue(held.await().isSuccess)
         }
 
+    @Test
+    fun requestNeverSentIsNotSessionActivity() =
+        runBlocking {
+            var now = T0
+            server.dispatcher = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
+            val signer = NonceFailingCredentialSigner()
+            val scheduler = RecordingSessionExpiryScheduler()
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = signer,
+                    sessionExpiryScheduler = scheduler,
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
+                    now = { now },
+                )
+            client.signInWithEmail()
+            val requestsAfterSignIn = server.requestCount
+            now = T0 + HOUR_MILLIS
+            signer.failNonce = true
+
+            // Signing fails, so the request never reaches WaaS and cannot extend the credential.
+            assertTrue(runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.isFailure)
+            assertEquals(requestsAfterSignIn, server.requestCount)
+
+            // So the idle check stays at the local expiry, not an hour later.
+            now = epochMillis("2026-01-11T00:00:00Z")
+            scheduler.fire()
+            assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
+        }
+
+    @Test
+    fun awaitedExpiryReadRunsAfterTheBackgroundAttemptItSharedWasSkippedAsBusy() =
+        runBlocking {
+            val arrivedA = CountDownLatch(1)
+            val releaseA = CountDownLatch(1)
+            val arrivedB = CountDownLatch(1)
+            val releaseB = CountDownLatch(1)
+            val signRequests = AtomicInteger()
+            val credentialReads = AtomicInteger()
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse {
+                        if (request.target == WaasApi.GetCredential.urlPath) {
+                            credentialReads.incrementAndGet()
+                            return okJson(getCredentialResponseBody("2026-01-11T00:00:00Z"))
+                        }
+                        when (signRequests.incrementAndGet()) {
+                            1 -> {
+                                arrivedA.countDown()
+                                releaseA.await(5, TimeUnit.SECONDS)
+                            }
+
+                            2 -> {
+                                arrivedB.countDown()
+                                releaseB.await(5, TimeUnit.SECONDS)
+                            }
+                        }
+                        return okJson("""{"signature":"0xsigned"}""")
+                    }
+                }
+            var currentTime = epochMillis("2026-01-01T00:00:00Z")
+            val snapshot = expiringSnapshot(expiresAt = "2026-01-05T00:00:00Z")
+            val signer = RefreshPausingSigner()
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(snapshot),
+                    credentialSigner = signer,
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                    credentialRefreshLauncher =
+                        CredentialRefreshLauncher { block ->
+                            thread(name = REFRESH_THREAD) { runBlocking { block() } }
+                        },
+                    now = { currentTime },
+                )
+            client.restoreSession(snapshot)
+            currentTime += SIX_HOURS_MILLIS
+
+            // A holds the turn and B waits for it.
+            val a = async(Dispatchers.IO) { client.signMessage(network = Network.AMOY, message = "a") }
+            assertTrue(arrivedA.await(5, TimeUnit.SECONDS))
+            val b = async(Dispatchers.IO) { client.signMessage(network = Network.AMOY, message = "b") }
+            withTimeout(5_000) { while (client.signedRequestTurnUsers() < 2) delay(5) }
+            // A's completion starts a background refresh, held before it tries for a turn; B holds the turn.
+            signer.pauseNextRefresh = true
+            releaseA.countDown()
+            assertTrue(signer.refreshPaused.await(5, TimeUnit.SECONDS))
+            assertTrue(arrivedB.await(5, TimeUnit.SECONDS))
+
+            // C finds the session locally expired and joins the background refresh in flight.
+            currentTime = epochMillis("2026-01-06T00:00:00Z")
+            val c = async(start = CoroutineStart.UNDISPATCHED) { client.signMessage(network = Network.AMOY, message = "c") }
+            // The background attempt finds B holding the turn and is skipped as busy, so C reads itself.
+            signer.resumeRefresh.countDown()
+            releaseB.countDown()
+
+            assertEquals("0xsigned", a.await())
+            assertEquals("0xsigned", b.await())
+            assertEquals("0xsigned", c.await())
+            assertEquals(1, credentialReads.get())
+            assertEquals("2026-01-11T00:00:00Z", client.session?.expiresAt)
+        }
+
     private fun expiryTimerClient(
         store: OMSWalletSessionMetadataStore,
         scheduler: RecordingSessionExpiryScheduler,
@@ -2353,4 +2462,23 @@ private class RotatingKeySigner : TrackingCredentialSigner() {
     }
 
     override fun sign(preimage: String): String = TEST_SIGNATURE
+}
+
+private const val REFRESH_THREAD = "test-background-refresh"
+
+/** Pauses one background refresh, on [REFRESH_THREAD], where it reads the signing credential. */
+private class RefreshPausingSigner : TrackingCredentialSigner() {
+    @Volatile
+    var pauseNextRefresh = false
+    val refreshPaused = CountDownLatch(1)
+    val resumeRefresh = CountDownLatch(1)
+
+    override fun existingCredentialId(): String? {
+        if (pauseNextRefresh && Thread.currentThread().name.startsWith(REFRESH_THREAD)) {
+            pauseNextRefresh = false
+            refreshPaused.countDown()
+            resumeRefresh.await(5, TimeUnit.SECONDS)
+        }
+        return super.existingCredentialId()
+    }
 }

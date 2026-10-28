@@ -1,10 +1,11 @@
 package technology.polygon.omswallet.wallet
 
-import android.app.Activity
-import android.app.ActivityManager
-import android.app.Application
-import android.content.Context
-import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -24,58 +25,48 @@ internal val ImmediateForegroundRunner =
     }
 
 /**
- * Runs now when the process is visible; otherwise once, when the first activity starts. Runs now
- * when visibility cannot be determined or the context is not an [Application].
+ * Runs now when the app has a started activity; otherwise once, on the main thread, when it next
+ * has one. It follows the process lifecycle rather than the process importance, which is also
+ * foreground while a broadcast receiver or service runs with no activity on screen.
  */
 internal class AndroidForegroundRunner(
-    context: Context,
+    private val lifecycleOwner: LifecycleOwner = ProcessLifecycleOwner.get(),
 ) : ForegroundRunner {
-    private val appContext: Context = context.applicationContext ?: context
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun runInForeground(action: () -> Unit): () -> Unit {
-        val application = appContext as? Application
-        if (application == null || isVisible()) {
-            action()
-            return {}
-        }
-        val ran = AtomicBoolean(false)
-        val callbacks =
-            object : Application.ActivityLifecycleCallbacks {
-                override fun onActivityStarted(activity: Activity) {
-                    if (ran.compareAndSet(false, true)) {
-                        application.unregisterActivityLifecycleCallbacks(this)
-                        action()
-                    }
+        val lifecycle = lifecycleOwner.lifecycle
+        // Set once the work ran or was cancelled; the observer is only touched on the main thread.
+        val settled = AtomicBoolean(false)
+        var observer: LifecycleEventObserver? = null
+        val start =
+            Runnable {
+                if (settled.get()) return@Runnable
+                val state = lifecycle.currentState
+                // INITIALIZED: the app disabled the process lifecycle's startup initializer, so it
+                // never reports started; run now rather than never.
+                if (state.isAtLeast(Lifecycle.State.STARTED) || state == Lifecycle.State.INITIALIZED) {
+                    if (settled.compareAndSet(false, true)) action()
+                    return@Runnable
                 }
-
-                override fun onActivityCreated(
-                    activity: Activity,
-                    savedInstanceState: Bundle?,
-                ) = Unit
-
-                override fun onActivityResumed(activity: Activity) = Unit
-
-                override fun onActivityPaused(activity: Activity) = Unit
-
-                override fun onActivityStopped(activity: Activity) = Unit
-
-                override fun onActivitySaveInstanceState(
-                    activity: Activity,
-                    outState: Bundle,
-                ) = Unit
-
-                override fun onActivityDestroyed(activity: Activity) = Unit
+                observer =
+                    object : LifecycleEventObserver {
+                        override fun onStateChanged(
+                            source: LifecycleOwner,
+                            event: Lifecycle.Event,
+                        ) {
+                            if (event != Lifecycle.Event.ON_START) return
+                            lifecycle.removeObserver(this)
+                            if (settled.compareAndSet(false, true)) action()
+                        }
+                    }.also(lifecycle::addObserver)
             }
-        application.registerActivityLifecycleCallbacks(callbacks)
+        // The lifecycle accepts observers only on the main thread.
+        if (Looper.myLooper() == Looper.getMainLooper()) start.run() else mainHandler.post(start)
         return {
-            if (ran.compareAndSet(false, true)) application.unregisterActivityLifecycleCallbacks(callbacks)
+            if (settled.compareAndSet(false, true)) {
+                mainHandler.post { observer?.let(lifecycle::removeObserver) }
+            }
         }
     }
-
-    private fun isVisible(): Boolean =
-        runCatching {
-            val info = ActivityManager.RunningAppProcessInfo()
-            ActivityManager.getMyMemoryState(info)
-            info.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
-        }.getOrDefault(true)
 }
