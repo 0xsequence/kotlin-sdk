@@ -87,12 +87,21 @@ is already past its expiry when the SDK restores it is discarded without asking 
 - Protected operations that find the session locally expired share one expiry check. Cancelling the
   operation that started it no longer cancels the others; they run the check again.
 
-### Rejected nonces are resent
+### Signed requests go one at a time
 
 WaaS needs every signed request's nonce to be higher than the last one it accepted, so concurrent
 calls can reach it out of order and be rejected with `PreconditionFailed` (code `7206`, HTTP 412).
-The SDK now signs such a request again with a fresh nonce and resends it, at most 2 times, before
-surfacing the rejection as `OMS_REQUEST_FAILED` (status 412). WaaS rejects the nonce before running
+Requests signed with one credential now go one at a time, in the order they were made, for every
+`OMSWallet` of that session in the process, so concurrent calls no longer reject each other; a
+burst of calls takes longer. A sign-in after sign-out uses a new key, whose requests do not wait
+for the previous key's. A call that waits for its turn past the 30-second request deadline
+fails with `OMS_REQUEST_FAILED` and was never sent.
+
+### Rejected nonces are resent
+
+Requests from another process or device signed with the same credential are not ordered with
+these. For a request WaaS still rejects for its nonce, the SDK signs it again with a fresh nonce
+and resends it, at most 2 times, before surfacing the rejection as `OMS_REQUEST_FAILED` (status 412). WaaS rejects the nonce before running
 the method, so a resent `Execute` cannot send a transaction twice, and a still-rejected `Execute`
 is reported as `OMS_REQUEST_FAILED`, not `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. The same applies to
 an `Execute` that WaaS refuses with `InvalidSignature` (7201), `UsageLimitExceeded` (7205) or

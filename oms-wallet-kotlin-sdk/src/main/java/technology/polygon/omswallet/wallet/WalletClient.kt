@@ -7,12 +7,14 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonElement
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
@@ -161,6 +163,7 @@ private class PendingEmailAuth(
 )
 
 private class WalletScopeRuntime(
+    publishableKey: String,
     val walletSession: OMSWalletSessionStateMachine,
     val sessionStore: OMSWalletSessionMetadataStore?,
     val oidcRedirectAuthStore: OidcRedirectAuthStore?,
@@ -171,6 +174,15 @@ private class WalletScopeRuntime(
     val now: () -> Long,
 ) {
     val lifecycleLock = Any()
+
+    /**
+     * The publishable key the scope's requests carry: the one of the latest client created for it.
+     * A scope is the wallet API origin and project, so a rotated key for the same project keeps the
+     * session, and requests from every client of the scope switch to the new key (an older key may
+     * have been revoked). A request in flight keeps the key it was sent with.
+     */
+    @Volatile
+    var publishableKey: String = publishableKey
     val sessionExpiredListeners = mutableSetOf<(OMSWalletSessionExpiredEvent) -> Unit>()
     var initialized = false
     var initializationCleanupPending = false
@@ -230,67 +242,100 @@ private class WalletScopeRuntime(
 }
 
 /**
- * WaaS rejects a credential nonce that is not above the last one it accepted, so a credential
- * refresh must not race another signed session request: requests wait for an in-flight refresh
- * before signing, and a refresh starts only once no request is in flight.
+ * Gives the requests signed with one credential one turn at a time, first come first served;
+ * credential refreshes (GetCredential) take turns the same way. Requests signed with different
+ * credentials (a new sign-in creates a new key) do not wait for each other.
+ *
+ * WaaS accepts a credential's nonce only above the last one it accepted, with an atomic conditional
+ * write (`:nonce > LastNonce`, waas v1.2.0 data/credential.go:741,837,894), so concurrent requests
+ * that reach it out of order are rejected with 7206. A request draws its nonce from the credential's
+ * single nonce store, signs, and is sent within its turn, so its nonce is above that of every
+ * request that turned before it and none of them is rejected. Requests from other processes or
+ * devices with the same credential are not ordered, which the 7206 resends still cover.
  */
 private class SignedRequestGate {
+    private class CredentialTurns {
+        val turn = Mutex()
+
+        /** Requests and refreshes holding or waiting for [turn]; the entry is dropped at zero. */
+        var users = 0
+    }
+
     private val lock = Any()
-    private var requestsInFlight = 0
-    private var refresh: CompletableDeferred<Unit>? = null
-    private var idle: CompletableDeferred<Unit>? = null
+    private val turnsByCredential = mutableMapOf<String, CredentialTurns>()
 
     suspend fun <T> request(
+        credentialId: String,
         deadline: SignedRequestDeadline,
         block: suspend () -> T,
     ): T {
-        while (true) {
-            val refreshInFlight =
-                synchronized(lock) {
-                    refresh ?: run {
-                        requestsInFlight += 1
-                        null
-                    }
-                } ?: break
-            // Not yet counted in flight, so giving up here leaves nothing to release.
-            withTimeoutOrNull(deadline.remainingMillisBeforeSend()) { refreshInFlight.await() }
-        }
+        val turns = join(credentialId)
         try {
-            return block()
-        } finally {
-            synchronized(lock) {
-                requestsInFlight -= 1
-                if (requestsInFlight == 0) idle.also { idle = null } else null
-            }?.complete(Unit)
-        }
-    }
-
-    /** Starts a refresh only when the gate is idle; returns null when it is busy. */
-    fun tryBeginRefresh(): CompletableDeferred<Unit>? =
-        synchronized(lock) {
-            if (requestsInFlight > 0 || refresh != null) null else CompletableDeferred<Unit>().also { refresh = it }
-        }
-
-    /** Waits for in-flight requests and refreshes to finish, then starts a refresh. */
-    suspend fun beginRefresh(): CompletableDeferred<Unit> {
-        while (true) {
-            val wait =
-                synchronized(lock) {
-                    when {
-                        refresh != null -> refresh
-                        requestsInFlight > 0 -> idle ?: CompletableDeferred<Unit>().also { idle = it }
-                        else -> return CompletableDeferred<Unit>().also { refresh = it }
-                    }
+            var holdsTurn = false
+            try {
+                withTimeout(deadline.remainingMillisBeforeSend()) {
+                    turns.turn.lock()
+                    holdsTurn = true
                 }
-            requireNotNull(wait).await()
+            } catch (timedOut: TimeoutCancellationException) {
+                // A turn that arrived as the deadline passed is kept: the deadline check before
+                // sending stops the request. Without the turn, nothing was taken and nothing is sent.
+                if (!holdsTurn) {
+                    throw SignedRequestNotSentException(TimeoutException("Signed request timed out waiting for its turn"))
+                }
+            }
+            try {
+                return block()
+            } finally {
+                turns.turn.unlock()
+            }
+        } finally {
+            leave(credentialId, turns)
         }
     }
 
-    fun endRefresh(started: CompletableDeferred<Unit>) {
+    /** Takes a turn for a refresh only when no request holds or waits for one; false when busy. */
+    fun tryBeginRefresh(credentialId: String): Boolean =
         synchronized(lock) {
-            if (refresh === started) refresh = null
+            val turns = turnsByCredential.getOrPut(credentialId) { CredentialTurns() }
+            if (!turns.turn.tryLock()) return@synchronized false
+            turns.users += 1
+            true
         }
-        started.complete(Unit)
+
+    /** Waits for the turns of the requests already waiting, then takes one for a refresh. */
+    suspend fun beginRefresh(credentialId: String) {
+        val turns = join(credentialId)
+        try {
+            turns.turn.lock()
+        } catch (cancelled: CancellationException) {
+            leave(credentialId, turns)
+            throw cancelled
+        }
+    }
+
+    fun endRefresh(credentialId: String) {
+        val turns = synchronized(lock) { requireNotNull(turnsByCredential[credentialId]) }
+        turns.turn.unlock()
+        leave(credentialId, turns)
+    }
+
+    /** Requests and refreshes holding or waiting for a turn of [credentialId]. */
+    fun users(credentialId: String): Int = synchronized(lock) { turnsByCredential[credentialId]?.users ?: 0 }
+
+    private fun join(credentialId: String): CredentialTurns =
+        synchronized(lock) {
+            turnsByCredential.getOrPut(credentialId) { CredentialTurns() }.also { it.users += 1 }
+        }
+
+    private fun leave(
+        credentialId: String,
+        turns: CredentialTurns,
+    ) {
+        synchronized(lock) {
+            turns.users -= 1
+            if (turns.users == 0 && turnsByCredential[credentialId] === turns) turnsByCredential.remove(credentialId)
+        }
     }
 }
 
@@ -430,6 +475,7 @@ class WalletClient private constructor(
         ): WalletClient {
             val createRuntime = {
                 WalletScopeRuntime(
+                    publishableKey = publishableKey,
                     walletSession = walletSession ?: OMSWalletSessionStateMachine(),
                     sessionStore = sessionStore,
                     oidcRedirectAuthStore = oidcRedirectAuthStore,
@@ -444,6 +490,7 @@ class WalletClient private constructor(
                 projectScopeKey?.let { scopeKey ->
                     WalletScopeRuntimeRegistry.runtimeFor(scopeKey, createRuntime)
                 } ?: createRuntime()
+            runtime.publishableKey = publishableKey
             return WalletClient(
                 publishableKey = publishableKey,
                 projectId = projectId,
@@ -466,7 +513,7 @@ class WalletClient private constructor(
     private val signer: CredentialSigner = runtime.signer
     private val gateway: WaasWalletGateway =
         WaasWalletGateway(
-            publishableKey = publishableKey,
+            publishableKey = { runtime.publishableKey },
             environment = environment,
             transport = transport,
             authorizeSignedRequest = ::authorizeSignedRequest,
@@ -475,6 +522,7 @@ class WalletClient private constructor(
             onSessionCredentialUnauthorized = ::launchCredentialRefresh,
             onSessionRequestCompleted = ::recordSessionRequestCompleted,
             signedRequestGate = runtime.signedRequestGate,
+            signingCredentialId = ::signingCredentialId,
             walletImportTrustedPcr0s = walletImportTrustedPcr0s,
             signedRequestTimeoutMillis = signedRequestTimeoutMillis,
         )
@@ -554,6 +602,15 @@ class WalletClient private constructor(
     }
 
     internal fun snapshotSession(): OMSWalletSessionSnapshot? = synchronized(runtime.lifecycleLock) { walletSession.snapshot() }
+
+    /** Signed requests and refreshes holding or waiting for a turn of the signer's credential. */
+    internal fun signedRequestTurnUsers(): Int = runtime.signedRequestGate.users(signingCredentialId())
+
+    /**
+     * The credential whose turns a signed request takes: the signer's key, read before queueing, or
+     * "" before a sign-in creates one.
+     */
+    private fun signingCredentialId(): String = runCatching { signer.existingCredentialId() }.getOrNull().orEmpty()
 
     internal fun restorePersistedSession(): Boolean {
         var expiredNotification: ExpiryNotification? = null
@@ -2799,19 +2856,21 @@ class WalletClient private constructor(
         }
         val outcome =
             try {
-                val gate =
+                val credentialId = signingCredentialId()
+                val hasTurn =
                     if (background) {
-                        runtime.signedRequestGate.tryBeginRefresh()
+                        runtime.signedRequestGate.tryBeginRefresh(credentialId)
                     } else {
-                        runtime.signedRequestGate.beginRefresh()
+                        runtime.signedRequestGate.beginRefresh(credentialId)
+                        true
                     }
-                if (gate == null) {
+                if (!hasTurn) {
                     CredentialRefreshOutcome.Busy
                 } else {
                     try {
                         requestCredentialRefresh(requiredSessionRevision, fromExpiryTimer)
                     } finally {
-                        runtime.signedRequestGate.endRefresh(gate)
+                        runtime.signedRequestGate.endRefresh(credentialId)
                     }
                 }
             } catch (throwable: Throwable) {
@@ -3767,7 +3826,8 @@ private data class OidcRedirectUris(
 )
 
 private class WaasWalletGateway(
-    private val publishableKey: String,
+    /** The scope's current publishable key, read for each request. */
+    private val publishableKey: () -> String,
     private val environment: OMSWalletEnvironment,
     private val transport: OMSWalletHttpClient,
     private val authorizeSignedRequest: (
@@ -3781,6 +3841,7 @@ private class WaasWalletGateway(
     private val onSessionCredentialUnauthorized: (requiredSessionRevision: Long) -> Unit,
     private val onSessionRequestCompleted: (credentialId: String, endpoint: String) -> Unit,
     private val signedRequestGate: SignedRequestGate,
+    private val signingCredentialId: () -> String,
     private val walletImportTrustedPcr0s: Set<String>?,
     private val signedRequestTimeoutMillis: Long,
 ) {
@@ -4587,7 +4648,11 @@ private class WaasWalletGateway(
         block: suspend () -> Pair<WebRpcHttpResponse, SessionCredentialAnswer?>,
     ): WebRpcHttpResponse {
         val (response, answer) =
-            if (endpoint == WaasApi.GetCredential.path) block() else signedRequestGate.request(deadline, block)
+            if (endpoint == WaasApi.GetCredential.path) {
+                block()
+            } else {
+                signedRequestGate.request(signingCredentialId(), deadline, block)
+            }
         when (answer) {
             SessionCredentialAnswer.Accepted -> onSessionCredentialAccepted(requiredSessionRevision)
             SessionCredentialAnswer.Unauthorized -> onSessionCredentialUnauthorized(requiredSessionRevision)
@@ -4637,7 +4702,7 @@ private class WaasWalletGateway(
         walletSignatureHeader: String,
     ): Map<String, String> =
         linkedMapOf(
-            OMSWalletEnvironment.accessKeyHeaderName to publishableKey,
+            OMSWalletEnvironment.accessKeyHeaderName to publishableKey(),
             "Accept" to "application/json",
             "Webrpc" to waasWebrpcHeaderValue,
             OMSWalletEnvironment.walletSignatureHeaderName to
@@ -4648,7 +4713,7 @@ private class WaasWalletGateway(
 
     private fun defaultPublicHeaders(): Map<String, String> =
         mapOf(
-            OMSWalletEnvironment.accessKeyHeaderName to publishableKey,
+            OMSWalletEnvironment.accessKeyHeaderName to publishableKey(),
             "Accept" to "application/json",
             "Webrpc" to waasWebrpcHeaderValue,
         )

@@ -151,8 +151,14 @@ Subscribe with `omsWallet.wallet.onSessionExpired { event -> ... }` to route use
 back to sign-in while preserving the expired session snapshot for reauth.
 Listeners are delivered on the Android main thread.
 
-Listeners are shared by every `OMSWallet` created with the same publishable key in the process,
-so they stay registered after the `OMSWallet` that added them is gone. Call the returned
+Every `OMSWallet` created for the same project and environment in the process shares one
+session: the active wallet, sign-out, expiry, and listeners. A rotated publishable key for the
+same project keeps the session, and requests switch to the newest key. Another project or
+environment is a separate session that needs its own sign-in. Requests signed with the session's
+credential go one at a time, in order, which keeps WaaS from rejecting their nonces.
+
+Because listeners are shared this way, they stay registered after the `OMSWallet` that added
+them is gone. Call the returned
 function when the owner goes away; a listener that captures an Activity otherwise keeps
 it in memory for the life of the process:
 

@@ -3,7 +3,9 @@ package technology.polygon.omswallet.wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.encodeToString
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
@@ -12,6 +14,7 @@ import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -873,20 +876,29 @@ class WalletSessionTest {
             // A refresh signs with the session credential, so it must not overlap another request's nonce.
             val heldArrived = CountDownLatch(1)
             val releaseHeld = CountDownLatch(1)
+            val releaseQuick = CountDownLatch(1)
             val signRequests = AtomicInteger()
+            val credentialReads = AtomicInteger()
             server.dispatcher =
                 object : Dispatcher() {
                     override fun dispatch(request: RecordedRequest): MockResponse {
                         if (request.target == WaasApi.GetCredential.urlPath) {
+                            credentialReads.incrementAndGet()
                             return MockResponse
                                 .Builder()
                                 .code(200)
                                 .body(getCredentialResponseBody("2026-01-11T00:00:00Z"))
                                 .build()
                         }
-                        if (signRequests.incrementAndGet() == 1) {
-                            heldArrived.countDown()
-                            releaseHeld.await(5, TimeUnit.SECONDS)
+                        when (signRequests.incrementAndGet()) {
+                            1 -> {
+                                heldArrived.countDown()
+                                releaseHeld.await(5, TimeUnit.SECONDS)
+                            }
+
+                            2 -> {
+                                releaseQuick.await(5, TimeUnit.SECONDS)
+                            }
                         }
                         return MockResponse
                             .Builder()
@@ -913,16 +925,22 @@ class WalletSessionTest {
 
             val held = async(Dispatchers.IO) { client.signMessage(network = Network.AMOY, message = "held") }
             assertTrue(heldArrived.await(5, TimeUnit.SECONDS))
-            // This call makes a refresh due while the held request is still in flight.
-            val signature = client.signMessage(network = Network.AMOY, message = "quick")
+            // This call waits for the held request's turn; when the held one completes and makes a
+            // refresh due, the waiting call holds the turn, so the refresh is skipped.
+            val quick = async(Dispatchers.IO) { client.signMessage(network = Network.AMOY, message = "quick") }
+            // Wait until the quick call queues behind the held one (the held one plus the quick one).
+            withTimeout(5_000) { while (client.signedRequestTurnUsers() < 2) delay(5) }
             val requestsWhileHeld = server.requestCount
             assertEquals(snapshot, client.snapshotSession())
             releaseHeld.countDown()
-
-            assertEquals("0xsigned", signature)
-            // The skipped refresh did not restart the 6-hour clock, so the held call's completion runs it.
+            // The held call returns after its due refresh was tried; the quick call held the turn.
             assertEquals("0xsigned", held.await())
-            assertEquals(2, requestsWhileHeld)
+            assertEquals(0, credentialReads.get())
+            releaseQuick.countDown()
+
+            // The skipped refresh did not restart the 6-hour clock, so the waiting call's completion runs it.
+            assertEquals("0xsigned", quick.await())
+            assertEquals(1, requestsWhileHeld)
             assertEquals(
                 listOf(WaasApi.SignMessage.urlPath, WaasApi.SignMessage.urlPath, WaasApi.GetCredential.urlPath),
                 List(server.requestCount) { requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target },
@@ -1889,7 +1907,7 @@ class WalletSessionTest {
         }
 
     @Test
-    fun requestCompletingAfterAWalletSwitchCountsAsSessionActivity() =
+    fun requestInFlightWhenAWalletSwitchStartsCountsAsSessionActivity() =
         runBlocking {
             val now = AtomicLong(T0)
             val waas = ExpiryTimerWaas(clock = { now.get() }, credentialExpiresAt = "2026-01-11T00:00:00Z")
@@ -1906,7 +1924,7 @@ class WalletSessionTest {
         }
 
     @Test
-    fun credentialRejectedAfterAWalletSwitchEndsTheSession() =
+    fun credentialRejectedWhileAWalletSwitchWaitsEndsTheSession() =
         runBlocking {
             val waas = ExpiryTimerWaas(clock = { T0 }, credentialExpiresAt = "2026-01-11T00:00:00Z")
             server.dispatcher = waas
@@ -2004,10 +2022,11 @@ class WalletSessionTest {
             val pending = async(Dispatchers.IO) { runCatching { client.signMessage(network = Network.AMOY, message = "hello") } }
             assertTrue(arrived.await(5, TimeUnit.SECONDS))
             waas.onSignMessage = {}
-            useWallet(waas.wallet.id)
+            // Requests signed with one credential go one at a time, so the switch waits for the message.
+            val switching = async(Dispatchers.IO) { runCatching { client.useWallet(waas.wallet.id) } }
             beforeAnswer()
             release.countDown()
-            pending.await()
+            pending.await().also { switching.await() }
         }
 
     @Test
@@ -2075,6 +2094,46 @@ class WalletSessionTest {
                 OMSWalletSessionExpiryBounds(10 * DAY_MILLIS, T0 + 11 * DAY_MILLIS),
                 redirectStore.snapshot?.expiryBounds,
             )
+        }
+
+    @Test
+    fun requestOfANewCredentialDoesNotWaitForAnOldCredentialsRequestInFlight() =
+        runBlocking {
+            val waas = ExpiryTimerWaas(clock = { T0 }, credentialExpiresAt = "2026-01-11T00:00:00Z")
+            server.dispatcher = waas
+            val signer = RotatingKeySigner()
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = serverEnvironment(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = signer,
+                    sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
+                    now = { T0 },
+                )
+            client.signInWithEmail()
+            val oldCredential = signer.existingCredentialId()
+            val arrived = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            waas.onSignMessage = {
+                arrived.countDown()
+                release.await(5, TimeUnit.SECONDS)
+            }
+            val held = async(Dispatchers.IO) { runCatching { client.signMessage(network = Network.AMOY, message = "old") } }
+            assertTrue(arrived.await(5, TimeUnit.SECONDS))
+            waas.onSignMessage = {}
+
+            // Signing out drops the key, and the next sign-in creates another: its requests take the
+            // new credential's turns, not the old one's held at WaaS.
+            client.signOut()
+            withTimeout(3_000) { client.signInWithEmail() }
+
+            assertNotEquals(oldCredential, signer.existingCredentialId())
+            assertEquals("0xsigned", withTimeout(3_000) { client.signMessage(network = Network.AMOY, message = "new") })
+            release.countDown()
+            assertTrue(held.await().isSuccess)
         }
 
     private fun expiryTimerClient(
@@ -2273,4 +2332,25 @@ private class NonceFailingCredentialSigner : TrackingCredentialSigner() {
         check(!failNonce) { "Unable to persist OMS Wallet credential nonce" }
         return super.nextNonce()
     }
+}
+
+/** Creates a new key on first use after each clear, as the Android Keystore signer does after sign-out. */
+private class RotatingKeySigner : TrackingCredentialSigner() {
+    private var keys = 0
+
+    @Volatile
+    private var current: String? = null
+
+    @Synchronized
+    override fun credentialId(): String = current ?: ("0x04" + (++keys).toString(16).padStart(128, '0')).also { current = it }
+
+    override fun existingCredentialId(): String? = current
+
+    override fun hasCredential(): Boolean = current != null
+
+    override fun clear() {
+        current = null
+    }
+
+    override fun sign(preimage: String): String = TEST_SIGNATURE
 }

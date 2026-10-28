@@ -155,7 +155,9 @@ class OMSWallet private constructor(
         private fun scopedOidcRedirectAuthFileName(publishableKey: String): String =
             scopedOidcRedirectAuthFileName(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
 
-        private fun scopedSessionSuffix(publishableKey: String): String =
+        /** The scope of [publishableKey]'s session: its wallet API origin and project, not the key itself. */
+        @JvmSynthetic
+        internal fun scopedSessionSuffix(publishableKey: String): String =
             scopedSessionSuffix(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
 
         internal fun scopedSessionFileName(
