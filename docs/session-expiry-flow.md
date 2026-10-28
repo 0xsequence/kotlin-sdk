@@ -57,7 +57,7 @@ ownership). Outcomes:
 
 | Outcome | Cause | Effect |
 |---|---|---|
-| Refreshed | `GetCredential` succeeded with a parseable `expiresAt` | The expiry replaces the session expiry (later or earlier), is saved to the session store, and reschedules the expiry task; the send time becomes the last expiry read |
+| Refreshed | `GetCredential` succeeded with a parseable `expiresAt` | The expiry replaces the session expiry (later or earlier), is saved to the session store, and reschedules the expiry task; its completion time becomes the last expiry read |
 | Ended | 7202 or 7203 (the transport ends the session), or 7207 (the refresh ends it) | The session ended and listeners were notified |
 | Unsupported | `WebrpcBadRoute` (WaaS without `GetCredential`) | Refreshes are skipped and local expiry stays exact for 15 minutes; then the next trigger probes `GetCredential` again, and an answer clears it while another `WebrpcBadRoute` restarts the 15 minutes |
 | Unavailable | Network or any other error, or an `expiresAt` that does not parse | Session unchanged |
@@ -115,15 +115,18 @@ Triggers:
   refresh ends the session; otherwise the call stays a request error and the
   session continues.
 
-WaaS requires strictly increasing nonces per credential, so a refresh never
-overlaps another signed session request: background refreshes start only when
-no signed request is in flight, the awaited refresh waits for in-flight requests
-to finish, and signed requests started during a refresh wait for it before
-signing. Other signed requests can still overlap each other, so one can reach
-WaaS after a request with a later nonce; WaaS then rejects it in its credential
-middleware, before running the method, with 7206 `PreconditionFailed` (HTTP 412),
-and the signed transport signs it again with a fresh nonce and resends it, at
-most 2 times.
+WaaS requires strictly increasing nonces per credential, so every request
+signed with one credential, refreshes included, takes one turn at a time, first
+come first served, across every client of the scope in the process; requests
+signed with another credential (a new sign-in's key) do not wait for them. A
+background refresh starts only when the credential's queue is empty and is
+skipped otherwise; an awaited refresh waits for its turn within its 30-second
+deadline. Requests from another process, device, or SDK version with the same
+credential are not ordered with these, so one can still reach WaaS after a
+request with a later nonce; WaaS then rejects it in its credential middleware,
+before running the method, with 7206 `PreconditionFailed` (HTTP 412), and the
+signed transport signs it again with a fresh nonce and resends it, at most 2
+times.
 
 ## Flow
 

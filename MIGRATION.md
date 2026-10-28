@@ -70,8 +70,9 @@ is already past its expiry when the SDK restores it is discarded without asking 
   `OMS_SESSION_EXPIRED` instead of `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. Status polling after a
   submitted transaction keeps `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` and its `txnId`.
 - When the wallet API answers the SDK's expiry check (`GetCredential`) with `Unauthorized` 7207, the
-  credential was revoked, and the session ends the same way. 7207 from any other call stays a
-  request error and keeps the session.
+  credential was revoked, and the session ends the same way. 7207 from any other call is a request
+  error, and it starts a background `GetCredential`: the session ends when that read finds the
+  credential revoked, and is kept otherwise.
 - Reading a credential's expiry extends an idle session, so the expiry timer no longer reads it as
   soon as the session looks expired: it waits until 5 minutes past the expected server-side
   expiry, which is later than the local one when the session was used after its expiry was last
@@ -79,13 +80,27 @@ is already past its expiry when the SDK restores it is discarded without asking 
   SDK activity, an idle session's `onSessionExpired` event can arrive up to about 6 hours after the
   wallet API ended it (it extends the expiry only in steps of at least 6 hours; within 5 minutes
   when the lifetime is shorter than the idle window), given an accurate device clock and the app running in the foreground.
+  After a restore whose expiry read did not reach the wallet API, it can arrive up to about an idle
+  window (10 days) late, because the restore time stands in for the previous process's last request.
   Protected operations on a locally expired session still check right away.
+- After a restore, the SDK reads the session's current expiry once the app is in use: right away when
+  the process is visible, otherwise when its first activity starts. A process started in the
+  background (for example for a push message) does not read it, because the read would extend an
+  idle session.
 - If the wallet API cannot be reached when a session reaches its local expiry, or returns an expiry
   the SDK cannot parse, the session is kept: the check is retried later, and protected operations
   throw the request error (`OMSWalletResponseException`, `OMS_INVALID_RESPONSE`, for an unparseable
   expiry) instead of `OMS_SESSION_EXPIRED`.
 - Protected operations that find the session locally expired share one expiry check. Cancelling the
   operation that started it no longer cancels the others; they run the check again.
+
+### One session per project and environment
+
+Every `OMSWallet` created for the same project and environment in the process shares one session:
+the active wallet, sign-out, expiry, and listeners. A rotated publishable key for the same project
+keeps the session, and every instance of it, including its `indexer` and the fee balance lookup
+of transaction methods, sends the key of the most recently created instance. Another project or
+environment is a separate session.
 
 ### Signed requests go one at a time
 
@@ -120,6 +135,18 @@ request error and the session is kept. Signing runs under the session lock and c
 interrupted, so a call returns within 30 seconds unless the device's signer itself is stuck; a
 signature that finishes after the deadline is never sent. An `Execute` that times out after it was
 sent stays `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
+
+### Indexer responses use the gateway field names
+
+Indexer responses are now read only with the field names the indexer gateways return; 0.3.x also
+accepted older names (`balanceWei`, and other spellings of `tokenId`, `tokenIds`, and `metaTxnId`).
+A response that has a required field only under an older name fails with `OMS_INVALID_RESPONSE`,
+and an optional one is read as `null`.
+
+### Retired wallet-import enclave measurement
+
+Production wallet import trusts the WaaS v1.1.1 and v1.2.0 enclave measurements and no longer the
+retired v1.1.0 one, so key material is not sent to a v1.1.0 enclave.
 
 ### Wallet-import key strings are redacted
 
