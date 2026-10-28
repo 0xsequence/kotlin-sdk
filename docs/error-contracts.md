@@ -11,6 +11,9 @@ whether `upstreamError` should be present, and which tests own the contract.
   branch on the SDK-level `code`.
 - `upstreamError.code` is a `String`; numeric WebRPC codes are stringified (for example `"7313"`),
   as in the TypeScript and Swift SDKs.
+- `upstreamError.cause` is the reason the service gave for the error, when it gave one, such as why a
+  request was invalid. It is set only from the service's response, never from the SDK's own transport
+  failures.
 - `upstreamError.service` is an `OMSWalletUpstreamService`; use its `wireValue` (`"waas"` or
   `"indexer"`) for logs that should match the TypeScript and Swift SDKs.
 - `retryable` is nullable and describes the failed SDK operation when retry semantics apply. A

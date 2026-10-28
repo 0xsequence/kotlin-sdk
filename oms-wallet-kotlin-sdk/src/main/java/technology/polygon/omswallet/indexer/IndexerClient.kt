@@ -843,6 +843,7 @@ class IndexerClient private constructor(
                     code = stringOrNumber("code"),
                     message = string("message") ?: string("msg") ?: fallbackMessage,
                     status = status,
+                    cause = string("cause")?.takeIf { it.isNotEmpty() },
                 )
             }
 

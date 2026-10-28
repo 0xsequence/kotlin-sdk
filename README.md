@@ -896,7 +896,10 @@ Public SDK APIs throw `OMSWalletException` subclasses with stable fields such as
 from a remote OMS service response or transport failure, the error also includes
 `upstreamError` with normalized wallet API or indexer details for logging and
 service-specific troubleshooting. For `OMSWalletException` values, branch
-application logic on the SDK-level `code`.
+application logic on the SDK-level `code`. When the service explains the error,
+`upstreamError.cause` holds its reason, for example
+`"wallet is not activated on chain: it must receive TRX or a token before it can send"`
+behind the generic message `"The request was invalid"`.
 
 For transaction writes, `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` means the SDK
 has a `txnId` from preparation, but the execute request failed before the SDK

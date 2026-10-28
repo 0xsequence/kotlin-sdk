@@ -107,6 +107,8 @@ data class OMSWalletUpstreamError(
     val code: String? = null,
     val message: String? = null,
     val status: Int? = null,
+    /** The service's reason for this error, when it gives one, for example why a request was invalid. */
+    val cause: String? = null,
 )
 
 /**
@@ -537,7 +539,14 @@ private fun WebRpcError.toWaasUpstreamError(status: Int? = normalizedStatus()): 
         code = normalizedCode(),
         message = normalizedMessage(),
         status = status,
+        cause = serviceCause(),
     )
+
+/**
+ * Only errors the service sent (code 0 and up) carry its reason in `cause`: the client's own transport
+ * errors (negative codes) put local details there, such as an unparsable response body.
+ */
+private fun WebRpcError.serviceCause(): String? = causeString.takeIf { code >= 0 && it.isNotEmpty() }
 
 private fun WebRpcError.normalizedCode(): String =
     if (error == "WebrpcBadResponse" && code == ErrorKind.UNKNOWN.code) {

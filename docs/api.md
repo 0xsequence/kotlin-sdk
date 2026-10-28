@@ -2179,6 +2179,8 @@ data class OMSWalletUpstreamError(
     val code: String? = null,
     val message: String? = null,
     val status: Int? = null,
+    /** The service's reason for this error, when it gives one, for example why a request was invalid. */
+    val cause: String? = null,
 )
 ```
 

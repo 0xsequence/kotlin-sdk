@@ -133,6 +133,7 @@ class PublicErrorContractsTest {
                           "error": "CommitmentConsumed",
                           "code": 7008,
                           "msg": "The authentication commitment has already been used",
+                          "cause": "commitment was completed at 2026-01-01T00:00:00Z",
                           "status": 400
                         }
                         """.trimIndent(),
@@ -157,6 +158,7 @@ class PublicErrorContractsTest {
                             code = "7008",
                             message = "The authentication commitment has already been used",
                             status = 400,
+                            cause = "commitment was completed at 2026-01-01T00:00:00Z",
                         ),
                 ),
                 publicError {
@@ -1349,8 +1351,9 @@ class PublicErrorContractsTest {
                 MockResponse
                     .Builder()
                     .code(503)
-                    .body("""{"error":"Unavailable","code":"INDEXER_UNAVAILABLE","message":"Indexer is unavailable"}""")
-                    .build(),
+                    .body(
+                        """{"error":"Unavailable","code":"INDEXER_UNAVAILABLE","message":"Indexer is unavailable","cause":"upstream node timed out"}""",
+                    ).build(),
             )
 
             val client = createIndexerClient()
@@ -1370,6 +1373,7 @@ class PublicErrorContractsTest {
                             code = "INDEXER_UNAVAILABLE",
                             message = "Indexer is unavailable",
                             status = 503,
+                            cause = "upstream node timed out",
                         ),
                 ),
                 publicError {
@@ -1706,6 +1710,7 @@ class PublicErrorContractsTest {
             code = code,
             message = message,
             status = status,
+            cause = cause,
         )
 
     private fun labeled(
@@ -1740,6 +1745,7 @@ class PublicErrorContractsTest {
         code: String? = null,
         message: String? = null,
         status: Int? = null,
+        cause: String? = null,
     ): SerializedUpstreamError =
         SerializedUpstreamError(
             service = service,
@@ -1747,6 +1753,7 @@ class PublicErrorContractsTest {
             code = code,
             message = message,
             status = status,
+            cause = cause,
         )
 
     private data class LabeledError(
@@ -1789,6 +1796,7 @@ class PublicErrorContractsTest {
         val code: String?,
         val message: String?,
         val status: Int?,
+        val cause: String?,
     )
 
     private class ThrowingOidcRedirectAuthStore(
