@@ -170,7 +170,8 @@ while a manual selection is pending.
 Completed auth requests ask the wallet API for the maximum session lifetime, 180 days, by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `15_552_000` seconds). The wallet API also ends an
 idle session about 10 days after its last use; without SDK activity, the SDK notices up to 5 minutes
-later. Wallet API versions without sliding expiry clamp the requested
+later, as long as the device clock is accurate and the app is running in the foreground (the timer
+cannot fire while the app is suspended or not running). Wallet API versions without sliding expiry clamp the requested
 lifetime to their 30-day maximum and have no idle timeout, so the default gives a fixed 30-day
 session there.
 Pass `sessionLifetimeSeconds` to `startEmailAuth`, `signInWithOidcIdToken`,
@@ -397,7 +398,9 @@ when (activeWallet?.type) {
 `activeWallet` is. `expiresAt` is an ISO-8601 timestamp string with the session's current
 expiry: with sliding expiry the wallet API extends it with use up to the requested lifetime, and the SDK refreshes it
 after a session is restored, before treating a session that is active in memory as expired, and periodically while the
-session is in use, so the value can change while the session stays active. `CompleteAuthResult.credential.expiresAt`
+session is in use, so the value can change while the session stays active. Refreshing extends an idle session, so when
+the app process starts in the background (for example for a push message or a scheduled job), the refresh after a restore
+waits until an activity of the app starts. `CompleteAuthResult.credential.expiresAt`
 is the same current expiry at sign-in. OIDC
 sessions include issuer/provider metadata on `OMSWalletOidcSessionAuth`, so apps
 can display built-in Google and Apple sessions by provider label.

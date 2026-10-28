@@ -13,6 +13,7 @@ import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
 import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.models.WalletKeyOrigin
 import technology.polygon.omswallet.models.WalletType
+import technology.polygon.omswallet.session.OMSWalletSessionExpiryBounds
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 
@@ -76,6 +77,32 @@ class PersistedSessionRecordTest {
     }
 
     @Test
+    fun roundTripsExpiryBoundsAsIntegers() {
+        val root = Json.parseToJsonElement(validRecord()).jsonObject
+
+        assertEquals(JsonPrimitive(864_000_000L), root["idleWindowMillis"])
+        assertEquals(JsonPrimitive(4_070_908_800_000L), root["expiryCeilingEpochMillis"])
+    }
+
+    @Test
+    fun discardsRecordsWithoutValidExpiryBounds() {
+        val record = Json.parseToJsonElement(validRecord()).jsonObject
+        val invalid =
+            listOf(
+                JsonObject(record - "idleWindowMillis"),
+                JsonObject(record - "expiryCeilingEpochMillis"),
+                JsonObject(record + ("idleWindowMillis" to JsonPrimitive("864000000"))),
+                JsonObject(record + ("idleWindowMillis" to JsonPrimitive(0))),
+                JsonObject(record + ("expiryCeilingEpochMillis" to JsonPrimitive(-1))),
+                JsonObject(record + ("expiryCeilingEpochMillis" to JsonPrimitive(1.5))),
+            ).map(JsonObject::toString)
+
+        invalid.forEach { encoded ->
+            assertThrows(encoded, InvalidSessionMetadataException::class.java) { PersistedSessionRecord.decode(encoded) }
+        }
+    }
+
+    @Test
     fun discardsRecordsWithMalformedWallets() {
         val malformed =
             listOf(
@@ -130,5 +157,6 @@ class PersistedSessionRecordTest {
             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
             expiresAt = "2099-01-01T00:00:00Z",
             auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
+            expiryBounds = OMSWalletSessionExpiryBounds(idleWindowMillis = 864_000_000L, ceilingEpochMillis = 4_070_908_800_000L),
         )
 }

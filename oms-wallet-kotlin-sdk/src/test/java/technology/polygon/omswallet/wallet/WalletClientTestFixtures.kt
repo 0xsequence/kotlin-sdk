@@ -79,6 +79,7 @@ internal fun completeAuthResponseBody(
     email: String? = "user@example.com",
     page: Page? = null,
     claimable: List<Wallet>? = null,
+    credentialExpiresAt: String = credentialFixture().expiresAt,
 ): String =
     WebRpcJson.encodeToString(
         CompleteAuthResponse(
@@ -86,7 +87,7 @@ internal fun completeAuthResponseBody(
             wallets = wallets,
             page = page,
             email = email,
-            credential = credentialFixture(),
+            credential = credentialFixture().copy(expiresAt = credentialExpiresAt),
             claimable = claimable,
         ),
     )

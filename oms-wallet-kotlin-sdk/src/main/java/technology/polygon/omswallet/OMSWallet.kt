@@ -9,8 +9,11 @@ import technology.polygon.omswallet.session.OMSWalletSessionStateMachine
 import technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore
 import technology.polygon.omswallet.storage.AndroidSessionMetadataStore
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
+import technology.polygon.omswallet.wallet.AndroidForegroundRunner
 import technology.polygon.omswallet.wallet.AndroidKeystoreP256CredentialSigner
 import technology.polygon.omswallet.wallet.CredentialSigner
+import technology.polygon.omswallet.wallet.ForegroundRunner
+import technology.polygon.omswallet.wallet.ImmediateForegroundRunner
 import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.WalletClient
 import java.net.URI
@@ -33,6 +36,7 @@ class OMSWallet private constructor(
     credentialSigner: CredentialSigner?,
     projectScopeKey: String?,
     walletImportTrustedPcr0s: Set<String>?,
+    foregroundRunner: ForegroundRunner,
 ) {
     private val resolvedProjectId: String = projectId ?: parsePublishableKey(publishableKey).projectId
     private val resolvedEnvironment: OMSWalletEnvironment =
@@ -52,6 +56,7 @@ class OMSWallet private constructor(
             credentialSigner = credentialSigner,
             projectScopeKey = projectScopeKey,
             walletImportTrustedPcr0s = walletImportTrustedPcr0s,
+            foregroundRunner = foregroundRunner,
         )
 
     val indexer: IndexerClient =
@@ -101,6 +106,7 @@ class OMSWallet private constructor(
             ),
         projectScopeKey = scopedSessionSuffix(publishableKey),
         walletImportTrustedPcr0s = parsePublishableKey(publishableKey).walletImportTrustedPcr0s,
+        foregroundRunner = AndroidForegroundRunner(context),
     )
 
     companion object {
@@ -116,6 +122,7 @@ class OMSWallet private constructor(
             credentialSigner: CredentialSigner? = null,
             projectScopeKey: String? = null,
             walletImportTrustedPcr0s: Set<String>? = null,
+            foregroundRunner: ForegroundRunner = ImmediateForegroundRunner,
         ): OMSWallet =
             OMSWallet(
                 publishableKey = publishableKey,
@@ -128,6 +135,7 @@ class OMSWallet private constructor(
                 credentialSigner = credentialSigner,
                 projectScopeKey = projectScopeKey,
                 walletImportTrustedPcr0s = walletImportTrustedPcr0s,
+                foregroundRunner = foregroundRunner,
             )
 
         private fun projectIdFromPublishableKey(publishableKey: String): String = parsePublishableKey(publishableKey).projectId

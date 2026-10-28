@@ -1015,6 +1015,103 @@ class PublicErrorContractsTest {
         }
 
     @Test
+    fun snapshotsStaleNonceExecuteAsRequestFailure() =
+        runBlocking {
+            server.enqueueJson(prepareTransactionResponse(txnId = "txn-stale-nonce", feeOptions = "[]", sponsored = true))
+            repeat(3) {
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(412)
+                        .body(
+                            """{"error":"PreconditionFailed","code":7206,""" +
+                                """"msg":"Precondition failed; try again with a higher nonce value","status":412}""",
+                        ).build(),
+                )
+            }
+
+            val client = createRestoredWalletClient()
+
+            // WaaS rejects a stale nonce before running Execute, so a still-rejected Execute was never submitted.
+            assertEquals(
+                error(
+                    name = "OMSWalletRequestException",
+                    code = "OMS_REQUEST_FAILED",
+                    operation = "wallet.sendTransaction",
+                    message = "Precondition failed; try again with a higher nonce value",
+                    status = 412,
+                    retryable = false,
+                    upstreamError =
+                        upstream(
+                            service = "Waas",
+                            name = "PreconditionFailed",
+                            code = "7206",
+                            message = "Precondition failed; try again with a higher nonce value",
+                            status = 412,
+                        ),
+                ),
+                publicError {
+                    client.sendTransaction(
+                        network = Network.POLYGON,
+                        request =
+                            SendTransactionRequest(
+                                to = "0x1111111111111111111111111111111111111111",
+                                value = BigInteger.ZERO,
+                            ),
+                    )
+                },
+            )
+            assertEquals(4, server.requestCount)
+        }
+
+    @Test
+    fun snapshotsExecuteRefusedBeforeSubmissionAsRequestFailure() =
+        runBlocking {
+            // WaaS raises these before Execute submits anything: its credential middleware rejects the
+            // signature (7201) or usage (7205), and 7207 comes only from checks that run before submission.
+            for ((status, name, code) in listOf(
+                Triple(400, "InvalidSignature", 7201),
+                Triple(429, "UsageLimitExceeded", 7205),
+                Triple(401, "Unauthorized", 7207),
+            )) {
+                server.enqueueJson(prepareTransactionResponse(txnId = "txn-refused-$code", feeOptions = "[]", sponsored = true))
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(status)
+                        .body("""{"error":"$name","code":$code,"msg":"refused","status":$status}""")
+                        .build(),
+                )
+                val client = createRestoredWalletClient()
+
+                assertEquals(
+                    error(
+                        name = "OMSWalletRequestException",
+                        code = "OMS_REQUEST_FAILED",
+                        operation = "wallet.sendTransaction",
+                        message = "refused",
+                        status = status,
+                        retryable = false,
+                        upstreamError =
+                            upstream(
+                                service = "Waas",
+                                name = name,
+                                code = code.toString(),
+                                message = "refused",
+                                status = status,
+                            ),
+                    ),
+                    publicError {
+                        client.sendTransaction(
+                            network = Network.POLYGON,
+                            request = SendTransactionRequest(to = "0x1111111111111111111111111111111111111111", value = BigInteger.ZERO),
+                        )
+                    },
+                )
+            }
+        }
+
+    @Test
     fun snapshotsSimulationRevertedExecuteAsRequestFailure() =
         runBlocking {
             server.enqueueJson(prepareTransactionResponse(txnId = "txn-reverts", feeOptions = "[]", sponsored = true))

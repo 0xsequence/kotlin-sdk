@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
@@ -16,6 +17,7 @@ import technology.polygon.omswallet.models.Wallet
 import technology.polygon.omswallet.models.WalletKeyOrigin
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletJson
+import technology.polygon.omswallet.session.OMSWalletSessionExpiryBounds
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.wallet.WalletSigningAlgorithm
 import technology.polygon.omswallet.wallet.isEthereumHexAddress
@@ -27,9 +29,17 @@ import technology.polygon.omswallet.wallet.isEthereumHexAddress
  * key origin) so wallet-family checks use the stored type. Records written by
  * SDK 0.3.x carry no version or wallet type; they are rejected so the store
  * discards them and the user signs in again.
+ *
+ * The `idleWindowMillis` and `expiryCeilingEpochMillis` fields hold the
+ * session's [OMSWalletSessionExpiryBounds]. Records without them (saved by
+ * earlier 0.4.0 builds) or with invalid values are rejected like other invalid
+ * records. A session whose bounds are unknown is saved without them, so it is
+ * not restored.
  */
 internal object PersistedSessionRecord {
     const val VERSION: Int = 2
+    private const val IDLE_WINDOW_KEY = "idleWindowMillis"
+    private const val EXPIRY_CEILING_KEY = "expiryCeilingEpochMillis"
 
     fun encode(snapshot: OMSWalletSessionSnapshot): String {
         val wallet = requireNotNull(snapshot.wallet) { "Cannot persist pending OMS Wallet auth state" }
@@ -54,6 +64,10 @@ internal object PersistedSessionRecord {
             put("signerKeyType", snapshot.signerKeyType?.wireValue)
             put("expiresAt", expiresAt)
             put("auth", auth.toJson())
+            snapshot.expiryBounds?.let { bounds ->
+                put(IDLE_WINDOW_KEY, bounds.idleWindowMillis)
+                put(EXPIRY_CEILING_KEY, bounds.ceilingEpochMillis)
+            }
         }.toString()
     }
 
@@ -83,7 +97,21 @@ internal object PersistedSessionRecord {
             signerKeyType = signerKeyType,
             expiresAt = expiresAt,
             auth = auth,
+            expiryBounds = root.toExpiryBounds() ?: invalid(),
         )
+    }
+
+    /** Both bounds as positive integers, or null when either is missing or invalid. */
+    private fun JsonObject.toExpiryBounds(): OMSWalletSessionExpiryBounds? {
+        val idleWindowMillis = positiveLong(IDLE_WINDOW_KEY) ?: return null
+        val ceilingEpochMillis = positiveLong(EXPIRY_CEILING_KEY) ?: return null
+        return OMSWalletSessionExpiryBounds(idleWindowMillis, ceilingEpochMillis)
+    }
+
+    private fun JsonObject.positiveLong(key: String): Long? {
+        val primitive = this[key] as? JsonPrimitive ?: return null
+        if (primitive.isString) return null
+        return primitive.longOrNull?.takeIf { it > 0 }
     }
 
     private fun invalid(): Nothing = throw InvalidSessionMetadataException("Invalid OMS Wallet session metadata")

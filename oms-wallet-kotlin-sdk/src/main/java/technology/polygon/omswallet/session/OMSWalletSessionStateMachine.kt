@@ -16,11 +16,26 @@ internal data class OMSWalletSessionSnapshot(
     val auth: OMSWalletSessionAuth? = null,
     val pendingWalletSelectionId: Long? = null,
     val pendingWalletType: WalletType? = null,
+    /** WaaS's idle window and lifetime ceiling for this credential; null when unknown. */
+    val expiryBounds: OMSWalletSessionExpiryBounds? = null,
 ) {
     val walletId: String? get() = wallet?.id
 
     val walletAddress: String? get() = wallet?.address
 }
+
+/**
+ * How far WaaS can move a session credential's expiry, derived from its sign-in: every request
+ * signed with the credential moves the expiry toward `min(request time + idleWindowMillis,
+ * ceilingEpochMillis)` and never past it.
+ */
+internal data class OMSWalletSessionExpiryBounds(
+    val idleWindowMillis: Long,
+    val ceilingEpochMillis: Long,
+)
+
+/** The session was signed out, replaced, or switched to another wallet while an operation ran. */
+internal class SessionRevisionChangedException : IllegalStateException("Wallet session changed before operation completed")
 
 internal data class OMSWalletPendingAuthSnapshot(
     val challenge: String,
@@ -63,6 +78,7 @@ internal class OMSWalletSessionStateMachine {
             val auth: OMSWalletSessionAuth,
             val pendingWalletSelectionId: Long?,
             val walletType: WalletType?,
+            val expiryBounds: OMSWalletSessionExpiryBounds?,
         ) : SessionState {
             override fun snapshot(): OMSWalletSessionSnapshot =
                 OMSWalletSessionSnapshot(
@@ -72,6 +88,7 @@ internal class OMSWalletSessionStateMachine {
                     auth = auth,
                     pendingWalletSelectionId = pendingWalletSelectionId,
                     pendingWalletType = walletType,
+                    expiryBounds = expiryBounds,
                 )
         }
 
@@ -81,6 +98,7 @@ internal class OMSWalletSessionStateMachine {
             val signerKeyType: WalletSigningAlgorithm?,
             val expiresAt: String,
             val auth: OMSWalletSessionAuth,
+            val expiryBounds: OMSWalletSessionExpiryBounds?,
         ) : SessionState {
             override fun snapshot(): OMSWalletSessionSnapshot =
                 OMSWalletSessionSnapshot(
@@ -89,6 +107,7 @@ internal class OMSWalletSessionStateMachine {
                     signerKeyType = signerKeyType,
                     expiresAt = expiresAt,
                     auth = auth,
+                    expiryBounds = expiryBounds,
                 )
         }
     }
@@ -151,6 +170,7 @@ internal class OMSWalletSessionStateMachine {
         expiresAt: String,
         auth: OMSWalletSessionAuth,
         walletType: WalletType,
+        expiryBounds: OMSWalletSessionExpiryBounds?,
         requiredRevision: Long? = null,
     ): Pair<Long, Long> {
         synchronized(lock) {
@@ -169,6 +189,7 @@ internal class OMSWalletSessionStateMachine {
                     auth = auth,
                     pendingWalletSelectionId = pendingWalletSelectionId,
                     walletType = walletType,
+                    expiryBounds = expiryBounds,
                 ),
             )
             return pendingWalletSelectionId to revision
@@ -190,6 +211,7 @@ internal class OMSWalletSessionStateMachine {
                             signerKeyType = current.signerKeyType,
                             expiresAt = current.expiresAt,
                             auth = current.auth,
+                            expiryBounds = current.expiryBounds,
                         )
                     }
 
@@ -220,6 +242,7 @@ internal class OMSWalletSessionStateMachine {
                     signerKeyType = current.signerKeyType,
                     expiresAt = current.expiresAt,
                     auth = current.auth,
+                    expiryBounds = current.expiryBounds,
                 ),
             )
             revision
@@ -284,9 +307,7 @@ internal class OMSWalletSessionStateMachine {
     }
 
     private fun requireCurrentRevision(expectedRevision: Long) {
-        check(revision == expectedRevision) {
-            "Wallet session changed before operation completed"
-        }
+        if (revision != expectedRevision) throw SessionRevisionChangedException()
     }
 
     private fun currentPendingWalletSelection(
@@ -322,6 +343,7 @@ internal class OMSWalletSessionStateMachine {
                     signerKeyType = snapshot.signerKeyType,
                     expiresAt = expiresAt,
                     auth = auth,
+                    expiryBounds = snapshot.expiryBounds,
                 )
             }
 
@@ -344,6 +366,7 @@ internal class OMSWalletSessionStateMachine {
                     auth = auth,
                     pendingWalletSelectionId = null,
                     walletType = snapshot.pendingWalletType,
+                    expiryBounds = snapshot.expiryBounds,
                 )
             }
 

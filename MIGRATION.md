@@ -77,7 +77,8 @@ is already past its expiry when the SDK restores it is discarded without asking 
   expiry, which is later than the local one when the session was used after its expiry was last
   read. Without
   SDK activity, an idle session's `onSessionExpired` event can arrive up to 5 minutes after the
-  wallet API ended it. Protected operations on a locally expired session still check right away.
+  wallet API ended it, given an accurate device clock and the app running in the foreground.
+  Protected operations on a locally expired session still check right away.
 - If the wallet API cannot be reached when a session reaches its local expiry, or returns an expiry
   the SDK cannot parse, the session is kept: the check is retried later, and protected operations
   throw the request error (`OMSWalletResponseException`, `OMS_INVALID_RESPONSE`, for an unparseable
@@ -90,8 +91,11 @@ is already past its expiry when the SDK restores it is discarded without asking 
 WaaS needs every signed request's nonce to be higher than the last one it accepted, so concurrent
 calls can reach it out of order and be rejected with `PreconditionFailed` (code `7206`, HTTP 412).
 The SDK now signs such a request again with a fresh nonce and resends it, at most 2 times, before
-surfacing the rejection as before. WaaS rejects the nonce before running the method, so a resent
-`Execute` cannot send a transaction twice.
+surfacing the rejection as `OMS_REQUEST_FAILED` (status 412). WaaS rejects the nonce before running
+the method, so a resent `Execute` cannot send a transaction twice, and a still-rejected `Execute`
+is reported as `OMS_REQUEST_FAILED`, not `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. The same applies to
+an `Execute` that WaaS refuses with `InvalidSignature` (7201), `UsageLimitExceeded` (7205) or
+`Unauthorized` (7207): WaaS refuses these before submitting anything, so they are request errors too.
 
 ### Wallet-import key strings are redacted
 
