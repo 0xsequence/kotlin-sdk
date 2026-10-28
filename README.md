@@ -151,6 +151,30 @@ Subscribe with `omsWallet.wallet.onSessionExpired { event -> ... }` to route use
 back to sign-in while preserving the expired session snapshot for reauth.
 Listeners are delivered on the Android main thread.
 
+Listeners are shared by every `OMSWallet` created with the same publishable key in the process,
+so they stay registered after the `OMSWallet` that added them is gone. Call the returned
+function when the owner goes away; a listener that captures an Activity otherwise keeps
+it in memory for the life of the process:
+
+```kotlin
+class WalletActivity : ComponentActivity() {
+    private var unsubscribeSessionExpired: (() -> Unit)? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        unsubscribeSessionExpired = omsWallet.wallet.onSessionExpired { event ->
+            showSignIn(event.session.auth)
+        }
+    }
+
+    override fun onDestroy() {
+        unsubscribeSessionExpired?.invoke()
+        unsubscribeSessionExpired = null
+        super.onDestroy()
+    }
+}
+```
+
 ## Authentication
 
 The quick start uses automatic wallet selection. Starting a new auth flow

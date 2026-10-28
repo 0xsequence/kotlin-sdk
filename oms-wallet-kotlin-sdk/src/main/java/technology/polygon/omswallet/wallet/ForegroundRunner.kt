@@ -12,11 +12,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  * scheduled job, or boot) is not user activity, so work that extends the session waits for it.
  */
 internal fun interface ForegroundRunner {
-    fun runInForeground(action: () -> Unit)
+    /** Returns a function that cancels the work if it has not run yet. */
+    fun runInForeground(action: () -> Unit): () -> Unit
 }
 
 /** Runs right away; used where no Android context is available. */
-internal val ImmediateForegroundRunner = ForegroundRunner { action -> action() }
+internal val ImmediateForegroundRunner =
+    ForegroundRunner { action ->
+        action()
+        return@ForegroundRunner {}
+    }
 
 /**
  * Runs now when the process is visible; otherwise once, when the first activity starts. Runs now
@@ -27,14 +32,14 @@ internal class AndroidForegroundRunner(
 ) : ForegroundRunner {
     private val appContext: Context = context.applicationContext ?: context
 
-    override fun runInForeground(action: () -> Unit) {
+    override fun runInForeground(action: () -> Unit): () -> Unit {
         val application = appContext as? Application
         if (application == null || isVisible()) {
             action()
-            return
+            return {}
         }
         val ran = AtomicBoolean(false)
-        application.registerActivityLifecycleCallbacks(
+        val callbacks =
             object : Application.ActivityLifecycleCallbacks {
                 override fun onActivityStarted(activity: Activity) {
                     if (ran.compareAndSet(false, true)) {
@@ -60,8 +65,11 @@ internal class AndroidForegroundRunner(
                 ) = Unit
 
                 override fun onActivityDestroyed(activity: Activity) = Unit
-            },
-        )
+            }
+        application.registerActivityLifecycleCallbacks(callbacks)
+        return {
+            if (ran.compareAndSet(false, true)) application.unregisterActivityLifecycleCallbacks(callbacks)
+        }
     }
 
     private fun isVisible(): Boolean =

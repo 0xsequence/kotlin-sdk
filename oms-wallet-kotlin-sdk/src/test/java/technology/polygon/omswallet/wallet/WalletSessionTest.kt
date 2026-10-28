@@ -1781,7 +1781,11 @@ class WalletSessionTest {
             val client = expiryTimerClient(store, RecordingSessionExpiryScheduler(), foreground, launcher) { T0 }
             assertTrue(client.restorePersistedSession())
 
+            assertEquals(1, foreground.pendingCount)
+
             client.signOut()
+            // Signing out stops the wait, so nothing keeps the client registered.
+            assertEquals(0, foreground.pendingCount)
             foreground.enterForeground()
 
             assertEquals(0, refreshLaunches)
@@ -2217,8 +2221,12 @@ private class ExpiryTimerWaas(
 private class ManualForegroundRunner : ForegroundRunner {
     private val pending = mutableListOf<() -> Unit>()
 
-    override fun runInForeground(action: () -> Unit) {
+    /** Work still waiting, as the Application would keep its lifecycle callbacks registered. */
+    val pendingCount: Int get() = pending.size
+
+    override fun runInForeground(action: () -> Unit): () -> Unit {
         pending += action
+        return { pending -= action }
     }
 
     fun enterForeground() {

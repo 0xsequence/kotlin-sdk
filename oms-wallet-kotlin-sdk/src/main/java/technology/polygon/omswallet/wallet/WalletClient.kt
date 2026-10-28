@@ -174,6 +174,9 @@ private class WalletScopeRuntime(
     var latestSessionExpiredEvent: OMSWalletSessionExpiredEvent? = null
     var latestSessionExpiredRevision: Long? = null
     var sessionExpiryTask: SessionExpiryTask? = null
+
+    /** Cancels the restore read still waiting for the app to come to the foreground. */
+    var cancelRestoredSessionRead: (() -> Unit)? = null
     var pendingEmailAuth: PendingEmailAuth? = null
 
     /** The single in-flight GetCredential refresh shared by concurrent callers. */
@@ -594,22 +597,40 @@ class WalletClient private constructor(
 
     private fun refreshRestoredSessionInForeground(restoredRevision: Long) {
         try {
-            foregroundRunner.runInForeground {
-                val current = synchronized(runtime.lifecycleLock) { walletSession.revision() == restoredRevision }
-                if (current) {
-                    launchCredentialRefresh(restoredRevision) { outcome ->
-                        if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
-                            // Leave the stored expiry due for a read on the next successful signed request.
-                            synchronized(runtime.lifecycleLock) {
-                                if (walletSession.revision() == restoredRevision) runtime.credentialRefreshAttemptedAt = null
+            val cancel =
+                foregroundRunner.runInForeground {
+                    val current =
+                        synchronized(runtime.lifecycleLock) {
+                            runtime.cancelRestoredSessionRead = null
+                            walletSession.revision() == restoredRevision
+                        }
+                    if (current) {
+                        launchCredentialRefresh(restoredRevision) { outcome ->
+                            if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
+                                // Leave the stored expiry due for a read on the next successful signed request.
+                                synchronized(runtime.lifecycleLock) {
+                                    if (walletSession.revision() == restoredRevision) runtime.credentialRefreshAttemptedAt = null
+                                }
                             }
                         }
                     }
                 }
-            }
+            // Ending the session cancels the wait, so a process that never shows UI does not keep
+            // this client registered with the Application.
+            val stillCurrent =
+                synchronized(runtime.lifecycleLock) {
+                    (walletSession.revision() == restoredRevision).also { current ->
+                        if (current) runtime.cancelRestoredSessionRead = cancel
+                    }
+                }
+            if (!stillCurrent) cancel()
         } catch (_: Throwable) {
             // The restore read is best effort; local expiry stays in effect.
         }
+    }
+
+    private fun cancelRestoredSessionReadLocked() {
+        runtime.cancelRestoredSessionRead.also { runtime.cancelRestoredSessionRead = null }?.invoke()
     }
 
     private fun clearInvalidPersistedSessionLocked() {
@@ -664,6 +685,7 @@ class WalletClient private constructor(
         runtime.pendingEmailAuth = null
         val clearedRevision = walletSession.revision()
         clearSessionExpiryTaskLocked()
+        cancelRestoredSessionReadLocked()
 
         var cleanupFailure: Throwable? = null
 
@@ -3020,6 +3042,7 @@ class WalletClient private constructor(
         }
         val expiredRevision = walletSession.revision()
         clearSessionExpiryTaskLocked()
+        cancelRestoredSessionReadLocked()
         try {
             oidcRedirectAuthStore?.clear()
         } catch (_: Throwable) {
