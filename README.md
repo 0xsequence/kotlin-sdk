@@ -895,7 +895,9 @@ could confirm whether the transaction was submitted; do not blindly resend the
 same write. A transaction that the wallet API refuses to send because it would
 revert (WaaS `TransactionSimulationFailed`, code `7314`) throws
 `OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `400`) with that
-`upstreamError` instead; it was never sent.
+`upstreamError` instead; it was never sent. The same applies when the wallet API
+refuses the execute request before submitting it, or when the SDK never sent it.
+Signed wallet API requests time out after 30 seconds.
 `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was submitted but
 status polling failed, so retry status lookup with the returned `txnId`.
 `retryable` describes the failed SDK operation, not the whole user intent.

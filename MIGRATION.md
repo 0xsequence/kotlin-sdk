@@ -97,6 +97,17 @@ the method, so a resent `Execute` cannot send a transaction twice, and a still-r
 is reported as `OMS_REQUEST_FAILED`, not `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. The same applies to
 an `Execute` that WaaS refuses with `InvalidSignature` (7201), `UsageLimitExceeded` (7205) or
 `Unauthorized` (7207): WaaS refuses these before submitting anything, so they are request errors too.
+For Tron, so are `InvalidRequest` (7200) and `InvalidFeeOption` (7310), which WaaS raises while it
+prices the transaction again, before broadcasting it. An `Execute` whose request the SDK never sent,
+because signing failed or its deadline passed first, also throws the request error without `txnId`.
+
+### Signed requests time out after 30 seconds
+
+Every signed wallet API request now fails if it has not finished within 30 seconds, counting its
+wait behind an expiry read, signing, nonce resends, and the HTTP call, whatever timeouts the
+`OkHttpClient` passed to `OMSWallet` sets (shorter ones still apply). A request that never reached
+the wallet API is not sent late. An `Execute` that times out after it was sent stays
+`OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
 
 ### Wallet-import key strings are redacted
 
@@ -111,7 +122,7 @@ When the wallet API refuses to send a transaction because it would revert (WaaS
 `OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `400`, `retryable = false`, no `txnId`) with
 `upstreamError.name = "TransactionSimulationFailed"` and `upstreamError.code = "7314"`. 0.3.x reported
 this as `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`; the transaction was closed as failed and never sent,
-so fix it before sending again. Every other Execute failure still throws
+so fix it before sending again. Execute failures that may have reached the wallet API still throw
 `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
 
 ### One-time sign-in after upgrading

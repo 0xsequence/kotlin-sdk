@@ -1814,6 +1814,34 @@ class WalletSessionTest {
         }
 
     @Test
+    fun routingErrorSkipsExpiryReadsForFifteenMinutesThenProbesAgain() =
+        runBlocking {
+            var now = T0
+            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
+            server.dispatcher = waas
+            val store = RecordBackedSessionStore(null)
+            expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }.signInWithEmail()
+            // A misrouted answer to the restore read looks like a WaaS without GetCredential.
+            now = T0 + HOUR_MILLIS
+            waas.credentialAnswers += errorResponse(404, "WebrpcBadRoute", -2)
+            val client = expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }
+            assertTrue(client.restorePersistedSession())
+            waas.signMessageResponse = errorResponse(401, "Unauthorized", 7207)
+
+            // Within the cooldown, a 7207 answer does not read the credential.
+            now = T0 + HOUR_MILLIS + 10 * MINUTE_MILLIS
+            runCatching { client.signMessage(network = Network.AMOY, message = "hello") }
+            assertEquals(listOf(T0 + HOUR_MILLIS), waas.credentialReadTimes)
+
+            // After it, the next read probes again, and its answer clears the latch.
+            now = T0 + HOUR_MILLIS + 16 * MINUTE_MILLIS
+            waas.credentialAnswers += okJson(getCredentialResponseBody("2026-01-11T01:16:00Z"))
+            runCatching { client.signMessage(network = Network.AMOY, message = "hello") }
+            assertEquals(listOf(T0 + HOUR_MILLIS, now), waas.credentialReadTimes)
+            assertEquals("2026-01-11T01:16:00Z", client.session?.expiresAt)
+        }
+
+    @Test
     fun restoreReadNotRunYetLeavesTheNextSuccessfulSignedRequestToReadTheExpiry() =
         runBlocking {
             var now = T0

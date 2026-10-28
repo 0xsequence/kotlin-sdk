@@ -352,6 +352,8 @@ internal fun restoredTestWalletClient(
     environment: OMSWalletEnvironment,
     wallet: technology.polygon.omswallet.models.Wallet,
     nonceValue: String,
+    credentialSigner: CredentialSigner = TrackingCredentialSigner(nonceValue = nonceValue),
+    signedRequestTimeoutMillis: Long = 30_000L,
 ): WalletClient {
     val client =
         WalletClient.create(
@@ -359,6 +361,7 @@ internal fun restoredTestWalletClient(
             projectId = "test-project-id",
             environment = environment,
             transport = OMSWalletHttpClient(),
+            signedRequestTimeoutMillis = signedRequestTimeoutMillis,
             sessionStore =
                 InMemorySessionStore(
                     snapshot =
@@ -370,7 +373,7 @@ internal fun restoredTestWalletClient(
                             auth = emailSessionAuth(),
                         ),
                 ),
-            credentialSigner = TrackingCredentialSigner(nonceValue = nonceValue),
+            credentialSigner = credentialSigner,
             credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
         )
     assertTrue(client.restorePersistedSession())

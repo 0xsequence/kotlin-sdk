@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
@@ -132,6 +133,8 @@ import java.math.BigInteger
 import java.security.SecureRandom
 import java.util.Timer
 import java.util.TimerTask
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import technology.polygon.omswallet.internal.generated.waas.AbiArg as WaasAbiArg
 import technology.polygon.omswallet.internal.generated.waas.CredentialInfo as WaasCredentialInfo
 import technology.polygon.omswallet.internal.generated.waas.CredentialMetadata as WaasCredentialMetadata
@@ -182,8 +185,12 @@ private class WalletScopeRuntime(
     /** The single in-flight GetCredential refresh shared by concurrent callers. */
     var credentialRefresh: CredentialRefreshInFlight? = null
 
-    /** Set once a WaaS server answers GetCredential with WebrpcBadRoute (pre-sliding expiry). */
-    var credentialRefreshUnsupported = false
+    /**
+     * When a WaaS server last answered GetCredential with WebrpcBadRoute (no sliding expiry), or
+     * null. Refreshes are skipped for [CREDENTIAL_REFRESH_UNSUPPORTED_COOLDOWN_MILLIS] after it, then
+     * probed again, so one misrouted answer does not disable them for the life of the process.
+     */
+    var credentialRefreshUnsupportedAt: Long? = null
 
     /**
      * When this process last read the current credential's expiry: the send time of the sign-in
@@ -233,7 +240,10 @@ private class SignedRequestGate {
     private var refresh: CompletableDeferred<Unit>? = null
     private var idle: CompletableDeferred<Unit>? = null
 
-    suspend fun <T> request(block: suspend () -> T): T {
+    suspend fun <T> request(
+        deadline: SignedRequestDeadline,
+        block: suspend () -> T,
+    ): T {
         while (true) {
             val refreshInFlight =
                 synchronized(lock) {
@@ -242,7 +252,8 @@ private class SignedRequestGate {
                         null
                     }
                 } ?: break
-            refreshInFlight.await()
+            // Not yet counted in flight, so giving up here leaves nothing to release.
+            withTimeoutOrNull(deadline.remainingMillisBeforeSend()) { refreshInFlight.await() }
         }
         try {
             return block()
@@ -280,6 +291,33 @@ private class SignedRequestGate {
             if (refresh === started) refresh = null
         }
         started.complete(Unit)
+    }
+}
+
+/**
+ * A signed request failed before its HTTP call started (at the gate, while signing, or because its
+ * deadline passed), so WaaS never received it.
+ */
+private class SignedRequestNotSentException(
+    cause: Throwable,
+) : Exception(cause.message, cause)
+
+/** The one deadline of a signed request: its gate wait, signing, nonce resends, and HTTP calls. */
+private class SignedRequestDeadline(
+    timeoutMillis: Long,
+) {
+    private val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+
+    /**
+     * The milliseconds left. Once none are, throws [SignedRequestNotSentException], so a request
+     * whose signing finished after the deadline is never sent.
+     */
+    fun remainingMillisBeforeSend(): Long {
+        val remainingMillis = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime())
+        if (remainingMillis <= 0) {
+            throw SignedRequestNotSentException(TimeoutException("Signed request timed out before it was sent"))
+        }
+        return remainingMillis
     }
 }
 
@@ -354,6 +392,7 @@ class WalletClient private constructor(
     private val transactionStatusDelay: suspend (Long) -> Unit,
     private val walletImportTrustedPcr0s: Set<String>?,
     private val foregroundRunner: ForegroundRunner,
+    private val signedRequestTimeoutMillis: Long,
 ) {
     companion object {
         /**
@@ -387,6 +426,7 @@ class WalletClient private constructor(
             projectScopeKey: String? = null,
             walletImportTrustedPcr0s: Set<String>? = null,
             foregroundRunner: ForegroundRunner = ImmediateForegroundRunner,
+            signedRequestTimeoutMillis: Long = SIGNED_REQUEST_TIMEOUT_MILLIS,
         ): WalletClient {
             val createRuntime = {
                 WalletScopeRuntime(
@@ -415,6 +455,7 @@ class WalletClient private constructor(
                 transactionStatusDelay = transactionStatusDelay,
                 walletImportTrustedPcr0s = walletImportTrustedPcr0s,
                 foregroundRunner = foregroundRunner,
+                signedRequestTimeoutMillis = signedRequestTimeoutMillis,
             )
         }
     }
@@ -435,6 +476,7 @@ class WalletClient private constructor(
             onSessionRequestCompleted = ::recordSessionRequestCompleted,
             signedRequestGate = runtime.signedRequestGate,
             walletImportTrustedPcr0s = walletImportTrustedPcr0s,
+            signedRequestTimeoutMillis = signedRequestTimeoutMillis,
         )
     private val indexerClient: IndexerClient =
         IndexerClient.create(
@@ -2244,6 +2286,7 @@ class WalletClient private constructor(
                 selectFeeOption = selectFeeOption,
                 waitForStatus = waitForStatus,
                 statusPolling = statusPolling,
+                refusedBeforeSubmission = TRON_EXECUTE_REFUSED_BEFORE_SUBMISSION,
             )
         }
 
@@ -2285,6 +2328,7 @@ class WalletClient private constructor(
                 selectFeeOption = selectFeeOption,
                 waitForStatus = waitForStatus,
                 statusPolling = statusPolling,
+                refusedBeforeSubmission = TRON_EXECUTE_REFUSED_BEFORE_SUBMISSION,
             )
         }
 
@@ -2735,7 +2779,7 @@ class WalletClient private constructor(
                 ) {
                     return CredentialRefreshOutcome.Stale
                 }
-                if (runtime.credentialRefreshUnsupported) {
+                if (isCredentialRefreshUnsupportedLocked()) {
                     return CredentialRefreshOutcome.Unsupported
                 }
                 runtime.credentialRefresh?.takeIf { it.revision == requiredSessionRevision }
@@ -2811,10 +2855,10 @@ class WalletClient private constructor(
                     return CredentialRefreshOutcome.Unavailable(throwable)
                 }
                 // Servers without sliding expiry have no GetCredential; their local expiry is exact.
-                synchronized(runtime.lifecycleLock) { runtime.credentialRefreshUnsupported = true }
+                synchronized(runtime.lifecycleLock) { runtime.credentialRefreshUnsupportedAt = runtime.now() }
                 return CredentialRefreshOutcome.Unsupported
             } catch (throwable: WebRpcTransportException) {
-                return when (val cause = throwable.cause) {
+                return when (val cause = throwable.cause.let { (it as? SignedRequestNotSentException)?.cause ?: it }) {
                     is OMSWalletSessionException -> {
                         if (cause.code == OMSWalletErrorCode.SessionExpired) {
                             CredentialRefreshOutcome.Ended
@@ -2858,9 +2902,16 @@ class WalletClient private constructor(
             // The read's own completion time, so a read with no later request leaves lastSessionRequestAt <= credentialReadAt.
             runtime.credentialReadAt = runtime.credentialReadCompletedAt ?: runtime.now()
             runtime.credentialRetryDelayMillis = null
+            runtime.credentialRefreshUnsupportedAt = null
             scheduleSessionExpiryLocked(updated, requiredSessionRevision)
             CredentialRefreshOutcome.Refreshed
         }
+    }
+
+    /** Whether a WebrpcBadRoute answer to GetCredential is recent enough that refreshes are skipped. */
+    private fun isCredentialRefreshUnsupportedLocked(): Boolean {
+        val unsupportedAt = runtime.credentialRefreshUnsupportedAt ?: return false
+        return runtime.now() - unsupportedAt < CREDENTIAL_REFRESH_UNSUPPORTED_COOLDOWN_MILLIS
     }
 
     /** Whether [credentialId] signs the current verified session; switching wallets keeps it. */
@@ -2908,7 +2959,7 @@ class WalletClient private constructor(
         val due =
             synchronized(runtime.lifecycleLock) {
                 val attemptedAt = runtime.credentialRefreshAttemptedAt
-                !runtime.credentialRefreshUnsupported &&
+                !isCredentialRefreshUnsupportedLocked() &&
                     runtime.credentialRefresh == null &&
                     walletSession.revision() == requiredSessionRevision &&
                     (attemptedAt == null || runtime.now() - attemptedAt >= CREDENTIAL_REFRESH_INTERVAL_MILLIS)
@@ -2995,7 +3046,7 @@ class WalletClient private constructor(
      * local expiry is exact.
      */
     private fun idleSessionCheckAtLocked(snapshot: OMSWalletSessionSnapshot): Long? {
-        if (snapshot.wallet == null || runtime.credentialRefreshUnsupported) return null
+        if (snapshot.wallet == null || isCredentialRefreshUnsupportedLocked()) return null
         val expiresAt = snapshot.expiresAtEpochMillis() ?: return null
         val readAt = runtime.credentialReadAt
         val usedAt = runtime.lastSessionRequestAt
@@ -3225,6 +3276,7 @@ class WalletClient private constructor(
         selectFeeOption: FeeOptionSelector?,
         waitForStatus: Boolean,
         statusPolling: TransactionStatusPollingOptions?,
+        refusedBeforeSubmission: Set<ErrorKind> = EXECUTE_REFUSED_BEFORE_SUBMISSION,
     ): SendTransactionResponse {
         if (waitForStatus) {
             requireValidTransactionStatusPollingOptions(
@@ -3261,6 +3313,11 @@ class WalletClient private constructor(
             } catch (throwable: CancellationException) {
                 throw throwable
             } catch (throwable: Throwable) {
+                val notSent = (throwable as? WebRpcTransportException)?.cause as? SignedRequestNotSentException
+                if (notSent != null) {
+                    // Execute failed before its request was sent, so nothing was submitted.
+                    throw (notSent.cause ?: notSent).toOMSWalletException(OMSWalletOperation.WalletExecute)
+                }
                 val sdkError = throwable.toOMSWalletException(OMSWalletOperation.WalletExecute)
                 if (sdkError.code == OMSWalletErrorCode.SessionExpired) {
                     // WaaS rejected the credential before running Execute, so nothing was sent.
@@ -3270,10 +3327,11 @@ class WalletClient private constructor(
                     // The relayer refused to dispatch a reverting transaction; WaaS closed it as failed.
                     throw sdkError
                 }
-                if (throwable is WebRpcError && throwable.errorKind in EXECUTE_REFUSED_BEFORE_SUBMISSION) {
+                if (throwable is WebRpcError && throwable.errorKind in refusedBeforeSubmission) {
                     // WaaS refused Execute before submitting anything: its credential middleware
                     // rejected the signature (7201), usage (7205), or nonce (7206, still after the
-                    // resends), or it was not authorized (7207, which Execute only raises before submission).
+                    // resends), or it was not authorized (7207, which Execute only raises before
+                    // submission); for Tron, also its re-pricing (7200, 7310).
                     throw sdkError
                 }
                 throw OMSWalletTransactionException(
@@ -3724,6 +3782,7 @@ private class WaasWalletGateway(
     private val onSessionRequestCompleted: (credentialId: String, endpoint: String) -> Unit,
     private val signedRequestGate: SignedRequestGate,
     private val walletImportTrustedPcr0s: Set<String>?,
+    private val signedRequestTimeoutMillis: Long,
 ) {
     private val publicClient: WaasPublicClient =
         WaasPublicClient(
@@ -4377,15 +4436,19 @@ private class WaasWalletGateway(
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
             val requestPath = WaasApi.basePath + endpoint
-            gatedSignedRequest(requiredSessionRevision, endpoint) {
+            val deadline = SignedRequestDeadline(signedRequestTimeoutMillis)
+            gatedSignedRequest(requiredSessionRevision, endpoint, deadline) {
                 var sessionCredentialId: String? = null
                 val signed =
                     try {
                         resendingRejectedNonce {
                             val authorization =
-                                withContext(Dispatchers.IO) {
-                                    authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
+                                beforeSend {
+                                    withContext(Dispatchers.IO) {
+                                        authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
+                                    }
                                 }
+                            val timeoutMillis = deadline.remainingMillisBeforeSend()
                             if (authorization.usesSessionCredential) sessionCredentialId = authorization.credentialId
                             val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
                             val nonce = WalletImportBase64.encode(nonceBytes)
@@ -4399,6 +4462,7 @@ private class WaasWalletGateway(
                                     path = requestPath,
                                     body = body,
                                     headers = requestHeaders,
+                                    timeoutMillis = timeoutMillis,
                                 )
                             val document =
                                 response.headers["x-attestation-document"]
@@ -4436,20 +4500,24 @@ private class WaasWalletGateway(
     ): LambdaWebRpcTransport =
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
-            gatedSignedRequest(requiredSessionRevision, endpoint) {
+            val deadline = SignedRequestDeadline(signedRequestTimeoutMillis)
+            gatedSignedRequest(requiredSessionRevision, endpoint, deadline) {
                 var sessionCredentialId: String? = null
                 val signed =
                     try {
                         resendingRejectedNonce {
                             val authorization =
-                                withContext(Dispatchers.IO) {
-                                    authorizeSignedRequest(
-                                        requiredSessionRevision,
-                                        allowCredentialCreation,
-                                        endpoint,
-                                        body,
-                                    )
+                                beforeSend {
+                                    withContext(Dispatchers.IO) {
+                                        authorizeSignedRequest(
+                                            requiredSessionRevision,
+                                            allowCredentialCreation,
+                                            endpoint,
+                                            body,
+                                        )
+                                    }
                                 }
+                            val timeoutMillis = deadline.remainingMillisBeforeSend()
                             if (authorization.usesSessionCredential) sessionCredentialId = authorization.credentialId
                             val response =
                                 transport.postJsonWithStatus(
@@ -4457,6 +4525,7 @@ private class WaasWalletGateway(
                                     path = WaasApi.basePath + endpoint,
                                     body = body,
                                     headers = defaultSignedHeaders(headers, authorization.walletSignatureHeader),
+                                    timeoutMillis = timeoutMillis,
                                 )
                             SignedResponse(authorization, response.statusCode, response.body)
                         }
@@ -4491,6 +4560,18 @@ private class WaasWalletGateway(
         return send()
     }
 
+    /** Runs a step before the HTTP call starts, reporting its failure as [SignedRequestNotSentException]. */
+    private suspend fun <T> beforeSend(step: suspend () -> T): T =
+        try {
+            step()
+        } catch (throwable: CancellationException) {
+            throw throwable
+        } catch (throwable: SignedRequestNotSentException) {
+            throw throwable
+        } catch (throwable: Throwable) {
+            throw SignedRequestNotSentException(throwable)
+        }
+
     private fun SignedResponse.isRejectedNonce(): Boolean =
         statusCode == 412 && decodeWebRpcError(statusCode, body).errorKind == ErrorKind.PRECONDITION_FAILED
 
@@ -4502,10 +4583,11 @@ private class WaasWalletGateway(
     private suspend fun gatedSignedRequest(
         requiredSessionRevision: Long,
         endpoint: String,
+        deadline: SignedRequestDeadline,
         block: suspend () -> Pair<WebRpcHttpResponse, SessionCredentialAnswer?>,
     ): WebRpcHttpResponse {
         val (response, answer) =
-            if (endpoint == WaasApi.GetCredential.path) block() else signedRequestGate.request(block)
+            if (endpoint == WaasApi.GetCredential.path) block() else signedRequestGate.request(deadline, block)
         when (answer) {
             SessionCredentialAnswer.Accepted -> onSessionCredentialAccepted(requiredSessionRevision)
             SessionCredentialAnswer.Unauthorized -> onSessionCredentialUnauthorized(requiredSessionRevision)
@@ -5012,6 +5094,9 @@ private const val CREDENTIAL_REFRESH_INTERVAL_MILLIS: Long = 6 * 60 * 60 * 1000L
 private const val CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS: Long = 60_000L
 private const val CREDENTIAL_RETRY_MAX_DELAY_MILLIS: Long = 15 * 60_000L
 
+/** How long after a WebrpcBadRoute answer to GetCredential the SDK skips refreshes before probing again. */
+private const val CREDENTIAL_REFRESH_UNSUPPORTED_COOLDOWN_MILLIS: Long = 15 * 60_000L
+
 /** How long after the predicted WaaS expiry the expiry timer waits before reading an idle session's credential. */
 private const val IDLE_SESSION_CHECK_GRACE_MILLIS: Long = 5 * 60_000L
 
@@ -5023,6 +5108,19 @@ private val EXECUTE_REFUSED_BEFORE_SUBMISSION =
         ErrorKind.PRECONDITION_FAILED,
         ErrorKind.UNAUTHORIZED,
     )
+
+/**
+ * Tron Execute also refuses before submitting with InvalidRequest (7200) and InvalidFeeOption (7310):
+ * WaaS v1.2.0 raises them only while re-pricing the transaction, before it marks it pending and
+ * broadcasts (rpc/tron_transaction.go:220-262, after the checks in rpc/transaction.go:246-298).
+ * TransactionExpired is not included: WaaS also returns it for a transaction an earlier Execute
+ * already claimed, which may have been broadcast.
+ */
+private val TRON_EXECUTE_REFUSED_BEFORE_SUBMISSION =
+    EXECUTE_REFUSED_BEFORE_SUBMISSION + setOf(ErrorKind.INVALID_REQUEST, ErrorKind.INVALID_FEE_OPTION)
+
+/** One deadline per signed request, covering its gate wait, signing, nonce resends, and HTTP calls. */
+private const val SIGNED_REQUEST_TIMEOUT_MILLIS: Long = 30_000L
 
 /** WaaS's SlideDampening: it skips an expiry slide shorter than this unless it reaches the ceiling. */
 private const val SLIDE_DAMPENING_MILLIS: Long = 6 * 60 * 60_000L

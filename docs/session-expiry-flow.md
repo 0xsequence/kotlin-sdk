@@ -59,7 +59,7 @@ ownership). Outcomes:
 |---|---|---|
 | Refreshed | `GetCredential` succeeded with a parseable `expiresAt` | The expiry replaces the session expiry (later or earlier), is saved to the session store, and reschedules the expiry task; the send time becomes the last expiry read |
 | Ended | 7202 or 7203 (the transport ends the session), or 7207 (the refresh ends it) | The session ended and listeners were notified |
-| Unsupported | `WebrpcBadRoute` (WaaS without `GetCredential`) | Remembered for the scope's lifetime; local expiry stays exact |
+| Unsupported | `WebrpcBadRoute` (WaaS without `GetCredential`) | Refreshes are skipped and local expiry stays exact for 15 minutes; then the next trigger probes `GetCredential` again, and an answer clears it while another `WebrpcBadRoute` restarts the 15 minutes |
 | Unavailable | Network or any other error, or an `expiresAt` that does not parse | Session unchanged |
 | Busy | A signed session request was in flight when a background refresh tried to start, or the caller that started the shared refresh was cancelled | Skipped until the next trigger; a caller that needs an answer (a protected operation) starts a new refresh |
 

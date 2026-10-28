@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -19,12 +20,15 @@ import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletRequestException
 import technology.polygon.omswallet.OMSWalletResponseException
+import technology.polygon.omswallet.OMSWalletTransactionException
 import technology.polygon.omswallet.OMSWalletValidationException
 import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.models.AbiArg
 import technology.polygon.omswallet.models.FeeOptionSelector
 import technology.polygon.omswallet.models.FeeOptionWithBalance
+import technology.polygon.omswallet.models.SendTransactionRequest
 import technology.polygon.omswallet.models.TransactionMode
 import technology.polygon.omswallet.models.TransactionStatus
 import technology.polygon.omswallet.models.TransactionStatusResolution
@@ -474,6 +478,62 @@ class WalletTronTest {
                 assertEquals(expectedMessage, TRON_WALLET, client.activeWallet?.address)
             }
         }
+
+    @Test
+    fun tronExecuteRefusedWhileRepricingIsRequestFailureWithoutTxnId() =
+        runBlocking {
+            // WaaS v1.2.0 raises 7200 and 7310 for Tron only while re-pricing, before anything is broadcast.
+            for ((name, code) in listOf("InvalidRequest" to 7200, "InvalidFeeOption" to 7310)) {
+                server.enqueueJson(sponsoredPrepareResponse("txn-refused-$code"))
+                server.enqueue(executeErrorResponse(400, name, code))
+                val client = tronWalletClient()
+
+                val error = runCatching { client.sendTronTransaction(TronNetwork.Nile, TRON_RECIPIENT, BigInteger.ONE) }.exceptionOrNull()
+
+                assertTrue("$name: got $error", error is OMSWalletRequestException)
+                error as OMSWalletException
+                assertEquals(OMSWalletErrorCode.RequestFailed, error.code)
+                assertEquals(code.toString(), error.upstreamError?.code)
+            }
+        }
+
+    @Test
+    fun executeStaysUnconfirmedForTronExpiryAndForInvalidRequestOnOtherChains() =
+        runBlocking {
+            // TransactionExpired can mean an earlier Execute already claimed and broadcast the
+            // transaction, and 7200 on other chains is not known to precede submission.
+            server.enqueueJson(sponsoredPrepareResponse("txn-expired"))
+            server.enqueue(executeErrorResponse(400, "TransactionExpired", 7309))
+            val tronError =
+                runCatching { tronWalletClient().sendTronTransaction(TronNetwork.Nile, TRON_RECIPIENT, BigInteger.ONE) }.exceptionOrNull()
+            server.enqueueJson(sponsoredPrepareResponse("txn-evm"))
+            server.enqueue(executeErrorResponse(400, "InvalidRequest", 7200))
+            val evmError =
+                runCatching {
+                    walletClient(testWallet("wallet-evm", ETHEREUM_ADDRESS, WalletType.Ethereum)).sendTransaction(
+                        network = Network.POLYGON,
+                        request = SendTransactionRequest(to = ETHEREUM_ADDRESS, value = BigInteger.ZERO),
+                    )
+                }.exceptionOrNull()
+
+            for ((error, txnId) in listOf(tronError to "txn-expired", evmError to "txn-evm")) {
+                assertTrue("got $error", error is OMSWalletTransactionException)
+                error as OMSWalletTransactionException
+                assertEquals(OMSWalletErrorCode.TransactionExecutionUnconfirmed, error.code)
+                assertEquals(txnId, error.txnId)
+            }
+        }
+
+    private fun executeErrorResponse(
+        status: Int,
+        name: String,
+        code: Int,
+    ): MockResponse =
+        MockResponse
+            .Builder()
+            .code(status)
+            .body("""{"error":"$name","code":$code,"msg":"refused","status":$status}""")
+            .build()
 
     private fun tronWalletClient(): WalletClient = walletClient(testWallet("wallet-tron", TRON_WALLET, WalletType.Tron))
 
