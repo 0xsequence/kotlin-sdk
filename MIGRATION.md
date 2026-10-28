@@ -53,8 +53,10 @@ Wallet API versions with sliding expiry extend a session's expiry with use, up t
 `OMSWalletSession.expiresAt` is the current expiry, which the SDK refreshes after restoring a
 session, while the session is in use, and before treating a locally expired session that is active
 in memory as ended; do not cache it as a fixed end time. `WalletCredential.expiresAt` is the expiry
-as reported when the credential was returned and is not updated afterwards. A stored session that
-is already past its expiry when the SDK restores it is discarded without asking the wallet API.
+as reported when the credential was returned and is not updated afterwards. A stored session whose
+expiry passed more than 12 hours before the SDK restores it is discarded without asking the wallet
+API; a more recently passed one may still be active, so it is restored and the read after the
+restore decides.
 
 - `WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
   (`15_552_000`). `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS` rose from 7 days (`604_800`) to the

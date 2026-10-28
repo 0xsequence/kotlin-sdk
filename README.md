@@ -135,8 +135,10 @@ OTP state is kept in memory. OIDC redirect state is stored only to complete the
 browser redirect flow and is cleared when the flow completes, fails, or is
 replaced.
 
-A stored session that is already past its expiry when the SDK restores it is discarded
-without asking the wallet API. Before treating a session that is active in memory as
+A stored session whose expiry passed more than 12 hours before the SDK restores it is
+discarded without asking the wallet API: the server's expiry is normally at most that far past the
+stored one (its 6-hour minimum move plus the 6 hours until the next read). A more recently
+passed one may still be active, so it is restored and the read after the restore decides. Before treating a session that is active in memory as
 expired, the SDK asks the wallet API for the credential's current expiry, which may have
 been extended with use. If the device is offline at that point, the session is kept: the
 expiry check is retried later, and protected operations fail with the network error
@@ -205,7 +207,7 @@ idle session about 10 days after its last use; while the app makes no wallet cal
 notice this up to about 6 hours later, because the wallet API extends the expiry only in steps of at least 6 hours (within 5
 minutes when the lifetime is shorter than the idle window), as long as the device clock is accurate and the app is running in the foreground (the timer
 cannot fire while the app is suspended or not running). After a restore whose expiry read did not reach the
-wallet API, the end can be noticed up to about an idle window (10 days) late. Wallet API versions without sliding expiry clamp the requested
+wallet API, the end is noticed about 12 hours after the stored expiry at the latest. Wallet API versions without sliding expiry clamp the requested
 lifetime to their 30-day maximum and have no idle timeout, so the default gives a fixed 30-day
 session there.
 Pass `sessionLifetimeSeconds` to `startEmailAuth`, `signInWithOidcIdToken`,

@@ -26,11 +26,15 @@ and stale expiry paths are coordinated.
   should have ended it. Without SDK activity since the last expiry read, the SDK
   notices an ended idle session up to 5 minutes after WaaS ended it; after later
   requests, WaaS's 6-hour slide dampening can make it notice up to about 6 hours
-  later, and after a restore whose read failed, up to an idle window later. These
+  later, and after a restore whose read failed, by `min(L + 12 hours, N) + G` (the
+  restore bound, while no read or request has completed since the restore). These
   times assume an accurate device clock (the expiry is WaaS time compared with
   device time) and an app running in the foreground; the task cannot fire while
   the app is suspended or not running, and after a restart the restore discards
-  a stored session that is past its expiry.
+  a stored session more than 12 hours past its expiry (`L + 6 hours + 6 hours + G`:
+  the dampening, plus requests until the next read, which follows the first
+  successful request once the last read is 6 hours old), and below the ceiling
+  restores a more recently expired one for its read to decide.
 - Sign-in records the session's idle window `I` and ceiling `N` from
   `CompleteAuth`: with `C0` the request's send time, `L0` the returned expiry,
   and `R` the requested lifetime, `I = L0 - C0` and `N = max(C0 + R, L0)`

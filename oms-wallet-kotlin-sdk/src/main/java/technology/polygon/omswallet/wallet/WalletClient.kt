@@ -229,6 +229,12 @@ private class WalletScopeRuntime(
      */
     var lastSessionRequestAt: Long? = null
 
+    /**
+     * When the session was restored from storage. While no read has succeeded and no request has
+     * completed since, the saved expiry bounds the server's ([latestServerExpiryOfSaved]).
+     */
+    var restoredAt: Long? = null
+
     /** Completion time of the current or last GetCredential; the same timestamp as its [lastSessionRequestAt]. */
     var credentialReadCompletedAt: Long? = null
 
@@ -648,6 +654,10 @@ class WalletClient private constructor(
      */
     private fun signingCredentialId(): String = runCatching { signer.existingCredentialId() }.getOrNull().orEmpty()
 
+    /** Whether the signer still holds the key [snapshot] signed in with; expiry clears the key but keeps the record. */
+    private fun signerHoldsKeyOf(snapshot: OMSWalletSessionSnapshot): Boolean =
+        !snapshot.signerAddress.isNullOrBlank() && signingCredentialId() == snapshot.signerAddress
+
     internal fun restorePersistedSession(): Boolean {
         var expiredNotification: ExpiryNotification? = null
         var restoredRevision: Long? = null
@@ -682,7 +692,12 @@ class WalletClient private constructor(
                     runtime.initialized = true
                     return@synchronized false
                 }
-                if (snapshot.isExpired(runtime.now())) {
+                // A passed expiry may still be active on WaaS; the restored session's read then decides. Without
+                // its signing key, an earlier launch already ended it (keeping the record as the sign-in hint),
+                // so it is replayed as expired again.
+                if (snapshot.isExpired(runtime.now()) &&
+                    !(snapshot.mayBeActiveOnServer(runtime.now()) && signerHoldsKeyOf(snapshot))
+                ) {
                     walletSession.clear()
                     clearSessionExpiryTaskLocked()
                     runCatching { oidcRedirectAuthStore?.clear() }
@@ -741,10 +756,17 @@ class WalletClient private constructor(
                         }
                     if (current) {
                         launchCredentialRefresh(restoredRevision) { outcome ->
-                            if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
-                                // Leave the stored expiry due for a read on the next successful signed request.
-                                synchronized(runtime.lifecycleLock) {
-                                    if (walletSession.revision() == restoredRevision) runtime.credentialRefreshAttemptedAt = null
+                            synchronized(runtime.lifecycleLock) {
+                                if (walletSession.revision() != restoredRevision) return@synchronized
+                                if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
+                                    // Leave the stored expiry due for a read on the next successful signed request.
+                                    runtime.credentialRefreshAttemptedAt = null
+                                }
+                                // A read that could not settle a session restored past its saved expiry (unsupported
+                                // or unreachable) hands it to the expiry timer, which ends or rechecks it.
+                                val snapshot = walletSession.snapshot()
+                                if (snapshot != null && snapshot.isExpired(runtime.now())) {
+                                    scheduleSessionExpiryLocked(snapshot, restoredRevision)
                                 }
                             }
                         }
@@ -2788,6 +2810,7 @@ class WalletClient private constructor(
     /** Sign-in: the session's expiry was read by a request sent at [readAt], so both refresh clocks restart. */
     private fun markCredentialReadLocked(readAt: Long) {
         runtime.credentialReadAt = readAt
+        runtime.restoredAt = null
         runtime.credentialRefreshAttemptedAt = runtime.now()
         runtime.credentialRetryDelayMillis = null
     }
@@ -2802,6 +2825,7 @@ class WalletClient private constructor(
         val now = runtime.now()
         runtime.credentialReadAt = null
         runtime.lastSessionRequestAt = now
+        runtime.restoredAt = now
         runtime.credentialRefreshAttemptedAt = null
         runtime.credentialRetryDelayMillis = null
     }
@@ -3165,6 +3189,17 @@ class WalletClient private constructor(
      * local expiry is exact.
      */
     private fun idleSessionCheckAtLocked(snapshot: OMSWalletSessionSnapshot): Long? {
+        val checkAt = activityCheckAtLocked(snapshot) ?: return null
+        // Restored with no read or request since: the saved expiry bounds the server's, which is tighter
+        // than counting the restore as a request when the restore read did not settle it.
+        val restoredAt = runtime.restoredAt
+        if (runtime.credentialReadAt != null || restoredAt == null || runtime.lastSessionRequestAt != restoredAt) return checkAt
+        val expiresAt = snapshot.expiresAtEpochMillis() ?: return checkAt
+        return minOf(checkAt, latestServerExpiryOfSaved(expiresAt, snapshot.expiryBounds))
+    }
+
+    /** The check time from the reads and requests alone, without the restore bound. */
+    private fun activityCheckAtLocked(snapshot: OMSWalletSessionSnapshot): Long? {
         if (snapshot.wallet == null || isCredentialRefreshUnsupportedLocked()) return null
         val expiresAt = snapshot.expiresAtEpochMillis() ?: return null
         val readAt = runtime.credentialReadAt
@@ -5191,6 +5226,32 @@ private object AndroidMainThreadSessionExpiryDispatcher : SessionExpiryDispatche
 private fun OMSWalletSessionSnapshot.isExpired(referenceTime: Long): Boolean {
     val expiresAt = expiresAtEpochMillis() ?: return false
     return expiresAt <= referenceTime
+}
+
+/**
+ * Whether a saved session whose expiry has passed may still be active on WaaS. The saved expiry is the
+ * last read's. That read moved the server expiry unless the move was under [SLIDE_DAMPENING_MILLIS], so
+ * it trailed the server by less than that; requests after the read moved the server expiry at most until
+ * the next read, which follows the first successful signed request once the read is
+ * [CREDENTIAL_REFRESH_INTERVAL_MILLIS] old. The server expiry is therefore before the saved one plus
+ * both, and never past the ceiling.
+ */
+private fun OMSWalletSessionSnapshot.mayBeActiveOnServer(now: Long): Boolean {
+    val expiresAt = expiresAtEpochMillis() ?: return false
+    return now < latestServerExpiryOfSaved(expiresAt, expiryBounds)
+}
+
+/**
+ * The latest the server expiry of a session saved with [expiresAt] can be, plus the grace: see
+ * [mayBeActiveOnServer]. It holds while every read and its save succeeded; a missed one can only leave
+ * the server expiry later, which ends the session early.
+ */
+private fun latestServerExpiryOfSaved(
+    expiresAt: Long,
+    bounds: OMSWalletSessionExpiryBounds?,
+): Long {
+    val latest = expiresAt + SLIDE_DAMPENING_MILLIS + CREDENTIAL_REFRESH_INTERVAL_MILLIS
+    return (bounds?.let { minOf(latest, it.ceilingEpochMillis) } ?: latest) + IDLE_SESSION_CHECK_GRACE_MILLIS
 }
 
 private fun OMSWalletSessionSnapshot.expiresAtEpochMillis(): Long? = expiresAt?.let(OMSWalletIsoTimestamps::parseEpochMillis)
