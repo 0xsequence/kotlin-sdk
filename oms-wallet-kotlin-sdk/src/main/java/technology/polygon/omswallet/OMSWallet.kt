@@ -61,7 +61,7 @@ class OMSWallet private constructor(
 
     val indexer: IndexerClient =
         IndexerClient.create(
-            publishableKey = publishableKey,
+            publishableKey = { wallet.currentPublishableKey },
             environment = resolvedEnvironment,
             transport = transport,
         )

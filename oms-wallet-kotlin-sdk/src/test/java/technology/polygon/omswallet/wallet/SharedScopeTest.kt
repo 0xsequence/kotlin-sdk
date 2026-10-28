@@ -14,9 +14,11 @@ import org.junit.Before
 import org.junit.Test
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
+import technology.polygon.omswallet.models.SendTransactionRequest
 import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
+import java.math.BigInteger
 import java.util.Collections
 import java.util.UUID
 
@@ -122,6 +124,57 @@ class SharedScopeTest {
             assertNull(second.activeWallet)
         }
 
+    @Test
+    fun indexerRequestsOfEveryInstanceSendTheNewestKey() =
+        runBlocking {
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse {
+                        val target = requireNotNull(request.target)
+                        if (target.contains("GetTokenBalancesDetails")) {
+                            apiKeys += "indexer:" + request.headers[OMSWalletEnvironment.accessKeyHeaderName]
+                            return MockResponse
+                                .Builder()
+                                .code(200)
+                                .body("""{"page":{"page":0,"pageSize":40,"more":false},"nativeBalances":[],"balances":[]}""")
+                                .build()
+                        }
+                        return MockResponse
+                            .Builder()
+                            .code(200)
+                            .body(UNSPONSORED_PREPARE)
+                            .build()
+                    }
+                }
+            val scopeKey = "shared-scope-test-${UUID.randomUUID()}"
+            val first =
+                OMSWallet.createForTesting(
+                    publishableKey = "pk_old",
+                    projectId = "test-project-id",
+                    environment = environment(),
+                    sessionStore = InMemorySessionStore(restoredSnapshot()),
+                    credentialSigner = TrackingCredentialSigner(),
+                    projectScopeKey = scopeKey,
+                )
+            OMSWallet.createForTesting(
+                publishableKey = "pk_new",
+                projectId = "test-project-id",
+                environment = environment(),
+                projectScopeKey = scopeKey,
+            )
+
+            // Through the first instance: its indexer, and the wallet's fee balance lookup.
+            first.indexer.getBalances(walletAddress = "0x9999999999999999999999999999999999999999", networks = listOf(Network.AMOY))
+            runCatching {
+                first.wallet.sendTransaction(
+                    network = Network.AMOY,
+                    request = SendTransactionRequest(to = "0x1111111111111111111111111111111111111111", value = BigInteger.ZERO),
+                ) { throw IllegalStateException("stop after the fee balances") }
+            }
+
+            assertEquals(listOf("indexer:pk_new", "indexer:pk_new"), apiKeys)
+        }
+
     private fun environment(): OMSWalletEnvironment =
         OMSWalletEnvironment(
             walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -136,4 +189,9 @@ class SharedScopeTest {
             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
             auth = emailSessionAuth(),
         )
+
+    private companion object {
+        const val UNSPONSORED_PREPARE: String =
+            """{"txnId":"txn-1","status":"quoted","feeOptions":[{"token":{"network":"amoy","name":"Polygon","symbol":"POL","type":"0","logoURL":"x"},"value":"10","displayValue":"0.00000000000000001"}],"sponsored":false,"expiresAt":"2099-01-01T00:00:00Z"}"""
+    }
 }

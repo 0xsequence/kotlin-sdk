@@ -62,7 +62,8 @@ import technology.polygon.omswallet.network.parseJsonObject
 import technology.polygon.omswallet.network.string
 
 class IndexerClient private constructor(
-    private val publishableKey: String,
+    /** The publishable key, read for each request: the session scope's newest key. */
+    private val publishableKey: () -> String,
     private val environment: OMSWalletEnvironment,
     private val transport: OMSWalletHttpClient,
 ) {
@@ -360,7 +361,7 @@ class IndexerClient private constructor(
 
     private fun defaultGatewayHeaders(webRpcHeaderValue: String): Map<String, String> =
         mapOf(
-            OMSWalletEnvironment.accessKeyHeaderName to publishableKey,
+            OMSWalletEnvironment.accessKeyHeaderName to publishableKey(),
             "Accept" to "application/json",
             "Webrpc" to webRpcHeaderValue,
         )
@@ -870,6 +871,14 @@ class IndexerClient private constructor(
             publishableKey: String,
             environment: OMSWalletEnvironment,
             transport: OMSWalletHttpClient = OMSWalletHttpClient(),
+        ): IndexerClient = IndexerClient({ publishableKey }, environment, transport)
+
+        /** An indexer client whose requests carry the key [publishableKey] returns at the time. */
+        @JvmSynthetic
+        internal fun create(
+            publishableKey: () -> String,
+            environment: OMSWalletEnvironment,
+            transport: OMSWalletHttpClient,
         ): IndexerClient = IndexerClient(publishableKey, environment, transport)
 
         private const val indexerGatewayWebrpcHeaderValue: String =

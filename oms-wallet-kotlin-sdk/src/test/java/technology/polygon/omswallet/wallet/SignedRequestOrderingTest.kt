@@ -3,13 +3,16 @@ package technology.polygon.omswallet.wallet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -100,6 +103,91 @@ class SignedRequestOrderingTest {
             assertEquals("0xsigned", waiting.signMessage(network = Network.AMOY, message = "later"))
         }
 
+    @Test
+    fun awaitedRefreshWaitingForItsTurnPastItsDeadlineFailsUnsentAndKeepsTheSession() =
+        runBlocking {
+            val arrived = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val waas =
+                ConditionalWriteWaas(onRequest = {
+                    arrived.countDown()
+                    release.await(5, TimeUnit.SECONDS)
+                })
+            server.dispatcher = waas
+            val clock = AtomicLong(T0)
+            val scopeKey = "ordering-test-${UUID.randomUUID()}"
+            val holding = walletClient(IncreasingNonceSigner(), projectScopeKey = scopeKey, now = { clock.get() })
+            val waiting =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = environment(),
+                    projectScopeKey = scopeKey,
+                    signedRequestTimeoutMillis = 300,
+                )
+            val held = async(Dispatchers.IO) { holding.signMessage(network = Network.AMOY, message = "held") }
+            assertTrue(arrived.await(5, TimeUnit.SECONDS))
+            waas.onRequest = {}
+            // Locally expired: each call first reads the expiry, which waits for the held request's turn.
+            clock.set(T0 + SESSION_MILLIS + 1)
+
+            val startedAt = System.nanoTime()
+            val error = runCatching { waiting.signMessage(network = Network.AMOY, message = "waiting") }.exceptionOrNull()
+            val waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+            release.countDown()
+
+            assertTrue("got $error", error is OMSWalletRequestException)
+            assertEquals(OMSWalletErrorCode.RequestFailed, (error as OMSWalletRequestException).code)
+            assertTrue("waited $waitedMillis ms", waitedMillis < 1_000)
+            // Nothing but the held request was sent, and the session is kept.
+            assertEquals(1, server.requestCount)
+            assertNotNull(waiting.activeWallet)
+            assertEquals("0xsigned", held.await())
+        }
+
+    @Test
+    fun callerSharingARefreshInFlightWaitsNoLongerThanItsOwnDeadline() =
+        runBlocking {
+            val arrived = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val waas =
+                ConditionalWriteWaas(onRequest = {
+                    arrived.countDown()
+                    release.await(5, TimeUnit.SECONDS)
+                })
+            server.dispatcher = waas
+            val clock = AtomicLong(T0)
+            val scopeKey = "ordering-test-${UUID.randomUUID()}"
+            val holding = walletClient(IncreasingNonceSigner(), projectScopeKey = scopeKey, now = { clock.get() })
+            val waiting =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment = environment(),
+                    projectScopeKey = scopeKey,
+                    signedRequestTimeoutMillis = 300,
+                )
+            val held = async(Dispatchers.IO) { holding.signMessage(network = Network.AMOY, message = "held") }
+            assertTrue(arrived.await(5, TimeUnit.SECONDS))
+            waas.onRequest = {}
+            clock.set(T0 + SESSION_MILLIS + 1)
+            // A call with the default deadline starts the expiry read and waits for the held request's turn.
+            val patient = async(Dispatchers.IO) { runCatching { holding.signMessage(network = Network.AMOY, message = "patient") } }
+            withTimeout(5_000) { while (holding.signedRequestTurnUsers() < 2) delay(5) }
+
+            val startedAt = System.nanoTime()
+            val error = runCatching { waiting.signMessage(network = Network.AMOY, message = "waiting") }.exceptionOrNull()
+            val waitedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+            release.countDown()
+
+            // It shares the patient call's read but gives up at its own deadline.
+            assertTrue("got $error", error is OMSWalletRequestException)
+            assertEquals(OMSWalletErrorCode.RequestFailed, (error as OMSWalletRequestException).code)
+            assertTrue("waited $waitedMillis ms", waitedMillis < 1_000)
+            assertEquals("0xsigned", held.await())
+            assertNotNull(patient.await())
+        }
+
     private fun environment(): OMSWalletEnvironment =
         OMSWalletEnvironment(
             walletApiUrl = server.url("/v1/Waas/").toString(),
@@ -109,6 +197,7 @@ class SignedRequestOrderingTest {
     private fun walletClient(
         signer: CredentialSigner,
         projectScopeKey: String? = null,
+        now: () -> Long = { T0 },
     ): WalletClient =
         WalletClient
             .create(
@@ -119,7 +208,7 @@ class SignedRequestOrderingTest {
                     InMemorySessionStore(
                         OMSWalletSessionSnapshot(
                             wallet = testWallet("wallet-main", "0x9999999999999999999999999999999999999999", WalletType.Ethereum),
-                            expiresAt = TEST_SESSION_EXPIRES_AT,
+                            expiresAt = SESSION_EXPIRES_AT,
                             signerAddress = TEST_CREDENTIAL_ID,
                             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                             auth = emailSessionAuth(),
@@ -127,6 +216,8 @@ class SignedRequestOrderingTest {
                     ),
                 credentialSigner = signer,
                 credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
+                sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                now = now,
                 projectScopeKey = projectScopeKey,
             ).also { assertTrue(it.restorePersistedSession()) }
 
@@ -185,5 +276,12 @@ class SignedRequestOrderingTest {
         override fun nextNonce(): String = nonce.incrementAndGet().toString()
 
         override fun sign(preimage: String): String = TEST_SIGNATURE
+    }
+
+    private companion object {
+        /** 2026-01-01T00:00:00Z. */
+        const val T0: Long = 1_767_225_600_000L
+        const val SESSION_MILLIS: Long = 4 * 24 * 60 * 60 * 1000L
+        const val SESSION_EXPIRES_AT: String = "2026-01-05T00:00:00Z"
     }
 }

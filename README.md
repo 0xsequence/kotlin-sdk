@@ -155,7 +155,9 @@ Every `OMSWallet` created for the same project and environment in the process sh
 session: the active wallet, sign-out, expiry, and listeners. A rotated publishable key for the
 same project keeps the session, and requests switch to the newest key. Another project or
 environment is a separate session that needs its own sign-in. Requests signed with the session's
-credential go one at a time, in order, which keeps WaaS from rejecting their nonces.
+credential go one at a time, in order, so WaaS does not reject the nonces of requests this app
+sends through this SDK version; requests from another process, device, or SDK version with the
+same credential are not ordered with them, and a rejected nonce is still signed again and resent.
 
 Because listeners are shared this way, they stay registered after the `OMSWallet` that added
 them is gone. Call the returned
@@ -903,7 +905,9 @@ revert (WaaS `TransactionSimulationFailed`, code `7314`) throws
 `OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `400`) with that
 `upstreamError` instead; it was never sent. The same applies when the wallet API
 refuses the execute request before submitting it, or when the SDK never sent it.
-Signed wallet API requests time out after 30 seconds.
+Signed wallet API requests time out after 30 seconds, counting the wait for their turn and their
+signing, and return within that time unless the device's signer itself is stuck; a signature that
+finishes after the deadline is never sent.
 `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` means the transaction was submitted but
 status polling failed, so retry status lookup with the returned `txnId`.
 `retryable` describes the failed SDK operation, not the whole user intent.

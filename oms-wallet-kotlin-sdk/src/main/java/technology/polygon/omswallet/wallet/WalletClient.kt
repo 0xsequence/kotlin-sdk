@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
@@ -137,6 +139,8 @@ import java.util.Timer
 import java.util.TimerTask
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import kotlin.coroutines.AbstractCoroutineContextElement
+import kotlin.coroutines.CoroutineContext
 import technology.polygon.omswallet.internal.generated.waas.AbiArg as WaasAbiArg
 import technology.polygon.omswallet.internal.generated.waas.CredentialInfo as WaasCredentialInfo
 import technology.polygon.omswallet.internal.generated.waas.CredentialMetadata as WaasCredentialMetadata
@@ -303,14 +307,29 @@ private class SignedRequestGate {
             true
         }
 
-    /** Waits for the turns of the requests already waiting, then takes one for a refresh. */
-    suspend fun beginRefresh(credentialId: String) {
+    /**
+     * Waits for the turns of the requests already waiting, then takes one for a refresh. Without a
+     * turn by [deadline], throws [SignedRequestNotSentException]: the refresh was never sent.
+     */
+    suspend fun beginRefresh(
+        credentialId: String,
+        deadline: SignedRequestDeadline,
+    ) {
         val turns = join(credentialId)
+        var holdsTurn = false
         try {
-            turns.turn.lock()
-        } catch (cancelled: CancellationException) {
+            withTimeout(deadline.remainingMillisBeforeSend()) {
+                turns.turn.lock()
+                holdsTurn = true
+            }
+        } catch (throwable: Throwable) {
+            // A turn that arrived as the deadline passed is kept; the read's own deadline check stops it.
+            if (holdsTurn) return
             leave(credentialId, turns)
-            throw cancelled
+            if (throwable is TimeoutCancellationException) {
+                throw SignedRequestNotSentException(TimeoutException("Credential refresh timed out waiting for its turn"))
+            }
+            throw throwable
         }
     }
 
@@ -350,8 +369,22 @@ private class SignedRequestNotSentException(
 /** The one deadline of a signed request: its gate wait, signing, nonce resends, and HTTP calls. */
 private class SignedRequestDeadline(
     timeoutMillis: Long,
-) {
+) : AbstractCoroutineContextElement(SignedRequestDeadline) {
+    /**
+     * Carries a deadline that started before the request, such as an operation's awaited
+     * credential refresh, which waits for its credential's turn before it sends GetCredential.
+     */
+    companion object Key : CoroutineContext.Key<SignedRequestDeadline> {
+        suspend fun current(): SignedRequestDeadline? = currentCoroutineContext()[Key]
+    }
+
     private val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+
+    /** Runs [block] until the deadline; null when the deadline passes first. */
+    suspend fun <T> within(block: suspend () -> T): T? {
+        val remainingMillis = TimeUnit.NANOSECONDS.toMillis(deadlineNanos - System.nanoTime())
+        return if (remainingMillis <= 0) null else withTimeoutOrNull(remainingMillis) { block() }
+    }
 
     /**
      * The milliseconds left. Once none are, throws [SignedRequestNotSentException], so a request
@@ -427,7 +460,6 @@ private const val DEFAULT_GOOGLE_OIDC_CLIENT_ID: String =
 private const val DEFAULT_APPLE_OIDC_CLIENT_ID: String = "service.oms.polygon.technology"
 
 class WalletClient private constructor(
-    private val publishableKey: String,
     private val projectId: String,
     private val environment: OMSWalletEnvironment,
     private val transport: OMSWalletHttpClient,
@@ -492,7 +524,6 @@ class WalletClient private constructor(
                 } ?: createRuntime()
             runtime.publishableKey = publishableKey
             return WalletClient(
-                publishableKey = publishableKey,
                 projectId = projectId,
                 environment = environment,
                 transport = transport,
@@ -528,10 +559,15 @@ class WalletClient private constructor(
         )
     private val indexerClient: IndexerClient =
         IndexerClient.create(
-            publishableKey = publishableKey,
+            publishableKey = { runtime.publishableKey },
             environment = environment,
             transport = transport,
         )
+
+    /** The newest publishable key of this client's session scope, which every client of it sends. */
+    internal val currentPublishableKey: String
+        get() = runtime.publishableKey
+
     internal val hasPendingSignIn: Boolean
         get() =
             synchronized(runtime.lifecycleLock) {
@@ -2783,7 +2819,9 @@ class WalletClient private constructor(
             }
         when (val outcome = refreshSessionCredential(locallyExpired.revision, background = false)) {
             is CredentialRefreshOutcome.Unavailable -> {
-                throw outcome.cause
+                val cause = outcome.cause
+                // The read never left this client (its deadline passed first): a request error.
+                throw if (cause is SignedRequestNotSentException && operation != null) cause.toOMSWalletException(operation) else cause
             }
 
             CredentialRefreshOutcome.Ended -> {
@@ -2821,12 +2859,19 @@ class WalletClient private constructor(
      * Reads the session credential's current expiry from WaaS. Concurrent callers for the same
      * session share one request, and the result is applied only while that session is current.
      * [fromExpiryTimer] marks the expiry timer's check when this call sends the request.
+     *
+     * An awaited refresh is bounded like a signed request, from when its caller starts waiting:
+     * for the credential's turn, for a refresh another caller started, and for GetCredential
+     * itself. When the bound passes first, the outcome is [CredentialRefreshOutcome.Unavailable]
+     * with a not-sent error, and the session is kept.
      */
     private suspend fun refreshSessionCredential(
         requiredSessionRevision: Long,
         background: Boolean,
         fromExpiryTimer: Boolean = false,
+        deadline: SignedRequestDeadline? = null,
     ): CredentialRefreshOutcome {
+        val awaitedDeadline = if (background) null else deadline ?: SignedRequestDeadline(signedRequestTimeoutMillis)
         var owner = false
         val inFlight =
             synchronized(runtime.lifecycleLock) {
@@ -2846,10 +2891,20 @@ class WalletClient private constructor(
                     }
             }
         if (!owner) {
-            val shared = inFlight.result.await()
+            val shared =
+                if (awaitedDeadline == null) {
+                    inFlight.result.await()
+                } else {
+                    awaitedDeadline.within { inFlight.result.await() }
+                        ?: return CredentialRefreshOutcome.Unavailable(
+                            SignedRequestNotSentException(
+                                TimeoutException("Credential refresh timed out waiting for the refresh in flight"),
+                            ),
+                        )
+                }
             // An awaited check must not settle for a background attempt that was skipped.
-            return if (shared == CredentialRefreshOutcome.Busy && !background) {
-                refreshSessionCredential(requiredSessionRevision, background = false)
+            return if (shared == CredentialRefreshOutcome.Busy && awaitedDeadline != null) {
+                refreshSessionCredential(requiredSessionRevision, background = false, deadline = awaitedDeadline)
             } else {
                 shared
             }
@@ -2858,17 +2913,22 @@ class WalletClient private constructor(
             try {
                 val credentialId = signingCredentialId()
                 val hasTurn =
-                    if (background) {
+                    if (awaitedDeadline == null) {
                         runtime.signedRequestGate.tryBeginRefresh(credentialId)
                     } else {
-                        runtime.signedRequestGate.beginRefresh(credentialId)
+                        runtime.signedRequestGate.beginRefresh(credentialId, awaitedDeadline)
                         true
                     }
                 if (!hasTurn) {
                     CredentialRefreshOutcome.Busy
                 } else {
                     try {
-                        requestCredentialRefresh(requiredSessionRevision, fromExpiryTimer)
+                        if (awaitedDeadline == null) {
+                            requestCredentialRefresh(requiredSessionRevision, fromExpiryTimer)
+                        } else {
+                            // GetCredential takes the remaining time of the same deadline.
+                            withContext(awaitedDeadline) { requestCredentialRefresh(requiredSessionRevision, fromExpiryTimer) }
+                        }
                     } finally {
                         runtime.signedRequestGate.endRefresh(credentialId)
                     }
@@ -4497,7 +4557,7 @@ private class WaasWalletGateway(
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
             val requestPath = WaasApi.basePath + endpoint
-            val deadline = SignedRequestDeadline(signedRequestTimeoutMillis)
+            val deadline = SignedRequestDeadline.current() ?: SignedRequestDeadline(signedRequestTimeoutMillis)
             gatedSignedRequest(requiredSessionRevision, endpoint, deadline) {
                 var sessionCredentialId: String? = null
                 val signed =
@@ -4561,7 +4621,7 @@ private class WaasWalletGateway(
     ): LambdaWebRpcTransport =
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
-            val deadline = SignedRequestDeadline(signedRequestTimeoutMillis)
+            val deadline = SignedRequestDeadline.current() ?: SignedRequestDeadline(signedRequestTimeoutMillis)
             gatedSignedRequest(requiredSessionRevision, endpoint, deadline) {
                 var sessionCredentialId: String? = null
                 val signed =

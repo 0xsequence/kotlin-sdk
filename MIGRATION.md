@@ -92,8 +92,8 @@ is already past its expiry when the SDK restores it is discarded without asking 
 WaaS needs every signed request's nonce to be higher than the last one it accepted, so concurrent
 calls can reach it out of order and be rejected with `PreconditionFailed` (code `7206`, HTTP 412).
 Requests signed with one credential now go one at a time, in the order they were made, for every
-`OMSWallet` of that session in the process, so concurrent calls no longer reject each other; a
-burst of calls takes longer. A sign-in after sign-out uses a new key, whose requests do not wait
+`OMSWallet` of that session in the process, so concurrent calls this app makes through this SDK
+version no longer reject each other; a burst of calls takes longer. A sign-in after sign-out uses a new key, whose requests do not wait
 for the previous key's. A call that waits for its turn past the 30-second request deadline
 fails with `OMS_REQUEST_FAILED` and was never sent.
 
@@ -113,10 +113,13 @@ because signing failed or its deadline passed first, also throws the request err
 ### Signed requests time out after 30 seconds
 
 Every signed wallet API request now fails if it has not finished within 30 seconds, counting its
-wait behind an expiry read, signing, nonce resends, and the HTTP call, whatever timeouts the
-`OkHttpClient` passed to `OMSWallet` sets (shorter ones still apply). A request that never reached
-the wallet API is not sent late. An `Execute` that times out after it was sent stays
-`OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
+wait for its turn, signing, nonce resends, and the HTTP call, whatever timeouts the `OkHttpClient`
+passed to `OMSWallet` sets (shorter ones still apply). An operation on a locally expired session
+waits for its expiry read within the same 30 seconds; when they pass first, it fails with the
+request error and the session is kept. Signing runs under the session lock and cannot be
+interrupted, so a call returns within 30 seconds unless the device's signer itself is stuck; a
+signature that finishes after the deadline is never sent. An `Execute` that times out after it was
+sent stays `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
 
 ### Wallet-import key strings are redacted
 
