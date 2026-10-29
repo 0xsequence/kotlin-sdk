@@ -135,12 +135,10 @@ OTP state is kept in memory. OIDC redirect state is stored only to complete the
 browser redirect flow and is cleared when the flow completes, fails, or is
 replaced.
 
-A stored session whose expiry passed more than 12 hours before the SDK restores it is
-discarded without asking the wallet API: the server's expiry is normally at most that far past the
-stored one (its 6-hour minimum move plus the 6 hours until the next read). A more recently
-passed one may still be active, so it is restored and the read after the restore decides. Before treating a session that is active in memory as
+A stored session whose expiry has passed may still be active on the wallet API, so unless its
+requested lifetime has run out it is restored and the read after the restore decides. Before treating a session that is active in memory as
 expired, the SDK asks the wallet API for the credential's current expiry, which may have
-been extended with use. If the device is offline at that point, the session is kept: the
+been extended with use (a session whose requested lifetime has run out ends without asking). If the device is offline at that point, the session is kept: the
 expiry check is retried later, and protected operations fail with the network error
 instead. Sessions the wallet API reports as expired, unknown, or revoked (and sessions that
 are past their expiry on wallet API versions without expiry refresh) are made inactive
@@ -244,12 +242,12 @@ while a manual selection is pending.
 
 Completed auth requests ask the wallet API for the maximum session lifetime, 180 days, by default
 (`WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS`, `15_552_000` seconds). The wallet API also ends an
-idle session about 10 days after its last use; while the app makes no wallet calls, the SDK can
-notice this up to about 6 hours later, because the wallet API extends the expiry only in steps of at least 6 hours (within 5
-minutes when the lifetime is shorter than the idle window), as long as the device clock is accurate and the app is running in the foreground (the timer
-cannot fire while the app is suspended or not running). After a restore whose expiry read could not reach the
-wallet API, the SDK retries it while the app is in the foreground, at most 15 minutes apart; in a
-process that never shows UI, the end can be noticed up to an idle window (10 days) after the restore. Wallet API versions without sliding expiry clamp the requested
+idle session about 10 days after its last use. When the local expiry passes, the SDK reads the
+current expiry once the app is in the foreground (reading counts as use) and the wallet API decides,
+so an ended session is noticed at its expiry as long as the device clock is accurate and the app is
+running in the foreground (the timer cannot fire while the app is suspended or not running). When a
+read cannot reach the wallet API, the SDK keeps the session and retries the read while the app is in
+the foreground, at most 15 minutes apart. Wallet API versions without sliding expiry clamp the requested
 lifetime to their 30-day maximum and have no idle timeout, so the default gives a fixed 30-day
 session there.
 Pass `sessionLifetimeSeconds` to `startEmailAuth`, `signInWithOidcIdToken`,

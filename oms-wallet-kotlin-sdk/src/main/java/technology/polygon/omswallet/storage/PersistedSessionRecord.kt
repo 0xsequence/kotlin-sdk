@@ -30,15 +30,14 @@ import technology.polygon.omswallet.wallet.isEthereumHexAddress
  * SDK 0.3.x carry no version or wallet type; they are rejected so the store
  * discards them and the user signs in again.
  *
- * The `idleWindowMillis` and `expiryCeilingEpochMillis` fields hold the
- * session's [OMSWalletSessionExpiryBounds]. Records without them (saved by
- * earlier 0.4.0 builds) or with invalid values are rejected like other invalid
- * records. A session whose bounds are unknown is saved without them, so it is
- * not restored.
+ * The `expiryCeilingEpochMillis` field holds the session's lifetime cap
+ * ([OMSWalletSessionExpiryBounds]). Records without it (saved by earlier 0.4.0
+ * builds) or with an invalid value are rejected like other invalid records; an
+ * `idleWindowMillis` field from 0.4.0 pre-releases is ignored. A session whose
+ * cap is unknown is saved without it, so it is not restored.
  */
 internal object PersistedSessionRecord {
     const val VERSION: Int = 2
-    private const val IDLE_WINDOW_KEY = "idleWindowMillis"
     private const val EXPIRY_CEILING_KEY = "expiryCeilingEpochMillis"
 
     fun encode(snapshot: OMSWalletSessionSnapshot): String {
@@ -65,7 +64,6 @@ internal object PersistedSessionRecord {
             put("expiresAt", expiresAt)
             put("auth", auth.toJson())
             snapshot.expiryBounds?.let { bounds ->
-                put(IDLE_WINDOW_KEY, bounds.idleWindowMillis)
                 put(EXPIRY_CEILING_KEY, bounds.ceilingEpochMillis)
             }
         }.toString()
@@ -101,11 +99,10 @@ internal object PersistedSessionRecord {
         )
     }
 
-    /** Both bounds as positive integers, or null when either is missing or invalid. */
+    /** The cap as a positive integer, or null when it is missing or invalid. */
     private fun JsonObject.toExpiryBounds(): OMSWalletSessionExpiryBounds? {
-        val idleWindowMillis = positiveLong(IDLE_WINDOW_KEY) ?: return null
         val ceilingEpochMillis = positiveLong(EXPIRY_CEILING_KEY) ?: return null
-        return OMSWalletSessionExpiryBounds(idleWindowMillis, ceilingEpochMillis)
+        return OMSWalletSessionExpiryBounds(ceilingEpochMillis)
     }
 
     private fun JsonObject.positiveLong(key: String): Long? {

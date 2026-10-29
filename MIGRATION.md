@@ -77,9 +77,8 @@ Wallet API versions with sliding expiry extend a session's expiry with use, up t
 session, while the session is in use, and before treating a locally expired session that is active
 in memory as ended; do not cache it as a fixed end time. `WalletCredential.expiresAt` is the expiry
 as reported when the credential was returned and is not updated afterwards. A stored session whose
-expiry passed more than 12 hours before the SDK restores it is discarded without asking the wallet
-API; a more recently passed one may still be active, so it is restored and the read after the
-restore decides.
+expiry has passed may still be active, so unless its requested lifetime has run out it is restored
+and the read after the restore decides.
 
 - `WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
   (`15_552_000`). `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS` rose from 7 days (`604_800`) to the
@@ -98,22 +97,18 @@ restore decides.
   credential was revoked, and the session ends the same way. 7207 from any other call is a request
   error, and it starts a background `GetCredential`: the session ends when that read finds the
   credential revoked, and is kept otherwise.
-- Reading a credential's expiry extends an idle session, so the expiry timer no longer reads it as
-  soon as the session looks expired: it waits until 5 minutes past the expected server-side
-  expiry, which is later than the local one when the session was used after its expiry was last
-  read. Without
-  SDK activity, an idle session's `Expired` change can arrive up to about 6 hours after the
-  wallet API ended it (it extends the expiry only in steps of at least 6 hours; within 5 minutes
-  when the lifetime is shorter than the idle window), given an accurate device clock and the app running in the foreground.
-  After a restore whose expiry read did not reach the wallet API, it can arrive up to about an idle
-  window (10 days) late, because the restore time stands in for the previous process's last request.
-  Protected operations on a locally expired session still check right away.
-- After a restore, the SDK reads the session's current expiry once the app is in use: right away when
-  the app has a started activity, otherwise when it next has one (the process lifecycle, through
-  `androidx.lifecycle:lifecycle-process`). A process started in the background (for example for a
-  push message or a broadcast) does not read it, because the read would extend an idle session.
+- When a session's local expiry passes, a session whose requested lifetime has run out ends at
+  once without asking the wallet API. Otherwise the SDK reads the expiry and the wallet API decides,
+  so with an accurate device clock and the app in the foreground the `Expired` change arrives at
+  the expiry. Protected operations on a locally expired session check right away.
+- After a restore and at the local expiry, the SDK reads the session's current expiry once the app is
+  in use: right away when the app has a started activity, otherwise when it next has one (the process
+  lifecycle, through `androidx.lifecycle:lifecycle-process`). A process started in the background
+  (for example for a push message or a broadcast) does not read it, because the read would extend an
+  idle session.
 - If the wallet API cannot be reached when a session reaches its local expiry, or returns an expiry
-  the SDK cannot parse, the session is kept: the check is retried later, and protected operations
+  the SDK cannot parse, the session is kept: the read is retried while the app is in the foreground,
+  at most 15 minutes apart, and protected operations
   throw the request error (`OMSWalletResponseException`, `OMS_INVALID_RESPONSE`, for an unparseable
   expiry) instead of `OMS_SESSION_EXPIRED`.
 - Protected operations that find the session locally expired share one expiry check. Cancelling the

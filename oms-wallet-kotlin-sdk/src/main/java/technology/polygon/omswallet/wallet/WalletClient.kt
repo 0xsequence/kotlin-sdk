@@ -205,8 +205,11 @@ private class WalletScopeRuntime(
     var initializationCleanupPending = false
     var sessionExpiryTask: SessionExpiryTask? = null
 
-    /** Cancels the restore read still waiting for the app to come to the foreground. */
-    var cancelRestoredSessionRead: (() -> Unit)? = null
+    /** Cancels the session read waiting for the app to come to the foreground or for its retry. */
+    var cancelSessionRead: (() -> Unit)? = null
+
+    /** Whether a session read is waiting, running, or retrying, so the timer and a restore never start a second one. */
+    var sessionReadPending = false
     var pendingEmailAuth: PendingEmailAuth? = null
 
     /** The single in-flight GetCredential refresh shared by concurrent callers. */
@@ -221,7 +224,7 @@ private class WalletScopeRuntime(
 
     /**
      * When this process last read the current credential's expiry: the send time of the sign-in
-     * CompleteAuth or the completion time of the last successful GetCredential. Null after a
+     * CompleteAuth or the time the last successful GetCredential was applied. Null after a
      * restore until a read succeeds; failed or skipped refreshes do not move it.
      */
     var credentialReadAt: Long? = null
@@ -232,28 +235,8 @@ private class WalletScopeRuntime(
      */
     var credentialRefreshAttemptedAt: Long? = null
 
-    /**
-     * When the last request signed with the session credential completed (response received or
-     * error thrown), GetCredential included (except the expiry timer's check), whatever its
-     * outcome: WaaS slid the expiry no later than that. A restore sets it to the restore time,
-     * which bounds the previous process's requests.
-     */
-    var lastSessionRequestAt: Long? = null
-
-    /** Next delay before retrying a restored session's read that could not reach WaaS. */
-    var restoredReadRetryDelayMillis: Long? = null
-
-    /** Completion time of the current or last GetCredential; the same timestamp as its [lastSessionRequestAt]. */
-    var credentialReadCompletedAt: Long? = null
-
-    /**
-     * Whether the current or last GetCredential is the expiry timer's check, which is not recorded
-     * as a request. Set before every GetCredential is sent; refreshes never overlap.
-     */
-    var expiryTimerReadInFlight = false
-
-    /** Next offline retry delay after the expiry timer could not reach WaaS. */
-    var credentialRetryDelayMillis: Long? = null
+    /** Next delay before retrying a session read that could not reach WaaS. */
+    var sessionReadRetryDelayMillis: Long? = null
 
     /** Keeps credential refreshes from overlapping other signed session requests. */
     val signedRequestGate = SignedRequestGate()
@@ -565,7 +548,6 @@ class WalletClient private constructor(
             onSessionCredentialRejected = ::endSessionRejectedForCredential,
             onSessionCredentialAccepted = ::refreshCredentialIfDue,
             onSessionCredentialUnauthorized = ::launchCredentialRefresh,
-            onSessionRequestCompleted = ::recordSessionRequestCompleted,
             signedRequestGate = runtime.signedRequestGate,
             signingCredentialId = ::signingCredentialId,
             walletImportTrustedPcr0s = walletImportTrustedPcr0s,
@@ -784,11 +766,11 @@ class WalletClient private constructor(
                     runtime.initialized = true
                     return@synchronized false
                 }
-                // A passed expiry may still be active on WaaS; the restored session's read then decides. Without
-                // its signing key, an earlier launch already ended it (keeping the record as the sign-in hint),
-                // so it is replayed as expired again.
+                // A passed expiry may have been extended on WaaS, so the restored session's read decides,
+                // unless its lifetime cap has passed too. Without its signing key, an earlier launch already
+                // ended it (keeping the record as the sign-in hint), so it is replayed as expired again.
                 if (snapshot.isExpired(runtime.now()) &&
-                    !(snapshot.mayBeActiveOnServer(runtime.now()) && signerHoldsKeyOf(snapshot))
+                    (snapshot.hasPassedLifetimeCap(runtime.now()) || !signerHoldsKeyOf(snapshot))
                 ) {
                     walletSession.clear()
                     clearSessionExpiryTaskLocked()
@@ -831,75 +813,113 @@ class WalletClient private constructor(
                 restoredRevision = revision
                 true
             }
-        // The stored expiry may predate server-side sliding; read the current one in the background.
-        // The read extends the session, so a process started in the background waits for the app to be used.
-        restoredRevision?.let(::refreshRestoredSessionInForeground)
+        // The stored expiry may predate server-side sliding; read the current one.
+        restoredRevision?.let(::readSessionExpiryInForeground)
         return restored
     }
 
     /**
-     * Until a read succeeds, retries a restore read that could not reach WaaS with the expiry timer's
-     * backoff, each time once the app is in the foreground, where reading counts as use: a session
-     * restored offline is settled soon after the network returns. The expiry timer reads no sooner for
-     * it, since the saved expiry may be older than the server's.
+     * Reads the session's expiry with GetCredential once the app is in the foreground, unless a read
+     * is already pending. The read extends a live session like any signed request, so a process
+     * started in the background waits for the app to be used. Used after a restore and by the expiry
+     * timer.
      */
-    private fun scheduleRestoredSessionReadRetryLocked(restoredRevision: Long) {
-        val delayMillis = runtime.restoredReadRetryDelayMillis ?: CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS
-        runtime.restoredReadRetryDelayMillis = minOf(delayMillis * 2, CREDENTIAL_RETRY_MAX_DELAY_MILLIS)
-        cancelRestoredSessionReadLocked()
-        val task =
-            runtime.sessionExpiryScheduler.schedule(delayMillis) {
-                synchronized(runtime.lifecycleLock) { runtime.cancelRestoredSessionRead = null }
-                refreshRestoredSessionInForeground(restoredRevision)
+    private fun readSessionExpiryInForeground(requiredSessionRevision: Long) {
+        val readBefore =
+            synchronized(runtime.lifecycleLock) {
+                if (walletSession.revision() != requiredSessionRevision || runtime.sessionReadPending) return
+                runtime.sessionReadPending = true
+                runtime.credentialReadAt
             }
-        runtime.cancelRestoredSessionRead = { task.cancel() }
+        readSessionExpiryInForeground(requiredSessionRevision, readBefore)
     }
 
-    private fun refreshRestoredSessionInForeground(restoredRevision: Long) {
+    /**
+     * Ending the session cancels the wait, so a process that never shows UI does not keep this
+     * client registered with the Application. A read that succeeded since [readBefore] (for example
+     * a wallet call's) has already applied the expiry, so this one is skipped.
+     */
+    private fun readSessionExpiryInForeground(
+        requiredSessionRevision: Long,
+        readBefore: Long?,
+    ) {
         try {
             val cancel =
                 foregroundRunner.runInForeground {
-                    // A wallet call may have read the expiry since the restore.
                     val current =
                         synchronized(runtime.lifecycleLock) {
-                            runtime.cancelRestoredSessionRead = null
-                            walletSession.revision() == restoredRevision && runtime.credentialReadAt == null
+                            runtime.cancelSessionRead = null
+                            if (walletSession.revision() != requiredSessionRevision) return@synchronized false
+                            (runtime.credentialReadAt == readBefore).also { if (!it) finishSessionReadLocked() }
                         }
                     if (current) {
-                        launchCredentialRefresh(restoredRevision) { outcome ->
-                            synchronized(runtime.lifecycleLock) {
-                                if (walletSession.revision() != restoredRevision) return@synchronized
-                                if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
-                                    // Leave the stored expiry due for a read on the next successful signed request.
-                                    runtime.credentialRefreshAttemptedAt = null
-                                    if (runtime.credentialReadAt == null) scheduleRestoredSessionReadRetryLocked(restoredRevision)
-                                }
-                                // Without GetCredential the local expiry is final: the timer ends a locally expired session.
-                                val snapshot = walletSession.snapshot()
-                                if (snapshot != null && snapshot.isExpired(runtime.now())) {
-                                    scheduleSessionExpiryLocked(snapshot, restoredRevision)
-                                }
-                            }
+                        launchCredentialRefresh(requiredSessionRevision) { outcome ->
+                            onSessionRead(requiredSessionRevision, outcome)
                         }
                     }
                 }
-            // Ending the session cancels the wait, so a process that never shows UI does not keep
-            // this client registered with the Application. A read that already ran here may have
-            // scheduled its retry, whose cancel is kept.
+            // A read that already ran here may have scheduled its retry, whose cancel is kept.
             val stillCurrent =
                 synchronized(runtime.lifecycleLock) {
-                    (walletSession.revision() == restoredRevision).also { current ->
-                        if (current && runtime.cancelRestoredSessionRead == null) runtime.cancelRestoredSessionRead = cancel
+                    (walletSession.revision() == requiredSessionRevision).also { current ->
+                        if (current && runtime.cancelSessionRead == null) runtime.cancelSessionRead = cancel
                     }
                 }
             if (!stillCurrent) cancel()
         } catch (_: Throwable) {
-            // The restore read is best effort; local expiry stays in effect.
+            // The read is best effort; local expiry stays in effect.
+            synchronized(runtime.lifecycleLock) {
+                if (walletSession.revision() == requiredSessionRevision) finishSessionReadLocked()
+            }
         }
     }
 
-    private fun cancelRestoredSessionReadLocked() {
-        runtime.cancelRestoredSessionRead.also { runtime.cancelRestoredSessionRead = null }?.invoke()
+    /**
+     * A read that could not reach WaaS keeps the session and is retried with backoff, each time once
+     * the app is in the foreground, so a session read offline is settled soon after the network
+     * returns. Without GetCredential the local expiry is final.
+     */
+    private fun onSessionRead(
+        requiredSessionRevision: Long,
+        outcome: CredentialRefreshOutcome,
+    ) {
+        synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) return
+            if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
+                // Leave the stored expiry due for a read on the next successful signed request.
+                runtime.credentialRefreshAttemptedAt = null
+                scheduleSessionReadRetryLocked(requiredSessionRevision)
+                return
+            }
+            finishSessionReadLocked()
+            val snapshot = walletSession.snapshot() ?: return
+            if (snapshot.isExpired(runtime.now())) {
+                expireSessionLocked(snapshot, requiredSessionRevision)
+            }
+        }
+    }
+
+    private fun scheduleSessionReadRetryLocked(requiredSessionRevision: Long) {
+        val delayMillis = runtime.sessionReadRetryDelayMillis ?: CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS
+        runtime.sessionReadRetryDelayMillis = minOf(delayMillis * 2, CREDENTIAL_RETRY_MAX_DELAY_MILLIS)
+        val readBefore = runtime.credentialReadAt
+        cancelSessionReadLocked()
+        val task =
+            runtime.sessionExpiryScheduler.schedule(delayMillis) {
+                synchronized(runtime.lifecycleLock) { runtime.cancelSessionRead = null }
+                readSessionExpiryInForeground(requiredSessionRevision, readBefore)
+            }
+        runtime.cancelSessionRead = { task.cancel() }
+    }
+
+    private fun finishSessionReadLocked() {
+        runtime.sessionReadPending = false
+        runtime.sessionReadRetryDelayMillis = null
+        runtime.cancelSessionRead = null
+    }
+
+    private fun cancelSessionReadLocked() {
+        runtime.cancelSessionRead.also { runtime.cancelSessionRead = null }?.invoke()
     }
 
     private fun clearInvalidPersistedSessionLocked() {
@@ -954,7 +974,9 @@ class WalletClient private constructor(
         runtime.pendingEmailAuth = null
         val clearedRevision = walletSession.revision()
         clearSessionExpiryTaskLocked()
-        cancelRestoredSessionReadLocked()
+        cancelSessionReadLocked()
+        runtime.sessionReadPending = false
+        runtime.sessionReadRetryDelayMillis = null
 
         var cleanupFailure: Throwable? = null
 
@@ -2926,16 +2948,6 @@ class WalletClient private constructor(
             }
     }
 
-    /** Schedules a recheck after the expiry timer could not reach WaaS, backing off to a cap. */
-    private fun scheduleCredentialRetry(requiredSessionRevision: Long) {
-        synchronized(runtime.lifecycleLock) {
-            if (walletSession.revision() != requiredSessionRevision) return
-            val delayMillis = runtime.credentialRetryDelayMillis ?: CREDENTIAL_RETRY_INITIAL_DELAY_MILLIS
-            runtime.credentialRetryDelayMillis = minOf(delayMillis * 2, CREDENTIAL_RETRY_MAX_DELAY_MILLIS)
-            scheduleSessionExpiryTimerLocked(delayMillis, requiredSessionRevision)
-        }
-    }
-
     private fun clearSessionExpiryTaskLocked() {
         runtime.sessionExpiryTask.also { runtime.sessionExpiryTask = null }?.cancel()
     }
@@ -2944,22 +2956,16 @@ class WalletClient private constructor(
     private fun markCredentialReadLocked(readAt: Long) {
         runtime.credentialReadAt = readAt
         runtime.credentialRefreshAttemptedAt = runtime.now()
-        runtime.credentialRetryDelayMillis = null
     }
 
     /**
      * Restore: the stored expiry was read by an earlier process, which may have sent requests after
-     * that read, so no read is recorded and the restore time stands in for the last request. No
-     * refresh is recorded either, so the first successful signed request reads the expiry when the
-     * restore read has not.
+     * that read, so no read is recorded. No refresh is recorded either, so the first successful
+     * signed request reads the expiry when the restore read has not.
      */
     private fun markSessionRestoredLocked() {
-        val now = runtime.now()
         runtime.credentialReadAt = null
-        runtime.lastSessionRequestAt = now
         runtime.credentialRefreshAttemptedAt = null
-        runtime.credentialRetryDelayMillis = null
-        runtime.restoredReadRetryDelayMillis = null
     }
 
     /** Runs a session check; when it finds the session locally expired, refreshes the expiry first. */
@@ -2973,6 +2979,24 @@ class WalletClient private constructor(
             } catch (expired: LocallyExpiredSession) {
                 expired
             }
+        // Past its lifetime cap the session has ended, whatever WaaS would say.
+        val capPassed =
+            synchronized(runtime.lifecycleLock) {
+                val snapshot = walletSession.snapshot()
+                if (walletSession.revision() != locallyExpired.revision || snapshot?.hasPassedLifetimeCap(runtime.now()) != true) {
+                    false
+                } else {
+                    expireSessionLocked(snapshot, locallyExpired.revision)
+                    true
+                }
+            }
+        if (capPassed) {
+            throw OMSWalletSessionException(
+                code = OMSWalletErrorCode.SessionExpired,
+                operation = operation,
+                message = "Wallet session expired",
+            )
+        }
         when (val outcome = refreshSessionCredential(locallyExpired.revision, background = false)) {
             is CredentialRefreshOutcome.Unavailable -> {
                 val cause = outcome.cause
@@ -2997,13 +3021,12 @@ class WalletClient private constructor(
 
     private fun launchCredentialRefresh(
         requiredSessionRevision: Long,
-        fromExpiryTimer: Boolean = false,
         onOutcome: (CredentialRefreshOutcome) -> Unit = {},
     ) {
         try {
             runtime.credentialRefreshLauncher.launch {
                 onOutcome(
-                    refreshSessionCredential(requiredSessionRevision, background = true, fromExpiryTimer = fromExpiryTimer),
+                    refreshSessionCredential(requiredSessionRevision, background = true),
                 )
             }
         } catch (_: Throwable) {
@@ -3014,7 +3037,6 @@ class WalletClient private constructor(
     /**
      * Reads the session credential's current expiry from WaaS. Concurrent callers for the same
      * session share one request, and the result is applied only while that session is current.
-     * [fromExpiryTimer] marks the expiry timer's check when this call sends the request.
      *
      * An awaited refresh is bounded like a signed request, from when its caller starts waiting:
      * for the credential's turn, for a refresh another caller started, and for GetCredential
@@ -3024,7 +3046,6 @@ class WalletClient private constructor(
     private suspend fun refreshSessionCredential(
         requiredSessionRevision: Long,
         background: Boolean,
-        fromExpiryTimer: Boolean = false,
         deadline: SignedRequestDeadline? = null,
     ): CredentialRefreshOutcome {
         val awaitedDeadline = if (background) null else deadline ?: SignedRequestDeadline(signedRequestTimeoutMillis)
@@ -3080,10 +3101,10 @@ class WalletClient private constructor(
                 } else {
                     try {
                         if (awaitedDeadline == null) {
-                            requestCredentialRefresh(requiredSessionRevision, fromExpiryTimer)
+                            requestCredentialRefresh(requiredSessionRevision)
                         } else {
                             // GetCredential takes the remaining time of the same deadline.
-                            withContext(awaitedDeadline) { requestCredentialRefresh(requiredSessionRevision, fromExpiryTimer) }
+                            withContext(awaitedDeadline) { requestCredentialRefresh(requiredSessionRevision) }
                         }
                     } finally {
                         runtime.signedRequestGate.endRefresh(credentialId)
@@ -3106,13 +3127,8 @@ class WalletClient private constructor(
         return outcome
     }
 
-    private suspend fun requestCredentialRefresh(
-        requiredSessionRevision: Long,
-        fromExpiryTimer: Boolean,
-    ): CredentialRefreshOutcome {
+    private suspend fun requestCredentialRefresh(requiredSessionRevision: Long): CredentialRefreshOutcome {
         synchronized(runtime.lifecycleLock) {
-            runtime.credentialReadCompletedAt = null
-            runtime.expiryTimerReadInFlight = fromExpiryTimer
             runtime.credentialRefreshAttemptedAt = runtime.now()
         }
         val expiresAt =
@@ -3174,9 +3190,7 @@ class WalletClient private constructor(
                     // The in-memory expiry is still current; the next refresh persists it again.
                 }
             }
-            // The read's own completion time, so a read with no later request leaves lastSessionRequestAt <= credentialReadAt.
-            runtime.credentialReadAt = runtime.credentialReadCompletedAt ?: runtime.now()
-            runtime.credentialRetryDelayMillis = null
+            runtime.credentialReadAt = runtime.now()
             runtime.credentialRefreshUnsupportedAt = null
             scheduleSessionExpiryLocked(updated, requiredSessionRevision)
             publishSessionChangeLocked(SessionChange.ExpiryUpdated)
@@ -3241,39 +3255,15 @@ class WalletClient private constructor(
         }
     }
 
-    /**
-     * Records that a request signed with the session credential completed (response received or
-     * error thrown). WaaS slides the expiry for every such request it receives, whatever its
-     * outcome, and no later than its completion, so the completion bounds the slide. The expiry
-     * timer's own check is not recorded: it is sent only once WaaS should have ended an idle
-     * session, so it cannot slide the expiry. Refreshes never overlap other signed session
-     * requests, so a GetCredential's completion is also the session's last request.
-     */
-    private fun recordSessionRequestCompleted(
-        credentialId: String,
-        endpoint: String,
-    ) {
-        synchronized(runtime.lifecycleLock) {
-            if (!isCurrentSessionCredentialLocked(credentialId)) return
-            val completedAt = runtime.now()
-            val isCredentialRead = endpoint == WaasApi.GetCredential.path
-            if (isCredentialRead) {
-                runtime.credentialReadCompletedAt = completedAt
-            }
-            if (!isCredentialRead || !runtime.expiryTimerReadInFlight) {
-                runtime.lastSessionRequestAt = completedAt
-            }
-        }
-    }
-
     /** A sign-out or new sign-in makes an earlier expiry old news, whether or not a change is published. */
     private fun clearLatestSessionExpiredEventLocked() {
         runtime.latestExpiredChange = null
     }
 
     /**
-     * Expiry timer: a locally expired session is first refreshed from WaaS, which may have slid
-     * the expiry. When WaaS is unreachable the session is kept and rechecked later.
+     * Expiry timer: at local expiry, ends a session whose lifetime cap has passed, or whose expiry
+     * WaaS cannot extend (a pending wallet selection, or a WaaS without GetCredential), and otherwise
+     * reads its expiry once the app is in the foreground: WaaS may have extended it.
      */
     private fun onSessionExpiryTimer(requiredSessionRevision: Long) {
         synchronized(runtime.lifecycleLock) {
@@ -3284,71 +3274,12 @@ class WalletClient private constructor(
                 scheduleSessionExpiryLocked(snapshot, requiredSessionRevision)
                 return
             }
-            val checkAt = idleSessionCheckAtLocked(snapshot)
-            if (checkAt != null && now < checkAt) {
-                scheduleSessionExpiryTimerLocked(checkAt - now, requiredSessionRevision)
+            if (snapshot.wallet == null || snapshot.hasPassedLifetimeCap(now) || isCredentialRefreshUnsupportedLocked()) {
+                expireSessionLocked(snapshot, requiredSessionRevision)
                 return
             }
         }
-        launchCredentialRefresh(requiredSessionRevision, fromExpiryTimer = true) { outcome ->
-            if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
-                scheduleCredentialRetry(requiredSessionRevision)
-            } else {
-                runtime.sessionChangeDispatcher.dispatch { expireSessionFromTimer(requiredSessionRevision) }
-            }
-        }
-    }
-
-    /**
-     * When the expiry timer may ask WaaS about a locally expired wallet session at local expiry
-     * `L`. GetCredential itself extends the expiry of a session WaaS has not ended yet, so the
-     * timer waits until [IDLE_SESSION_CHECK_GRACE_MILLIS] (`G`) past an upper bound on WaaS's
-     * expiry for the session. `A` is when the last request signed with the session credential
-     * completed (the timer's own checks excluded: they are sent only past the bound, when WaaS
-     * has ended an idle session and cannot slide it), and `C` is this process's last expiry read.
-     * - No request since the last read (`A <= C`): WaaS's expiry is `L`, so `L + G`.
-     * - Otherwise, with the sign-in's idle window `I` and ceiling `N`: each request moves WaaS's
-     *   expiry toward `min(request time + I, N)` and never past it (WaaS's 6-hour dampening can
-     *   only leave it lower), so `max(L, min(A + I, N)) + G`. A restore leaves `C` unset and sets
-     *   `A` to the restore time, which bounds the previous process's requests.
-     * - Bounds unknown (a sign-in whose expiry was not after its send time; stored sessions
-     *   without bounds are not restored): `L + max(0, A - C) + 6 hours + G`, or `L + 6 hours + G`
-     *   while `C` is unset.
-     * Null to check right away: a pending wallet selection, or a WaaS without GetCredential, whose
-     * local expiry is exact.
-     */
-    private fun idleSessionCheckAtLocked(snapshot: OMSWalletSessionSnapshot): Long? {
-        if (snapshot.wallet == null || isCredentialRefreshUnsupportedLocked()) return null
-        val expiresAt = snapshot.expiresAtEpochMillis() ?: return null
-        val readAt = runtime.credentialReadAt
-        val usedAt = runtime.lastSessionRequestAt
-        val bounds =
-            snapshot.expiryBounds ?: run {
-                val usedSinceRead = if (readAt != null && usedAt != null) maxOf(0L, usedAt - readAt) else 0L
-                return expiresAt + usedSinceRead + SLIDE_DAMPENING_MILLIS + IDLE_SESSION_CHECK_GRACE_MILLIS
-            }
-        if (usedAt == null || (readAt != null && usedAt <= readAt)) {
-            return expiresAt + IDLE_SESSION_CHECK_GRACE_MILLIS
-        }
-        val slideTarget =
-            if (bounds.ceilingEpochMillis - usedAt <= bounds.idleWindowMillis) {
-                bounds.ceilingEpochMillis
-            } else {
-                usedAt + bounds.idleWindowMillis
-            }
-        return maxOf(expiresAt, slideTarget) + IDLE_SESSION_CHECK_GRACE_MILLIS
-    }
-
-    private fun expireSessionFromTimer(requiredSessionRevision: Long) {
-        synchronized(runtime.lifecycleLock) {
-            if (walletSession.revision() != requiredSessionRevision) return
-            val snapshot = walletSession.snapshot() ?: return
-            if (!snapshot.isExpired(runtime.now())) {
-                scheduleSessionExpiryLocked(snapshot, requiredSessionRevision)
-                return
-            }
-            expireSessionLocked(snapshot, requiredSessionRevision)
-        }
+        readSessionExpiryInForeground(requiredSessionRevision)
     }
 
     /** Ends [snapshot]'s session as expired and returns whether it did (it needs a parseable expiry). */
@@ -3362,7 +3293,9 @@ class WalletClient private constructor(
             return false
         }
         clearSessionExpiryTaskLocked()
-        cancelRestoredSessionReadLocked()
+        cancelSessionReadLocked()
+        runtime.sessionReadPending = false
+        runtime.sessionReadRetryDelayMillis = null
         try {
             oidcRedirectAuthStore?.clear()
         } catch (_: Throwable) {
@@ -3895,17 +3828,14 @@ private class SignInCompletion(
     val lifetimeSeconds: UInt,
 ) {
     /**
-     * WaaS sets a new credential's expiry to `min(sign-in + idle window, sign-in + lifetime)`, so
-     * the idle window is the expiry less the send time, and the ceiling is the later of the
-     * lifetime from the send time and the expiry itself. Null when the expiry does not parse or
-     * is not after the send time.
+     * WaaS sets a new credential's expiry to `min(sign-in + idle window, sign-in + lifetime)`, so the
+     * lifetime cap is the later of the lifetime from the send time and the expiry itself. Null when
+     * the expiry does not parse or is not after the send time.
      */
     fun expiryBounds(): OMSWalletSessionExpiryBounds? {
         val expiresAt = OMSWalletIsoTimestamps.parseEpochMillis(auth.credential.expiresAt) ?: return null
-        val idleWindowMillis = expiresAt - sentAt
-        if (idleWindowMillis <= 0) return null
+        if (expiresAt <= sentAt) return null
         return OMSWalletSessionExpiryBounds(
-            idleWindowMillis = idleWindowMillis,
             ceilingEpochMillis = maxOf(sentAt + lifetimeSeconds.toLong() * 1_000L, expiresAt),
         )
     }
@@ -4039,7 +3969,6 @@ private class WaasWalletGateway(
     private val onSessionCredentialRejected: (credentialId: String) -> Unit,
     private val onSessionCredentialAccepted: (requiredSessionRevision: Long) -> Unit,
     private val onSessionCredentialUnauthorized: (requiredSessionRevision: Long) -> Unit,
-    private val onSessionRequestCompleted: (credentialId: String, endpoint: String) -> Unit,
     private val signedRequestGate: SignedRequestGate,
     private val signingCredentialId: () -> String,
     private val walletImportTrustedPcr0s: Set<String>?,
@@ -4699,50 +4628,44 @@ private class WaasWalletGateway(
             val requestPath = WaasApi.basePath + endpoint
             val deadline = SignedRequestDeadline.current() ?: SignedRequestDeadline(signedRequestTimeoutMillis)
             gatedSignedRequest(requiredSessionRevision, endpoint, deadline) {
-                var sessionCredentialId: String? = null
                 val signed =
-                    try {
-                        resendingRejectedNonce {
-                            val authorization =
-                                beforeSend {
-                                    withContext(Dispatchers.IO) {
-                                        authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
-                                    }
+                    resendingRejectedNonce {
+                        val authorization =
+                            beforeSend {
+                                withContext(Dispatchers.IO) {
+                                    authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
                                 }
-                            val timeoutMillis = deadline.remainingMillisBeforeSend()
-                            if (authorization.usesSessionCredential) sessionCredentialId = authorization.credentialId
-                            val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
-                            val nonce = WalletImportBase64.encode(nonceBytes)
-                            val requestHeaders =
-                                defaultSignedHeaders(headers, authorization.walletSignatureHeader).toMutableMap().apply {
-                                    put("X-Attestation-Nonce", nonce)
-                                }
-                            val response =
-                                transport.postJsonWithStatus(
-                                    baseUrl = baseUrl,
-                                    path = requestPath,
-                                    body = body,
-                                    headers = requestHeaders,
-                                    timeoutMillis = timeoutMillis,
-                                )
-                            val document =
-                                response.headers["x-attestation-document"]
-                                    ?: throw technology.polygon.omswallet.OMSWalletAttestationException(
-                                        message = "WaaS response is missing its attestation document",
-                                    )
-                            AttestationVerifier.verify(
-                                encodedDocument = document,
-                                method = "POST",
+                            }
+                        val timeoutMillis = deadline.remainingMillisBeforeSend()
+                        val nonceBytes = ByteArray(18).also(SecureRandom()::nextBytes)
+                        val nonce = WalletImportBase64.encode(nonceBytes)
+                        val requestHeaders =
+                            defaultSignedHeaders(headers, authorization.walletSignatureHeader).toMutableMap().apply {
+                                put("X-Attestation-Nonce", nonce)
+                            }
+                        val response =
+                            transport.postJsonWithStatus(
+                                baseUrl = baseUrl,
                                 path = requestPath,
-                                requestBody = body,
-                                responseBody = response.body,
-                                nonce = nonce,
-                                trustedPcr0s = trustedPcr0s,
+                                body = body,
+                                headers = requestHeaders,
+                                timeoutMillis = timeoutMillis,
                             )
-                            SignedResponse(authorization, response.statusCode, response.body)
-                        }
-                    } finally {
-                        sessionCredentialId?.let { onSessionRequestCompleted(it, endpoint) }
+                        val document =
+                            response.headers["x-attestation-document"]
+                                ?: throw technology.polygon.omswallet.OMSWalletAttestationException(
+                                    message = "WaaS response is missing its attestation document",
+                                )
+                        AttestationVerifier.verify(
+                            encodedDocument = document,
+                            method = "POST",
+                            path = requestPath,
+                            requestBody = body,
+                            responseBody = response.body,
+                            nonce = nonce,
+                            trustedPcr0s = trustedPcr0s,
+                        )
+                        SignedResponse(authorization, response.statusCode, response.body)
                     }
                 val answer =
                     observeSessionCredentialResponse(
@@ -4763,35 +4686,29 @@ private class WaasWalletGateway(
             val endpoint = resolveEndpoint(path)
             val deadline = SignedRequestDeadline.current() ?: SignedRequestDeadline(signedRequestTimeoutMillis)
             gatedSignedRequest(requiredSessionRevision, endpoint, deadline) {
-                var sessionCredentialId: String? = null
                 val signed =
-                    try {
-                        resendingRejectedNonce {
-                            val authorization =
-                                beforeSend {
-                                    withContext(Dispatchers.IO) {
-                                        authorizeSignedRequest(
-                                            requiredSessionRevision,
-                                            allowCredentialCreation,
-                                            endpoint,
-                                            body,
-                                        )
-                                    }
+                    resendingRejectedNonce {
+                        val authorization =
+                            beforeSend {
+                                withContext(Dispatchers.IO) {
+                                    authorizeSignedRequest(
+                                        requiredSessionRevision,
+                                        allowCredentialCreation,
+                                        endpoint,
+                                        body,
+                                    )
                                 }
-                            val timeoutMillis = deadline.remainingMillisBeforeSend()
-                            if (authorization.usesSessionCredential) sessionCredentialId = authorization.credentialId
-                            val response =
-                                transport.postJsonWithStatus(
-                                    baseUrl = baseUrl,
-                                    path = WaasApi.basePath + endpoint,
-                                    body = body,
-                                    headers = defaultSignedHeaders(headers, authorization.walletSignatureHeader),
-                                    timeoutMillis = timeoutMillis,
-                                )
-                            SignedResponse(authorization, response.statusCode, response.body)
-                        }
-                    } finally {
-                        sessionCredentialId?.let { onSessionRequestCompleted(it, endpoint) }
+                            }
+                        val timeoutMillis = deadline.remainingMillisBeforeSend()
+                        val response =
+                            transport.postJsonWithStatus(
+                                baseUrl = baseUrl,
+                                path = WaasApi.basePath + endpoint,
+                                body = body,
+                                headers = defaultSignedHeaders(headers, authorization.walletSignatureHeader),
+                                timeoutMillis = timeoutMillis,
+                            )
+                        SignedResponse(authorization, response.statusCode, response.body)
                     }
                 val answer =
                     observeSessionCredentialResponse(
@@ -5333,32 +5250,8 @@ private fun OMSWalletSessionSnapshot.isExpired(referenceTime: Long): Boolean {
     return expiresAt <= referenceTime
 }
 
-/**
- * Whether a saved session whose expiry has passed may still be active on WaaS. The saved expiry is the
- * last read's. That read moved the server expiry unless the move was under [SLIDE_DAMPENING_MILLIS], so
- * it trailed the server by less than that; requests after the read moved the server expiry at most until
- * the next read, which follows the first successful signed request once the read is
- * [CREDENTIAL_REFRESH_INTERVAL_MILLIS] old. The server expiry is therefore before the saved one plus
- * both, and never past the ceiling.
- */
-private fun OMSWalletSessionSnapshot.mayBeActiveOnServer(now: Long): Boolean {
-    val expiresAt = expiresAtEpochMillis() ?: return false
-    return now < latestServerExpiryOfSaved(expiresAt, expiryBounds)
-}
-
-/**
- * The latest the server expiry of a session saved with [expiresAt] normally is, plus the grace: see
- * [mayBeActiveOnServer]. A read that was missed or not saved can leave the server expiry later, so it
- * only decides whether a restored session's read may settle it; the expiry timer never reads by it,
- * since reading a live credential would extend an idle session.
- */
-private fun latestServerExpiryOfSaved(
-    expiresAt: Long,
-    bounds: OMSWalletSessionExpiryBounds?,
-): Long {
-    val latest = expiresAt + SLIDE_DAMPENING_MILLIS + CREDENTIAL_REFRESH_INTERVAL_MILLIS
-    return (bounds?.let { minOf(latest, it.ceilingEpochMillis) } ?: latest) + IDLE_SESSION_CHECK_GRACE_MILLIS
-}
+/** Whether the session's lifetime cap has passed: it has ended, whatever WaaS would say. */
+private fun OMSWalletSessionSnapshot.hasPassedLifetimeCap(now: Long): Boolean = expiryBounds?.let { now >= it.ceilingEpochMillis } == true
 
 private fun OMSWalletSessionSnapshot.expiresAtEpochMillis(): Long? = expiresAt?.let(OMSWalletIsoTimestamps::parseEpochMillis)
 
@@ -5392,9 +5285,6 @@ private const val CREDENTIAL_RETRY_MAX_DELAY_MILLIS: Long = 15 * 60_000L
 /** How long after a WebrpcBadRoute answer to GetCredential the SDK skips refreshes before probing again. */
 private const val CREDENTIAL_REFRESH_UNSUPPORTED_COOLDOWN_MILLIS: Long = 15 * 60_000L
 
-/** How long after the predicted WaaS expiry the expiry timer waits before reading an idle session's credential. */
-private const val IDLE_SESSION_CHECK_GRACE_MILLIS: Long = 5 * 60_000L
-
 /** Execute errors WaaS raises before it submits anything, so they are request errors. */
 private val EXECUTE_REFUSED_BEFORE_SUBMISSION =
     setOf(
@@ -5416,9 +5306,6 @@ private val TRON_EXECUTE_REFUSED_BEFORE_SUBMISSION =
 
 /** One deadline per signed request, covering its gate wait, signing, nonce resends, and HTTP calls. */
 private const val SIGNED_REQUEST_TIMEOUT_MILLIS: Long = 30_000L
-
-/** WaaS's SlideDampening: it skips an expiry slide shorter than this unless it reaches the ceiling. */
-private const val SLIDE_DAMPENING_MILLIS: Long = 6 * 60 * 60_000L
 
 /** How many times a signed request is re-signed after WaaS rejects its nonce (412, 7206 PreconditionFailed). */
 private const val REJECTED_NONCE_MAX_RETRIES: Int = 2

@@ -12,41 +12,35 @@ and stale expiry paths are coordinated.
 - A valid stored session is restored into memory, gets an expiry task, and is
   refreshed in the background. Restore itself never waits for or fails on the
   refresh.
-- An expired stored session is discarded on restore without asking WaaS: it is
-  not restored as active, but its metadata stays in storage so
+- A stored session whose expiry has passed may still be active on WaaS:
+  requests after the last read can have moved the server expiry. Unless its
+  lifetime cap has passed, it is restored as active and the restore read
+  decides. Past the cap, or without its signing key (an earlier launch already
+  ended it), it is not restored as active, but its metadata stays in storage so
   its `Expired` change replays to listeners after process recreation.
-- A session active in memory is checked with WaaS before it is treated as
-  ended. It can expire from the scheduled task or from a protected wallet
-  operation checking the session before use. Both refresh first: an extended
-  expiry keeps the session, and only a session WaaS cannot extend expires.
-- WaaS ends a session about 10 days after its last use (the idle window), or at
-  the requested lifetime (the ceiling). Every request signed with the session's
-  credential, including `GetCredential`, extends the idle window, so the expiry
-  task does not read the credential of a session that looks idle until WaaS
-  should have ended it. Without SDK activity since the last expiry read, the SDK
-  notices an ended idle session up to 5 minutes after WaaS ended it; after later
-  requests, WaaS's 6-hour slide dampening can make it notice up to about 6 hours
-  later, and after a restore whose read failed, up to an idle window later. The timer
-  never reads by the saved expiry alone: a read or a save missed before the restore can
-  leave the server expiry later than any bound derived from it, and reading a live
-  credential would extend an idle session. Instead, a restore read that could not reach
-  WaaS is retried with the timer's backoff (1 minute, doubling to 15) while no read has
-  succeeded, each time once the app is in the foreground. These
-  times assume an accurate device clock (the expiry is WaaS time compared with
-  device time) and an app running in the foreground; the task cannot fire while
-  the app is suspended or not running, and after a restart the restore discards
-  a stored session more than 12 hours past its expiry (`L + 6 hours + 6 hours + G`:
-  the dampening, plus requests until the next read, which follows the first
-  successful request once the last read is 6 hours old), and below the ceiling
-  restores a more recently expired one for its read to decide.
-- Sign-in records the session's idle window `I` and ceiling `N` from
-  `CompleteAuth`: with `C0` the request's send time, `L0` the returned expiry,
-  and `R` the requested lifetime, `I = L0 - C0` and `N = max(C0 + R, L0)`
-  (unknown when `L0` does not parse or `I <= 0`). They are kept with the
-  session and saved in the session store record as `idleWindowMillis` and
-  `expiryCeilingEpochMillis`. A stored record without valid bounds (saved by
-  an earlier 0.4.0 build, or for a session whose bounds were unknown) is
-  discarded on restore like any invalid record, and the user signs in again.
+- A session active in memory can expire from the scheduled task or from a
+  protected wallet operation checking the session before use. Past the lifetime
+  cap, both end it without a request; otherwise both read the expiry from WaaS
+  first: an extended expiry keeps the session, and only a session WaaS reports
+  ended (or a WaaS without `GetCredential`) expires.
+- WaaS ends a session about 10 days after its last use, and never after its
+  lifetime cap `N`. Every request signed with the session's credential,
+  `GetCredential` included, moves the expiry toward 10 days after it, capped at
+  `N`. The read at the local expiry therefore extends a live session, which is
+  intended: the app is in use when it runs, and the read becomes the session's
+  last use, so the next read after the new expiry finds the session ended unless
+  something else used it. With an accurate device clock (the expiry is WaaS time
+  compared with device time) and an app running in the foreground, an ended
+  session is noticed at its expiry; the task cannot fire while the app is
+  suspended or not running.
+- Sign-in records the session's lifetime cap `N` from `CompleteAuth`: with
+  `C0` the request's send time, `L0` the returned expiry, and `R` the requested
+  lifetime, `N = max(C0 + R, L0)` (unknown when `L0` does not parse or is not
+  after `C0`). It is kept with the session and saved in the session store record
+  as `expiryCeilingEpochMillis`. A stored record without a valid cap (saved by an
+  earlier 0.4.0 build, or for a session whose cap was unknown) is discarded on
+  restore like any invalid record, and the user signs in again; an
+  `idleWindowMillis` field from 0.4.0 pre-releases is ignored.
 - A request signed with the session's credential that WaaS rejects with 7202
   `KeyNotFound` or 7203 `KeyExpired`, or a `GetCredential` that WaaS answers with
   7207 `Unauthorized` (the credential was revoked), ends the session like local
@@ -73,44 +67,25 @@ ownership). Outcomes:
 
 Triggers:
 
-- Restore (`restorePersistedSession`): background refresh after a session is
-  restored. The refresh extends an idle session, so it runs only while the app
-  has a started activity (the process lifecycle, `ProcessLifecycleOwner`): a
-  process started in the background (a push message, a broadcast, a scheduled
-  job, or boot) runs it once an activity starts, and skips it if the session
-  changed meanwhile. A restore
-  leaves the 6-hour refresh clock unset, and so does a restore refresh that is
-  Busy or Unavailable, so until a read reaches WaaS the next successful signed
-  call refreshes.
-- Expiry task on a locally expired wallet session at local expiry `L`: let `C` be
-  this process's last expiry read (the send time of the sign-in `CompleteAuth`
-  or the completion time of the last successful `GetCredential`; a restore
-  leaves it unset) and `A` the time the last request signed with the session's
-  credential completed (response received or error thrown), `GetCredential`
-  included, whatever its outcome. WaaS slides the expiry when it receives a
-  request, which is no later than its completion, so a request that stalls on
-  the way still counts from when it completed. A restore sets `A` to the restore
-  time, which bounds the previous process's requests. The task's own
-  `GetCredential` checks are not counted: they are sent only past the bound,
-  when WaaS has already ended an idle session and cannot slide it. Refreshes
-  never overlap other signed session requests, so a successful read leaves
-  `A <= C` until another request completes. The task waits until 5 minutes
-  (`G`) past an upper bound on WaaS's expiry:
-  - No request since the last read (`A <= C`): WaaS's expiry is `L`, so `L + G`.
-  - Otherwise: each request moves WaaS's expiry toward `min(request time + I, N)`
-    and never past it (dampening can only leave it lower), so
-    `max(L, min(A + I, N)) + G`.
-  - Bounds unknown in memory (a sign-in whose expiry was not after its send
-    time): `L + max(0, A - C) + 6 hours + G`, or `L + 6 hours + G` while `C` is
-    unset, with 6 hours being WaaS's slide dampening.
-
-  Until then it reschedules without a request, re-evaluating each time it fires.
-  Then it refreshes: Refreshed reschedules; Ended or Unsupported expire as
-  before; Unavailable or Busy keep the session and recheck after 60 seconds,
-  doubling up to 15 minutes. A pending manual wallet
-  selection, and a WaaS known to lack `GetCredential`, refresh at `L` without
-  waiting.
-- Protected operation on a locally expired session: awaits the refresh.
+- Session read (`readSessionExpiryInForeground`), after a restore and from the
+  expiry task: reads the expiry once the app has a started activity (the
+  process lifecycle, `ProcessLifecycleOwner`), because the read extends the
+  session: a process started in the background (a push message, a broadcast, a
+  scheduled job, or boot) runs it once an activity starts, and skips it if the
+  session changed meanwhile or another read succeeded since it was requested.
+  Only one read is pending at a time; the expiry task joins one already waiting.
+  Refreshed keeps the session; Ended expires it; Unsupported makes a locally
+  expired session expire; Unavailable or Busy keep the session and retry the
+  read after 60 seconds, doubling up to 15 minutes, each time once the app is in
+  the foreground. A restore leaves the 6-hour refresh clock unset, and so does a
+  read that is Busy or Unavailable, so until a read reaches WaaS the next
+  successful signed call refreshes.
+- Expiry task at the local expiry `L`: a session past its lifetime cap, a
+  pending manual wallet selection, or a session on a WaaS known to lack
+  `GetCredential` expires without a request; any other session starts the
+  session read.
+- Protected operation on a locally expired session: past the lifetime cap,
+  throws `OMS_SESSION_EXPIRED` without a request; otherwise awaits the refresh.
   Refreshed continues the operation; Ended or Unsupported throw
   `OMS_SESSION_EXPIRED`; Unavailable throws the network error and keeps the
   session.
@@ -146,11 +121,11 @@ flowchart TD
   B -- "No" --> C["Start signed out"]
 
   B -- "Yes" --> D["Build restored session snapshot"]
-  D --> E{"Snapshot expired?"}
+  D --> E{"Expired and past its lifetime cap, or signing key gone?"}
 
   E -- "No" --> F["Restore active in-memory session"]
   F --> G["Schedule active session expiry task"]
-  F --> R0["Background credential refresh"]
+  F --> RF
 
   E -- "Yes" --> H["Keep expired metadata in storage"]
   H --> I["Do not restore active in-memory session"]
@@ -162,19 +137,19 @@ flowchart TD
   M -- "No" --> N["Ignore stale task"]
   M -- "Yes" --> O{"Session expired now?"}
   O -- "No" --> G
-  O -- "Yes" --> IW{"Wallet session before bound on WaaS expiry + 5 minutes?"}
-  IW -- "Yes" --> IR["Reschedule to that time, no request"]
-  IR --> L
-  IW -- "No" --> RF{"Refresh credential"}
+  O -- "Yes" --> CP{"Past its lifetime cap, pending selection, or no GetCredential?"}
+  CP -- "Yes" --> P
+  CP -- "No" --> RF{"Read the expiry once the app is in the foreground"}
   RF -- "Refreshed" --> G
-  RF -- "Unavailable or Busy" --> RT["Keep session, recheck later"]
-  RT --> L
+  RF -- "Unavailable or Busy" --> RT["Keep session, read again after a backoff"]
+  RT --> RF
   RF -- "Ended or Unsupported" --> P["Clear in-memory session and signer"]
   P --> Q["Keep expired metadata in storage"]
   Q --> K
 
   S0["Protected wallet operation"] --> S{"Current session expired?"}
   S -- "No" --> T["Continue operation"]
+  S -- "Yes, past its lifetime cap" --> P
   S -- "Yes" --> RO{"Refresh credential"}
   RO -- "Refreshed" --> T
   RO -- "Unavailable" --> X["Throw network error, keep session"]

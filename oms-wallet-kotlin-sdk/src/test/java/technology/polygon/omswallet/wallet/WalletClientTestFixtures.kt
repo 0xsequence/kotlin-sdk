@@ -308,7 +308,13 @@ internal class RecordingSessionExpiryScheduler : SessionExpiryScheduler {
         delayMillis: Long,
         action: () -> Unit,
     ): SessionExpiryTask {
-        val scheduledTask = ScheduledTask(delayMillis, action)
+        lateinit var scheduledTask: ScheduledTask
+        // A fired task is no longer pending, as with a real scheduler.
+        scheduledTask =
+            ScheduledTask(delayMillis) {
+                scheduledTasks -= scheduledTask
+                action()
+            }
         scheduledTasks += scheduledTask
         return SessionExpiryTask {
             cancelCalls += 1

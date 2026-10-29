@@ -77,22 +77,22 @@ class PersistedSessionRecordTest {
     }
 
     @Test
-    fun roundTripsExpiryBoundsAsIntegers() {
+    fun roundTripsTheLifetimeCapAsAnInteger() {
         val root = Json.parseToJsonElement(validRecord()).jsonObject
 
-        assertEquals(JsonPrimitive(864_000_000L), root["idleWindowMillis"])
         assertEquals(JsonPrimitive(4_070_908_800_000L), root["expiryCeilingEpochMillis"])
+        // 0.4.0 pre-releases also stored an idle window, which is ignored.
+        val preRelease = JsonObject(root + ("idleWindowMillis" to JsonPrimitive(864_000_000L))).toString()
+        assertEquals(PersistedSessionRecord.decode(validRecord()), PersistedSessionRecord.decode(preRelease))
     }
 
     @Test
-    fun discardsRecordsWithoutValidExpiryBounds() {
+    fun discardsRecordsWithoutAValidLifetimeCap() {
         val record = Json.parseToJsonElement(validRecord()).jsonObject
         val invalid =
             listOf(
-                JsonObject(record - "idleWindowMillis"),
                 JsonObject(record - "expiryCeilingEpochMillis"),
-                JsonObject(record + ("idleWindowMillis" to JsonPrimitive("864000000"))),
-                JsonObject(record + ("idleWindowMillis" to JsonPrimitive(0))),
+                JsonObject(record + ("expiryCeilingEpochMillis" to JsonPrimitive("4070908800000"))),
                 JsonObject(record + ("expiryCeilingEpochMillis" to JsonPrimitive(-1))),
                 JsonObject(record + ("expiryCeilingEpochMillis" to JsonPrimitive(1.5))),
             ).map(JsonObject::toString)
@@ -157,6 +157,6 @@ class PersistedSessionRecordTest {
             signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
             expiresAt = "2099-01-01T00:00:00Z",
             auth = OMSWalletEmailSessionAuth(email = "user@example.com"),
-            expiryBounds = OMSWalletSessionExpiryBounds(idleWindowMillis = 864_000_000L, ceilingEpochMillis = 4_070_908_800_000L),
+            expiryBounds = OMSWalletSessionExpiryBounds(ceilingEpochMillis = 4_070_908_800_000L),
         )
 }

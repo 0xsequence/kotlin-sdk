@@ -195,6 +195,8 @@ class WalletSessionTest {
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:00:00Z",
                 auth = emailSessionAuth(),
+                // The expiry is the lifetime cap, so nothing can have extended it.
+                expiryBounds = OMSWalletSessionExpiryBounds(epochMillis("2026-01-01T00:00:00Z")),
             )
         val store = InMemorySessionStore(snapshot)
         val signer = TrackingCredentialSigner()
@@ -205,8 +207,7 @@ class WalletSessionTest {
                 environment = testEnvironment(),
                 sessionStore = store,
                 credentialSigner = signer,
-                // Past the latest the server can have extended the expiry to since its last read.
-                now = { epochMillis("2026-01-01T12:05:00Z") },
+                now = { epochMillis("2026-01-01T00:01:00Z") },
                 credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
             )
 
@@ -236,6 +237,8 @@ class WalletSessionTest {
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:00:00Z",
                 auth = emailSessionAuth(),
+                // The expiry is the lifetime cap, so nothing can have extended it.
+                expiryBounds = OMSWalletSessionExpiryBounds(epochMillis("2026-01-01T00:00:00Z")),
             )
         val client =
             WalletClient.create(
@@ -244,8 +247,7 @@ class WalletSessionTest {
                 environment = testEnvironment(),
                 sessionStore = InMemorySessionStore(snapshot),
                 credentialSigner = TrackingCredentialSigner(),
-                // Past the latest the server can have extended the expiry to since its last read.
-                now = { epochMillis("2026-01-01T12:05:00Z") },
+                now = { epochMillis("2026-01-01T00:01:00Z") },
                 credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
             )
         assertFalse(client.restorePersistedSession())
@@ -348,7 +350,7 @@ class WalletSessionTest {
 
     @Test
     fun expiryTimerRefreshExtendsPersistsAndReschedulesSession() {
-        server.enqueueJson(getCredentialResponseBody("2026-01-11T00:07:00Z"))
+        server.enqueueJson(getCredentialResponseBody("2026-01-11T00:02:00Z"))
         val scheduler = RecordingSessionExpiryScheduler()
         var currentTime = epochMillis("2026-01-01T00:00:00Z")
         val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
@@ -369,14 +371,9 @@ class WalletSessionTest {
 
         currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
-        // The idle check waits out the grace period before reading the credential.
-        assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-        assertEquals(0, server.requestCount)
-        currentTime += IDLE_CHECK_GRACE_MILLIS
-        scheduler.scheduledTasks.single().action()
 
-        assertEquals("2026-01-11T00:07:00Z", client.session?.expiresAt)
-        assertEquals(snapshot.copy(expiresAt = "2026-01-11T00:07:00Z"), store.snapshot)
+        assertEquals("2026-01-11T00:02:00Z", client.session?.expiresAt)
+        assertEquals(snapshot.copy(expiresAt = "2026-01-11T00:02:00Z"), store.snapshot)
         assertEquals(10 * 24 * 60 * 60 * 1000L, scheduler.scheduledTasks.single().delayMillis)
         assertEquals(listOf("ExpiryUpdated"), changes.kinds)
         assertEquals(WaasApi.GetCredential.urlPath, requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target)
@@ -404,9 +401,6 @@ class WalletSessionTest {
         val changes = client.recordSessionChanges()
 
         currentTime = epochMillis("2026-01-01T00:02:00Z")
-        scheduler.scheduledTasks.single().action()
-        assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-        currentTime += IDLE_CHECK_GRACE_MILLIS
         scheduler.scheduledTasks.single().action()
 
         assertEquals(snapshot, client.snapshotSession())
@@ -516,7 +510,7 @@ class WalletSessionTest {
         client.restoreSession(snapshot)
         val changes = client.recordSessionChanges()
 
-        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
 
         assertNull(client.snapshotSession())
@@ -545,7 +539,7 @@ class WalletSessionTest {
             )
         client.restoreSession(snapshot)
 
-        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
 
         assertNull(client.snapshotSession())
@@ -577,7 +571,7 @@ class WalletSessionTest {
         client.restoreSession(snapshot)
         val changes = client.recordSessionChanges()
 
-        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
         assertEquals(snapshot, client.snapshotSession())
         assertEquals(60_000L, scheduler.scheduledTasks.single().delayMillis)
@@ -648,93 +642,6 @@ class WalletSessionTest {
         }
 
     @Test
-    fun expiryTimerReschedulesWithoutReadingCredentialWhenSessionWasUsedAfterLastRead() =
-        runBlocking {
-            server.enqueueJson("""{"signature":"0xsigned"}""")
-            server.enqueue(errorResponse(400, "KeyExpired", 7203))
-            val scheduler = RecordingSessionExpiryScheduler()
-            var currentTime = epochMillis("2026-01-01T00:00:00Z")
-            // Signed in at 00:00 with a 2-minute idle window.
-            val snapshot =
-                expiringSnapshot(
-                    expiresAt = "2026-01-01T00:02:00Z",
-                    expiryBounds = OMSWalletSessionExpiryBounds(2 * MINUTE_MILLIS, epochMillis(TEST_SESSION_EXPIRES_AT)),
-                )
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment = serverEnvironment(),
-                    sessionStore = InMemorySessionStore(snapshot),
-                    credentialSigner = TrackingCredentialSigner(),
-                    sessionExpiryScheduler = scheduler,
-                    credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
-                    now = { currentTime },
-                )
-            client.restoreSession(snapshot)
-            val changes = client.recordSessionChanges()
-            // Used one minute after its expiry was read, so WaaS slid the expiry to 00:03.
-            currentTime += 60_000L
-            client.signMessage(network = Network.AMOY, message = "hello")
-
-            currentTime = epochMillis("2026-01-01T00:02:00Z")
-            scheduler.scheduledTasks.single().action()
-
-            assertEquals(snapshot, client.snapshotSession())
-            assertEquals(60_000L + IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-            assertEquals(1, server.requestCount)
-
-            currentTime += 60_000L + IDLE_CHECK_GRACE_MILLIS
-            scheduler.scheduledTasks.single().action()
-
-            assertNull(client.snapshotSession())
-            assertEquals(listOf("Expired"), changes.kinds)
-            assertEquals(
-                listOf(WaasApi.SignMessage.urlPath, WaasApi.GetCredential.urlPath),
-                List(server.requestCount) { requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target },
-            )
-        }
-
-    @Test
-    fun expiryTimerReadsIdleSessionCredentialOnlyAfterGracePeriod() {
-        server.enqueue(errorResponse(400, "KeyExpired", 7203))
-        val scheduler = RecordingSessionExpiryScheduler()
-        var currentTime = epochMillis("2026-01-01T00:00:00Z")
-        val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
-        val client =
-            WalletClient.create(
-                publishableKey = "test-publishable-key",
-                projectId = "test-project-id",
-                environment = serverEnvironment(),
-                sessionStore = InMemorySessionStore(snapshot),
-                credentialSigner = TrackingCredentialSigner(),
-                sessionExpiryScheduler = scheduler,
-                credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
-                now = { currentTime },
-            )
-        client.restoreSession(snapshot)
-        val changes = client.recordSessionChanges()
-
-        currentTime = epochMillis("2026-01-01T00:02:00Z")
-        scheduler.scheduledTasks.single().action()
-        assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-        // A timer that fires early is rescheduled again instead of reading the credential.
-        currentTime += IDLE_CHECK_GRACE_MILLIS - 1
-        scheduler.scheduledTasks.single().action()
-        assertEquals(1L, scheduler.scheduledTasks.single().delayMillis)
-        assertEquals(snapshot, client.snapshotSession())
-        assertEquals(0, server.requestCount)
-
-        currentTime += 1
-        scheduler.scheduledTasks.single().action()
-
-        assertNull(client.snapshotSession())
-        assertEquals("2026-01-01T00:02:00Z", requireNotNull(changes.lastExpired).expiredAt)
-        assertEquals(WaasApi.GetCredential.urlPath, requireNotNull(server.takeRequest(1, TimeUnit.SECONDS)).target)
-        assertEquals(1, server.requestCount)
-    }
-
-    @Test
     fun expiryTimerKeepsSessionAndRetriesWhenCredentialExpiryIsInvalid() {
         server.enqueueJson(getCredentialResponseBody("not-a-timestamp"))
         val scheduler = RecordingSessionExpiryScheduler()
@@ -755,7 +662,7 @@ class WalletSessionTest {
         client.restoreSession(snapshot)
         val changes = client.recordSessionChanges()
 
-        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
 
         assertEquals(snapshot, client.snapshotSession())
@@ -1136,12 +1043,12 @@ class WalletSessionTest {
             )
         client.restoreSession(snapshot)
 
-        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
 
         assertEquals(replacement, client.snapshotSession())
         assertEquals(snapshot, store.snapshot)
-        assertEquals(23 * 60 * 1000L, scheduler.scheduledTasks.single().delayMillis)
+        assertEquals(28 * 60 * 1000L, scheduler.scheduledTasks.single().delayMillis)
         assertEquals(1, server.requestCount)
     }
 
@@ -1178,9 +1085,6 @@ class WalletSessionTest {
         assertEquals(1, scheduler.scheduledTasks.size)
         assertEquals(120_000L, scheduler.scheduledTasks.single().delayMillis)
         currentTime = epochMillis("2026-01-01T00:02:00Z")
-        scheduler.scheduledTasks.single().action()
-        assertEquals(snapshot, client.snapshotSession())
-        currentTime += IDLE_CHECK_GRACE_MILLIS
         scheduler.scheduledTasks.single().action()
 
         assertNull(client.snapshotSession())
@@ -1261,19 +1165,12 @@ class WalletSessionTest {
 
         currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
-        dispatcher.runNext()
-        currentTime += IDLE_CHECK_GRACE_MILLIS
-        scheduler.scheduledTasks.single().action()
 
         assertEquals(snapshot, client.snapshotSession())
         assertEquals(listOf<String>(), changes.kinds)
         assertEquals(1, dispatcher.actions.size)
 
-        // The timer refreshes first; the unsupported server hands expiry back to the dispatcher.
-        dispatcher.runNext()
-        assertEquals(snapshot, client.snapshotSession())
-        assertEquals(1, dispatcher.actions.size)
-
+        // The timer reads first; the unsupported server leaves the local expiry final.
         dispatcher.runNext()
         assertNull(client.snapshotSession())
         assertEquals(listOf<String>(), changes.kinds)
@@ -1318,10 +1215,6 @@ class WalletSessionTest {
         currentTime = epochMillis("2026-01-01T00:02:00Z")
         scheduler.scheduledTasks.single().action()
         dispatcher.runNext()
-        currentTime += IDLE_CHECK_GRACE_MILLIS
-        scheduler.scheduledTasks.single().action()
-        dispatcher.runNext()
-        dispatcher.runNext()
         unsubscribe()
         dispatcher.runNext()
 
@@ -1337,6 +1230,8 @@ class WalletSessionTest {
                 signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
                 expiresAt = "2026-01-01T00:00:00Z",
                 auth = emailSessionAuth(),
+                // The expiry is the lifetime cap, so nothing can have extended it.
+                expiryBounds = OMSWalletSessionExpiryBounds(epochMillis("2026-01-01T00:00:00Z")),
             )
         val client =
             WalletClient.create(
@@ -1345,8 +1240,7 @@ class WalletSessionTest {
                 environment = testEnvironment(),
                 sessionStore = InMemorySessionStore(snapshot),
                 credentialSigner = ThrowingClearCredentialSigner(),
-                // Past the latest the server can have extended the expiry to since its last read.
-                now = { epochMillis("2026-01-01T12:05:00Z") },
+                now = { epochMillis("2026-01-01T00:01:00Z") },
                 credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
             )
 
@@ -1475,74 +1369,47 @@ class WalletSessionTest {
     }
 
     @Test
-    fun expiryTimerWaitsAnIdleWindowFromTheLastRequestAfterADampenedRead() =
+    fun expiryTimerEndsASessionAtItsLifetimeCapWithoutARead() =
         runBlocking {
             var now = T0
-            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
-            server.dispatcher = waas
-            val store = RecordBackedSessionStore(null)
-            expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }.signInWithEmail()
-            // A restore read an hour later is dampened: WaaS returns the sign-in expiry unchanged.
-            now = T0 + HOUR_MILLIS
-            waas.credentialAnswers += okJson(getCredentialResponseBody("2026-01-11T00:00:00Z"))
-            val scheduler = RecordingSessionExpiryScheduler()
-            val client = expiryTimerClient(store, scheduler) { now }
-            assertTrue(client.restorePersistedSession())
-            val changes = client.recordSessionChanges()
-            // WaaS slides the expiry to usedAt + 10 days: 6h50m past the sign-in expiry, 1 hour more
-            // than the time between the restore read and this request.
-            now = T0 + 6 * HOUR_MILLIS + 50 * MINUTE_MILLIS
-            val usedAt = now
-            client.signMessage(network = Network.AMOY, message = "hello")
-            val checkAt = usedAt + 10 * DAY_MILLIS + IDLE_CHECK_GRACE_MILLIS
-
-            now = epochMillis("2026-01-11T00:00:00Z")
-            scheduler.fire()
-            assertEquals(checkAt - now, scheduler.scheduledTasks.single().delayMillis)
-            now = checkAt - 1
-            scheduler.fire()
-            assertEquals(1L, scheduler.scheduledTasks.single().delayMillis)
-            assertEquals(listOf(T0 + HOUR_MILLIS), waas.credentialReadTimes)
-
-            waas.credentialAnswers += errorResponse(400, "KeyExpired", 7203)
-            now = checkAt
-            scheduler.fire()
-
-            assertEquals(listOf(T0 + HOUR_MILLIS, checkAt), waas.credentialReadTimes)
-            assertNull(client.snapshotSession())
-            assertEquals(listOf("Expired"), changes.kinds)
-        }
-
-    @Test
-    fun expiryTimerChecksAtTheCeilingWhenTheLifetimeIsShorterThanTheIdleWindow() =
-        runBlocking {
-            var now = T0
-            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-01T01:00:00Z")
+            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-01T00:01:10Z")
             server.dispatcher = waas
             val scheduler = RecordingSessionExpiryScheduler()
             val client = expiryTimerClient(InMemorySessionStore(), scheduler) { now }
-            client.signInWithEmail(sessionLifetimeSeconds = 3_600L)
+            // A 70-second lifetime puts the expiry at the cap, which nothing extends.
+            client.signInWithEmail(sessionLifetimeSeconds = 70L)
             val changes = client.recordSessionChanges()
-            // WaaS cannot move an expiry that is already at the lifetime ceiling.
-            now = T0 + 30 * MINUTE_MILLIS
-            client.signMessage(network = Network.AMOY, message = "hello")
 
-            now = T0 + HOUR_MILLIS
+            now = T0 + 70_000L
             scheduler.fire()
-            assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
+
             assertEquals(emptyList<Long>(), waas.credentialReadTimes)
+            assertNull(client.snapshotSession())
+            assertEquals(listOf("Expired"), changes.kinds)
+            assertEquals("2026-01-01T00:01:10Z", requireNotNull(changes.lastExpired).expiredAt)
+        }
 
-            waas.credentialAnswers += errorResponse(400, "KeyExpired", 7203)
-            now = T0 + HOUR_MILLIS + IDLE_CHECK_GRACE_MILLIS
-            scheduler.fire()
+    @Test
+    fun walletCallPastTheLifetimeCapThrowsSessionExpiredWithoutARead() =
+        runBlocking {
+            var now = T0
+            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-01T00:01:10Z")
+            server.dispatcher = waas
+            val client = expiryTimerClient(InMemorySessionStore(), RecordingSessionExpiryScheduler()) { now }
+            client.signInWithEmail(sessionLifetimeSeconds = 70L)
+            val changes = client.recordSessionChanges()
 
-            assertEquals(listOf(now), waas.credentialReadTimes)
+            now = T0 + 71_000L
+            val error = runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.exceptionOrNull()
+
+            assertEquals(OMSWalletErrorCode.SessionExpired, (error as OMSWalletException).code)
+            assertEquals(emptyList<Long>(), waas.credentialReadTimes)
             assertNull(client.snapshotSession())
             assertEquals(listOf("Expired"), changes.kinds)
         }
 
     @Test
-    fun expiryTimerCapsTheIdleCheckAtTheLifetimeCeiling() =
+    fun expiryTimerEndsASessionAtTheCapOnceUseMovedItsExpiryThere() =
         runBlocking {
             var now = T0
             val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
@@ -1550,57 +1417,23 @@ class WalletSessionTest {
             val scheduler = RecordingSessionExpiryScheduler()
             val client = expiryTimerClient(InMemorySessionStore(), scheduler) { now }
             client.signInWithEmail(sessionLifetimeSeconds = 12 * DAY_MILLIS / 1_000L)
-            val changes = client.recordSessionChanges()
-            // Used on day 9; the background read that follows fails, so the sign-in stays the last read.
+            // Used on day 9: the read that follows moves the expiry to the cap, not 10 days later.
             now = T0 + 9 * DAY_MILLIS
-            waas.credentialAnswers += errorResponse(500, "InternalError", 5000)
+            waas.credentialAnswers += okJson(getCredentialResponseBody("2026-01-13T00:00:00Z"))
             client.signMessage(network = Network.AMOY, message = "hello")
-            val ceilingCheckAt = T0 + 12 * DAY_MILLIS + IDLE_CHECK_GRACE_MILLIS
-
-            now = T0 + 10 * DAY_MILLIS
-            scheduler.fire()
-            assertEquals(ceilingCheckAt - now, scheduler.scheduledTasks.single().delayMillis)
-
-            waas.credentialAnswers += errorResponse(400, "KeyExpired", 7203)
-            now = ceilingCheckAt
-            scheduler.fire()
-
-            assertEquals(listOf(T0 + 9 * DAY_MILLIS, ceilingCheckAt), waas.credentialReadTimes)
-            assertNull(client.snapshotSession())
-            assertEquals(listOf("Expired"), changes.kinds)
-        }
-
-    @Test
-    fun expiryTimerChecksRightAfterTheExpiryWhenNothingWasSentSinceTheLastRead() =
-        runBlocking {
-            var now = T0
-            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
-            server.dispatcher = waas
-            val store = RecordBackedSessionStore(null)
-            expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }.signInWithEmail()
-            // The restore read is the last request, and its dampened answer is WaaS's current expiry.
-            now = T0 + HOUR_MILLIS
-            waas.credentialAnswers += okJson(getCredentialResponseBody("2026-01-11T00:00:00Z"))
-            val scheduler = RecordingSessionExpiryScheduler()
-            val client = expiryTimerClient(store, scheduler) { now }
-            assertTrue(client.restorePersistedSession())
+            assertEquals("2026-01-13T00:00:00Z", client.session?.expiresAt)
             val changes = client.recordSessionChanges()
 
-            now = epochMillis("2026-01-11T00:00:00Z")
-            scheduler.fire()
-            assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-
-            waas.credentialAnswers += errorResponse(400, "KeyExpired", 7203)
-            now += IDLE_CHECK_GRACE_MILLIS
+            now = T0 + 12 * DAY_MILLIS
             scheduler.fire()
 
-            assertEquals(listOf(T0 + HOUR_MILLIS, now), waas.credentialReadTimes)
+            assertEquals(listOf(T0 + 9 * DAY_MILLIS), waas.credentialReadTimes)
             assertNull(client.snapshotSession())
             assertEquals(listOf("Expired"), changes.kinds)
         }
 
     @Test
-    fun idleWindowAndCeilingArePersistedAndDriveTheTimerAfterRestore() =
+    fun lifetimeCapIsPersistedAndEndsTheSessionAfterRestore() =
         runBlocking {
             var now = T0
             val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-01T01:00:00Z")
@@ -1608,7 +1441,7 @@ class WalletSessionTest {
             val store = RecordBackedSessionStore(null)
             expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }
                 .signInWithEmail(sessionLifetimeSeconds = 3_600L)
-            val bounds = OMSWalletSessionExpiryBounds(idleWindowMillis = HOUR_MILLIS, ceilingEpochMillis = T0 + HOUR_MILLIS)
+            val bounds = OMSWalletSessionExpiryBounds(ceilingEpochMillis = T0 + HOUR_MILLIS)
             assertEquals(bounds, PersistedSessionRecord.decode(requireNotNull(store.record)).expiryBounds)
 
             now = T0 + 10 * MINUTE_MILLIS
@@ -1618,27 +1451,19 @@ class WalletSessionTest {
             assertTrue(client.restorePersistedSession())
             assertEquals(bounds, client.snapshotSession()?.expiryBounds)
             val changes = client.recordSessionChanges()
-            now = T0 + 30 * MINUTE_MILLIS
-            client.signMessage(network = Network.AMOY, message = "hello")
 
-            // Without the ceiling the timer would wait 20 minutes more (the time since the restore read).
             now = T0 + HOUR_MILLIS
             scheduler.fire()
-            assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
 
-            waas.credentialAnswers += errorResponse(400, "KeyExpired", 7203)
-            now += IDLE_CHECK_GRACE_MILLIS
-            scheduler.fire()
-
-            assertEquals(listOf(T0 + 10 * MINUTE_MILLIS, now), waas.credentialReadTimes)
+            assertEquals(listOf(T0 + 10 * MINUTE_MILLIS), waas.credentialReadTimes)
             assertNull(client.snapshotSession())
             assertEquals(listOf("Expired"), changes.kinds)
         }
 
     @Test
-    fun storedRecordWithoutIdleWindowIsNotRestored() {
+    fun storedRecordWithoutLifetimeCapIsNotRestored() {
         val record = PersistedSessionRecord.encode(expiringSnapshot(TEST_SESSION_EXPIRES_AT, expiryBounds = null))
-        assertFalse(record.contains("idleWindowMillis") || record.contains("expiryCeilingEpochMillis"))
+        assertFalse(record.contains("expiryCeilingEpochMillis"))
         val waas = ExpiryTimerWaas(clock = { T0 }, credentialExpiresAt = TEST_SESSION_EXPIRES_AT)
         server.dispatcher = waas
         val store = RecordBackedSessionStore(record)
@@ -1652,112 +1477,45 @@ class WalletSessionTest {
     }
 
     @Test
-    fun expiryTimerWaitsAtLeastTheDampeningWindowWhenBoundsAreUnknown() =
+    fun expiryTimerReadsAtExpiryWhenTheCapIsUnknown() =
         runBlocking {
             var now = T0
             val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = TEST_SESSION_EXPIRES_AT)
             server.dispatcher = waas
-            val expiresAt = epochMillis("2026-01-01T00:02:00Z")
             val snapshot = expiringSnapshot("2026-01-01T00:02:00Z", expiryBounds = null)
+            val scheduler = RecordingSessionExpiryScheduler()
+            val client = expiryTimerClient(InMemorySessionStore(snapshot), scheduler) { now }
+            client.restoreSession(snapshot)
+            val changes = client.recordSessionChanges()
+            waas.credentialAnswers += errorResponse(400, "KeyExpired", 7203)
 
-            // Expiry read at T0, used a minute later.
-            val readScheduler = RecordingSessionExpiryScheduler()
-            val readClient = expiryTimerClient(InMemorySessionStore(snapshot), readScheduler) { now }
-            readClient.restoreSession(snapshot)
-            now = T0 + MINUTE_MILLIS
-            readClient.signMessage(network = Network.AMOY, message = "hello")
+            now = epochMillis("2026-01-01T00:02:00Z")
+            scheduler.fire()
+
+            assertEquals(listOf(now), waas.credentialReadTimes)
+            assertNull(client.snapshotSession())
+            assertEquals(listOf("Expired"), changes.kinds)
+        }
+
+    @Test
+    fun expiryTimerReadThatFailsIsRetriedWithBackoff() =
+        runBlocking {
+            var now = T0
+            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
+            server.dispatcher = waas
+            val scheduler = RecordingSessionExpiryScheduler()
+            val client = expiryTimerClient(InMemorySessionStore(), scheduler) { now }
+            client.signInWithEmail()
+            val expiresAt = epochMillis("2026-01-11T00:00:00Z")
+
             now = expiresAt
-            readScheduler.fire()
-            assertEquals(
-                MINUTE_MILLIS + SIX_HOURS_MILLIS + IDLE_CHECK_GRACE_MILLIS,
-                readScheduler.scheduledTasks.single().delayMillis,
-            )
-
-            // Restored in the background, so no read in this process.
-            now = T0
-            val restoredScheduler = RecordingSessionExpiryScheduler()
-            val restoredClient = expiryTimerClient(InMemorySessionStore(snapshot), restoredScheduler, ManualForegroundRunner()) { now }
-            assertTrue(restoredClient.restorePersistedSession())
-            now = expiresAt
-            restoredScheduler.fire()
-            assertEquals(SIX_HOURS_MILLIS + IDLE_CHECK_GRACE_MILLIS, restoredScheduler.scheduledTasks.single().delayMillis)
-            assertEquals(emptyList<Long>(), waas.credentialReadTimes)
-        }
-
-    @Test
-    fun expiryTimerBoundsTheIdleWindowFromWhenTheLastRequestCompleted() =
-        runBlocking {
-            var now = T0
-            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
-            server.dispatcher = waas
-            val scheduler = RecordingSessionExpiryScheduler()
-            val client = expiryTimerClient(InMemorySessionStore(), scheduler) { now }
-            client.signInWithEmail()
-            // Sent an hour after sign-in, the request takes two hours to complete; WaaS may have
-            // received it, and slid the expiry, at any time until then.
-            now = T0 + HOUR_MILLIS
-            waas.onSignMessage = { now += 2 * HOUR_MILLIS }
-            client.signMessage(network = Network.AMOY, message = "hello")
-            val completedAt = T0 + 3 * HOUR_MILLIS
-            assertEquals(completedAt, now)
-
-            now = epochMillis("2026-01-11T00:00:00Z")
-            scheduler.fire()
-
-            assertEquals(
-                completedAt + 10 * DAY_MILLIS + IDLE_CHECK_GRACE_MILLIS - now,
-                scheduler.scheduledTasks.single().delayMillis,
-            )
-            assertEquals(emptyList<Long>(), waas.credentialReadTimes)
-        }
-
-    @Test
-    fun failedCredentialReadCountsAsSessionActivity() =
-        runBlocking {
-            var now = T0
-            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
-            server.dispatcher = waas
-            val scheduler = RecordingSessionExpiryScheduler()
-            val client = expiryTimerClient(InMemorySessionStore(), scheduler) { now }
-            client.signInWithEmail()
-            // A protected operation finds the session locally expired; its read may have reached
-            // WaaS and slid the expiry even though no answer came back.
-            now = epochMillis("2026-01-11T00:01:00Z")
-            val readAt = now
-            waas.credentialAnswers += errorResponse(500, "InternalError", 5000)
-            val error = runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.exceptionOrNull()
-            assertEquals(OMSWalletErrorCode.RequestFailed, (error as OMSWalletException).code)
-
-            scheduler.fire()
-
-            assertEquals(10 * DAY_MILLIS + IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-            assertEquals(listOf(readAt), waas.credentialReadTimes)
-            assertTrue(client.snapshotSession() != null)
-        }
-
-    @Test
-    fun expiryTimerCheckThatFailsIsRetriedWithBackoffInsteadOfAnotherIdleWindow() =
-        runBlocking {
-            var now = T0
-            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
-            server.dispatcher = waas
-            val scheduler = RecordingSessionExpiryScheduler()
-            val client = expiryTimerClient(InMemorySessionStore(), scheduler) { now }
-            client.signInWithEmail()
-            val checkAt = epochMillis("2026-01-11T00:00:00Z") + IDLE_CHECK_GRACE_MILLIS
-
-            now = epochMillis("2026-01-11T00:00:00Z")
-            scheduler.fire()
-            assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-            // The timer's own check fails; it is sent past the bound, so it is not session activity.
-            now = checkAt
             scheduler.fire()
             assertEquals(60_000L, scheduler.scheduledTasks.single().delayMillis)
             now += 60_000L
             scheduler.fire()
             assertEquals(120_000L, scheduler.scheduledTasks.single().delayMillis)
 
-            assertEquals(listOf(checkAt, checkAt + 60_000L), waas.credentialReadTimes)
+            assertEquals(listOf(expiresAt, expiresAt + 60_000L), waas.credentialReadTimes)
             assertTrue(client.snapshotSession() != null)
         }
 
@@ -1848,18 +1606,16 @@ class WalletSessionTest {
             expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }.signInWithEmail()
             // A process started in the background (a push message or job) restores the session.
             now = T0 + 2 * DAY_MILLIS
-            val restoredAt = now
             val foreground = ManualForegroundRunner()
             val scheduler = RecordingSessionExpiryScheduler()
             val client = expiryTimerClient(store, scheduler, foreground) { now }
             assertTrue(client.restorePersistedSession())
             assertEquals(emptyList<Long>(), waas.credentialReadTimes)
-            // The saved expiry (2026-01-11) can be older than the server's, as when saving a refreshed one
-            // failed, so the timer waits until an idle window after the restore, not by the saved expiry.
+            // The expiry timer joins the read still waiting for the foreground instead of starting another.
             now = epochMillis("2026-01-11T00:00:00Z")
             scheduler.fire()
-            assertEquals(restoredAt + 10 * DAY_MILLIS + IDLE_CHECK_GRACE_MILLIS - now, scheduler.scheduledTasks.single().delayMillis)
             assertEquals(emptyList<Long>(), waas.credentialReadTimes)
+            assertEquals(1, foreground.pendingCount)
 
             waas.credentialAnswers += okJson(getCredentialResponseBody("2026-01-21T00:00:00Z"))
             foreground.enterForeground()
@@ -1992,23 +1748,6 @@ class WalletSessionTest {
         }
 
     @Test
-    fun requestInFlightWhenAWalletSwitchStartsCountsAsSessionActivity() =
-        runBlocking {
-            val now = AtomicLong(T0)
-            val waas = ExpiryTimerWaas(clock = { now.get() }, credentialExpiresAt = "2026-01-11T00:00:00Z")
-            server.dispatcher = waas
-            val scheduler = RecordingSessionExpiryScheduler()
-            val client = expiryTimerClient(InMemorySessionStore(), scheduler) { now.get() }
-            client.signInWithEmail()
-
-            client.signMessageAcrossWalletSwitch(waas) { now.set(T0 + HOUR_MILLIS) }
-
-            now.set(epochMillis("2026-01-11T00:00:00Z"))
-            scheduler.fire()
-            assertEquals(HOUR_MILLIS + IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
-        }
-
-    @Test
     fun credentialRejectedWhileAWalletSwitchWaitsEndsTheSession() =
         runBlocking {
             val waas = ExpiryTimerWaas(clock = { T0 }, credentialExpiresAt = "2026-01-11T00:00:00Z")
@@ -2112,7 +1851,7 @@ class WalletSessionTest {
         }
 
     @Test
-    fun everySignInPathKeepsTheIdleWindowAndCeiling() =
+    fun everySignInPathKeepsTheLifetimeCap() =
         runBlocking {
             val now = T0
             val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
@@ -2124,7 +1863,7 @@ class WalletSessionTest {
             emailClient.startEmailAuth("user@example.com")
             val selection = emailClient.completeEmailAuth("123456", walletSelection = WalletSelectionBehavior.Manual)
             val pending = (selection as CompleteAuthResult.WalletSelection).pendingSelection
-            val defaultBounds = OMSWalletSessionExpiryBounds(10 * DAY_MILLIS, T0 + 180 * DAY_MILLIS)
+            val defaultBounds = OMSWalletSessionExpiryBounds(T0 + 180 * DAY_MILLIS)
             assertEquals(defaultBounds, emailClient.snapshotSession()?.expiryBounds)
             pending.selectWallet(waas.wallet.id)
             assertEquals(defaultBounds, emailStore.snapshot?.expiryBounds)
@@ -2138,7 +1877,7 @@ class WalletSessionTest {
                 sessionLifetimeSeconds = 12 * DAY_MILLIS / 1_000L,
             )
             assertEquals(
-                OMSWalletSessionExpiryBounds(10 * DAY_MILLIS, T0 + 12 * DAY_MILLIS),
+                OMSWalletSessionExpiryBounds(T0 + 12 * DAY_MILLIS),
                 idTokenStore.snapshot?.expiryBounds,
             )
 
@@ -2173,7 +1912,7 @@ class WalletSessionTest {
                 sessionLifetimeSeconds = 11 * DAY_MILLIS / 1_000L,
             )
             assertEquals(
-                OMSWalletSessionExpiryBounds(10 * DAY_MILLIS, T0 + 11 * DAY_MILLIS),
+                OMSWalletSessionExpiryBounds(T0 + 11 * DAY_MILLIS),
                 redirectStore.snapshot?.expiryBounds,
             )
         }
@@ -2216,39 +1955,6 @@ class WalletSessionTest {
             assertEquals("0xsigned", withTimeout(3_000) { client.signMessage(network = Network.AMOY, message = "new") })
             release.countDown()
             assertTrue(held.await().isSuccess)
-        }
-
-    @Test
-    fun requestNeverSentIsNotSessionActivity() =
-        runBlocking {
-            var now = T0
-            server.dispatcher = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
-            val signer = NonceFailingCredentialSigner()
-            val scheduler = RecordingSessionExpiryScheduler()
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment = serverEnvironment(),
-                    sessionStore = InMemorySessionStore(),
-                    credentialSigner = signer,
-                    sessionExpiryScheduler = scheduler,
-                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
-                    now = { now },
-                )
-            client.signInWithEmail()
-            val requestsAfterSignIn = server.requestCount
-            now = T0 + HOUR_MILLIS
-            signer.failNonce = true
-
-            // Signing fails, so the request never reaches WaaS and cannot extend the credential.
-            assertTrue(runCatching { client.signMessage(network = Network.AMOY, message = "hello") }.isFailure)
-            assertEquals(requestsAfterSignIn, server.requestCount)
-
-            // So the idle check stays at the local expiry, not an hour later.
-            now = epochMillis("2026-01-11T00:00:00Z")
-            scheduler.fire()
-            assertEquals(IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
         }
 
     @Test
@@ -2328,21 +2034,60 @@ class WalletSessionTest {
 
     @Test
     fun restoredSessionPastSavedExpiryContinuesWhenTheServerExtendedIt() {
-        // Requests after the last read may have extended the session on WaaS without the saved expiry showing it.
-        server.enqueueJson(getCredentialResponseBody("2026-01-11T04:00:00Z"))
+        // Requests after the last read may have extended the session on WaaS without the saved expiry
+        // showing it. However long ago the saved expiry passed, the read decides while the cap has not.
+        for ((restoredAt, serverExpiry) in listOf(
+            "2026-01-01T04:00:00Z" to "2026-01-11T04:00:00Z",
+            "2026-01-31T00:00:00Z" to "2026-02-10T00:00:00Z",
+        )) {
+            server.enqueueJson(getCredentialResponseBody(serverExpiry))
+            val client =
+                expiryTimerClient(
+                    InMemorySessionStore(expiringSnapshot(expiresAt = "2026-01-01T00:00:00Z")),
+                    RecordingSessionExpiryScheduler(),
+                    clock = { epochMillis(restoredAt) },
+                )
+            val changes = client.recordSessionChanges()
+
+            assertTrue(client.restorePersistedSession())
+
+            assertEquals(serverExpiry, client.session?.expiresAt)
+            assertEquals(listOf("ExpiryUpdated"), changes.kinds)
+        }
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun restoredSessionPastItsLifetimeCapEndsWithoutARead() {
+        val store =
+            InMemorySessionStore(
+                expiringSnapshot(
+                    expiresAt = "2026-01-01T00:00:00Z",
+                    expiryBounds = OMSWalletSessionExpiryBounds(epochMillis("2026-01-01T00:00:00Z")),
+                ),
+            )
+        val signer = TrackingCredentialSigner()
         val client =
-            expiryTimerClient(
-                InMemorySessionStore(expiringSnapshot(expiresAt = "2026-01-01T00:00:00Z")),
-                RecordingSessionExpiryScheduler(),
-                clock = { epochMillis("2026-01-01T04:00:00Z") },
+            WalletClient.create(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = serverEnvironment(),
+                sessionStore = store,
+                credentialSigner = signer,
+                sessionExpiryScheduler = RecordingSessionExpiryScheduler(),
+                credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
+                now = { epochMillis("2026-01-01T00:01:00Z") },
+                foregroundRunner = ImmediateForegroundRunner,
             )
         val changes = client.recordSessionChanges()
 
-        assertTrue(client.restorePersistedSession())
+        assertFalse(client.restorePersistedSession())
 
-        assertEquals("2026-01-11T04:00:00Z", client.session?.expiresAt)
-        assertEquals(1, server.requestCount)
-        assertEquals(listOf("ExpiryUpdated"), changes.kinds)
+        assertNull(client.snapshotSession())
+        assertEquals(0, server.requestCount)
+        assertEquals(listOf("Expired"), changes.kinds)
+        assertFalse(signer.hasCredential())
+        assertNotNull(store.snapshot)
     }
 
     @Test
@@ -2377,14 +2122,12 @@ class WalletSessionTest {
             )
         val changes = client.recordSessionChanges()
         assertTrue(client.restorePersistedSession())
-        // The expiry timer runs before the read and waits an idle window after the restore.
+        // The expiry timer runs before the read, which waits for the foreground.
         scheduler.fire()
-        assertEquals(10 * DAY_MILLIS + IDLE_CHECK_GRACE_MILLIS, scheduler.scheduledTasks.single().delayMillis)
+        assertTrue(client.snapshotSession() != null)
 
+        // The read finds no GetCredential, so the local expiry is final.
         foreground.enterForeground()
-        // The read finds no GetCredential, so the local expiry is final: the timer runs at once.
-        assertEquals(0L, scheduler.scheduledTasks.single().delayMillis)
-        scheduler.fire()
 
         assertNull(client.snapshotSession())
         assertEquals(listOf("Expired"), changes.kinds)
@@ -2513,10 +2256,16 @@ class WalletSessionTest {
                 publishableKey = "test-publishable-key",
                 projectId = "test-project-id",
                 environment = testEnvironment(),
-                sessionStore = InMemorySessionStore(expiringSnapshot(expiresAt = "2026-01-01T00:00:00Z")),
+                // The expiry is the lifetime cap, so nothing can have extended it.
+                sessionStore =
+                    InMemorySessionStore(
+                        expiringSnapshot(
+                            expiresAt = "2026-01-01T00:00:00Z",
+                            expiryBounds = OMSWalletSessionExpiryBounds(epochMillis("2026-01-01T00:00:00Z")),
+                        ),
+                    ),
                 credentialSigner = TrackingCredentialSigner(),
-                // Past the latest the server can have extended the expiry to since its last read.
-                now = { epochMillis("2026-01-01T12:05:00Z") },
+                now = { epochMillis("2026-01-01T00:01:00Z") },
                 credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
             )
         assertFalse(client.restorePersistedSession())
@@ -2603,14 +2352,13 @@ class WalletSessionTest {
 }
 
 private const val SIX_HOURS_MILLIS = 6 * 60 * 60 * 1000L
-private const val IDLE_CHECK_GRACE_MILLIS = 5 * 60 * 1000L
 private const val MINUTE_MILLIS = 60 * 1000L
 private const val HOUR_MILLIS = 60 * MINUTE_MILLIS
 private const val DAY_MILLIS = 24 * HOUR_MILLIS
 private val T0 = epochMillis("2026-01-01T00:00:00Z")
 
-/** Bounds of a session signed in with a 10-day idle window and a lifetime past every test clock. */
-private val TEST_EXPIRY_BOUNDS = OMSWalletSessionExpiryBounds(10 * DAY_MILLIS, epochMillis(TEST_SESSION_EXPIRES_AT))
+/** The lifetime cap of a session signed in with a lifetime past every test clock. */
+private val TEST_EXPIRY_BOUNDS = OMSWalletSessionExpiryBounds(epochMillis(TEST_SESSION_EXPIRES_AT))
 
 private fun epochMillis(value: String): Long = requireNotNull(OMSWalletIsoTimestamps.parseEpochMillis(value))
 

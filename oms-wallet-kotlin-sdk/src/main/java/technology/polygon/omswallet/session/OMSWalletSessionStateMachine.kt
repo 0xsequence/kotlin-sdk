@@ -25,12 +25,10 @@ internal data class OMSWalletSessionSnapshot(
 }
 
 /**
- * How far WaaS can move a session credential's expiry, derived from its sign-in: every request
- * signed with the credential moves the expiry toward `min(request time + idleWindowMillis,
- * ceilingEpochMillis)` and never past it.
+ * The session's lifetime cap, derived from its sign-in: WaaS never moves the credential's expiry past
+ * [ceilingEpochMillis].
  */
 internal data class OMSWalletSessionExpiryBounds(
-    val idleWindowMillis: Long,
     val ceilingEpochMillis: Long,
 )
 
