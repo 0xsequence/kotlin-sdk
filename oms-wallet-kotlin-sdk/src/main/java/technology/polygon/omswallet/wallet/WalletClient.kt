@@ -208,8 +208,12 @@ private class WalletScopeRuntime(
     /** Cancels the session read waiting for the app to come to the foreground or for its retry. */
     var cancelSessionRead: (() -> Unit)? = null
 
-    /** Whether a session read is waiting, running, or retrying, so the timer and a restore never start a second one. */
-    var sessionReadPending = false
+    /**
+     * The session revision whose read is waiting, running, or retrying, so the timer and a restore
+     * never start a second one. A wallet switch starts a new revision: the older read no longer
+     * counts and is cancelled by the next read, so it never blocks it.
+     */
+    var sessionReadRevision: Long? = null
     var pendingEmailAuth: PendingEmailAuth? = null
 
     /** The single in-flight GetCredential refresh shared by concurrent callers. */
@@ -827,8 +831,15 @@ class WalletClient private constructor(
     private fun readSessionExpiryInForeground(requiredSessionRevision: Long) {
         val readBefore =
             synchronized(runtime.lifecycleLock) {
-                if (walletSession.revision() != requiredSessionRevision || runtime.sessionReadPending) return
-                runtime.sessionReadPending = true
+                if (walletSession.revision() != requiredSessionRevision ||
+                    runtime.sessionReadRevision == requiredSessionRevision
+                ) {
+                    return
+                }
+                // A read left from before a wallet switch is replaced, with a fresh backoff.
+                cancelSessionReadLocked()
+                runtime.sessionReadRevision = requiredSessionRevision
+                runtime.sessionReadRetryDelayMillis = null
                 runtime.credentialReadAt
             }
         readSessionExpiryInForeground(requiredSessionRevision, readBefore)
@@ -913,7 +924,7 @@ class WalletClient private constructor(
     }
 
     private fun finishSessionReadLocked() {
-        runtime.sessionReadPending = false
+        runtime.sessionReadRevision = null
         runtime.sessionReadRetryDelayMillis = null
         runtime.cancelSessionRead = null
     }
@@ -975,7 +986,7 @@ class WalletClient private constructor(
         val clearedRevision = walletSession.revision()
         clearSessionExpiryTaskLocked()
         cancelSessionReadLocked()
-        runtime.sessionReadPending = false
+        runtime.sessionReadRevision = null
         runtime.sessionReadRetryDelayMillis = null
 
         var cleanupFailure: Throwable? = null
@@ -3294,7 +3305,7 @@ class WalletClient private constructor(
         }
         clearSessionExpiryTaskLocked()
         cancelSessionReadLocked()
-        runtime.sessionReadPending = false
+        runtime.sessionReadRevision = null
         runtime.sessionReadRetryDelayMillis = null
         try {
             oidcRedirectAuthStore?.clear()

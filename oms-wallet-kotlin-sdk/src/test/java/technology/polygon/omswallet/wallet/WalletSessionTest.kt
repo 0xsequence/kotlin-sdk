@@ -1577,6 +1577,62 @@ class WalletSessionTest {
         }
 
     @Test
+    fun theExpiryTimerJoinsARestoreReadRetryInsteadOfReadingAgain() =
+        runBlocking {
+            var now = T0
+            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
+            server.dispatcher = waas
+            val store = RecordBackedSessionStore(null)
+            expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }.signInWithEmail()
+            // Restored two minutes before its expiry; the read fails and waits a minute to retry.
+            now = epochMillis("2026-01-10T23:58:00Z")
+            val restoredAt = now
+            waas.credentialAnswers += errorResponse(500, "InternalError", 5000)
+            val scheduler = RecordingSessionExpiryScheduler()
+            val client = expiryTimerClient(store, scheduler) { now }
+            assertTrue(client.restorePersistedSession())
+
+            now = epochMillis("2026-01-11T00:00:00Z")
+            scheduler.scheduledTasks.single { it.delayMillis == 2 * MINUTE_MILLIS }.action()
+
+            assertEquals(listOf(restoredAt), waas.credentialReadTimes)
+            assertTrue(scheduler.scheduledTasks.any { it.delayMillis == MINUTE_MILLIS })
+            assertTrue(client.snapshotSession() != null)
+        }
+
+    @Test
+    fun aWalletSwitchWhileARestoreReadRetryWaitsKeepsExpiryReadsGoing() =
+        runBlocking {
+            var now = T0
+            val waas = ExpiryTimerWaas(clock = { now }, credentialExpiresAt = "2026-01-11T00:00:00Z")
+            server.dispatcher = waas
+            val store = RecordBackedSessionStore(null)
+            expiryTimerClient(store, RecordingSessionExpiryScheduler()) { now }.signInWithEmail()
+            now = T0 + 2 * DAY_MILLIS
+            waas.credentialAnswers += errorResponse(500, "InternalError", 5000)
+            val scheduler = RecordingSessionExpiryScheduler()
+            val client = expiryTimerClient(store, scheduler) { now }
+            assertTrue(client.restorePersistedSession())
+            assertTrue(scheduler.scheduledTasks.any { it.delayMillis == MINUTE_MILLIS })
+
+            // The user switches wallets before the restore read's retry runs, which starts a new revision.
+            val other = walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000")
+            waas.activatedWallet = other
+            client.useWallet(other.id)
+            val changes = client.recordSessionChanges()
+
+            // At the local expiry the timer still reads the expiry, and the old retry is dropped.
+            waas.credentialAnswers += errorResponse(400, "KeyExpired", 7203)
+            now = epochMillis("2026-01-11T00:00:00Z")
+            scheduler.scheduledTasks.single { it.delayMillis > MINUTE_MILLIS }.action()
+
+            assertEquals(now, waas.credentialReadTimes.last())
+            assertNull(client.snapshotSession())
+            assertEquals(listOf("Expired"), changes.kinds)
+            assertTrue(scheduler.scheduledTasks.isEmpty())
+        }
+
+    @Test
     fun signOutCancelsAPendingRestoreReadRetry() =
         runBlocking {
             var now = T0
