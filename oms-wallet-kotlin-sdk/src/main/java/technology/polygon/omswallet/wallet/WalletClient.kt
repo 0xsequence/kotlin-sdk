@@ -698,7 +698,7 @@ class WalletClient private constructor(
                     walletSession.clear()
                     clearSessionExpiryTaskLocked()
                     runCatching { oidcRedirectAuthStore?.clear() }
-                    runCatching(signer::clear)
+                    runCatching { snapshot.signerAddress?.let(signer::clearIfCredentialId) }
                     expiredNotification = recordSessionExpiredLocked(snapshot, walletSession.revision())
                     runtime.initialized = true
                     return@synchronized false
@@ -3259,7 +3259,8 @@ class WalletClient private constructor(
             // Expiry notification should not depend on redirect-state cleanup succeeding.
         }
         try {
-            signer.clear()
+            // Only this session's key: a newer sign-in may already have stored another.
+            snapshot.signerAddress?.let(signer::clearIfCredentialId)
         } catch (_: Throwable) {
             // Expiry notification should not depend on credential cleanup succeeding.
         }

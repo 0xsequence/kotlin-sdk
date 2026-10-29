@@ -83,6 +83,21 @@ internal class AndroidKeystoreP256CredentialSigner(
         }
     }
 
+    /**
+     * Reads the key actually in the Keystore, not the cached ID, under the Keystore lock that also
+     * guards creating it, and deletes it only while it is [credentialId]. The nonce is kept.
+     */
+    override fun clearIfCredentialId(credentialId: String) {
+        synchronized(keyStoreLock) {
+            val store = keyStore()
+            val stored = store.getCertificate(alias)?.publicKey?.let(::credentialId)
+            cachedCredentialId = null
+            if (stored != null && stored.equals(credentialId, ignoreCase = true)) {
+                store.deleteEntry(alias)
+            }
+        }
+    }
+
     private fun requirePrivateKey(): PrivateKey =
         synchronized(keyStoreLock) {
             requireNotNull(keyStore().getKey(alias, null) as? PrivateKey) {

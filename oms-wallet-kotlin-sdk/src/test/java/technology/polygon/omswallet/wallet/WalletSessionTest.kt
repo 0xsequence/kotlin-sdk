@@ -497,6 +497,72 @@ class WalletSessionTest {
         }
 
     @Test
+    fun expiredSessionKeepsAKeyANewerSignInStoredWhileItsReadWasInFlight() {
+        // Another sign-in replaces the shared key while this session's expiry read is at WaaS.
+        val signer = ReplaceableCredentialSigner()
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    signer.replaceKey("0x04" + "22".repeat(64))
+                    return errorResponse(400, "KeyExpired", 7203)
+                }
+            }
+        val scheduler = RecordingSessionExpiryScheduler()
+        var currentTime = epochMillis("2026-01-01T00:00:00Z")
+        val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
+        val client =
+            WalletClient.create(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = serverEnvironment(),
+                sessionStore = InMemorySessionStore(snapshot),
+                credentialSigner = signer,
+                sessionExpiryScheduler = scheduler,
+                credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+        var notifications = 0
+        client.onSessionExpired { notifications += 1 }
+
+        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        scheduler.scheduledTasks.single().action()
+
+        assertNull(client.snapshotSession())
+        assertEquals(1, notifications)
+        assertEquals("0x04" + "22".repeat(64), signer.existingCredentialId())
+        assertEquals(0, signer.clearCalls)
+    }
+
+    @Test
+    fun expiredSessionStillDeletesItsOwnKey() {
+        val signer = ReplaceableCredentialSigner()
+        server.enqueue(errorResponse(400, "KeyExpired", 7203))
+        val scheduler = RecordingSessionExpiryScheduler()
+        var currentTime = epochMillis("2026-01-01T00:00:00Z")
+        val snapshot = expiringSnapshot(expiresAt = "2026-01-01T00:02:00Z")
+        val client =
+            WalletClient.create(
+                publishableKey = "test-publishable-key",
+                projectId = "test-project-id",
+                environment = serverEnvironment(),
+                sessionStore = InMemorySessionStore(snapshot),
+                credentialSigner = signer,
+                sessionExpiryScheduler = scheduler,
+                credentialRefreshLauncher = ImmediateCredentialRefreshLauncher,
+                now = { currentTime },
+            )
+        client.restoreSession(snapshot)
+
+        currentTime = epochMillis("2026-01-01T00:02:00Z") + IDLE_CHECK_GRACE_MILLIS
+        scheduler.scheduledTasks.single().action()
+
+        assertNull(client.snapshotSession())
+        assertNull(signer.existingCredentialId())
+        assertEquals(1, signer.clearCalls)
+    }
+
+    @Test
     fun expiryTimerEndsSessionWhenGetCredentialReportsRevokedCredential() {
         // The gateway's own "Unauthorized" (code 1000) is not WaaS 7207: the session is kept and rechecked.
         server.enqueue(errorResponse(401, "Unauthorized", 1000))
@@ -2631,5 +2697,36 @@ private class RefreshPausingSigner : TrackingCredentialSigner() {
             resumeRefresh.await(5, TimeUnit.SECONDS)
         }
         return super.existingCredentialId()
+    }
+}
+
+/** A signer whose key another sign-in (another client, or another process) can replace. */
+private class ReplaceableCredentialSigner : CredentialSigner {
+    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
+
+    @Volatile
+    private var key: String? = TEST_CREDENTIAL_ID
+
+    @Volatile
+    var clearCalls: Int = 0
+        private set
+
+    fun replaceKey(credentialId: String) {
+        key = credentialId
+    }
+
+    override fun credentialId(): String = key ?: TEST_CREDENTIAL_ID.also { key = it }
+
+    override fun existingCredentialId(): String? = key
+
+    override fun nextNonce(): String = "1710000107"
+
+    override fun sign(preimage: String): String = TEST_SIGNATURE
+
+    override fun hasCredential(): Boolean = key != null
+
+    override fun clear() {
+        clearCalls += 1
+        key = null
     }
 }

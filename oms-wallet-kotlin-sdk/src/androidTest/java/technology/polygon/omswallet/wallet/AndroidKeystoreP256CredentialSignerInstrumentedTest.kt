@@ -41,6 +41,41 @@ class AndroidKeystoreP256CredentialSignerInstrumentedTest {
     }
 
     @Test
+    fun clearIfCredentialIdDeletesItsOwnKeyAndKeepsTheNonce() {
+        val credentialId = signer.credentialId()
+        val nonce = signer.nextNonce()
+
+        signer.clearIfCredentialId(credentialId.uppercase())
+
+        assertFalse(signer.hasCredential())
+        val nonces =
+            ApplicationProvider
+                .getApplicationContext<Context>()
+                .getSharedPreferences(nonceStoreName, Context.MODE_PRIVATE)
+        assertEquals(nonce, nonces.getString(alias, null))
+    }
+
+    @Test
+    fun clearIfCredentialIdKeepsAKeyAnotherSignerStoredUnderTheSameAlias() {
+        // This signer cached the old key's ID; the check must read the Keystore, not the cache.
+        val oldId = signer.credentialId()
+        val other =
+            AndroidKeystoreP256CredentialSigner(
+                context = ApplicationProvider.getApplicationContext(),
+                alias = alias,
+                nonceStoreName = nonceStoreName,
+            )
+        other.clear()
+        val newId = other.credentialId()
+
+        signer.clearIfCredentialId(oldId)
+
+        assertTrue(oldId != newId)
+        assertTrue(other.hasCredential())
+        assertEquals(newId, signer.existingCredentialId())
+    }
+
+    @Test
     fun createsNonExtractableP256CredentialAndSignsRawWebCryptoSignature() =
         runBlocking {
             val preimage = "POST /v1/Waas/CommitVerifier\nnonce: 1\n\n{}"
