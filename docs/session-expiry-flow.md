@@ -26,8 +26,12 @@ and stale expiry paths are coordinated.
   should have ended it. Without SDK activity since the last expiry read, the SDK
   notices an ended idle session up to 5 minutes after WaaS ended it; after later
   requests, WaaS's 6-hour slide dampening can make it notice up to about 6 hours
-  later, and after a restore whose read failed, by `min(L + 12 hours, N) + G` (the
-  restore bound, while no read or request has completed since the restore). These
+  later, and after a restore whose read failed, up to an idle window later. The timer
+  never reads by the saved expiry alone: a read or a save missed before the restore can
+  leave the server expiry later than any bound derived from it, and reading a live
+  credential would extend an idle session. Instead, a restore read that could not reach
+  WaaS is retried with the timer's backoff (1 minute, doubling to 15) while no read has
+  succeeded, each time once the app is in the foreground. These
   times assume an accurate device clock (the expiry is WaaS time compared with
   device time) and an app running in the foreground; the task cannot fire while
   the app is suspended or not running, and after a restart the restore discards
