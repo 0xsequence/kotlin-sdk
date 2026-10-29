@@ -9,6 +9,8 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.Assert.assertTrue
+import technology.polygon.omswallet.OMSWalletExpiredSession
+import technology.polygon.omswallet.OMSWalletSessionChangeEvent
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthResponse
 import technology.polygon.omswallet.internal.generated.waas.CredentialInfo
 import technology.polygon.omswallet.internal.generated.waas.CredentialType
@@ -315,7 +317,7 @@ internal class RecordingSessionExpiryScheduler : SessionExpiryScheduler {
     }
 }
 
-internal class RecordingSessionExpiryDispatcher : SessionExpiryDispatcher {
+internal class RecordingSessionChangeDispatcher : SessionChangeDispatcher {
     val actions = mutableListOf<() -> Unit>()
 
     override fun dispatch(action: () -> Unit) {
@@ -379,3 +381,15 @@ internal fun restoredTestWalletClient(
     assertTrue(client.restorePersistedSession())
     return client
 }
+
+/** Records the session changes [WalletClient.onSessionChange] reports to a listener added now. */
+internal fun WalletClient.recordSessionChanges(): List<OMSWalletSessionChangeEvent> =
+    mutableListOf<OMSWalletSessionChangeEvent>().also { changes -> onSessionChange { changes += it } }
+
+/** The kinds of these changes in order, such as `Expired`, for comparing sequences. */
+internal val List<OMSWalletSessionChangeEvent>.kinds: List<String>
+    get() = map { it::class.simpleName.orEmpty() }
+
+/** The expired session of the last change, when that change is an expiry. */
+internal val List<OMSWalletSessionChangeEvent>.lastExpired: OMSWalletExpiredSession?
+    get() = (lastOrNull() as? OMSWalletSessionChangeEvent.Expired)?.expiredSession

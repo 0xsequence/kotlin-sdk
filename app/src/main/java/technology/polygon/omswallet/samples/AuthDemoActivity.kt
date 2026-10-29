@@ -49,10 +49,11 @@ import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
 import technology.polygon.omswallet.OMSWalletException
+import technology.polygon.omswallet.OMSWalletExpiredSession
 import technology.polygon.omswallet.OMSWalletNetworks
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionAuth
-import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
+import technology.polygon.omswallet.OMSWalletSessionChangeEvent
 import technology.polygon.omswallet.SolanaNetwork
 import technology.polygon.omswallet.TronNetwork
 import technology.polygon.omswallet.models.AbiArg
@@ -176,7 +177,7 @@ class AuthDemoActivity : AppCompatActivity() {
     private var selectedSolanaAsset: SolanaAsset = SolanaAsset.Sol
     private var lastSolanaTransactionSignature: String? = null
     private val busyWalletPanels = mutableSetOf<WalletType>()
-    private var expiredSessionEvent: OMSWalletSessionExpiredEvent? = null
+    private var expiredSessionEvent: OMSWalletExpiredSession? = null
     private var unsubscribeSessionExpired: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1109,8 +1110,8 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun subscribeSessionExpiry() {
         unsubscribeSessionExpired =
-            sdk.wallet.onSessionExpired { event ->
-                renderExpiredSession(event)
+            sdk.wallet.onSessionChange { change ->
+                if (change is OMSWalletSessionChangeEvent.Expired) renderExpiredSession(change.expiredSession)
             }
     }
 
@@ -1788,7 +1789,7 @@ class AuthDemoActivity : AppCompatActivity() {
         renderWalletPanels(activeWallet)
     }
 
-    private fun renderExpiredSession(event: OMSWalletSessionExpiredEvent) {
+    private fun renderExpiredSession(event: OMSWalletExpiredSession) {
         val isNewEvent = expiredSessionEvent != event
         expiredSessionEvent = event
         renderSessionStateBox()

@@ -80,18 +80,102 @@ data class OMSWalletSession(
 )
 ```
 
-### `OMSWalletSessionExpiredEvent`
+### `OMSWalletSessionChangeEvent`
 
-Event delivered when a wallet session expires.
+A change of `WalletClient.activeWallet` or `WalletClient.session`, with the state right after it.
+See `WalletClient.onSessionChange`.
 
 ```kotlin
-data class OMSWalletSessionExpiredEvent(
+sealed interface OMSWalletSessionChangeEvent {
+    /**
+     * The active wallet after the change; null for `SignedOut` and `Expired`.
+     */
+    val activeWallet: Wallet?
+
+    /**
+     * The session after the change; non-null exactly when `activeWallet` is.
+     */
+    val session: OMSWalletSession?
+}
+```
+
+### `OMSWalletSessionChangeEvent.SignedIn`
+
+A sign-in made a wallet active.
+
+```kotlin
+data class SignedIn(
+    override val activeWallet: Wallet,
+    override val session: OMSWalletSession,
+) : OMSWalletSessionChangeEvent
+```
+
+### `OMSWalletSessionChangeEvent.WalletChanged`
+
+Another wallet of the same sign-in became active.
+
+```kotlin
+data class WalletChanged(
+    override val activeWallet: Wallet,
+    override val session: OMSWalletSession,
+) : OMSWalletSessionChangeEvent
+```
+
+### `OMSWalletSessionChangeEvent.ExpiryUpdated`
+
+`OMSWalletSession.expiresAt` moved. Safe to ignore unless you show the expiry.
+
+```kotlin
+data class ExpiryUpdated(
+    override val activeWallet: Wallet,
+    override val session: OMSWalletSession,
+) : OMSWalletSessionChangeEvent
+```
+
+### `OMSWalletSessionChangeEvent.SignedOut`
+
+There is no session any more and it did not expire: `WalletClient.signOut`, a sign-in started
+while signed in, or another process signing in. Not necessarily the user's choice.
+
+```kotlin
+data object SignedOut : OMSWalletSessionChangeEvent {
+    override val activeWallet: Wallet?
+
+    override val session: OMSWalletSession?
+}
+```
+
+### `OMSWalletSessionChangeEvent.Expired`
+
+The session expired, or the wallet API no longer accepts it.
+
+```kotlin
+data class Expired(
+    val expiredSession: OMSWalletExpiredSession,
+) : OMSWalletSessionChangeEvent {
+    override val activeWallet: Wallet?
+
+    override val session: OMSWalletSession?
+}
+```
+
+### `OMSWalletExpiredSession`
+
+A session that expired, as reported by `OMSWalletSessionChangeEvent.Expired`. Apps can use it to
+prefill re-authentication UI.
+
+```kotlin
+data class OMSWalletExpiredSession(
     /**
      * Wallet that was active when the session expired, or null when the
      * credential expired while a manual wallet selection was still pending.
      */
     val wallet: Wallet?,
     val session: OMSWalletSession,
+    /**
+     * ISO-8601 time the session ended: its expiry, or the time the SDK found it ended when that was
+     * earlier.
+     */
     val expiredAt: String,
 )
 ```
@@ -675,12 +759,19 @@ when `activeWallet` is.
 val session: OMSWalletSession?
 ```
 
-### `WalletClient.onSessionExpired`
+### `WalletClient.onSessionChange`
 
-Registers a listener for expired wallet sessions.
+Calls `listener` on the main thread after every change of `activeWallet` or `session`, in
+order and after the change (never during the call that made it). Subscribe first, then read
+`activeWallet` and `session`, so no change is missed. A listener added while signed out first
+receives the last `OMSWalletSessionChangeEvent.Expired`, if a session expired since the last
+sign-in or sign-out (for example while the app was not running). Every client of the same
+project and environment shares the session, so its listeners hear every change. The returned
+function unsubscribes; call it when the listener's owner goes away (for example in
+`ViewModel.onCleared`).
 
 ```kotlin
-fun onSessionExpired(listener: (OMSWalletSessionExpiredEvent) -> Unit): () -> Unit
+fun onSessionChange(listener: (OMSWalletSessionChangeEvent) -> Unit): () -> Unit
 ```
 
 ### `WalletClient.signOut`

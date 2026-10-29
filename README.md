@@ -148,10 +148,28 @@ before protected wallet operations and throw `OMSWalletSessionException` with
 `code = OMSWalletErrorCode.SessionExpired`. The same happens when the wallet API rejects
 the session's credential as unknown or expired during a request. The SDK
 clears the active signer/session state, but keeps expired completed-session
-metadata in storage until the app starts a new auth flow or calls `signOut()`.
-Subscribe with `omsWallet.wallet.onSessionExpired { event -> ... }` to route users
-back to sign-in while preserving the expired session snapshot for reauth.
-Listeners are delivered on the Android main thread.
+metadata in storage until the app starts a new auth flow or calls `signOut()`, so the
+expiry is replayed to listeners after the process is recreated.
+
+### Keep your UI in sync
+
+`onSessionChange` calls your listener on the Android main thread after every change of
+`activeWallet` or `session`: a sign-in, a wallet switch, an expiry update, a sign-out, or an
+expiry. Subscribe first, then read `activeWallet` and `session`, so no change is missed. Listeners
+run shortly after the change, never during the call that made it, so `activeWallet` and `session`
+are always the current state.
+
+| Change | Meaning |
+| --- | --- |
+| `SignedIn` | A sign-in made a wallet active |
+| `WalletChanged` | Another wallet of the same sign-in became active |
+| `ExpiryUpdated` | `session.expiresAt` moved; safe to ignore unless you show it |
+| `SignedOut` | There is no session any more and it did not expire: `signOut()`, a new sign-in started while signed in, or another process signing in. Not necessarily the user's choice; don't navigate away from a sign-in in progress |
+| `Expired` | The session expired, or the wallet API no longer accepts it; `expiredSession` has its wallet and auth for reauthentication |
+
+A listener added while signed out first receives the last `Expired` change, if a session expired
+since the last sign-in or sign-out (for example while the app was not running). Each new listener
+receives it, so keep one listener in a `ViewModel` and keep the prompt as state.
 
 Every `OMSWallet` created for the same project and environment in the process shares one
 session: the active wallet, sign-out, expiry, and listeners. A rotated publishable key for the
@@ -167,22 +185,45 @@ function when the owner goes away; a listener that captures an Activity otherwis
 it in memory for the life of the process:
 
 ```kotlin
-class WalletActivity : ComponentActivity() {
-    private var unsubscribeSessionExpired: (() -> Unit)? = null
+data class SessionUiState(
+    val wallet: Wallet? = null,
+    val session: OMSWalletSession? = null,
+    val expired: OMSWalletExpiredSession? = null,
+)
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        unsubscribeSessionExpired = omsWallet.wallet.onSessionExpired { event ->
-            showSignIn(event.session.auth)
+class SessionViewModel(private val wallet: WalletClient) : ViewModel() {
+    private val _state = MutableStateFlow(SessionUiState())
+    val state: StateFlow<SessionUiState> = _state.asStateFlow()
+
+    // Subscribe first, then read, so no change is missed.
+    private val unsubscribe =
+        wallet.onSessionChange { change ->
+            _state.update {
+                SessionUiState(
+                    wallet = change.activeWallet,
+                    session = change.session,
+                    expired = (change as? OMSWalletSessionChangeEvent.Expired)?.expiredSession
+                        ?: it.expired.takeIf { change.activeWallet == null },
+                )
+            }
         }
+
+    init {
+        _state.update { it.copy(wallet = wallet.activeWallet, session = wallet.session) }
     }
 
-    override fun onDestroy() {
-        unsubscribeSessionExpired?.invoke()
-        unsubscribeSessionExpired = null
-        super.onDestroy()
-    }
+    override fun onCleared() = unsubscribe()
 }
+```
+
+Prefer a `Flow`? Wrap the listener:
+
+```kotlin
+fun WalletClient.sessionChanges(): Flow<OMSWalletSessionChangeEvent> =
+    callbackFlow {
+        val unsubscribe = onSessionChange { trySend(it) }
+        awaitClose { unsubscribe() }
+    }
 ```
 
 ## Authentication
@@ -454,7 +495,7 @@ wallet and the session expiry and auth metadata returned by the wallet API, but 
 email OTP pending state. Sessions saved by SDK 0.3.x do not record the wallet type,
 so they are discarded on load and users sign in once after upgrading.
 
-`onSessionExpired` events carry the expired `session` and the `wallet` that was
+`Expired` changes carry the expired `session` and the `wallet` that was
 active, or a null `wallet` when the credential expired while a manual wallet
 selection was still pending.
 

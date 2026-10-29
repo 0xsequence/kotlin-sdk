@@ -42,10 +42,33 @@ val email = omsWallet.wallet.session.auth?.email
 val email = omsWallet.wallet.session?.auth?.email
 ```
 
-`OMSWalletSessionExpiredEvent` gained `wallet: Wallet?`, and its `session` is an
-`OMSWalletSession` without `walletAddress`. `wallet` is `null` when the credential expired while a
-manual wallet selection was still pending. `wallet` is the first constructor property, so code that
-creates or destructures the event positionally must account for it; prefer named arguments.
+### `onSessionChange` replaces `onSessionExpired`
+
+`onSessionExpired` and `OMSWalletSessionExpiredEvent` were removed. `onSessionChange` reports every
+change of `activeWallet` or `session` as an `OMSWalletSessionChangeEvent`: `SignedIn`,
+`WalletChanged`, `ExpiryUpdated`, `SignedOut`, or `Expired`. Each has `activeWallet` and `session`
+after the change. `Expired` carries an `OMSWalletExpiredSession`, which replaces
+`OMSWalletSessionExpiredEvent`. It gained `wallet: Wallet?` (`null` when the credential expired
+during a pending manual wallet selection), and its `session` is an `OMSWalletSession` without
+`walletAddress`. `wallet` is the first constructor property, so code that creates or destructures it
+positionally must account for it; prefer named arguments.
+
+```kotlin
+// 0.3.x
+val unsubscribe = wallet.onSessionExpired { event -> showSignIn(event.session.auth) }
+
+// 0.4.0
+val unsubscribe =
+    wallet.onSessionChange { change ->
+        if (change is OMSWalletSessionChangeEvent.Expired) showSignIn(change.expiredSession.session.auth)
+    }
+```
+
+Listeners still run on the main thread, now always posted, never during the call that made the
+change. The replay of the last expiry to new listeners is unchanged. A session whose signer key is
+gone reports `Expired` (and the call throws `OMS_SESSION_EXPIRED`) when its stored record is still
+its own or its expiry passed, and `SignedOut` (with `OMS_SESSION_MISSING`) when another sign-in
+replaced the key.
 
 ### Sliding session expiry
 
@@ -66,7 +89,7 @@ restore decides.
   Wallet API versions without sliding expiry clamp the requested lifetime to their 30-day maximum
   and have no idle timeout, so the default gives a fixed 30-day session there.
 - When the wallet API rejects the session credential as unknown or expired (WaaS `KeyNotFound`
-  7202 or `KeyExpired` 7203), the session ends as on local expiry (`onSessionExpired` fires once) and
+  7202 or `KeyExpired` 7203), the session ends as on local expiry (listeners receive `Expired` once) and
   the call throws `OMSWalletSessionException` (`OMS_SESSION_EXPIRED`, no `upstreamError`) instead of
   `OMSWalletRequestException`. This includes a rejected `Execute`, which never ran: it throws
   `OMS_SESSION_EXPIRED` instead of `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. Status polling after a
@@ -79,7 +102,7 @@ restore decides.
   soon as the session looks expired: it waits until 5 minutes past the expected server-side
   expiry, which is later than the local one when the session was used after its expiry was last
   read. Without
-  SDK activity, an idle session's `onSessionExpired` event can arrive up to about 6 hours after the
+  SDK activity, an idle session's `Expired` change can arrive up to about 6 hours after the
   wallet API ended it (it extends the expiry only in steps of at least 6 hours; within 5 minutes
   when the lifetime is shorter than the idle window), given an accurate device clock and the app running in the foreground.
   After a restore whose expiry read did not reach the wallet API, it can arrive up to about an idle

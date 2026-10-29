@@ -40,9 +40,10 @@ import kotlinx.serialization.json.jsonPrimitive
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
+import technology.polygon.omswallet.OMSWalletExpiredSession
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionAuth
-import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
+import technology.polygon.omswallet.OMSWalletSessionChangeEvent
 import technology.polygon.omswallet.models.FeeOptionSelection
 import technology.polygon.omswallet.models.FeeOptionWithBalance
 import technology.polygon.omswallet.models.SendTransactionRequest
@@ -162,7 +163,7 @@ class TrailsActionsActivity : AppCompatActivity() {
     private var preparedEarn: PreparedSwapAndDepositPlan? = null
     private var selectedFeeOption: FeeOptionWithBalance? = null
     private var lastTransactionHash: String? = null
-    private var expiredSessionEvent: OMSWalletSessionExpiredEvent? = null
+    private var expiredSessionEvent: OMSWalletExpiredSession? = null
     private var unsubscribeSessionExpired: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1283,8 +1284,8 @@ class TrailsActionsActivity : AppCompatActivity() {
 
     private fun subscribeSessionExpiry() {
         unsubscribeSessionExpired =
-            sdk.wallet.onSessionExpired { event ->
-                renderExpiredSession(event)
+            sdk.wallet.onSessionChange { change ->
+                if (change is OMSWalletSessionChangeEvent.Expired) renderExpiredSession(change.expiredSession)
             }
     }
 
@@ -1345,7 +1346,7 @@ class TrailsActionsActivity : AppCompatActivity() {
         refreshSignedInData()
     }
 
-    private fun renderExpiredSession(event: OMSWalletSessionExpiredEvent) {
+    private fun renderExpiredSession(event: OMSWalletExpiredSession) {
         val isNewEvent = expiredSessionEvent != event
         expiredSessionEvent = event
         renderSessionStateBox()

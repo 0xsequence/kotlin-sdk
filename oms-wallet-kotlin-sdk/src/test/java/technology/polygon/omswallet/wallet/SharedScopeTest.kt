@@ -74,7 +74,7 @@ class SharedScopeTest {
     fun clientsOfOneScopeShareTheSessionAndSendTheNewestKey() =
         runBlocking {
             val scopeKey = "shared-scope-test-${UUID.randomUUID()}"
-            val dispatcher = RecordingSessionExpiryDispatcher()
+            val dispatcher = RecordingSessionChangeDispatcher()
             val first =
                 WalletClient
                     .create(
@@ -83,7 +83,7 @@ class SharedScopeTest {
                         environment = environment(),
                         sessionStore = InMemorySessionStore(restoredSnapshot()),
                         credentialSigner = TrackingCredentialSigner(),
-                        sessionExpiryDispatcher = dispatcher,
+                        sessionChangeDispatcher = dispatcher,
                         credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                         projectScopeKey = scopeKey,
                     ).also { it.restorePersistedSession() }
@@ -113,13 +113,12 @@ class SharedScopeTest {
             assertEquals(listOf("pk_new", "pk_new"), apiKeys)
 
             // A session one client ends is ended for all, and their listeners hear it.
-            var heardBySecond = 0
-            second.onSessionExpired { heardBySecond += 1 }
+            val heardBySecond = second.recordSessionChanges()
             rejectCredential = true
             runCatching { first.signMessage(network = Network.AMOY, message = "hello") }
             while (dispatcher.actions.isNotEmpty()) dispatcher.runNext()
 
-            assertEquals(1, heardBySecond)
+            assertEquals(listOf("Expired"), heardBySecond.kinds)
             assertNull(first.activeWallet)
             assertNull(second.activeWallet)
         }

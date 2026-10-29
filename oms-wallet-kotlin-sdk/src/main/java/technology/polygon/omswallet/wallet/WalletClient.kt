@@ -21,6 +21,7 @@ import kotlinx.serialization.json.JsonElement
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
 import technology.polygon.omswallet.OMSWalletErrorCode
+import technology.polygon.omswallet.OMSWalletExpiredSession
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletOidcSessionAuthFlow
 import technology.polygon.omswallet.OMSWalletOperation
@@ -28,8 +29,8 @@ import technology.polygon.omswallet.OMSWalletResponseException
 import technology.polygon.omswallet.OMSWalletSelectionException
 import technology.polygon.omswallet.OMSWalletSession
 import technology.polygon.omswallet.OMSWalletSessionAuth
+import technology.polygon.omswallet.OMSWalletSessionChangeEvent
 import technology.polygon.omswallet.OMSWalletSessionException
-import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
 import technology.polygon.omswallet.OMSWalletStorageException
 import technology.polygon.omswallet.OMSWalletTransactionException
 import technology.polygon.omswallet.OMSWalletValidationException
@@ -173,7 +174,7 @@ private class WalletScopeRuntime(
     val oidcRedirectAuthStore: OidcRedirectAuthStore?,
     val signer: CredentialSigner,
     val sessionExpiryScheduler: SessionExpiryScheduler,
-    val sessionExpiryDispatcher: SessionExpiryDispatcher,
+    val sessionChangeDispatcher: SessionChangeDispatcher,
     val credentialRefreshLauncher: CredentialRefreshLauncher,
     val now: () -> Long,
 ) {
@@ -187,11 +188,21 @@ private class WalletScopeRuntime(
      */
     @Volatile
     var publishableKey: String = publishableKey
-    val sessionExpiredListeners = mutableSetOf<(OMSWalletSessionExpiredEvent) -> Unit>()
+
+    /** Session change listeners of every client of the scope, in registration order. */
+    val sessionChangeListeners = mutableListOf<SessionChangeRegistration>()
+
+    /** The active wallet and session of the last published change; a change is published only when they differ. */
+    var publishedState: Pair<Wallet?, OMSWalletSession?> = null to null
+
+    /** Changes not yet delivered, each with the listeners registered when it happened. */
+    val pendingSessionChanges = ArrayDeque<Pair<OMSWalletSessionChangeEvent, List<SessionChangeRegistration>>>()
+    var sessionChangeDeliveryScheduled = false
+
+    /** The last expiry, replayed to listeners added before the next sign-in or sign-out. */
+    var latestExpiredChange: OMSWalletSessionChangeEvent.Expired? = null
     var initialized = false
     var initializationCleanupPending = false
-    var latestSessionExpiredEvent: OMSWalletSessionExpiredEvent? = null
-    var latestSessionExpiredRevision: Long? = null
     var sessionExpiryTask: SessionExpiryTask? = null
 
     /** Cancels the restore read still waiting for the app to come to the foreground. */
@@ -500,7 +511,7 @@ class WalletClient private constructor(
             defaultStatusPolling: TransactionStatusPollingOptions = TransactionStatusPollingOptions(),
             transactionStatusDelay: suspend (Long) -> Unit = { delay(it) },
             sessionExpiryScheduler: SessionExpiryScheduler = TimerSessionExpiryScheduler,
-            sessionExpiryDispatcher: SessionExpiryDispatcher = AndroidMainThreadSessionExpiryDispatcher,
+            sessionChangeDispatcher: SessionChangeDispatcher = AndroidMainThreadSessionChangeDispatcher,
             credentialRefreshLauncher: CredentialRefreshLauncher = BackgroundCredentialRefreshLauncher,
             now: () -> Long = OMSWalletTimestamps::nowMilliseconds,
             projectScopeKey: String? = null,
@@ -516,7 +527,7 @@ class WalletClient private constructor(
                     oidcRedirectAuthStore = oidcRedirectAuthStore,
                     signer = credentialSigner ?: MissingCredentialSigner,
                     sessionExpiryScheduler = sessionExpiryScheduler,
-                    sessionExpiryDispatcher = sessionExpiryDispatcher,
+                    sessionChangeDispatcher = sessionChangeDispatcher,
                     credentialRefreshLauncher = credentialRefreshLauncher,
                     now = now,
                 )
@@ -599,26 +610,110 @@ class WalletClient private constructor(
         get() = synchronized(runtime.lifecycleLock) { walletSession.snapshot()?.toPublicSession() }
 
     /**
-     * Registers a listener for expired wallet sessions.
-     *
-     * The latest expired-session event is replayed to new listeners until a new
-     * auth flow, new wallet session, or [signOut] clears it. The returned
-     * function unsubscribes the listener.
+     * Calls [listener] on the main thread after every change of [activeWallet] or [session], in
+     * order and after the change (never during the call that made it). Subscribe first, then read
+     * [activeWallet] and [session], so no change is missed. A listener added while signed out first
+     * receives the last [OMSWalletSessionChangeEvent.Expired], if a session expired since the last
+     * sign-in or sign-out (for example while the app was not running). Every client of the same
+     * project and environment shares the session, so its listeners hear every change. The returned
+     * function unsubscribes; call it when the listener's owner goes away (for example in
+     * `ViewModel.onCleared`).
      */
-    fun onSessionExpired(listener: (OMSWalletSessionExpiredEvent) -> Unit): () -> Unit {
-        val replay =
-            synchronized(runtime.lifecycleLock) {
-                runtime.sessionExpiredListeners += listener
-                runtime.latestSessionExpiredEvent?.let { event ->
-                    runtime.latestSessionExpiredRevision?.let { revision -> event to revision }
-                }
+    fun onSessionChange(listener: (OMSWalletSessionChangeEvent) -> Unit): () -> Unit {
+        val registration = SessionChangeRegistration(listener)
+        synchronized(runtime.lifecycleLock) {
+            runtime.sessionChangeListeners += registration
+            val replay = runtime.latestExpiredChange
+            if (replay != null && walletSession.snapshot()?.wallet == null) {
+                queueSessionChangeLocked(replay, listOf(registration))
             }
-        replay?.let { (event, revision) ->
-            dispatchSessionExpiredListener(listener, event, revision)
         }
         return {
             synchronized(runtime.lifecycleLock) {
-                runtime.sessionExpiredListeners -= listener
+                runtime.sessionChangeListeners -= registration
+            }
+        }
+    }
+
+    /**
+     * Publishes a change of [activeWallet] or [session] to the listeners registered now. Every change
+     * except an expiry is published only when they differ from the last published ones. Call it under
+     * [WalletScopeRuntime.lifecycleLock] once the change is complete; listeners run later.
+     */
+    private fun publishSessionChangeLocked(change: SessionChange) {
+        val snapshot = walletSession.snapshot()
+        val wallet = snapshot?.wallet
+        val session = snapshot?.toPublicSession()
+        val previous = runtime.publishedState
+        val expiredSession = (change as? SessionChange.Expired)?.expiredSession?.takeIf { wallet == null }
+        if (expiredSession == null && previous == (wallet to session)) return
+        runtime.publishedState = wallet to session
+        val event =
+            when {
+                expiredSession != null -> {
+                    OMSWalletSessionChangeEvent.Expired(expiredSession).also { runtime.latestExpiredChange = it }
+                }
+
+                wallet != null && session != null -> {
+                    runtime.latestExpiredChange = null
+                    when {
+                        change == SessionChange.ExpiryUpdated -> {
+                            OMSWalletSessionChangeEvent.ExpiryUpdated(wallet, session)
+                        }
+
+                        previous.first != null -> {
+                            OMSWalletSessionChangeEvent.WalletChanged(wallet, session)
+                        }
+
+                        else -> {
+                            OMSWalletSessionChangeEvent.SignedIn(wallet, session)
+                        }
+                    }
+                }
+
+                else -> {
+                    OMSWalletSessionChangeEvent.SignedOut
+                }
+            }
+        queueSessionChangeLocked(event, runtime.sessionChangeListeners.toList())
+    }
+
+    /** The state later changes compare with, without publishing: a session restored at creation. */
+    private fun setPublishedSessionStateLocked() {
+        val snapshot = walletSession.snapshot()
+        runtime.publishedState = snapshot?.wallet to snapshot?.toPublicSession()
+    }
+
+    private fun queueSessionChangeLocked(
+        event: OMSWalletSessionChangeEvent,
+        listeners: List<SessionChangeRegistration>,
+    ) {
+        if (listeners.isEmpty()) return
+        runtime.pendingSessionChanges.addLast(event to listeners)
+        if (runtime.sessionChangeDeliveryScheduled) return
+        runtime.sessionChangeDeliveryScheduled = true
+        runtime.sessionChangeDispatcher.dispatch(::deliverSessionChanges)
+    }
+
+    /** Delivers queued changes in order; a change a listener causes is delivered after the ones before it. */
+    private fun deliverSessionChanges() {
+        while (true) {
+            val (event, listeners) =
+                synchronized(runtime.lifecycleLock) {
+                    runtime.pendingSessionChanges.removeFirstOrNull()
+                        ?: run {
+                            runtime.sessionChangeDeliveryScheduled = false
+                            return
+                        }
+                }
+            for (registration in listeners) {
+                val registered = synchronized(runtime.lifecycleLock) { registration in runtime.sessionChangeListeners }
+                if (!registered) continue
+                try {
+                    registration.listener(event)
+                } catch (_: Throwable) {
+                    // App callbacks must not change SDK operation results.
+                }
             }
         }
     }
@@ -635,6 +730,7 @@ class WalletClient private constructor(
             runtime.initialized = true
             clearLatestSessionExpiredEventLocked()
             val revision = walletSession.restore(snapshot)
+            setPublishedSessionStateLocked()
             markCredentialReadLocked(readAt = runtime.now())
             scheduleSessionExpiryLocked(snapshot, revision)
         }
@@ -656,7 +752,6 @@ class WalletClient private constructor(
         !snapshot.signerAddress.isNullOrBlank() && signingCredentialId() == snapshot.signerAddress
 
     internal fun restorePersistedSession(): Boolean {
-        var expiredNotification: ExpiryNotification? = null
         var restoredRevision: Long? = null
         val restored =
             synchronized(runtime.lifecycleLock) {
@@ -699,7 +794,7 @@ class WalletClient private constructor(
                     clearSessionExpiryTaskLocked()
                     runCatching { oidcRedirectAuthStore?.clear() }
                     runCatching { snapshot.signerAddress?.let(signer::clearIfCredentialId) }
-                    expiredNotification = recordSessionExpiredLocked(snapshot, walletSession.revision())
+                    recordSessionExpiredLocked(snapshot)
                     runtime.initialized = true
                     return@synchronized false
                 }
@@ -728,6 +823,7 @@ class WalletClient private constructor(
                 }
                 clearLatestSessionExpiredEventLocked()
                 val revision = walletSession.restore(snapshot)
+                setPublishedSessionStateLocked()
                 markSessionRestoredLocked()
                 scheduleSessionExpiryLocked(snapshot, revision)
                 clearConsumedOidcRedirectAuthLocked()
@@ -735,7 +831,6 @@ class WalletClient private constructor(
                 restoredRevision = revision
                 true
             }
-        expiredNotification?.let(::dispatchSessionExpiredNotification)
         // The stored expiry may predate server-side sliding; read the current one in the background.
         // The read extends the session, so a process started in the background waits for the app to be used.
         restoredRevision?.let(::refreshRestoredSessionInForeground)
@@ -877,6 +972,7 @@ class WalletClient private constructor(
         }
         attemptCleanup(signer::clear)
         clearLatestSessionExpiredEventLocked()
+        publishSessionChangeLocked(SessionChange.SignedOut)
 
         if (throwOnFailure) {
             cleanupFailure?.let { failure ->
@@ -1795,13 +1891,12 @@ class WalletClient private constructor(
         signerKeyType: WalletSigningAlgorithm?,
         expireLocally: Boolean,
     ): Long {
-        var expiredNotification: ExpiryNotification? = null
         val revision =
             synchronized(runtime.lifecycleLock) {
                 val snapshot = walletSession.snapshot()
                 if (snapshot?.isExpired(runtime.now()) == true) {
                     if (!expireLocally) throw LocallyExpiredSession(walletSession.revision())
-                    expiredNotification = expireSessionLocked(snapshot, walletSession.revision())
+                    expireSessionLocked(snapshot, walletSession.revision())
                     return@synchronized null
                 }
                 try {
@@ -1822,7 +1917,6 @@ class WalletClient private constructor(
                     )
                 }
             }
-        expiredNotification?.let(::dispatchSessionExpiredNotification)
         return revision
             ?: throw OMSWalletSessionException(
                 code = OMSWalletErrorCode.SessionExpired,
@@ -2062,6 +2156,7 @@ class WalletClient private constructor(
                 )
             }
             scheduleSessionExpiryLocked(snapshot, requiredSessionRevision)
+            publishSessionChangeLocked(SessionChange.Activation)
         }
     }
 
@@ -2704,7 +2799,6 @@ class WalletClient private constructor(
         requireCredential: Boolean,
         expireLocally: Boolean,
     ): ActiveWalletSession {
-        var expiredNotification: ExpiryNotification? = null
         val activeSession =
             synchronized(runtime.lifecycleLock) {
                 val snapshot =
@@ -2713,7 +2807,7 @@ class WalletClient private constructor(
                 val revision = walletSession.revision()
                 if (snapshot.isExpired(runtime.now())) {
                     if (!expireLocally) throw LocallyExpiredSession(revision)
-                    expiredNotification = expireSessionLocked(snapshot, revision)
+                    expireSessionLocked(snapshot, revision)
                     return@synchronized null
                 }
                 val wallet =
@@ -2724,7 +2818,6 @@ class WalletClient private constructor(
                 }
                 ActiveWalletSession(wallet, revision)
             }
-        expiredNotification?.let(::dispatchSessionExpiredNotification)
         return activeSession
             ?: throw OMSWalletSessionException(
                 code = OMSWalletErrorCode.SessionExpired,
@@ -2742,7 +2835,6 @@ class WalletClient private constructor(
         requiredSessionRevision: Long?,
         expireLocally: Boolean,
     ): Long {
-        var expiredNotification: ExpiryNotification? = null
         val revision =
             synchronized(runtime.lifecycleLock) {
                 requiredSessionRevision?.let(walletSession::requireRevision)
@@ -2750,7 +2842,7 @@ class WalletClient private constructor(
                 val currentRevision = walletSession.revision()
                 if (snapshot.isExpired(runtime.now())) {
                     if (!expireLocally) throw LocallyExpiredSession(currentRevision)
-                    expiredNotification = expireSessionLocked(snapshot, currentRevision)
+                    expireSessionLocked(snapshot, currentRevision)
                     return@synchronized null
                 }
                 if (snapshot.walletId.isNullOrBlank() && snapshot.expiresAt.isNullOrBlank()) {
@@ -2759,7 +2851,6 @@ class WalletClient private constructor(
                 requireActiveCredentialLocked(currentRevision, snapshot)
                 currentRevision
             }
-        expiredNotification?.let(::dispatchSessionExpiredNotification)
         return revision
             ?: throw OMSWalletSessionException(
                 code = OMSWalletErrorCode.SessionExpired,
@@ -2777,14 +2868,39 @@ class WalletClient private constructor(
             actualSignerAddress != snapshot.signerAddress ||
             snapshot.signerKeyType != signer.signingAlgorithm
         ) {
-            clearSessionUnlocked(
-                clearOidcRedirectAuth = true,
-                operation = null,
-                throwOnFailure = false,
-                requiredSessionRevision = requiredSessionRevision,
-            )
-            throw OMSWalletSessionException(message = "No active wallet session")
+            endSessionWithMismatchedSignerLocked(snapshot, requiredSessionRevision, actualSignerAddress)
         }
+    }
+
+    /**
+     * Ends a session whose signer no longer holds its key and throws. It ended on its own when its
+     * stored record is still its own while the signer holds no key (an expiry or a rejection elsewhere
+     * cleared the key) or its expiry passed: it ends as expired, keeping the record, and throws
+     * `SessionExpired`. Otherwise another sign-in replaced its key: it is cleared and throws
+     * `SessionMissing`.
+     */
+    private fun endSessionWithMismatchedSignerLocked(
+        snapshot: OMSWalletSessionSnapshot?,
+        requiredSessionRevision: Long,
+        signerAddress: String?,
+    ): Nothing {
+        if (snapshot?.wallet != null && endedOnItsOwnLocked(snapshot, signerAddress)) {
+            val now = runtime.now()
+            val expiredAt = if (snapshot.isExpired(now)) null else OMSWalletIsoTimestamps.formatEpochMillis(now)
+            if (expireSessionLocked(snapshot, requiredSessionRevision, expiredAt)) {
+                throw OMSWalletSessionException(
+                    code = OMSWalletErrorCode.SessionExpired,
+                    message = "Wallet session expired",
+                )
+            }
+        }
+        clearSessionUnlocked(
+            clearOidcRedirectAuth = true,
+            operation = null,
+            throwOnFailure = false,
+            requiredSessionRevision = requiredSessionRevision,
+        )
+        throw OMSWalletSessionException(message = "No active wallet session")
     }
 
     private fun scheduleSessionExpiryLocked(
@@ -2804,7 +2920,7 @@ class WalletClient private constructor(
         clearSessionExpiryTaskLocked()
         runtime.sessionExpiryTask =
             runtime.sessionExpiryScheduler.schedule(delayMillis) {
-                runtime.sessionExpiryDispatcher.dispatch {
+                runtime.sessionChangeDispatcher.dispatch {
                     onSessionExpiryTimer(requiredSessionRevision)
                 }
             }
@@ -3063,6 +3179,7 @@ class WalletClient private constructor(
             runtime.credentialRetryDelayMillis = null
             runtime.credentialRefreshUnsupportedAt = null
             scheduleSessionExpiryLocked(updated, requiredSessionRevision)
+            publishSessionChangeLocked(SessionChange.ExpiryUpdated)
             CredentialRefreshOutcome.Refreshed
         }
     }
@@ -3094,23 +3211,19 @@ class WalletClient private constructor(
      * Unauthorized from GetCredential).
      */
     private fun endSessionRejectedByServer(requiredSessionRevision: Long) {
-        val notification =
-            synchronized(runtime.lifecycleLock) {
-                if (walletSession.revision() != requiredSessionRevision) return
-                val snapshot = walletSession.snapshot() ?: return
-                expireSessionLocked(snapshot, requiredSessionRevision).also { notification ->
-                    if (notification == null) {
-                        // Without a parseable expiry there is no event to report; still end the session.
-                        clearSessionUnlocked(
-                            clearOidcRedirectAuth = true,
-                            operation = null,
-                            throwOnFailure = false,
-                            requiredSessionRevision = requiredSessionRevision,
-                        )
-                    }
-                }
+        synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) return
+            val snapshot = walletSession.snapshot() ?: return
+            if (!expireSessionLocked(snapshot, requiredSessionRevision)) {
+                // Without a parseable expiry there is no expiry to report; still end the session.
+                clearSessionUnlocked(
+                    clearOidcRedirectAuth = true,
+                    operation = null,
+                    throwOnFailure = false,
+                    requiredSessionRevision = requiredSessionRevision,
+                )
             }
-        notification?.let(::dispatchSessionExpiredNotification)
+        }
     }
 
     /** After a successful authenticated call, refreshes the expiry in the background when due. */
@@ -3153,9 +3266,9 @@ class WalletClient private constructor(
         }
     }
 
+    /** A sign-out or new sign-in makes an earlier expiry old news, whether or not a change is published. */
     private fun clearLatestSessionExpiredEventLocked() {
-        runtime.latestSessionExpiredEvent = null
-        runtime.latestSessionExpiredRevision = null
+        runtime.latestExpiredChange = null
     }
 
     /**
@@ -3181,7 +3294,7 @@ class WalletClient private constructor(
             if (outcome is CredentialRefreshOutcome.Unavailable || outcome == CredentialRefreshOutcome.Busy) {
                 scheduleCredentialRetry(requiredSessionRevision)
             } else {
-                runtime.sessionExpiryDispatcher.dispatch { expireSessionFromTimer(requiredSessionRevision) }
+                runtime.sessionChangeDispatcher.dispatch { expireSessionFromTimer(requiredSessionRevision) }
             }
         }
     }
@@ -3227,89 +3340,51 @@ class WalletClient private constructor(
     }
 
     private fun expireSessionFromTimer(requiredSessionRevision: Long) {
-        val notification =
-            synchronized(runtime.lifecycleLock) {
-                if (walletSession.revision() != requiredSessionRevision) {
-                    return@synchronized null
-                }
-                val snapshot = walletSession.snapshot() ?: return@synchronized null
-                if (!snapshot.isExpired(runtime.now())) {
-                    scheduleSessionExpiryLocked(snapshot, requiredSessionRevision)
-                    return@synchronized null
-                }
-                expireSessionLocked(snapshot, requiredSessionRevision)
+        synchronized(runtime.lifecycleLock) {
+            if (walletSession.revision() != requiredSessionRevision) return
+            val snapshot = walletSession.snapshot() ?: return
+            if (!snapshot.isExpired(runtime.now())) {
+                scheduleSessionExpiryLocked(snapshot, requiredSessionRevision)
+                return
             }
-        notification?.let(::dispatchSessionExpiredNotification)
+            expireSessionLocked(snapshot, requiredSessionRevision)
+        }
     }
 
+    /** Ends [snapshot]'s session as expired and returns whether it did (it needs a parseable expiry). */
     private fun expireSessionLocked(
         snapshot: OMSWalletSessionSnapshot,
         requiredSessionRevision: Long,
-    ): ExpiryNotification? {
-        snapshot.toSessionExpiredEvent() ?: return null
+        expiredAt: String? = null,
+    ): Boolean {
+        snapshot.toExpiredSession(expiredAt) ?: return false
         if (!walletSession.clear(requiredSessionRevision)) {
-            return null
+            return false
         }
-        val expiredRevision = walletSession.revision()
         clearSessionExpiryTaskLocked()
         cancelRestoredSessionReadLocked()
         try {
             oidcRedirectAuthStore?.clear()
         } catch (_: Throwable) {
-            // Expiry notification should not depend on redirect-state cleanup succeeding.
+            // The expiry is published even when redirect-state cleanup fails.
         }
         try {
             // Only this session's key: a newer sign-in may already have stored another.
             snapshot.signerAddress?.let(signer::clearIfCredentialId)
         } catch (_: Throwable) {
-            // Expiry notification should not depend on credential cleanup succeeding.
+            // The expiry is published even when credential cleanup fails.
         }
-        return recordSessionExpiredLocked(snapshot, expiredRevision)
+        return recordSessionExpiredLocked(snapshot, expiredAt)
     }
 
+    /** Publishes that [snapshot]'s session expired; false without a parseable expiry. */
     private fun recordSessionExpiredLocked(
         snapshot: OMSWalletSessionSnapshot,
-        expiredRevision: Long,
-    ): ExpiryNotification? {
-        val event = snapshot.toSessionExpiredEvent() ?: return null
-        runtime.latestSessionExpiredEvent = event
-        runtime.latestSessionExpiredRevision = expiredRevision
-        return ExpiryNotification(event, expiredRevision, runtime.sessionExpiredListeners.toList())
-    }
-
-    private fun dispatchSessionExpiredNotification(notification: ExpiryNotification) {
-        notification.listeners.forEach { listener ->
-            dispatchSessionExpiredListener(listener, notification.event, notification.revision)
-        }
-    }
-
-    private fun dispatchSessionExpiredListener(
-        listener: (OMSWalletSessionExpiredEvent) -> Unit,
-        event: OMSWalletSessionExpiredEvent,
-        revision: Long,
-    ) {
-        runtime.sessionExpiryDispatcher.dispatch {
-            val shouldNotify =
-                synchronized(runtime.lifecycleLock) {
-                    runtime.sessionExpiredListeners.contains(listener) &&
-                        runtime.latestSessionExpiredEvent == event &&
-                        runtime.latestSessionExpiredRevision == revision
-                }
-            if (shouldNotify) {
-                callSessionExpiredListener(listener, event)
-            }
-        }
-    }
-
-    private fun callSessionExpiredListener(
-        listener: (OMSWalletSessionExpiredEvent) -> Unit,
-        event: OMSWalletSessionExpiredEvent,
-    ) {
-        try {
-            listener(event)
-        } catch (_: Throwable) {
-            // App callbacks must not change SDK operation results.
-        }
+        expiredAt: String? = null,
+    ): Boolean {
+        val expired = snapshot.toExpiredSession(expiredAt) ?: return false
+        publishSessionChangeLocked(SessionChange.Expired(expired))
+        return true
     }
 
     private fun loginHintForProvider(
@@ -3371,6 +3446,21 @@ class WalletClient private constructor(
         return sessionLifetimeSeconds.toUInt()
     }
 
+    /**
+     * Whether a session whose signer no longer holds its key ended on its own: its stored record is
+     * still its own while the signer holds no key (an expiry or a rejection elsewhere cleared it), or
+     * its expiry passed. Otherwise another sign-in replaced its key.
+     */
+    private fun endedOnItsOwnLocked(
+        snapshot: OMSWalletSessionSnapshot,
+        signerAddress: String?,
+    ): Boolean {
+        if (snapshot.isExpired(runtime.now())) return true
+        if (signerAddress != null) return false
+        val stored = runCatching { sessionStore?.load() }.getOrNull()
+        return stored != null && stored.signerAddress == snapshot.signerAddress
+    }
+
     private fun authorizeSignedRequest(
         requiredSessionRevision: Long,
         allowCredentialCreation: Boolean,
@@ -3392,13 +3482,7 @@ class WalletClient private constructor(
                 (!expectedSignerAddress.isNullOrBlank() && expectedSignerAddress != actualSignerAddress) ||
                 (snapshot?.signerKeyType != null && snapshot.signerKeyType != signer.signingAlgorithm)
             ) {
-                clearSessionUnlocked(
-                    clearOidcRedirectAuth = true,
-                    operation = null,
-                    throwOnFailure = false,
-                    requiredSessionRevision = requiredSessionRevision,
-                )
-                throw OMSWalletSessionException(message = "No active wallet session")
+                endSessionWithMismatchedSignerLocked(snapshot, requiredSessionRevision, actualSignerAddress)
             }
             // Sign-in requests run before WaaS has verified the credential.
             val usesSessionCredential = !snapshot?.expiresAt.isNullOrBlank()
@@ -3886,11 +3970,26 @@ private sealed interface WalletImportActivationContext {
     ) : WalletImportActivationContext
 }
 
-private data class ExpiryNotification(
-    val event: OMSWalletSessionExpiredEvent,
-    val revision: Long,
-    val listeners: List<(OMSWalletSessionExpiredEvent) -> Unit>,
+/** A session change listener; a registration of its own, so one listener can be added twice. */
+private class SessionChangeRegistration(
+    val listener: (OMSWalletSessionChangeEvent) -> Unit,
 )
+
+/**
+ * What changed the session, for its change event. [Activation] (a wallet became active) is published
+ * as a wallet change when a wallet was active before, and as a sign-in otherwise.
+ */
+private sealed interface SessionChange {
+    data object Activation : SessionChange
+
+    data object ExpiryUpdated : SessionChange
+
+    data object SignedOut : SessionChange
+
+    data class Expired(
+        val expiredSession: OMSWalletExpiredSession,
+    ) : SessionChange
+}
 
 /** A WaaS answer to a request signed with the session credential that needs a follow-up. */
 private enum class SessionCredentialAnswer {
@@ -5171,7 +5270,8 @@ internal fun interface SessionExpiryTask {
     fun cancel()
 }
 
-internal fun interface SessionExpiryDispatcher {
+/** Runs session work and session change listeners later, on the main thread in an app. */
+internal fun interface SessionChangeDispatcher {
     fun dispatch(action: () -> Unit)
 }
 
@@ -5214,15 +5314,14 @@ private object TimerSessionExpiryScheduler : SessionExpiryScheduler {
     }
 }
 
-private object AndroidMainThreadSessionExpiryDispatcher : SessionExpiryDispatcher {
+/**
+ * Posts to the main thread, also from the main thread, so listeners never run inside the call that
+ * made a change (which may hold the session lock). Runs inline only without a main looper (JVM tests).
+ */
+private object AndroidMainThreadSessionChangeDispatcher : SessionChangeDispatcher {
     override fun dispatch(action: () -> Unit) {
         val mainLooper = runCatching { Looper.getMainLooper() }.getOrNull()
-        if (mainLooper == null || runCatching { Looper.myLooper() }.getOrNull() == mainLooper) {
-            action()
-            return
-        }
-
-        val posted = runCatching { Handler(mainLooper).post(action) }.getOrDefault(false)
+        val posted = mainLooper != null && runCatching { Handler(mainLooper).post(action) }.getOrDefault(false)
         if (!posted) {
             action()
         }
@@ -5271,15 +5370,18 @@ private fun OMSWalletSessionSnapshot.toPublicSession(): OMSWalletSession? {
     return OMSWalletSession(expiresAt = expiresAt, auth = auth)
 }
 
-/** [OMSWalletSessionExpiredEvent.wallet] is null when a manual wallet selection was pending. */
-private fun OMSWalletSessionSnapshot.toSessionExpiredEvent(): OMSWalletSessionExpiredEvent? {
+/**
+ * The expired session, ended at [expiredAt] or else its expiry; [OMSWalletExpiredSession.wallet] is
+ * null when a manual wallet selection was pending. Null without a parseable expiry.
+ */
+private fun OMSWalletSessionSnapshot.toExpiredSession(expiredAt: String? = null): OMSWalletExpiredSession? {
     expiresAtEpochMillis() ?: return null
-    val expiredAt = expiresAt ?: return null
+    val expiresAt = expiresAt ?: return null
     val auth = auth ?: return null
-    return OMSWalletSessionExpiredEvent(
+    return OMSWalletExpiredSession(
         wallet = wallet,
-        session = OMSWalletSession(expiresAt = expiredAt, auth = auth),
-        expiredAt = expiredAt,
+        session = OMSWalletSession(expiresAt = expiresAt, auth = auth),
+        expiredAt = expiredAt ?: expiresAt,
     )
 }
 

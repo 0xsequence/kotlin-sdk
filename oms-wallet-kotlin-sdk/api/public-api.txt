@@ -90,6 +90,21 @@ public abstract class technology/polygon/omswallet/OMSWalletException : java/lan
 	public final fun getUpstreamError ()Ltechnology/polygon/omswallet/OMSWalletUpstreamError;
 }
 
+public final class technology/polygon/omswallet/OMSWalletExpiredSession {
+	public fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;Ljava/lang/String;)V
+	public final fun component1 ()Ltechnology/polygon/omswallet/models/Wallet;
+	public final fun component2 ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;Ljava/lang/String;)Ltechnology/polygon/omswallet/OMSWalletExpiredSession;
+	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/OMSWalletExpiredSession;Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;Ljava/lang/String;ILjava/lang/Object;)Ltechnology/polygon/omswallet/OMSWalletExpiredSession;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpiredAt ()Ljava/lang/String;
+	public final fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public final fun getWallet ()Ltechnology/polygon/omswallet/models/Wallet;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class technology/polygon/omswallet/OMSWalletNetworks {
 	public static final field INSTANCE Ltechnology/polygon/omswallet/OMSWalletNetworks;
 	public final fun findById (I)Ltechnology/polygon/omswallet/Network;
@@ -213,25 +228,76 @@ public abstract interface class technology/polygon/omswallet/OMSWalletSessionAut
 	public abstract fun getEmail ()Ljava/lang/String;
 }
 
+public abstract interface class technology/polygon/omswallet/OMSWalletSessionChangeEvent {
+	public abstract fun getActiveWallet ()Ltechnology/polygon/omswallet/models/Wallet;
+	public abstract fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
+}
+
+public final class technology/polygon/omswallet/OMSWalletSessionChangeEvent$Expired : technology/polygon/omswallet/OMSWalletSessionChangeEvent {
+	public fun <init> (Ltechnology/polygon/omswallet/OMSWalletExpiredSession;)V
+	public final fun component1 ()Ltechnology/polygon/omswallet/OMSWalletExpiredSession;
+	public final fun copy (Ltechnology/polygon/omswallet/OMSWalletExpiredSession;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$Expired;
+	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$Expired;Ltechnology/polygon/omswallet/OMSWalletExpiredSession;ILjava/lang/Object;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$Expired;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getActiveWallet ()Ltechnology/polygon/omswallet/models/Wallet;
+	public final fun getExpiredSession ()Ltechnology/polygon/omswallet/OMSWalletExpiredSession;
+	public fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class technology/polygon/omswallet/OMSWalletSessionChangeEvent$ExpiryUpdated : technology/polygon/omswallet/OMSWalletSessionChangeEvent {
+	public fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;)V
+	public final fun component1 ()Ltechnology/polygon/omswallet/models/Wallet;
+	public final fun component2 ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public final fun copy (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$ExpiryUpdated;
+	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$ExpiryUpdated;Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;ILjava/lang/Object;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$ExpiryUpdated;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getActiveWallet ()Ltechnology/polygon/omswallet/models/Wallet;
+	public fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class technology/polygon/omswallet/OMSWalletSessionChangeEvent$SignedIn : technology/polygon/omswallet/OMSWalletSessionChangeEvent {
+	public fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;)V
+	public final fun component1 ()Ltechnology/polygon/omswallet/models/Wallet;
+	public final fun component2 ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public final fun copy (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$SignedIn;
+	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$SignedIn;Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;ILjava/lang/Object;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$SignedIn;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getActiveWallet ()Ltechnology/polygon/omswallet/models/Wallet;
+	public fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class technology/polygon/omswallet/OMSWalletSessionChangeEvent$SignedOut : technology/polygon/omswallet/OMSWalletSessionChangeEvent {
+	public static final field INSTANCE Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$SignedOut;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getActiveWallet ()Ltechnology/polygon/omswallet/models/Wallet;
+	public fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class technology/polygon/omswallet/OMSWalletSessionChangeEvent$WalletChanged : technology/polygon/omswallet/OMSWalletSessionChangeEvent {
+	public fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;)V
+	public final fun component1 ()Ltechnology/polygon/omswallet/models/Wallet;
+	public final fun component2 ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public final fun copy (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$WalletChanged;
+	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$WalletChanged;Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;ILjava/lang/Object;)Ltechnology/polygon/omswallet/OMSWalletSessionChangeEvent$WalletChanged;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getActiveWallet ()Ltechnology/polygon/omswallet/models/Wallet;
+	public fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class technology/polygon/omswallet/OMSWalletSessionException : technology/polygon/omswallet/OMSWalletException {
 	public fun <init> ()V
 	public fun <init> (Ltechnology/polygon/omswallet/OMSWalletErrorCode;Ltechnology/polygon/omswallet/OMSWalletOperation;Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ltechnology/polygon/omswallet/OMSWalletErrorCode;Ltechnology/polygon/omswallet/OMSWalletOperation;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-}
-
-public final class technology/polygon/omswallet/OMSWalletSessionExpiredEvent {
-	public fun <init> (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;Ljava/lang/String;)V
-	public final fun component1 ()Ltechnology/polygon/omswallet/models/Wallet;
-	public final fun component2 ()Ltechnology/polygon/omswallet/OMSWalletSession;
-	public final fun component3 ()Ljava/lang/String;
-	public final fun copy (Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;Ljava/lang/String;)Ltechnology/polygon/omswallet/OMSWalletSessionExpiredEvent;
-	public static synthetic fun copy$default (Ltechnology/polygon/omswallet/OMSWalletSessionExpiredEvent;Ltechnology/polygon/omswallet/models/Wallet;Ltechnology/polygon/omswallet/OMSWalletSession;Ljava/lang/String;ILjava/lang/Object;)Ltechnology/polygon/omswallet/OMSWalletSessionExpiredEvent;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getExpiredAt ()Ljava/lang/String;
-	public final fun getSession ()Ltechnology/polygon/omswallet/OMSWalletSession;
-	public final fun getWallet ()Ltechnology/polygon/omswallet/models/Wallet;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
 }
 
 public final class technology/polygon/omswallet/OMSWalletStorageException : technology/polygon/omswallet/OMSWalletException {
@@ -1726,7 +1792,7 @@ public final class technology/polygon/omswallet/wallet/WalletClient {
 	public final fun listAccessPages-aPkLuA0 (Lkotlin/UInt;Ltechnology/polygon/omswallet/models/AccessGrantType;)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun listAccessPages-aPkLuA0$default (Ltechnology/polygon/omswallet/wallet/WalletClient;Lkotlin/UInt;Ltechnology/polygon/omswallet/models/AccessGrantType;ILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
 	public final fun listWallets (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun onSessionExpired (Lkotlin/jvm/functions/Function1;)Lkotlin/jvm/functions/Function0;
+	public final fun onSessionChange (Lkotlin/jvm/functions/Function1;)Lkotlin/jvm/functions/Function0;
 	public final fun revokeAccess (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun revokeAccess$default (Ltechnology/polygon/omswallet/wallet/WalletClient;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun sendSolanaTransfer (Ltechnology/polygon/omswallet/SolanaNetwork;Ljava/lang/String;Ljava/lang/String;Ljava/math/BigInteger;Ltechnology/polygon/omswallet/models/TransactionMode;ZLtechnology/polygon/omswallet/models/TransactionStatusPollingOptions;Ltechnology/polygon/omswallet/models/FeeOptionSelector;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

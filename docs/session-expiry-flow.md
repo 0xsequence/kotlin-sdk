@@ -14,7 +14,7 @@ and stale expiry paths are coordinated.
   refresh.
 - An expired stored session is discarded on restore without asking WaaS: it is
   not restored as active, but its metadata stays in storage so
-  `onSessionExpired` can replay after process recreation.
+  its `Expired` change replays to listeners after process recreation.
 - A session active in memory is checked with WaaS before it is treated as
   ended. It can expire from the scheduled task or from a protected wallet
   operation checking the session before use. Both refresh first: an extended
@@ -155,7 +155,7 @@ flowchart TD
   E -- "Yes" --> H["Keep expired metadata in storage"]
   H --> I["Do not restore active in-memory session"]
   I --> J["Clear signer credential"]
-  J --> K["Notify onSessionExpired"]
+  J --> K["Publish Expired (replayed to new listeners)"]
 
   G --> L["Expiry task fires"]
   L --> M{"In-memory session snapshot still current?"}
