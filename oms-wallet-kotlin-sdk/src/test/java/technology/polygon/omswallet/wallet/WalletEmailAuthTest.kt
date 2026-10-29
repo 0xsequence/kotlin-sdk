@@ -19,11 +19,11 @@ import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
 import technology.polygon.omswallet.OMSWalletUpstreamService
+import technology.polygon.omswallet.OMSWalletValidationException
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
 import technology.polygon.omswallet.internal.generated.waas.CommitVerifierRequest
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthRequest
 import technology.polygon.omswallet.internal.generated.waas.CreateWalletRequest
-import technology.polygon.omswallet.internal.generated.waas.Identity
 import technology.polygon.omswallet.internal.generated.waas.IdentityType
 import technology.polygon.omswallet.internal.generated.waas.ListWalletsRequest
 import technology.polygon.omswallet.internal.generated.waas.Page
@@ -156,48 +156,6 @@ class WalletEmailAuthTest {
         }
 
     @Test
-    fun startEmailAuthRequestFailedNormalizesGeneratedStatus400ToNoStatus() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(400)
-                    .body("""{"error":"WebrpcRequestFailed","code":-1,"msg":"request failed","status":400}""")
-                    .build(),
-            )
-
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000100"),
-                )
-
-            val failure =
-                runCatching {
-                    client.startEmailAuth("user@example.com")
-                }.exceptionOrNull() as? OMSWalletException
-
-            requireNotNull(failure)
-            assertEquals(OMSWalletErrorCode.RequestFailed, failure.code)
-            assertEquals(OMSWalletOperation.WalletStartEmailAuth, failure.operation)
-            assertEquals(null, failure.status)
-            assertEquals(true, failure.retryable)
-            assertEquals(OMSWalletUpstreamService.Waas, failure.upstreamError?.service)
-            assertEquals("WebrpcRequestFailed", failure.upstreamError?.name)
-            assertEquals("-1", failure.upstreamError?.code)
-            assertEquals("request failed", failure.upstreamError?.message)
-            assertEquals(null, failure.upstreamError?.status)
-        }
-
-    @Test
     fun startEmailAuthReplacesActiveWalletSessionWithPendingAuth() =
         runBlocking {
             server.enqueue(
@@ -253,7 +211,7 @@ class WalletEmailAuthTest {
                     walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
-            val signer = MockWebCryptoCredentialSigner()
+            val signer = TrackingCredentialSigner(nonceValue = "42")
             val client =
                 WalletClient.create(
                     publishableKey = "test-publishable-key",
@@ -360,7 +318,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(store.snapshot)
             assertEquals(0, store.saveCalls)
             assertFalse(signer.hasCredential())
@@ -383,7 +341,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = null,
-                            wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
+                            wallets = listOf(walletFixture("wallet-abc", "0xabc0000000000000000000000000000000000000", "demo")),
                         ),
                     ).build(),
             )
@@ -391,8 +349,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-abc", address = "0xabc", reference = "demo"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-abc",
+                            address = "0xabc0000000000000000000000000000000000000",
+                            reference = "demo",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -427,7 +390,7 @@ class WalletEmailAuthTest {
                                 challenge = "challenge",
                                 code = "123456",
                             ),
-                        lifetime = 604_800u,
+                        lifetime = 15_552_000u,
                     ),
                 )
             val expectedWalletSignatureHeader = expectedWalletSignatureHeader(nonce = "1710000101")
@@ -439,16 +402,21 @@ class WalletEmailAuthTest {
                 request.headers[OMSWalletEnvironment.walletSignatureHeaderName],
             )
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
+            assertEquals("""{"walletId":"wallet-abc"}""", requireNotNull(useWalletRequest.body).utf8())
+            assertEquals("wallet-abc", response.wallet.id)
+            assertEquals("0xabc0000000000000000000000000000000000000", response.wallet.address)
+            assertEquals("0xabc0000000000000000000000000000000000000", client.activeWallet?.address)
+            assertFalse(client.hasPendingSignIn)
             assertEmailSessionAuth(client.snapshotSession()?.auth)
             assertEquals(1, response.wallets.size)
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, response.wallets.single().type)
-            assertEquals("0xabc", response.wallets.single().address)
+            assertEquals("0xabc0000000000000000000000000000000000000", response.wallets.single().address)
         }
 
     @Test
     fun completeEmailAuthBindsSessionToLocalSignerAcrossProtectedCallsAndRestore() =
         runBlocking {
-            val wallet = walletFixture("wallet-local-signer", "0xabc", "demo")
+            val wallet = walletFixture("wallet-local-signer", "0xabc0000000000000000000000000000000000000", "demo")
             val store = InMemorySessionStore()
             val signer = TrackingCredentialSigner(nonceValue = "1710000199")
             val environment =
@@ -456,8 +424,6 @@ class WalletEmailAuthTest {
                     walletApiUrl = server.url("/v1/Waas/").toString(),
                     indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
                 )
-            assertTrue(credentialFixture().credentialId != TEST_CREDENTIAL_ID)
-
             enqueueEmailAuthStart()
             server.enqueue(
                 MockResponse
@@ -506,12 +472,13 @@ class WalletEmailAuthTest {
                     transport = OMSWalletHttpClient(),
                     sessionStore = store,
                     credentialSigner = signer,
+                    credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
                 )
             assertTrue(restoredClient.restorePersistedSession())
             val restoredWallets = restoredClient.listWallets()
 
             assertEquals(listOf(wallet.id), activeWallets.map { it.id })
-            assertEquals(wallet.address, restoredClient.walletAddress)
+            assertEquals(wallet.address, restoredClient.activeWallet?.address)
             assertEquals(listOf(wallet.id), restoredWallets.map { it.id })
             assertEquals("/v1/Waas/CompleteAuth", requireNotNull(server.takeRequest()).target)
             assertEquals("/v1/Waas/UseWallet", requireNotNull(server.takeRequest()).target)
@@ -535,7 +502,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-abc", "0xabc", "demo")),
+                            wallets = listOf(walletFixture("wallet-abc", "0xabc0000000000000000000000000000000000000", "demo")),
                         ),
                     ).build(),
             )
@@ -543,8 +510,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-abc", address = "0xabc", reference = "demo"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-abc",
+                            address = "0xabc0000000000000000000000000000000000000",
+                            reference = "demo",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -561,9 +533,10 @@ class WalletEmailAuthTest {
                     credentialSigner = TrackingCredentialSigner(),
                 )
 
+            // The 180-day cap itself is a valid request.
             client.startEmailAuth(
                 email = "user@example.com",
-                sessionLifetimeSeconds = 120L,
+                sessionLifetimeSeconds = WalletClient.MAX_SESSION_LIFETIME_SECONDS,
             )
             assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
             client.completeEmailAuth(code = "123456")
@@ -580,7 +553,7 @@ class WalletEmailAuthTest {
                                 challenge = "challenge",
                                 code = "123456",
                             ),
-                        lifetime = 120u,
+                        lifetime = 15_552_000u,
                     ),
                 ),
                 requireNotNull(request.body).utf8(),
@@ -611,159 +584,10 @@ class WalletEmailAuthTest {
                     )
                 }.exceptionOrNull()
 
-            assertTrue(error is OMSWalletException)
-            error as OMSWalletException
-            assertEquals(OMSWalletErrorCode.ValidationError, error.code)
-            assertEquals("wallet.startEmailAuth", error.operation?.id)
-            assertEquals("sessionLifetimeSeconds must be an integer between 1 and 2592000", error.message)
+            // The public error fields are pinned in PublicErrorContractsTest; this covers local state.
+            assertTrue(error is OMSWalletValidationException)
             assertEquals(0, server.requestCount)
             assertNull(client.snapshotSession())
-        }
-
-    @Test
-    fun completeEmailAuthUsesReturnedWalletIndexWhenSelectingExistingWallet() =
-        runBlocking {
-            enqueueEmailAuthStart()
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            identity =
-                                Identity(
-                                    type = IdentityType.Email,
-                                    iss = "issuer-123",
-                                    sub = "sub-123",
-                                ),
-                            email = "user@example.com",
-                            wallets =
-                                listOf(
-                                    Wallet(
-                                        id = "wallet-def",
-                                        type = WalletType.Ethereum,
-                                        networkFamily = technology.polygon.omswallet.internal.generated.waas.NetworkFamily.EVM,
-                                        keyOrigin = technology.polygon.omswallet.internal.generated.waas.KeyOrigin.Enclave,
-                                        address = "0xdef",
-                                        reference = "picked",
-                                    ),
-                                ),
-                        ),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
-            )
-
-            val environment =
-                OMSWalletEnvironment(
-                    walletApiUrl = server.url("/v1/Waas/").toString(),
-                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                )
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment = environment,
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000102"),
-                )
-            client.startEmailAuth("user@example.com")
-            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
-
-            val resolved = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
-            server.takeRequest()
-            val request = requireNotNull(server.takeRequest())
-
-            val expectedPayload =
-                WaasApi.UseWallet.encodeRequest(
-                    UseWalletRequest(
-                        walletId = "wallet-def",
-                    ),
-                )
-
-            assertEquals("/v1/Waas/UseWallet", request.target)
-            assertEquals(expectedPayload, requireNotNull(request.body).utf8())
-            assertEquals("wallet-def", resolved.id)
-            assertEquals("0xdef", resolved.address)
-        }
-
-    @Test
-    fun completeEmailAuthConfirmsAndResolvesWallet() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            identity =
-                                identityFixture(
-                                    type = IdentityType.Email,
-                                    iss = "issuer-123",
-                                    sub = "sub-123",
-                                ),
-                            email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
-                        ),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
-            )
-
-            val environment =
-                OMSWalletEnvironment(
-                    walletApiUrl = server.url("/v1/Waas/").toString(),
-                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                )
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment = environment,
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
-                )
-            client.startEmailAuth("user@example.com")
-
-            val resolved = (client.completeEmailAuth("123456") as CompleteAuthResult.WalletSelected).wallet
-            val commitRequest = requireNotNull(server.takeRequest())
-            val completeAuthRequest = requireNotNull(server.takeRequest())
-            val useWalletRequest = requireNotNull(server.takeRequest())
-
-            assertEquals("/v1/Waas/CommitVerifier", commitRequest.target)
-            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
-            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
-            assertEquals(
-                WaasApi.UseWallet.encodeRequest(
-                    UseWalletRequest(
-                        walletId = "wallet-def",
-                    ),
-                ),
-                requireNotNull(useWalletRequest.body).utf8(),
-            )
-            assertEquals("0xdef", resolved.address)
-            assertEquals("wallet-def", resolved.id)
-            assertEquals("0xdef", client.walletAddress)
-            assertFalse(client.hasPendingSignIn)
         }
 
     @Test
@@ -800,7 +624,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         listWalletsResponseBody(
-                            wallets = listOf(walletFixture("wallet-later", "0xlater", "later")),
+                            wallets = listOf(walletFixture("wallet-later", "0x1a7e000000000000000000000000000000000000", "later")),
                         ),
                     ).build(),
             )
@@ -808,8 +632,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-later", address = "0xlater", reference = "later"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-later",
+                            address = "0x1a7e000000000000000000000000000000000000",
+                            reference = "later",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -854,82 +683,8 @@ class WalletEmailAuthTest {
                 requireNotNull(useWalletRequest.body).utf8(),
             )
             assertEquals("wallet-later", resolved.id)
-            assertEquals("0xlater", resolved.address)
+            assertEquals("0x1a7e000000000000000000000000000000000000", resolved.address)
             assertEquals(4, server.requestCount)
-        }
-
-    @Test
-    fun manualCompleteEmailAuthReceivesMatchingWalletsFromAllPages() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-aaa", "0xaaa", "first")),
-                            page = Page(cursor = "cursor-2"),
-                        ),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        listWalletsResponseBody(
-                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb", "second")),
-                        ),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
-            )
-
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000110"),
-                )
-            client.startEmailAuth("user@example.com")
-
-            val result =
-                client.completeEmailAuth(
-                    code = "123456",
-                    walletSelection = WalletSelectionBehavior.Manual,
-                )
-            assertTrue(result is CompleteAuthResult.WalletSelection)
-            val selection = result as CompleteAuthResult.WalletSelection
-            assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
-            val resolved = selection.pendingSelection.selectWallet("wallet-bbb")
-
-            requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
-            val listWalletsRequest = requireNotNull(server.takeRequest())
-            val useWalletRequest = requireNotNull(server.takeRequest())
-            assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
-            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
-            assertEquals("wallet-bbb", resolved.wallet.id)
-            assertEquals("0xbbb", client.walletAddress)
         }
 
     @Test
@@ -948,7 +703,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-aaa", "0xaaa", "first")),
+                            wallets = listOf(walletFixture("wallet-aaa", "0xaaa0000000000000000000000000000000000000", "first")),
                             page = Page(cursor = "cursor-2"),
                         ),
                     ).build(),
@@ -959,7 +714,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         listWalletsResponseBody(
-                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb", "second")),
+                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second")),
                         ),
                     ).build(),
             )
@@ -987,15 +742,18 @@ class WalletEmailAuthTest {
                 )
 
             requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
+            val completeAuthRequest = requireNotNull(server.takeRequest())
             val listWalletsRequest = requireNotNull(server.takeRequest())
+            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
             assertTrue(result is CompleteAuthResult.WalletSelection)
             val selection = result as CompleteAuthResult.WalletSelection
             assertEquals(technology.polygon.omswallet.models.WalletType.Ethereum, selection.pendingSelection.walletType)
             assertEquals(listOf("wallet-aaa", "wallet-bbb"), selection.pendingSelection.wallets.map { it.id })
             assertEquals("credential-123", selection.pendingSelection.credential.credentialId)
+            assertNull(result.wallet)
+            assertEquals(selection.pendingSelection.credential, result.credential)
             assertEquals("/v1/Waas/ListWallets", listWalletsRequest.target)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(client.hasPendingSignIn)
             assertEquals(3, server.requestCount)
             assertNull(store.snapshot)
@@ -1004,18 +762,25 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
 
             val selected = selection.pendingSelection.selectWallet("wallet-bbb")
             val useWalletRequest = requireNotNull(server.takeRequest())
 
             assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
+            assertEquals("""{"walletId":"wallet-bbb"}""", requireNotNull(useWalletRequest.body).utf8())
             assertEquals("wallet-bbb", selected.wallet.id)
-            assertEquals("0xbbb", selected.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", selected.wallet.address)
+            assertEquals("0xbbb0000000000000000000000000000000000000", client.activeWallet?.address)
             assertEquals("wallet-bbb", store.snapshot?.walletId)
-            assertEquals("0xbbb", store.snapshot?.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEmailSessionAuth(store.snapshot?.auth)
         }
@@ -1078,8 +843,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-new", address = "0xnew", reference = "fresh"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-new",
+                            address = "0x4e00000000000000000000000000000000000000",
+                            reference = "fresh",
+                        ),
+                    ).build(),
             )
 
             val selected = selection.pendingSelection.createAndSelectWallet(reference = "fresh")
@@ -1098,9 +868,9 @@ class WalletEmailAuthTest {
                 requireNotNull(createWalletRequest.body).utf8(),
             )
             assertEquals("wallet-new", selected.wallet.id)
-            assertEquals("0xnew", selected.walletAddress)
+            assertEquals("0x4e00000000000000000000000000000000000000", selected.wallet.address)
             assertEquals("wallet-new", store.snapshot?.walletId)
-            assertEquals("0xnew", store.snapshot?.walletAddress)
+            assertEquals("0x4e00000000000000000000000000000000000000", store.snapshot?.walletAddress)
         }
 
     @Test
@@ -1120,7 +890,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "old@example.com",
-                            wallets = listOf(walletFixture("wallet-old", "0xold", "old")),
+                            wallets = listOf(walletFixture("wallet-old", "0x01d0000000000000000000000000000000000000", "old")),
                         ),
                     ).build(),
             )
@@ -1138,7 +908,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "new@example.com",
-                            wallets = listOf(walletFixture("wallet-new", "0xnew", "new")),
+                            wallets = listOf(walletFixture("wallet-new", "0x4e00000000000000000000000000000000000000", "new")),
                         ),
                     ).build(),
             )
@@ -1146,15 +916,25 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-old", address = "0xold", reference = "old"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-old",
+                            address = "0x01d0000000000000000000000000000000000000",
+                            reference = "old",
+                        ),
+                    ).build(),
             )
             server.enqueue(
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-stale", address = "0xstale", reference = "stale"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-stale",
+                            address = "0x57a1e00000000000000000000000000000000000",
+                            reference = "stale",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -1198,7 +978,7 @@ class WalletEmailAuthTest {
             assertEquals("Pending wallet selection is no longer active", selectFailure?.message)
             assertEquals("Pending wallet selection is no longer active", createFailure?.message)
             assertEquals(requestCountBeforeStaleSelection, server.requestCount)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(client.hasPendingSignIn)
         }
 
@@ -1218,7 +998,7 @@ class WalletEmailAuthTest {
                     .code(200)
                     .body(
                         completeAuthResponseBody(
-                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb", "second")),
+                            wallets = listOf(walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second")),
                         ),
                     ).build(),
             )
@@ -1226,15 +1006,25 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
             server.enqueue(
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-bbb",
+                            address = "0xbbb0000000000000000000000000000000000000",
+                            reference = "second",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -1266,7 +1056,7 @@ class WalletEmailAuthTest {
                 }.exceptionOrNull()
 
             assertEquals("wallet-bbb", selected.wallet.id)
-            assertEquals("0xbbb", client.walletAddress)
+            assertEquals("0xbbb0000000000000000000000000000000000000", client.activeWallet?.address)
             assertEquals("Pending wallet selection is no longer active", reuseFailure?.message)
             assertEquals(requestCountAfterSelection, server.requestCount)
         }
@@ -1288,7 +1078,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "old@example.com",
-                            wallets = listOf(walletFixture("wallet-old", "0xold", "old")),
+                            wallets = listOf(walletFixture("wallet-old", "0x01d0000000000000000000000000000000000000", "old")),
                         ),
                     ).build(),
             )
@@ -1306,7 +1096,7 @@ class WalletEmailAuthTest {
                     .body(
                         completeAuthResponseBody(
                             email = "new@example.com",
-                            wallets = listOf(walletFixture("wallet-new", "0xnew", "new")),
+                            wallets = listOf(walletFixture("wallet-new", "0x4e00000000000000000000000000000000000000", "new")),
                         ),
                     ).build(),
             )
@@ -1314,15 +1104,25 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-new", address = "0xnew", reference = "new"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-new",
+                            address = "0x4e00000000000000000000000000000000000000",
+                            reference = "new",
+                        ),
+                    ).build(),
             )
             server.enqueue(
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-stale", address = "0xstale", reference = "stale"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-stale",
+                            address = "0x57a1e00000000000000000000000000000000000",
+                            reference = "stale",
+                        ),
+                    ).build(),
             )
 
             val client =
@@ -1354,7 +1154,7 @@ class WalletEmailAuthTest {
                     oldPendingSelection.createAndSelectWallet(reference = "stale")
                 }.exceptionOrNull()
 
-            assertEquals("0xnew", client.walletAddress)
+            assertEquals("0x4e00000000000000000000000000000000000000", client.activeWallet?.address)
             assertEquals("Pending wallet selection is no longer active", createFailure?.message)
             assertEquals(requestCountBeforeStaleSelection, server.requestCount)
         }
@@ -1389,7 +1189,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1397,8 +1197,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val store = InMemorySessionStore()
@@ -1444,7 +1249,7 @@ class WalletEmailAuthTest {
                 TEST_CREDENTIAL_ID,
                 client.signerAddress,
             )
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertNull(store.snapshot)
             assertEquals(0, store.saveCalls)
 
@@ -1452,11 +1257,11 @@ class WalletEmailAuthTest {
 
             requireNotNull(server.takeRequest())
             requireNotNull(server.takeRequest())
-            assertEquals("0xdef", wallet.address)
-            assertEquals("0xdef", client.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", wallet.address)
+            assertEquals("0xdef0000000000000000000000000000000000000", client.activeWallet?.address)
             assertFalse(client.hasPendingSignIn)
             assertEquals("wallet-def", store.snapshot?.walletId)
-            assertEquals("0xdef", store.snapshot?.walletAddress)
+            assertEquals("0xdef0000000000000000000000000000000000000", store.snapshot?.walletAddress)
             assertEquals("2099-01-01T00:00:00Z", store.snapshot?.expiresAt)
             assertEmailSessionAuth(store.snapshot?.auth)
             assertEquals(1, store.saveCalls)
@@ -1481,8 +1286,8 @@ class WalletEmailAuthTest {
                             email = "user@example.com",
                             wallets =
                                 listOf(
-                                    walletFixture("wallet-aaa", "0xaaa", "first"),
-                                    walletFixture("wallet-bbb", "0xbbb", "second"),
+                                    walletFixture("wallet-aaa", "0xaaa0000000000000000000000000000000000000", "first"),
+                                    walletFixture("wallet-bbb", "0xbbb0000000000000000000000000000000000000", "second"),
                                 ),
                         ),
                     ).build(),
@@ -1491,8 +1296,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-aaa", address = "0xaaa", reference = "first"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-aaa",
+                            address = "0xaaa0000000000000000000000000000000000000",
+                            reference = "first",
+                        ),
+                    ).build(),
             )
 
             val environment =
@@ -1529,221 +1339,98 @@ class WalletEmailAuthTest {
             assertTrue(result is CompleteAuthResult.WalletSelected)
             val selected = result as CompleteAuthResult.WalletSelected
             assertEquals("wallet-aaa", selected.wallet.id)
-            assertEquals("0xaaa", selected.walletAddress)
+            assertEquals("0xaaa0000000000000000000000000000000000000", selected.wallet.address)
             assertFalse(client.hasPendingSignIn)
             assertEquals(
                 TEST_CREDENTIAL_ID,
                 client.signerAddress,
             )
-            assertEquals("0xaaa", client.walletAddress)
+            assertEquals("0xaaa0000000000000000000000000000000000000", client.activeWallet?.address)
         }
 
     @Test
-    fun pendingWalletSelectionUsesSelectedWallet() =
+    fun completeEmailAuthClearsSessionWhenWalletActivationFails() =
         runBlocking {
-            enqueueEmailAuthStart()
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            identity =
-                                identityFixture(
-                                    type = IdentityType.Email,
-                                    iss = "issuer-123",
-                                    sub = "sub-123",
-                                ),
-                            email = "user@example.com",
-                            wallets =
-                                listOf(
-                                    walletFixture("wallet-aaa", "0xaaa", "first"),
-                                    walletFixture("wallet-bbb", "0xbbb", "second"),
-                                ),
-                        ),
-                    ).build(),
+            data class FailingStep(
+                val wallets: List<Wallet>,
+                val failingTarget: String,
+                val failureBody: String,
             )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(walletResponseBody(walletId = "wallet-bbb", address = "0xbbb", reference = "second"))
-                    .build(),
-            )
-
-            val environment =
-                OMSWalletEnvironment(
-                    walletApiUrl = server.url("/v1/Waas/").toString(),
-                    indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                )
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment = environment,
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = InMemorySessionStore(),
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000112"),
-                )
-            client.startEmailAuth("user@example.com")
-            assertEquals("/v1/Waas/CommitVerifier", requireNotNull(server.takeRequest()).target)
-
-            val result =
-                client.completeEmailAuth(
-                    code = "123456",
-                    walletSelection = WalletSelectionBehavior.Manual,
-                )
-            assertTrue(result is CompleteAuthResult.WalletSelection)
-            val selectedWallet = (result as CompleteAuthResult.WalletSelection).pendingSelection.selectWallet("wallet-bbb")
-            val completeAuthRequest = requireNotNull(server.takeRequest())
-            val useWalletRequest = requireNotNull(server.takeRequest())
-
-            assertEquals("/v1/Waas/CompleteAuth", completeAuthRequest.target)
-            assertEquals("/v1/Waas/UseWallet", useWalletRequest.target)
-            assertEquals(
-                WaasApi.UseWallet.encodeRequest(
-                    UseWalletRequest(
-                        walletId = "wallet-bbb",
-                    ),
+            listOf(
+                FailingStep(
+                    wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
+                    failingTarget = "/v1/Waas/UseWallet",
+                    failureBody = """{"error":"InternalError","code":5000,"msg":"use wallet failed","status":500}""",
                 ),
-                requireNotNull(useWalletRequest.body).utf8(),
-            )
-            assertEquals("0xbbb", selectedWallet.wallet.address)
-            assertEquals("0xbbb", client.walletAddress)
-        }
-
-    @Test
-    fun completeEmailAuthClearsSessionWhenUseWalletFails() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            identity =
-                                identityFixture(
-                                    type = IdentityType.Email,
-                                    iss = "issuer-123",
-                                    sub = "sub-123",
-                                ),
-                            email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
-                        ),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(500)
-                    .body("""{"error":"InternalError","code":5000,"msg":"use wallet failed","status":500}""")
-                    .build(),
-            )
-
-            val store = InMemorySessionStore()
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = store,
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000114"),
+                FailingStep(
+                    wallets = emptyList(),
+                    failingTarget = "/v1/Waas/CreateWallet",
+                    failureBody = """{"error":"InternalError","code":5001,"msg":"create wallet failed","status":500}""",
+                ),
+            ).forEach { step ->
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(200)
+                        .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
+                        .build(),
                 )
-            client.startEmailAuth("user@example.com")
-
-            val failure =
-                runCatching {
-                    client.completeEmailAuth("123456")
-                }.exceptionOrNull()
-
-            requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
-            assertNotNull(failure)
-            assertNull(client.snapshotSession())
-            assertFalse(client.hasPendingSignIn)
-            assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
-            assertNull(store.snapshot)
-        }
-
-    @Test
-    fun completeEmailAuthClearsSessionWhenCreateWalletFails() =
-        runBlocking {
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body("""{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}""")
-                    .build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(200)
-                    .body(
-                        completeAuthResponseBody(
-                            identity =
-                                identityFixture(
-                                    type = IdentityType.Email,
-                                    iss = "issuer-123",
-                                    sub = "sub-123",
-                                ),
-                            email = "user@example.com",
-                            wallets = emptyList(),
-                        ),
-                    ).build(),
-            )
-            server.enqueue(
-                MockResponse
-                    .Builder()
-                    .code(500)
-                    .body("""{"error":"InternalError","code":5001,"msg":"create wallet failed","status":500}""")
-                    .build(),
-            )
-
-            val store = InMemorySessionStore()
-            val client =
-                WalletClient.create(
-                    publishableKey = "test-publishable-key",
-                    projectId = "test-project-id",
-                    environment =
-                        OMSWalletEnvironment(
-                            walletApiUrl = server.url("/v1/Waas/").toString(),
-                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
-                        ),
-                    transport = OMSWalletHttpClient(),
-                    sessionStore = store,
-                    credentialSigner = TrackingCredentialSigner(nonceValue = "1710000115"),
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(200)
+                        .body(
+                            completeAuthResponseBody(
+                                identity =
+                                    identityFixture(
+                                        type = IdentityType.Email,
+                                        iss = "issuer-123",
+                                        sub = "sub-123",
+                                    ),
+                                email = "user@example.com",
+                                wallets = step.wallets,
+                            ),
+                        ).build(),
                 )
-            client.startEmailAuth("user@example.com")
+                server.enqueue(
+                    MockResponse
+                        .Builder()
+                        .code(500)
+                        .body(step.failureBody)
+                        .build(),
+                )
 
-            val failure =
-                runCatching {
-                    client.completeEmailAuth("123456")
-                }.exceptionOrNull()
+                val store = InMemorySessionStore()
+                val client =
+                    WalletClient.create(
+                        publishableKey = "test-publishable-key",
+                        projectId = "test-project-id",
+                        environment =
+                            OMSWalletEnvironment(
+                                walletApiUrl = server.url("/v1/Waas/").toString(),
+                                indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                            ),
+                        transport = OMSWalletHttpClient(),
+                        sessionStore = store,
+                        credentialSigner = TrackingCredentialSigner(nonceValue = "1710000114"),
+                    )
+                client.startEmailAuth("user@example.com")
 
-            requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
-            requireNotNull(server.takeRequest())
-            assertNotNull(failure)
-            assertNull(client.snapshotSession())
-            assertFalse(client.hasPendingSignIn)
-            assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
-            assertNull(store.snapshot)
+                val failure =
+                    runCatching {
+                        client.completeEmailAuth("123456")
+                    }.exceptionOrNull()
+
+                requireNotNull(server.takeRequest())
+                requireNotNull(server.takeRequest())
+                assertEquals(step.failingTarget, requireNotNull(server.takeRequest()).target)
+                assertNotNull(failure)
+                assertNull(client.snapshotSession())
+                assertFalse(client.hasPendingSignIn)
+                assertNull(client.signerAddress)
+                assertNull(client.activeWallet)
+                assertNull(store.snapshot)
+            }
         }
 
     @Test
@@ -1769,7 +1456,7 @@ class WalletEmailAuthTest {
                                     sub = "sub-123",
                                 ),
                             email = "user@example.com",
-                            wallets = listOf(walletFixture("wallet-def", "0xdef", "picked")),
+                            wallets = listOf(walletFixture("wallet-def", "0xdef0000000000000000000000000000000000000", "picked")),
                         ),
                     ).build(),
             )
@@ -1777,8 +1464,13 @@ class WalletEmailAuthTest {
                 MockResponse
                     .Builder()
                     .code(200)
-                    .body(walletResponseBody(walletId = "wallet-def", address = "0xdef", reference = "picked"))
-                    .build(),
+                    .body(
+                        walletResponseBody(
+                            walletId = "wallet-def",
+                            address = "0xdef0000000000000000000000000000000000000",
+                            reference = "picked",
+                        ),
+                    ).build(),
             )
 
             val store = FailingSaveSessionStore()
@@ -1811,7 +1503,7 @@ class WalletEmailAuthTest {
             assertNull(client.snapshotSession())
             assertFalse(client.hasPendingSignIn)
             assertNull(client.signerAddress)
-            assertNull(client.walletAddress)
+            assertNull(client.activeWallet)
             assertTrue(store.clearCalls > 0)
         }
 

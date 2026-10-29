@@ -3,6 +3,387 @@
 This document records breaking changes and the steps to migrate between published
 versions of `io.github.0xsequence:oms-wallet-kotlin-sdk`.
 
+## 0.4.0
+
+### Active wallet replaces `walletAddress`
+
+`omsWallet.wallet.walletAddress` was removed. Read the active wallet from
+`omsWallet.wallet.activeWallet`, which is a `Wallet` (`id`, `type`, `address`, `reference`,
+`keyOrigin`) or `null` when signed out. Branch on `type` before passing the address to
+family-specific code:
+
+```kotlin
+// 0.3.x
+val address = omsWallet.wallet.walletAddress
+
+// 0.4.0
+val activeWallet = omsWallet.wallet.activeWallet
+if (activeWallet?.type == WalletType.Ethereum) {
+    val ethereumAddress = activeWallet.address
+}
+```
+
+The `walletAddress` property was also removed from `WalletActivationResult` (formerly
+`WalletSelectionResult`) and `CompleteAuthResult.WalletSelected`. Use `result.wallet.address`. Code that creates or
+destructures these data classes positionally must drop the removed first component.
+
+### `session` is null when signed out
+
+`OMSWalletSessionState` was renamed to `OMSWalletSession`, and `omsWallet.wallet.session` is now
+`OMSWalletSession?`. Previously it returned an object whose fields were all `null` when signed
+out. The `walletAddress` property was removed, and `expiresAt` and `auth` are now non-null.
+`session` is non-null exactly when `activeWallet` is.
+
+```kotlin
+// 0.3.x
+val email = omsWallet.wallet.session.auth?.email
+
+// 0.4.0
+val email = omsWallet.wallet.session?.auth?.email
+```
+
+### `onSessionChange` replaces `onSessionExpired`
+
+`onSessionExpired` and `OMSWalletSessionExpiredEvent` were removed. `onSessionChange` reports every
+change of `activeWallet` or `session` as an `OMSWalletSessionChangeEvent`: `SignedIn`,
+`WalletChanged`, `ExpiryUpdated`, `SignedOut`, or `Expired`. Each has `activeWallet` and `session`
+after the change. `Expired` carries an `OMSWalletExpiredSession`, which replaces
+`OMSWalletSessionExpiredEvent`. It gained `wallet: Wallet?` (`null` when the credential expired
+during a pending manual wallet selection), and its `session` is an `OMSWalletSession` without
+`walletAddress`. `wallet` is the first constructor property, so code that creates or destructures it
+positionally must account for it; prefer named arguments.
+
+```kotlin
+// 0.3.x
+val unsubscribe = wallet.onSessionExpired { event -> showSignIn(event.session.auth) }
+
+// 0.4.0
+val unsubscribe =
+    wallet.onSessionChange { change ->
+        if (change is OMSWalletSessionChangeEvent.Expired) showSignIn(change.expiredSession.session.auth)
+    }
+```
+
+Listeners still run on the main thread, now always posted, never during the call that made the
+change. The replay of the last expiry to new listeners is unchanged. A session whose signer key is
+gone reports `Expired` (and the call throws `OMS_SESSION_EXPIRED`) when its stored record is still
+its own or its expiry passed, and `SignedOut` (with `OMS_SESSION_MISSING`) when another sign-in
+replaced the key.
+
+### Sliding session expiry
+
+Wallet API versions with sliding expiry extend a session's expiry with use, up to the requested lifetime.
+`OMSWalletSession.expiresAt` is the current expiry, which the SDK refreshes after restoring a
+session, while the session is in use, and before treating a locally expired session that is active
+in memory as ended; do not cache it as a fixed end time. `WalletCredential.expiresAt` is the expiry
+as reported when the credential was returned and is not updated afterwards. A stored session whose
+expiry has passed may still be active, so unless its requested lifetime has run out it is restored
+and the read after the restore decides.
+
+- `WalletClient.MAX_SESSION_LIFETIME_SECONDS` rose from 30 days (`2_592_000`) to 180 days
+  (`15_552_000`). `WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS` rose from 7 days (`604_800`) to the
+  same maximum, so sign-in without `sessionLifetimeSeconds` now requests 180 days. An idle session
+  still ends about 10 days after its last use; pass a shorter `sessionLifetimeSeconds` if you need a
+  hard limit.
+  Wallet API versions without sliding expiry clamp the requested lifetime to their 30-day maximum
+  and have no idle timeout, so the default gives a fixed 30-day session there.
+- When the wallet API rejects the session credential as unknown or expired (WaaS `KeyNotFound`
+  7202 or `KeyExpired` 7203), the session ends as on local expiry (listeners receive `Expired` once) and
+  the call throws `OMSWalletSessionException` (`OMS_SESSION_EXPIRED`, no `upstreamError`) instead of
+  `OMSWalletRequestException`. This includes a rejected `Execute`, which never ran: it throws
+  `OMS_SESSION_EXPIRED` instead of `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. Status polling after a
+  submitted transaction keeps `OMS_TRANSACTION_STATUS_LOOKUP_FAILED` and its `txnId`.
+- When the wallet API answers the SDK's expiry check (`GetCredential`) with `Unauthorized` 7207, the
+  credential was revoked, and the session ends the same way. 7207 from any other call is a request
+  error, and it starts a background `GetCredential`: the session ends when that read finds the
+  credential revoked, and is kept otherwise.
+- When a session's local expiry passes, a session whose requested lifetime has run out ends at
+  once without asking the wallet API. Otherwise the SDK reads the expiry and the wallet API decides,
+  so with an accurate device clock and the app in the foreground the `Expired` change arrives at
+  the expiry. Protected operations on a locally expired session check right away.
+- After a restore and at the local expiry, the SDK reads the session's current expiry once the app is
+  in use: right away when the app has a started activity, otherwise when it next has one (the process
+  lifecycle, through `androidx.lifecycle:lifecycle-process`). A process started in the background
+  (for example for a push message or a broadcast) does not read it, because the read would extend an
+  idle session.
+- If the wallet API cannot be reached when a session reaches its local expiry, or returns an expiry
+  the SDK cannot parse, the session is kept: the read is retried while the app is in the foreground,
+  at most 15 minutes apart, and protected operations
+  throw the request error (`OMSWalletResponseException`, `OMS_INVALID_RESPONSE`, for an unparseable
+  expiry) instead of `OMS_SESSION_EXPIRED`.
+- Protected operations that find the session locally expired share one expiry check. Cancelling the
+  operation that started it no longer cancels the others; they run the check again.
+
+### One session per project and environment
+
+Every `OMSWallet` created for the same project and environment in the process shares one session:
+the active wallet, sign-out, expiry, and listeners. A rotated publishable key for the same project
+keeps the session, and every instance of it, including its `indexer` and the fee balance lookup
+of transaction methods, sends the key of the most recently created instance. Another project or
+environment is a separate session.
+
+### Signed requests go one at a time
+
+WaaS needs every signed request's nonce to be higher than the last one it accepted, so concurrent
+calls can reach it out of order and be rejected with `PreconditionFailed` (code `7206`, HTTP 412).
+Requests signed with one credential now go one at a time, in the order they were made, for every
+`OMSWallet` of that session in the process, so concurrent calls this app makes through this SDK
+version no longer reject each other; a burst of calls takes longer. A sign-in after sign-out uses a new key, whose requests do not wait
+for the previous key's. A call that waits for its turn past the 30-second request deadline
+fails with `OMS_REQUEST_FAILED` and was never sent.
+
+### Rejected nonces are resent
+
+Requests from another process or device signed with the same credential are not ordered with
+these. For a request WaaS still rejects for its nonce, the SDK signs it again with a fresh nonce
+and resends it, at most 2 times, before surfacing the rejection as `OMS_REQUEST_FAILED` (status 412). WaaS rejects the nonce before running
+the method, so a resent `Execute` cannot send a transaction twice, and a still-rejected `Execute`
+is reported as `OMS_REQUEST_FAILED`, not `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`. The same applies to
+an `Execute` that WaaS refuses with `InvalidSignature` (7201), `UsageLimitExceeded` (7205) or
+`Unauthorized` (7207): WaaS refuses these before submitting anything, so they are request errors too.
+For Tron, so are `InvalidRequest` (7200) and `InvalidFeeOption` (7310), which WaaS raises while it
+prices the transaction again, before broadcasting it. An `Execute` whose request the SDK never sent,
+because signing failed or its deadline passed first, also throws the request error without `txnId`.
+
+### Signed requests time out after 30 seconds
+
+Every signed wallet API request now fails if it has not finished within 30 seconds, counting its
+wait for its turn, signing, nonce resends, and the HTTP call. A shorter call, connect, read, or
+write timeout on the `OkHttpClient` passed to `OMSWallet` still applies. An operation on a locally expired session
+waits for its expiry read within the same 30 seconds; when they pass first, it fails with the
+request error and the session is kept. Signing runs under the session lock and cannot be
+interrupted, so a call returns within 30 seconds unless the device's signer itself is stuck; a
+signature that finishes after the deadline is never sent. An `Execute` that times out after it was
+sent stays `OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
+
+### Indexer responses use the gateway field names
+
+Indexer responses are now read only with the field names the indexer gateways return; 0.3.x also
+accepted older names (`balanceWei`, and other spellings of `tokenId`, `tokenIds`, and `metaTxnId`).
+A response that has a required field only under an older name fails with `OMS_INVALID_RESPONSE`,
+and an optional one is read as `null`.
+
+### Retired wallet-import enclave measurement
+
+Production wallet import trusts the WaaS v1.1.1 and v1.2.0 enclave measurements and no longer the
+retired v1.1.0 one, so key material is not sent to a v1.1.0 enclave.
+
+### Wallet-import key strings are redacted
+
+`toString()` of `WalletImportPrivateKey.Ethereum`, `Tron`, and `Solana` no longer includes the key:
+it returns `Ethereum(value=<redacted>)` (and likewise for the others). They remain data classes, so
+`value`, equality, `copy`, and destructuring are unchanged.
+
+### Reverting transactions are request failures
+
+When the wallet API refuses to send a transaction because it would revert (WaaS
+`TransactionSimulationFailed`, code `7314`, HTTP 400), the transaction methods throw
+`OMSWalletRequestException` (`OMS_REQUEST_FAILED`, status `400`, `retryable = false`, no `txnId`) with
+`upstreamError.name = "TransactionSimulationFailed"` and `upstreamError.code = "7314"`. 0.3.x reported
+this as `OMS_TRANSACTION_EXECUTION_UNCONFIRMED`; the transaction was closed as failed and never sent,
+so fix it before sending again. Execute failures that may have reached the wallet API still throw
+`OMS_TRANSACTION_EXECUTION_UNCONFIRMED` with its `txnId`.
+
+### One-time sign-in after upgrading
+
+Saved sessions now record the full active wallet, including its type. Sessions saved by 0.3.x do
+not, so 0.4.0 discards them on load and users sign in once after upgrading.
+
+### Contract method names
+
+`callContract` (and the new `callTronContract`) now require `method` to be a bare function name
+such as `"transfer"`. The wallet service builds the signature from the `args` types and never
+accepted full signatures; the SDK now rejects values such as `"transfer(address,uint256)"` with
+`OMSWalletValidationException` before sending a request.
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.callContract(network, contract, method = "transfer(address,uint256)", args = args)
+
+// 0.4.0
+omsWallet.wallet.callContract(network, contractAddress, method = "transfer", args = args)
+```
+
+The contract parameter of `callContract` and `callTronContract` is now named `contractAddress`.
+Positional calls are unchanged; update named arguments:
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.callContract(network = network, contract = token, method = "transfer", args = args)
+
+// 0.4.0
+omsWallet.wallet.callContract(network = network, contractAddress = token, method = "transfer", args = args)
+```
+
+### Signature verification targets a wallet address
+
+Every verification method (`isValidMessageSignature`, `isValidTypedDataSignature`,
+`isValidSolanaMessageSignature`, `isValidTronMessageSignature`, `isValidTronTypedDataSignature`)
+takes an optional trailing `walletAddress` and no `walletId`. The SDK always sends `networkFamily`
+and `walletAddress` to the wallet service and never sends `walletId`; `isValidTypedDataSignature`
+now also sends `networkFamily = "evm"`.
+
+- Passing `walletAddress` verifies any wallet and no longer requires a session, so the EVM and
+  Solana methods now work while signed out.
+- Omitting `walletAddress` uses the active wallet's address. Without a session the methods still
+  throw `OMSWalletSessionException`. When the active wallet belongs to another family (for example
+  an active Ethereum wallet for `isValidSolanaMessageSignature`, or an active Tron wallet for
+  `isValidTypedDataSignature`), they now throw `OMSWalletValidationException` before any request.
+  Previously such calls reached the wallet service, which rejected them with an
+  `OMSWalletRequestException`.
+- A given but empty or whitespace-only `walletAddress` throws `OMSWalletValidationException`
+  (`walletAddress must not be empty`) before any request. Omit `walletAddress` to verify against
+  the active wallet.
+
+```kotlin
+// 0.3.x: always the active wallet, which had to be signed in
+omsWallet.wallet.isValidMessageSignature(network, message, signature)
+
+// 0.4.0: the active wallet (unchanged call), or any Ethereum wallet, even while signed out
+omsWallet.wallet.isValidMessageSignature(network, message, signature)
+omsWallet.wallet.isValidMessageSignature(network, message, signature, walletAddress = "0x…")
+```
+
+### Renamed types
+
+| 0.3.x | 0.4.0 |
+|---|---|
+| `WalletSelectionResult` | `WalletActivationResult` |
+| `TokenBalancesResult` | `BalancesResult` |
+| `OidcRedirectAuthMode` | `OidcAuthMode` (wire values `auth-code`/`auth-code-pkce` are unchanged, so pending redirects saved by 0.3.x still load) |
+
+```kotlin
+// 0.3.x
+val result: WalletSelectionResult = omsWallet.wallet.useWallet(walletId)
+val balances: TokenBalancesResult = omsWallet.indexer.getBalances(walletAddress)
+
+// 0.4.0
+val result: WalletActivationResult = omsWallet.wallet.useWallet(walletId)
+val balances: BalancesResult = omsWallet.indexer.getBalances(walletAddress)
+```
+
+### Transaction status polling options
+
+`TransactionStatusPollingOptions` properties were renamed to match the TypeScript and Swift SDKs.
+The defaults (`400`, `5`, `2_000`, `60_000` milliseconds/polls), the constructor order, and the
+polling behavior are unchanged. Validation messages use the new names (for example
+`"timeoutMs must not be negative"`).
+
+| 0.3.x | 0.4.0 |
+|---|---|
+| `fastPollIntervalMillis` | `fastIntervalMs` |
+| `fastPollCount` | `fastPollCount` |
+| `pollIntervalMillis` | `intervalMs` |
+| `timeoutMillis` | `timeoutMs` |
+
+```kotlin
+// 0.3.x
+TransactionStatusPollingOptions(timeoutMillis = 120_000L, pollIntervalMillis = 3_000L)
+
+// 0.4.0
+TransactionStatusPollingOptions(timeoutMs = 120_000L, intervalMs = 3_000L)
+```
+
+### `sendTransaction(network, to, value)` takes `mode`
+
+The `to`/`value` overload gained `mode: TransactionMode = TransactionMode.Relayer` before
+`waitForStatus`, matching `callContract` and `sendSolanaTransfer`. Positional calls that passed
+`waitForStatus` fourth must name it:
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.sendTransaction(network, to, value, false)
+
+// 0.4.0
+omsWallet.wallet.sendTransaction(network, to, value, waitForStatus = false)
+omsWallet.wallet.sendTransaction(network, to, value, mode = TransactionMode.Native)
+```
+
+### OIDC parameter order
+
+Parameters now follow the same order as the TypeScript and Swift SDKs. Defaults are unchanged and
+named arguments are unaffected:
+
+- `signInWithOidcIdToken(idToken, issuer, audience, walletType, walletSelection, sessionLifetimeSeconds, provider, providerLabel)`:
+  `walletType` now comes before `walletSelection`.
+- `startOidcRedirectAuth(provider: CustomOidcProviderConfig, walletType, walletSelection, sessionLifetimeSeconds, loginHint, authorizeParams)`:
+  `loginHint` now comes before `authorizeParams`.
+
+```kotlin
+// 0.3.x
+omsWallet.wallet.signInWithOidcIdToken(idToken, issuer, audience, WalletSelectionBehavior.Manual, WalletType.Solana)
+
+// 0.4.0
+omsWallet.wallet.signInWithOidcIdToken(idToken, issuer, audience, WalletType.Solana, WalletSelectionBehavior.Manual)
+```
+
+### Address-already-imported errors
+
+Importing a key whose address is already imported (WaaS `AddressAlreadyImported`, code `7313`)
+now throws `OMSWalletRequestException` with `code = OMSWalletErrorCode.WalletAddressAlreadyImported`
+(`OMS_WALLET_ADDRESS_ALREADY_IMPORTED`), `status = 409`, and `retryable = false`. It previously
+used `OMSWalletErrorCode.RequestFailed`:
+
+```kotlin
+// 0.3.x
+catch (error: OMSWalletRequestException) {
+    if (error.code == OMSWalletErrorCode.RequestFailed && error.status == 409) showAlreadyImported()
+}
+
+// 0.4.0
+catch (error: OMSWalletRequestException) {
+    if (error.code == OMSWalletErrorCode.WalletAddressAlreadyImported) showAlreadyImported()
+}
+```
+
+### Indexer page cursors
+
+`TokenBalancesPageRequest` and `TokenBalancesPage` gained trailing `column`, `before`, `after`, and
+`sort` properties (`SortBy`, `SortOrder`). Omitted request fields are not sent. A page response
+whose `sort` entries are malformed or use an order other than `DESC`/`ASC` now fails with
+`OMSWalletResponseException` (`OMS_INVALID_RESPONSE`); previously the SDK ignored those fields.
+Because these are data-class properties, `TokenBalancesPage` equality and `toString()` now include
+them.
+
+### Wallet responses
+
+Ethereum wallet addresses returned by the wallet API must be `0x` followed by 40 hexadecimal
+characters (checksum casing is not enforced). Other values fail with `OMSWalletResponseException`
+(`OMS_INVALID_RESPONSE`). Wallet-family checks now use the wallet's stored type instead of the
+address shape.
+
+### Claimable wallets
+
+Automatic wallet selection now claims a claimable (preallocated) wallet of the requested type
+when the user owns none, instead of creating a new one. Owned wallets still win, and a wallet is
+still created when there is nothing to claim. A failed claim fails sign-in.
+
+- `CompleteAuthResult.WalletSelected` gained `claimableWallets: List<Wallet>`, the claimable
+  wallets the sign-in did not claim. It is the last constructor property and defaults to an
+  empty list.
+- `PendingWalletSelection` gained `claimableWallets: List<Wallet>`, filtered to the requested
+  wallet type like `wallets`, and `claimAndSelectWallet(walletId: String)`, which claims one of
+  them and completes the selection like `selectWallet`. Its errors carry
+  `OMSWalletOperation.PendingWalletSelectionClaimAndSelectWallet`
+  (`wallet.pendingWalletSelection.claimAndSelectWallet`).
+- `WalletClient.claimWallet(walletId: String): WalletActivationResult` claims and selects a
+  claimable wallet, during a pending manual selection or with an active session. Its errors carry
+  `OMSWalletOperation.WalletClaimWallet` (`wallet.claimWallet`).
+
+### Exhaustive `when` expressions
+
+These public enums gained cases. Update exhaustive `when` expressions over them:
+
+- `WalletType.Tron`
+- `OMSWalletOperation.WalletSignTronMessage`, `WalletSignTronTypedData`,
+  `WalletIsValidTronMessageSignature`, `WalletIsValidTronTypedDataSignature`,
+  `WalletSendTronTransaction`, `WalletCallTronContract`, `IndexerGetTronBalances`,
+  `WalletClaimWallet`, and `PendingWalletSelectionClaimAndSelectWallet`
+- `OMSWalletErrorCode.WalletAddressAlreadyImported`
+
+`WalletImportPrivateKey` also gained the `Tron` and `TronBytes` subtypes; exhaustive `when`
+expressions over it need branches for them.
+
 ## 0.3.0
 
 ### Wallet types and key origin

@@ -10,10 +10,9 @@ import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.runOMSWalletOperation
 
 /**
- * Result returned after selecting or creating a wallet.
+ * Result returned after selecting, creating, or importing a wallet.
  */
-data class WalletSelectionResult(
-    val walletAddress: String,
+data class WalletActivationResult(
     val wallet: Wallet,
 )
 
@@ -23,9 +22,10 @@ data class WalletSelectionResult(
  */
 enum class WalletSelectionBehavior {
     /**
-     * Selects the first existing wallet for the requested wallet type, or
-     * creates and selects one when none exists. Use [Manual] when the app needs
-     * to present wallet choices.
+     * Selects the first existing wallet for the requested wallet type. When none
+     * exists, claims and selects a claimable (preallocated) wallet of that type,
+     * or creates and selects one when there is none to claim. Use [Manual] when
+     * the app needs to present wallet choices.
      */
     Automatic,
 
@@ -38,20 +38,26 @@ enum class WalletSelectionBehavior {
 
 /**
  * Authenticated state waiting for the app to select or create a wallet.
+ *
+ * [claimableWallets] are wallets of [walletType] that were preallocated for the
+ * signed-in user's verified email and not claimed yet; claim one with
+ * [claimAndSelectWallet].
  */
 class PendingWalletSelection internal constructor(
     val walletType: WalletType,
     val wallets: List<Wallet>,
+    val claimableWallets: List<Wallet>,
     val credential: WalletCredential,
-    private val selectWalletAction: suspend (String) -> WalletSelectionResult,
-    private val createAndSelectWalletAction: suspend (String?) -> WalletSelectionResult,
+    private val selectWalletAction: suspend (String) -> WalletActivationResult,
+    private val createAndSelectWalletAction: suspend (String?) -> WalletActivationResult,
+    private val claimAndSelectWalletAction: suspend (String) -> WalletActivationResult,
 ) {
     private val selectionMutex = Mutex()
 
     /**
      * Selects one of [wallets] and persists it as the active wallet session.
      */
-    suspend fun selectWallet(walletId: String): WalletSelectionResult {
+    suspend fun selectWallet(walletId: String): WalletActivationResult {
         val operation = OMSWalletOperation.PendingWalletSelectionSelectWallet
         return runOMSWalletOperation(operation) {
             lockSelection(operation)
@@ -74,12 +80,35 @@ class PendingWalletSelection internal constructor(
      * Creates a new wallet for [walletType], selects it, and persists it as the
      * active wallet session.
      */
-    suspend fun createAndSelectWallet(reference: String? = null): WalletSelectionResult {
+    suspend fun createAndSelectWallet(reference: String? = null): WalletActivationResult {
         val operation = OMSWalletOperation.PendingWalletSelectionCreateAndSelectWallet
         return runOMSWalletOperation(operation) {
             lockSelection(operation)
             try {
                 createAndSelectWalletAction(reference)
+            } finally {
+                selectionMutex.unlock()
+            }
+        }
+    }
+
+    /**
+     * Claims one of [claimableWallets], selects it, and persists it as the
+     * active wallet session.
+     */
+    suspend fun claimAndSelectWallet(walletId: String): WalletActivationResult {
+        val operation = OMSWalletOperation.PendingWalletSelectionClaimAndSelectWallet
+        return runOMSWalletOperation(operation) {
+            lockSelection(operation)
+            try {
+                if (claimableWallets.none { it.id == walletId }) {
+                    throw OMSWalletSelectionException(
+                        code = OMSWalletErrorCode.WalletSelectionUnavailable,
+                        operation = operation,
+                        message = "Selected wallet is not one of the available options",
+                    )
+                }
+                claimAndSelectWalletAction(walletId)
             } finally {
                 selectionMutex.unlock()
             }
@@ -102,14 +131,31 @@ class PendingWalletSelection internal constructor(
  * or app-driven.
  */
 sealed interface CompleteAuthResult {
+    /** The credential issued by auth completion. */
+    val credential: WalletCredential
+
+    /** The selected wallet, or `null` while wallet selection is pending. */
+    val wallet: Wallet?
+
+    /**
+     * Auth completed and [wallet] is active. [claimableWallets] are wallets preallocated
+     * for the signed-in user's verified email that this sign-in did not claim; claim one
+     * with `WalletClient.claimWallet`.
+     */
     data class WalletSelected(
-        val walletAddress: String,
-        val wallet: Wallet,
+        override val wallet: Wallet,
         val wallets: List<Wallet>,
-        val credential: WalletCredential,
+        override val credential: WalletCredential,
+        val claimableWallets: List<Wallet> = emptyList(),
     ) : CompleteAuthResult
 
     data class WalletSelection(
         val pendingSelection: PendingWalletSelection,
-    ) : CompleteAuthResult
+    ) : CompleteAuthResult {
+        override val credential: WalletCredential
+            get() = pendingSelection.credential
+
+        override val wallet: Wallet?
+            get() = null
+    }
 }

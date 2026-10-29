@@ -19,13 +19,15 @@ How testing works in this repo. AGENTS.md points here so agents know how to veri
 Key subdirectories:
 - `wallet/` — wallet auth, signing, access, session, and transaction tests
 - `network/` — indexer and service client tests using MockWebServer
-- `utils/` — unit formatting, parsing, and nonce helper tests
+- `storage/` — persisted session record encoding/decoding tests
+- `utils/` — base64url, ISO timestamp, and unit conversion/formatting helper tests
 
 ## Instrumented (Android) Tests
 
-- **Scope:** Tests that require the Android runtime — specifically Android Keystore credential
-  creation, nonce generation, and persisted session behavior. These must run on a connected device
-  or emulator.
+- **Scope:** Tests that require the Android runtime. The only instrumented test is
+  `AndroidKeystoreP256CredentialSignerInstrumentedTest`: P-256 Android Keystore credential creation
+  and signing, and monotonic/unique nonce generation. These must run on a connected device or
+  emulator.
 - **Location:** `oms-wallet-kotlin-sdk/src/androidTest/`
 - **Run:** `./gradlew :oms-wallet-kotlin-sdk:connectedDebugAndroidTest`
 - **Prerequisites:** A connected Android device or running emulator. This is an intentional

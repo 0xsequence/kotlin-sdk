@@ -44,17 +44,27 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.serialization.json.JsonPrimitive
 import technology.polygon.omswallet.Network
 import technology.polygon.omswallet.OMSWallet
 import technology.polygon.omswallet.OMSWalletEmailSessionAuth
 import technology.polygon.omswallet.OMSWalletException
+import technology.polygon.omswallet.OMSWalletExpiredSession
 import technology.polygon.omswallet.OMSWalletNetworks
 import technology.polygon.omswallet.OMSWalletOidcSessionAuth
 import technology.polygon.omswallet.OMSWalletSessionAuth
-import technology.polygon.omswallet.OMSWalletSessionExpiredEvent
+import technology.polygon.omswallet.OMSWalletSessionChangeEvent
+import technology.polygon.omswallet.SolanaNetwork
+import technology.polygon.omswallet.TronNetwork
+import technology.polygon.omswallet.models.AbiArg
 import technology.polygon.omswallet.models.FeeOptionSelection
 import technology.polygon.omswallet.models.FeeOptionWithBalance
+import technology.polygon.omswallet.models.SolanaBalance
+import technology.polygon.omswallet.models.TransactionStatus
+import technology.polygon.omswallet.models.TransactionStatusPollingOptions
+import technology.polygon.omswallet.models.TronBalance
 import technology.polygon.omswallet.models.Wallet
+import technology.polygon.omswallet.models.WalletType
 import technology.polygon.omswallet.utils.parseUnits
 import technology.polygon.omswallet.wallet.CompleteAuthResult
 import technology.polygon.omswallet.wallet.OidcRedirectAuthResult
@@ -108,12 +118,66 @@ class AuthDemoActivity : AppCompatActivity() {
     private lateinit var startAppleRedirectSignInButton: MaterialButton
     private lateinit var manualWalletSelectionCheckbox: MaterialCheckBox
     private lateinit var sessionLifetimeInput: TextInputEditText
+    private lateinit var walletTypeInput: AutoCompleteTextView
+    private lateinit var networkInputLayout: View
+    private lateinit var evmActionsContainer: View
+    private lateinit var tronActionsContainer: View
+    private lateinit var tronNetworkInput: AutoCompleteTextView
+    private lateinit var tronMainnetWarningView: TextView
+    private lateinit var tronFaucetButton: MaterialButton
+    private lateinit var tronFaucetSpacer: View
+    private lateinit var tronBalancesView: TextView
+    private lateinit var tronRefreshBalancesButton: MaterialButton
+    private lateinit var tronMessageInput: TextInputEditText
+    private lateinit var tronSignMessageButton: MaterialButton
+    private lateinit var tronSignatureView: TextView
+    private lateinit var tronSignatureStatusView: TextView
+    private lateinit var tronAssetInput: AutoCompleteTextView
+    private lateinit var tronCustomTokenContainer: View
+    private lateinit var tronTokenContractInput: TextInputEditText
+    private lateinit var tronTokenDecimalsInput: TextInputEditText
+    private lateinit var tronRecipientInput: TextInputEditText
+    private lateinit var tronAmountLayout: com.google.android.material.textfield.TextInputLayout
+    private lateinit var tronAmountInput: TextInputEditText
+    private lateinit var tronSendButton: MaterialButton
+    private lateinit var tronTransactionHashView: TextView
+    private lateinit var tronTransactionStatusView: TextView
+    private lateinit var tronOpenExplorerButton: MaterialButton
+    private lateinit var solanaActionsContainer: View
+    private lateinit var solanaNetworkInput: AutoCompleteTextView
+    private lateinit var solanaMainnetWarningView: TextView
+    private lateinit var solanaFaucetRow: View
+    private lateinit var solanaBalancesView: TextView
+    private lateinit var solanaRefreshBalancesButton: MaterialButton
+    private lateinit var solanaMessageInput: TextInputEditText
+    private lateinit var solanaSignMessageButton: MaterialButton
+    private lateinit var solanaSignatureView: TextView
+    private lateinit var solanaSignatureStatusView: TextView
+    private lateinit var solanaAssetInput: AutoCompleteTextView
+    private lateinit var solanaAssetHintView: TextView
+    private lateinit var solanaCustomTokenContainer: View
+    private lateinit var solanaTokenMintInput: TextInputEditText
+    private lateinit var solanaTokenDecimalsInput: TextInputEditText
+    private lateinit var solanaRecipientInput: TextInputEditText
+    private lateinit var solanaAmountLayout: com.google.android.material.textfield.TextInputLayout
+    private lateinit var solanaAmountInput: TextInputEditText
+    private lateinit var solanaSendButton: MaterialButton
+    private lateinit var solanaTransactionSignatureView: TextView
+    private lateinit var solanaTransactionStatusView: TextView
+    private lateinit var solanaOpenExplorerButton: MaterialButton
 
     private var lastSignedMessage: String? = null
     private var lastSignedSignature: String? = null
     private var lastTransactionHash: String? = null
     private var selectedNetwork: Network = Network.AMOY
-    private var expiredSessionEvent: OMSWalletSessionExpiredEvent? = null
+    private var selectedTronNetwork: TronNetworkConfig = TronNetworkConfig.Nile
+    private var selectedTronAsset: TronAsset = TronAsset.Trx
+    private var lastTronTransactionHash: String? = null
+    private var selectedSolanaNetwork: SolanaNetworkConfig = SolanaNetworkConfig.Devnet
+    private var selectedSolanaAsset: SolanaAsset = SolanaAsset.Sol
+    private var lastSolanaTransactionSignature: String? = null
+    private val busyWalletPanels = mutableSetOf<WalletType>()
+    private var expiredSessionEvent: OMSWalletExpiredSession? = null
     private var unsubscribeSessionExpired: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -170,6 +234,53 @@ class AuthDemoActivity : AppCompatActivity() {
         startAppleRedirectSignInButton = findViewById(R.id.startAppleRedirectSignInButton)
         manualWalletSelectionCheckbox = findViewById(R.id.manualWalletSelectionCheckbox)
         sessionLifetimeInput = findViewById(R.id.sessionLifetimeInput)
+        walletTypeInput = findViewById(R.id.walletTypeInput)
+        networkInputLayout = findViewById(R.id.networkInputLayout)
+        evmActionsContainer = findViewById(R.id.evmActionsContainer)
+        tronActionsContainer = findViewById(R.id.tronActionsContainer)
+        tronNetworkInput = findViewById(R.id.tronNetworkInput)
+        tronMainnetWarningView = findViewById(R.id.tronMainnetWarningView)
+        tronFaucetButton = findViewById(R.id.tronFaucetButton)
+        tronFaucetSpacer = findViewById(R.id.tronFaucetSpacer)
+        tronBalancesView = findViewById(R.id.tronBalancesView)
+        tronRefreshBalancesButton = findViewById(R.id.tronRefreshBalancesButton)
+        tronMessageInput = findViewById(R.id.tronMessageInput)
+        tronSignMessageButton = findViewById(R.id.tronSignMessageButton)
+        tronSignatureView = findViewById(R.id.tronSignatureView)
+        tronSignatureStatusView = findViewById(R.id.tronSignatureStatusView)
+        tronAssetInput = findViewById(R.id.tronAssetInput)
+        tronCustomTokenContainer = findViewById(R.id.tronCustomTokenContainer)
+        tronTokenContractInput = findViewById(R.id.tronTokenContractInput)
+        tronTokenDecimalsInput = findViewById(R.id.tronTokenDecimalsInput)
+        tronRecipientInput = findViewById(R.id.tronRecipientInput)
+        tronAmountLayout = findViewById(R.id.tronAmountLayout)
+        tronAmountInput = findViewById(R.id.tronAmountInput)
+        tronSendButton = findViewById(R.id.tronSendButton)
+        tronTransactionHashView = findViewById(R.id.tronTransactionHashView)
+        tronTransactionStatusView = findViewById(R.id.tronTransactionStatusView)
+        tronOpenExplorerButton = findViewById(R.id.tronOpenExplorerButton)
+        solanaActionsContainer = findViewById(R.id.solanaActionsContainer)
+        solanaNetworkInput = findViewById(R.id.solanaNetworkInput)
+        solanaMainnetWarningView = findViewById(R.id.solanaMainnetWarningView)
+        solanaFaucetRow = findViewById(R.id.solanaFaucetRow)
+        solanaBalancesView = findViewById(R.id.solanaBalancesView)
+        solanaRefreshBalancesButton = findViewById(R.id.solanaRefreshBalancesButton)
+        solanaMessageInput = findViewById(R.id.solanaMessageInput)
+        solanaSignMessageButton = findViewById(R.id.solanaSignMessageButton)
+        solanaSignatureView = findViewById(R.id.solanaSignatureView)
+        solanaSignatureStatusView = findViewById(R.id.solanaSignatureStatusView)
+        solanaAssetInput = findViewById(R.id.solanaAssetInput)
+        solanaAssetHintView = findViewById(R.id.solanaAssetHintView)
+        solanaCustomTokenContainer = findViewById(R.id.solanaCustomTokenContainer)
+        solanaTokenMintInput = findViewById(R.id.solanaTokenMintInput)
+        solanaTokenDecimalsInput = findViewById(R.id.solanaTokenDecimalsInput)
+        solanaRecipientInput = findViewById(R.id.solanaRecipientInput)
+        solanaAmountLayout = findViewById(R.id.solanaAmountLayout)
+        solanaAmountInput = findViewById(R.id.solanaAmountInput)
+        solanaSendButton = findViewById(R.id.solanaSendButton)
+        solanaTransactionSignatureView = findViewById(R.id.solanaTransactionSignatureView)
+        solanaTransactionStatusView = findViewById(R.id.solanaTransactionStatusView)
+        solanaOpenExplorerButton = findViewById(R.id.solanaOpenExplorerButton)
     }
 
     private fun populateDefaults() {
@@ -177,6 +288,11 @@ class AuthDemoActivity : AppCompatActivity() {
         transactionToInput.setText("0xE5E8B483FfC05967FcFed58cc98D053265af6D99")
         restoreAuthPreferences()
         configureNetworkPicker()
+        configureWalletTypePicker()
+        configureTronAssetPicker()
+        configureSolanaAssetPicker()
+        configureTronNetworkPicker()
+        configureSolanaNetworkPicker()
         resetUiForNoSession()
     }
 
@@ -239,14 +355,10 @@ class AuthDemoActivity : AppCompatActivity() {
                 val email = requireEmailForSignIn()
                 val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
                 persistAuthPreferences()
-                if (sessionLifetimeSeconds == null) {
-                    sdk.wallet.startEmailAuth(email)
-                } else {
-                    sdk.wallet.startEmailAuth(
-                        email = email,
-                        sessionLifetimeSeconds = sessionLifetimeSeconds,
-                    )
-                }
+                sdk.wallet.startEmailAuth(
+                    email = email,
+                    sessionLifetimeSeconds = sessionLifetimeSeconds ?: WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
+                )
                 authStatusView.text =
                     buildString {
                         append("Code requested for ")
@@ -274,42 +386,22 @@ class AuthDemoActivity : AppCompatActivity() {
             ) {
                 val code = requireText(codeInput, "Verification code")
                 codeInput.text?.clear()
-                if (manualWalletSelectionCheckbox.isChecked) {
-                    when (
-                        val result =
-                            completePendingEmailAuth(
-                                code = code,
-                                walletSelection = WalletSelectionBehavior.Manual,
-                            )
-                    ) {
-                        is CompleteAuthResult.WalletSelection -> {
-                            completePendingWalletSelection(
-                                pendingSelection = result.pendingSelection,
-                                status = "Email login complete",
-                            )
-                        }
-
-                        is CompleteAuthResult.WalletSelected -> {
-                            renderSignedInWallet(result.wallet, "Email login complete")
-                        }
+                when (
+                    val result =
+                        sdk.wallet.completeEmailAuth(
+                            code = code,
+                            walletSelection = currentWalletSelectionBehavior(),
+                        )
+                ) {
+                    is CompleteAuthResult.WalletSelected -> {
+                        renderSignedInWallet(result.wallet, "Email login complete")
                     }
-                } else {
-                    when (
-                        val result =
-                            completePendingEmailAuth(
-                                code = code,
-                            )
-                    ) {
-                        is CompleteAuthResult.WalletSelected -> {
-                            renderSignedInWallet(result.wallet, "Email login complete")
-                        }
 
-                        is CompleteAuthResult.WalletSelection -> {
-                            completePendingWalletSelection(
-                                pendingSelection = result.pendingSelection,
-                                status = "Email login complete",
-                            )
-                        }
+                    is CompleteAuthResult.WalletSelection -> {
+                        completePendingWalletSelection(
+                            pendingSelection = result.pendingSelection,
+                            status = "Email login complete",
+                        )
                     }
                 }
             }
@@ -411,6 +503,562 @@ class AuthDemoActivity : AppCompatActivity() {
         copyWalletAddressButton.setOnClickListener {
             copyWalletAddress()
         }
+
+        bindTronActions()
+        bindSolanaActions()
+    }
+
+    private fun bindTronActions() {
+        tronRefreshBalancesButton.setOnClickListener {
+            val wallet = activeWalletOrNull(WalletType.Tron) ?: return@setOnClickListener
+            launchWalletPanelAction(WalletType.Tron, label = "Refresh Tron balances") {
+                loadTronBalances(wallet)
+            }
+        }
+
+        tronFaucetButton.setOnClickListener {
+            val faucetUrl = selectedTronNetwork.faucetUrl ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(faucetUrl)))
+        }
+
+        tronSignMessageButton.setOnClickListener {
+            launchWalletPanelAction(
+                WalletType.Tron,
+                label = "Sign Tron message",
+                onStart = { tronSignatureStatusView.text = "Signature status: signing in progress..." },
+                onFailure = { tronSignatureStatusView.text = "Signature status: ${it.message ?: "signing failed"}" },
+            ) {
+                val message = requireText(tronMessageInput, "Message")
+                val walletAddress = requireActiveWallet(WalletType.Tron).address
+                val signature = sdk.wallet.signTronMessage(message)
+                tronSignatureView.text = "Last signature: $signature"
+                tronSignatureStatusView.text = "Signature status: verifying..."
+                val valid =
+                    sdk.wallet.isValidTronMessageSignature(
+                        message = message,
+                        signature = signature,
+                        walletAddress = walletAddress,
+                    )
+                tronSignatureStatusView.text =
+                    if (valid) "Signature status: signed and verified." else "Signature status: verification failed."
+                appendLog("Tron message signed; isValid=$valid")
+            }
+        }
+
+        tronSendButton.setOnClickListener {
+            launchWalletPanelAction(
+                WalletType.Tron,
+                label = selectedTronNetwork.sendLabel,
+                onStart = {
+                    tronTransactionStatusView.text = "Transfer status: preparing transfer..."
+                    tronTransactionHashView.text = "Last tx hash: none"
+                    tronOpenExplorerButton.visibility = View.GONE
+                    lastTronTransactionHash = null
+                },
+                onFailure = { tronTransactionStatusView.text = "Transfer status: ${it.message ?: "send failed"}" },
+            ) {
+                val wallet = requireActiveWallet(WalletType.Tron)
+                val config = selectedTronNetwork
+                val recipient = requireText(tronRecipientInput, "Recipient")
+                val amount = requireText(tronAmountInput, "Amount")
+                val statusPolling = TransactionStatusPollingOptions(timeoutMs = 120_000L)
+                val result =
+                    when (val asset = selectedTronAsset) {
+                        TronAsset.Trx -> {
+                            sdk.wallet.sendTronTransaction(
+                                network = config.network,
+                                to = recipient,
+                                value = parseUnits(amount, TRX_DECIMALS),
+                                statusPolling = statusPolling,
+                                selectFeeOption = ::selectFeeOption,
+                            )
+                        }
+
+                        TronAsset.Usdt, TronAsset.Custom -> {
+                            val contract =
+                                if (asset == TronAsset.Usdt) {
+                                    config.usdtContract
+                                } else {
+                                    requireText(tronTokenContractInput, "Token contract")
+                                }
+                            val decimals =
+                                if (asset == TronAsset.Usdt) {
+                                    USDT_DECIMALS
+                                } else {
+                                    requireText(tronTokenDecimalsInput, "Token decimals")
+                                        .toIntOrNull()
+                                        ?.takeIf { it in 0..255 }
+                                        ?: error("Token decimals must be between 0 and 255")
+                                }
+                            // TRC-20 transfers are contract calls; the wallet service ABI-encodes the args.
+                            sdk.wallet.callTronContract(
+                                network = config.network,
+                                contractAddress = contract,
+                                method = "transfer",
+                                args =
+                                    listOf(
+                                        AbiArg(type = "address", value = JsonPrimitive(recipient)),
+                                        AbiArg(type = "uint256", value = JsonPrimitive(parseUnits(amount, decimals).toString())),
+                                    ),
+                                statusPolling = statusPolling,
+                                selectFeeOption = ::selectFeeOption,
+                            )
+                        }
+                    }
+                lastTronTransactionHash = result.txnHash
+                tronTransactionHashView.text =
+                    result.txnHash?.let { "Last tx hash: $it" } ?: "Last transaction ID: ${result.txnId}"
+                tronTransactionStatusView.text =
+                    when (result.status) {
+                        TransactionStatus.Executed, TransactionStatus.Failed -> "Transfer status: transfer ${result.status}."
+                        else -> "Transfer status: Transaction submitted."
+                    }
+                tronOpenExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
+                appendLog("Tron transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
+                // The transfer already succeeded; a balance refresh failure is shown in the balance view and logged.
+                runCatching { loadTronBalances(wallet) }
+                    .onFailure { appendLog("!! Tron balance refresh failed: ${describeThrowable(it)}") }
+            }
+        }
+
+        tronOpenExplorerButton.setOnClickListener {
+            val txnHash = lastTronTransactionHash ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${selectedTronNetwork.explorerUrl}/transaction/$txnHash")))
+        }
+    }
+
+    /**
+     * Loads TRX and USDT balances on the selected Tron network; shows the indexer's error for that
+     * network instead of zero balances. A response for a network or wallet the panel has left is ignored.
+     */
+    private suspend fun loadTronBalances(wallet: Wallet) {
+        val config = selectedTronNetwork
+
+        fun isCurrent() = config == selectedTronNetwork && activeWalletOrNull(WalletType.Tron)?.id == wallet.id
+
+        tronBalancesView.text = "${config.label} TRX: loading...\n${config.label} USDT: loading..."
+        try {
+            val result =
+                sdk.indexer.getTronBalances(
+                    walletAddress = wallet.address,
+                    networks = listOf(config.network),
+                    contractAddresses = listOf(config.usdtContract),
+                )
+            if (!isCurrent()) return
+            val networkError = result.errors.firstOrNull { it.network == config.network }
+            if (networkError != null) {
+                tronBalancesView.text = "Balances unavailable: ${networkError.reason}"
+                return
+            }
+            val trx = result.balances.firstOrNull { it is TronBalance.Native }
+            val usdt =
+                result.balances.firstOrNull {
+                    it is TronBalance.FungibleToken && it.contractAddress == config.usdtContract
+                }
+            tronBalancesView.text =
+                buildString {
+                    appendLine("${config.label} TRX: ${trx?.formattedBalance ?: "0"} TRX")
+                    append("${config.label} USDT: ${usdt?.formattedBalance ?: "0"} USDT")
+                }
+        } catch (throwable: Throwable) {
+            if (!isCurrent()) return
+            tronBalancesView.text = "Balances unavailable: ${throwable.message ?: "Unknown error"}"
+            throw throwable
+        }
+    }
+
+    private fun bindSolanaActions() {
+        solanaRefreshBalancesButton.setOnClickListener {
+            val wallet = activeWalletOrNull(WalletType.Solana) ?: return@setOnClickListener
+            launchWalletPanelAction(WalletType.Solana, label = "Refresh Solana balances") {
+                loadSolanaBalances(wallet)
+            }
+        }
+
+        findViewById<MaterialButton>(R.id.solanaViewWalletButton).setOnClickListener {
+            val address = activeWalletOrNull(WalletType.Solana)?.address ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedSolanaNetwork.explorerUrl("address/$address"))))
+        }
+
+        findViewById<MaterialButton>(R.id.solanaSolFaucetButton).setOnClickListener {
+            val faucetUrl = selectedSolanaNetwork.solFaucetUrl ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(faucetUrl)))
+        }
+
+        findViewById<MaterialButton>(R.id.solanaUsdcFaucetButton).setOnClickListener {
+            val faucetUrl = selectedSolanaNetwork.usdcFaucetUrl ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(faucetUrl)))
+        }
+
+        solanaSignMessageButton.setOnClickListener {
+            launchWalletPanelAction(
+                WalletType.Solana,
+                label = "Sign Solana message",
+                onStart = {
+                    solanaSignatureView.text = "Last signature: none"
+                    solanaSignatureStatusView.text = "Signature status: signing in progress..."
+                },
+                onFailure = { solanaSignatureStatusView.text = "Signature status: ${it.message ?: "signing failed"}" },
+            ) {
+                val message = requireText(solanaMessageInput, "Message")
+                val walletAddress = requireActiveWallet(WalletType.Solana).address
+                val signature = sdk.wallet.signSolanaMessage(message)
+                solanaSignatureView.text = "Last signature: $signature"
+                solanaSignatureStatusView.text = "Signature status: verifying..."
+                val valid =
+                    sdk.wallet.isValidSolanaMessageSignature(
+                        message = message,
+                        signature = signature,
+                        walletAddress = walletAddress,
+                    )
+                solanaSignatureStatusView.text =
+                    if (valid) "Signature status: signed and verified." else "Signature status: verification failed."
+                appendLog("Solana message signed; isValid=$valid")
+            }
+        }
+
+        solanaSendButton.setOnClickListener {
+            launchWalletPanelAction(
+                WalletType.Solana,
+                label = selectedSolanaNetwork.sendLabel,
+                onStart = {
+                    solanaTransactionStatusView.text = "Transfer status: preparing relayed transfer..."
+                    solanaTransactionSignatureView.text = "Last tx signature: none"
+                    solanaOpenExplorerButton.visibility = View.GONE
+                    lastSolanaTransactionSignature = null
+                },
+                onFailure = { solanaTransactionStatusView.text = "Transfer status: ${it.message ?: "send failed"}" },
+            ) {
+                val wallet = requireActiveWallet(WalletType.Solana)
+                val config = selectedSolanaNetwork
+                val recipient = requireText(solanaRecipientInput, "Recipient")
+                val amountText = requireText(solanaAmountInput, "Amount")
+                val (asset, decimals) =
+                    when (selectedSolanaAsset) {
+                        SolanaAsset.Sol -> {
+                            SOLANA_NATIVE_ASSET to SOL_DECIMALS
+                        }
+
+                        SolanaAsset.Usdc -> {
+                            config.usdcMint to USDC_DECIMALS
+                        }
+
+                        SolanaAsset.Custom -> {
+                            requireText(solanaTokenMintInput, "Token mint") to
+                                (
+                                    requireText(solanaTokenDecimalsInput, "Token decimals")
+                                        .toIntOrNull()
+                                        ?.takeIf { it in 0..255 }
+                                        ?: error("Token decimals must be between 0 and 255")
+                                )
+                        }
+                    }
+                val amount = parseUnits(amountText, decimals)
+                require(amount.signum() > 0) { "Amount must be greater than zero" }
+                val result =
+                    sdk.wallet.sendSolanaTransfer(
+                        network = config.network,
+                        asset = asset,
+                        to = recipient,
+                        amount = amount,
+                        statusPolling = TransactionStatusPollingOptions(timeoutMs = 120_000L),
+                        selectFeeOption = ::selectFeeOption,
+                    )
+                lastSolanaTransactionSignature = result.txnHash
+                solanaTransactionSignatureView.text =
+                    result.txnHash?.let { "Last tx signature: $it" } ?: "Last transaction ID: ${result.txnId}"
+                solanaTransactionStatusView.text =
+                    when (result.status) {
+                        TransactionStatus.Executed, TransactionStatus.Failed -> "Transfer status: transfer ${result.status}."
+                        else -> "Transfer status: Transaction submitted."
+                    }
+                solanaOpenExplorerButton.visibility = if (result.txnHash == null) View.GONE else View.VISIBLE
+                appendLog("Solana transaction ${result.txnId}: status=${result.status} hash=${result.txnHash ?: "pending"}")
+                // The transfer already succeeded; a balance refresh failure is shown in the balance view and logged.
+                runCatching { loadSolanaBalances(wallet) }
+                    .onFailure { appendLog("!! Solana balance refresh failed: ${describeThrowable(it)}") }
+            }
+        }
+
+        solanaOpenExplorerButton.setOnClickListener {
+            val signature = lastSolanaTransactionSignature ?: return@setOnClickListener
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(selectedSolanaNetwork.explorerUrl("tx/$signature"))))
+        }
+    }
+
+    private fun activeWalletOrNull(type: WalletType): Wallet? = sdk.wallet.activeWallet?.takeIf { it.type == type }
+
+    private fun requireActiveWallet(type: WalletType): Wallet =
+        activeWalletOrNull(type) ?: error("Select a ${walletTypeLabel(type)} wallet first")
+
+    /** Runs one action at a time per wallet panel, disabling that panel's actions while it is busy. */
+    private fun launchWalletPanelAction(
+        walletType: WalletType,
+        label: String,
+        onStart: (() -> Unit)? = null,
+        onFailure: ((Throwable) -> Unit)? = null,
+        action: suspend () -> Unit,
+    ) {
+        if (!busyWalletPanels.add(walletType)) return
+        setWalletPanelEnabled(walletType, enabled = false)
+        launchAction(label = label, onStart = onStart, onFailure = onFailure) {
+            try {
+                action()
+            } finally {
+                busyWalletPanels.remove(walletType)
+                setWalletPanelEnabled(walletType, enabled = true)
+            }
+        }
+    }
+
+    private fun setWalletPanelEnabled(
+        walletType: WalletType,
+        enabled: Boolean,
+    ) {
+        val controls =
+            when (walletType) {
+                WalletType.Solana -> {
+                    listOf(solanaRefreshBalancesButton, solanaSignMessageButton, solanaSendButton, solanaAssetInput, solanaNetworkInput)
+                }
+
+                WalletType.Tron -> {
+                    listOf(tronRefreshBalancesButton, tronSignMessageButton, tronSendButton, tronAssetInput, tronNetworkInput)
+                }
+
+                else -> {
+                    emptyList()
+                }
+            }
+        controls.forEach { it.isEnabled = enabled }
+    }
+
+    /**
+     * Loads SOL and USDC balances on the selected Solana network; shows the indexer's error for that
+     * network instead of zero balances. A response for a network or wallet the panel has left is ignored.
+     */
+    private suspend fun loadSolanaBalances(wallet: Wallet) {
+        val config = selectedSolanaNetwork
+
+        fun isCurrent() = config == selectedSolanaNetwork && activeWalletOrNull(WalletType.Solana)?.id == wallet.id
+
+        solanaBalancesView.text = "${config.label} SOL: loading...\n${config.label} USDC: loading..."
+        try {
+            val result =
+                sdk.indexer.getSolanaBalances(
+                    walletAddress = wallet.address,
+                    networks = listOf(config.network),
+                    mintAddresses = listOf(config.usdcMint),
+                )
+            if (!isCurrent()) return
+            val networkError = result.errors.firstOrNull { it.network == config.network }
+            if (networkError != null) {
+                solanaBalancesView.text = "Balances unavailable: ${networkError.reason}"
+                return
+            }
+            val sol = result.balances.firstOrNull { it is SolanaBalance.Native }
+            val usdc =
+                result.balances.firstOrNull {
+                    it is SolanaBalance.FungibleToken && it.mintAddress == config.usdcMint
+                }
+            solanaBalancesView.text =
+                buildString {
+                    appendLine("${config.label} SOL: ${sol?.formattedBalance ?: "0"} SOL")
+                    append("${config.label} USDC: ${usdc?.formattedBalance ?: "0"} USDC")
+                }
+        } catch (throwable: Throwable) {
+            if (!isCurrent()) return
+            solanaBalancesView.text = "Balances unavailable: ${throwable.message ?: "Unknown error"}"
+            throw throwable
+        }
+    }
+
+    private fun configureSolanaAssetPicker() {
+        val assets = SolanaAsset.entries
+        renderSolanaAssetLabels()
+        solanaAssetInput.setOnItemClickListener { _, _, position, _ ->
+            val previous = selectedSolanaAsset
+            selectedSolanaAsset = assets[position]
+            renderSolanaAssetFields()
+            if ((previous == SolanaAsset.Sol) != (selectedSolanaAsset == SolanaAsset.Sol)) {
+                solanaAmountInput.setText(if (selectedSolanaAsset == SolanaAsset.Sol) "0.001" else "1")
+            }
+        }
+        renderSolanaAssetFields()
+    }
+
+    private fun renderSolanaAssetLabels() {
+        val labels = SolanaAsset.entries.map(::solanaAssetLabel)
+        solanaAssetInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
+        solanaAssetInput.setText(solanaAssetLabel(selectedSolanaAsset), false)
+    }
+
+    private fun solanaAssetLabel(asset: SolanaAsset): String =
+        if (asset == SolanaAsset.Usdc) "${asset.label} (${selectedSolanaNetwork.label})" else asset.label
+
+    private fun renderSolanaAssetFields() {
+        solanaCustomTokenContainer.visibility =
+            if (selectedSolanaAsset == SolanaAsset.Custom) View.VISIBLE else View.GONE
+        solanaAmountLayout.hint =
+            when (selectedSolanaAsset) {
+                SolanaAsset.Sol -> "Amount (SOL)"
+                SolanaAsset.Usdc -> "Amount (USDC)"
+                SolanaAsset.Custom -> "Amount (token units)"
+            }
+        val tokenAccountHint =
+            "WaaS uses the recipient's associated token account when one exists. If one must be " +
+                "created, you choose how to pay the required account rent."
+        solanaAssetHintView.text =
+            when (selectedSolanaAsset) {
+                SolanaAsset.Sol -> ""
+                SolanaAsset.Usdc -> "USDC mint: ${selectedSolanaNetwork.usdcMint}\n$tokenAccountHint"
+                SolanaAsset.Custom -> tokenAccountHint
+            }
+        solanaAssetHintView.visibility = if (selectedSolanaAsset == SolanaAsset.Sol) View.GONE else View.VISIBLE
+    }
+
+    private fun configureWalletTypePicker() {
+        val labels = SELECTABLE_WALLET_TYPES.map(::walletTypeLabel)
+        walletTypeInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
+        walletTypeInput.setOnItemClickListener { _, _, position, _ ->
+            activateWalletType(SELECTABLE_WALLET_TYPES[position])
+        }
+    }
+
+    /** Uses the account's first wallet of [type], creating one when none exists. */
+    private fun activateWalletType(type: WalletType) {
+        if (sdk.wallet.activeWallet?.type == type) return
+        launchAction(
+            label = "Switch to ${walletTypeLabel(type)} wallet",
+            onStart = { authStatusView.text = "Switching to a ${walletTypeLabel(type)} wallet..." },
+            onFailure = { sdk.wallet.activeWallet?.let(::renderWalletPanels) },
+        ) {
+            val existing = sdk.wallet.listWallets().firstOrNull { it.type == type }
+            val result =
+                if (existing != null) {
+                    sdk.wallet.useWallet(existing.id)
+                } else {
+                    sdk.wallet.createWallet(walletType = type)
+                }
+            renderSignedInWallet(result.wallet, "${walletTypeLabel(type)} wallet ready")
+        }
+    }
+
+    private fun configureTronAssetPicker() {
+        val assets = TronAsset.entries
+        renderTronAssetLabels()
+        tronAssetInput.setOnItemClickListener { _, _, position, _ ->
+            selectedTronAsset = assets[position]
+            tronCustomTokenContainer.visibility =
+                if (selectedTronAsset == TronAsset.Custom) View.VISIBLE else View.GONE
+            tronAmountLayout.hint =
+                when (selectedTronAsset) {
+                    TronAsset.Trx -> "Amount (TRX)"
+                    TronAsset.Usdt -> "Amount (USDT)"
+                    TronAsset.Custom -> "Amount (token units)"
+                }
+        }
+    }
+
+    private fun renderTronAssetLabels() {
+        val labels = TronAsset.entries.map(::tronAssetLabel)
+        tronAssetInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
+        tronAssetInput.setText(tronAssetLabel(selectedTronAsset), false)
+    }
+
+    private fun tronAssetLabel(asset: TronAsset): String =
+        if (asset == TronAsset.Usdt) "${asset.label} (${selectedTronNetwork.label})" else asset.label
+
+    private fun configureSolanaNetworkPicker() {
+        val networks = SolanaNetworkConfig.entries
+        solanaNetworkInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, networks.map { it.pickerLabel }))
+        solanaNetworkInput.setOnItemClickListener { _, _, position, _ ->
+            val network = networks[position]
+            if (network == selectedSolanaNetwork) return@setOnItemClickListener
+            selectedSolanaNetwork = network
+            renderSolanaNetwork()
+            resetSolanaTransferResult()
+            val wallet = activeWalletOrNull(WalletType.Solana) ?: return@setOnItemClickListener
+            launchWalletPanelAction(WalletType.Solana, label = "Refresh Solana balances") { loadSolanaBalances(wallet) }
+        }
+        renderSolanaNetwork()
+    }
+
+    /** Applies the selected Solana network to every network-specific label, link, and hint in the panel. */
+    private fun renderSolanaNetwork() {
+        val config = selectedSolanaNetwork
+        solanaNetworkInput.setText(config.pickerLabel, false)
+        solanaMainnetWarningView.visibility = if (config.isMainnet) View.VISIBLE else View.GONE
+        solanaFaucetRow.visibility = if (config.solFaucetUrl != null) View.VISIBLE else View.GONE
+        solanaBalancesView.text = "${config.label} SOL: -\n${config.label} USDC: -"
+        solanaSendButton.text = config.sendLabel
+        renderSolanaAssetLabels()
+        renderSolanaAssetFields()
+    }
+
+    private fun resetSolanaTransferResult() {
+        solanaTransactionSignatureView.text = "Last tx signature: none"
+        solanaTransactionStatusView.text = "Transfer status: ready to send."
+        solanaOpenExplorerButton.visibility = View.GONE
+        lastSolanaTransactionSignature = null
+    }
+
+    private fun configureTronNetworkPicker() {
+        val networks = TronNetworkConfig.entries
+        tronNetworkInput.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, networks.map { it.pickerLabel }))
+        tronNetworkInput.setOnItemClickListener { _, _, position, _ ->
+            val network = networks[position]
+            if (network == selectedTronNetwork) return@setOnItemClickListener
+            selectedTronNetwork = network
+            renderTronNetwork()
+            resetTronTransferResult()
+            val wallet = activeWalletOrNull(WalletType.Tron) ?: return@setOnItemClickListener
+            launchWalletPanelAction(WalletType.Tron, label = "Refresh Tron balances") { loadTronBalances(wallet) }
+        }
+        renderTronNetwork()
+    }
+
+    /** Applies the selected Tron network to every network-specific label, link, and hint in the panel. */
+    private fun renderTronNetwork() {
+        val config = selectedTronNetwork
+        tronNetworkInput.setText(config.pickerLabel, false)
+        tronMainnetWarningView.visibility = if (config.isMainnet) View.VISIBLE else View.GONE
+        val faucetVisibility = if (config.faucetUrl != null) View.VISIBLE else View.GONE
+        tronFaucetButton.visibility = faucetVisibility
+        tronFaucetSpacer.visibility = faucetVisibility
+        tronBalancesView.text = "${config.label} TRX: -\n${config.label} USDT: -"
+        tronSendButton.text = config.sendLabel
+        renderTronAssetLabels()
+    }
+
+    private fun resetTronTransferResult() {
+        tronTransactionHashView.text = "Last tx hash: none"
+        tronTransactionStatusView.text = "Transfer status: ready to send."
+        tronOpenExplorerButton.visibility = View.GONE
+        lastTronTransactionHash = null
+    }
+
+    /** Shows the EVM, Solana, or Tron actions that match the active wallet's stored type. */
+    private fun renderWalletPanels(wallet: Wallet) {
+        walletTypeInput.setText(walletTypeLabel(wallet.type), false)
+        val isEthereum = wallet.type == WalletType.Ethereum
+        val isSolana = wallet.type == WalletType.Solana
+        val isTron = wallet.type == WalletType.Tron
+        networkInputLayout.visibility = if (isEthereum) View.VISIBLE else View.GONE
+        evmActionsContainer.visibility = if (isEthereum) View.VISIBLE else View.GONE
+        solanaActionsContainer.visibility = if (isSolana) View.VISIBLE else View.GONE
+        tronActionsContainer.visibility = if (isTron) View.VISIBLE else View.GONE
+        if (isSolana) {
+            solanaSignatureView.text = "Last signature: none"
+            solanaSignatureStatusView.text = "Signature status: ready to sign."
+            resetSolanaTransferResult()
+            launchWalletPanelAction(WalletType.Solana, label = "Refresh Solana balances") { loadSolanaBalances(wallet) }
+        }
+        if (isTron) {
+            tronSignatureView.text = "Last signature: none"
+            tronSignatureStatusView.text = "Signature status: ready to sign."
+            resetTronTransferResult()
+            launchWalletPanelAction(WalletType.Tron, label = "Refresh Tron balances") { loadTronBalances(wallet) }
+        }
     }
 
     private fun startOidcRedirectSignIn(
@@ -462,8 +1110,8 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun subscribeSessionExpiry() {
         unsubscribeSessionExpired =
-            sdk.wallet.onSessionExpired { event ->
-                renderExpiredSession(event)
+            sdk.wallet.onSessionChange { change ->
+                if (change is OMSWalletSessionChangeEvent.Expired) renderExpiredSession(change.expiredSession)
             }
     }
 
@@ -692,7 +1340,7 @@ class AuthDemoActivity : AppCompatActivity() {
     ): String = "$label:\n${address ?: "none"}"
 
     private fun copyWalletAddress() {
-        val address = sdk.wallet.session.walletAddress
+        val address = sdk.wallet.activeWallet?.address
         if (address.isNullOrBlank()) {
             Toast.makeText(this, "No wallet address to copy", Toast.LENGTH_SHORT).show()
             return
@@ -706,32 +1354,14 @@ class AuthDemoActivity : AppCompatActivity() {
         val sessionLifetimeSeconds = requestedSessionLifetimeSeconds()
         persistAuthPreferences()
         val walletSelection = currentWalletSelectionBehavior()
-        return if (sessionLifetimeSeconds == null) {
-            sdk.wallet.signInWithOidcIdToken(
-                idToken = idToken,
-                issuer = DemoConfig.googleIssuer,
-                audience = DemoConfig.demoGoogleWebClientId,
-                walletSelection = walletSelection,
-            )
-        } else {
-            sdk.wallet.signInWithOidcIdToken(
-                idToken = idToken,
-                issuer = DemoConfig.googleIssuer,
-                audience = DemoConfig.demoGoogleWebClientId,
-                walletSelection = walletSelection,
-                sessionLifetimeSeconds = sessionLifetimeSeconds,
-            )
-        }
-    }
-
-    private suspend fun completePendingEmailAuth(
-        code: String,
-        walletSelection: WalletSelectionBehavior = WalletSelectionBehavior.Automatic,
-    ): CompleteAuthResult =
-        sdk.wallet.completeEmailAuth(
-            code = code,
+        return sdk.wallet.signInWithOidcIdToken(
+            idToken = idToken,
+            issuer = DemoConfig.googleIssuer,
+            audience = DemoConfig.demoGoogleWebClientId,
             walletSelection = walletSelection,
+            sessionLifetimeSeconds = sessionLifetimeSeconds ?: WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS,
         )
+    }
 
     private suspend fun handleOidcRedirectCallbackFromPendingAuth(callbackUrl: String): OidcRedirectAuthResult =
         sdk.wallet.handleOidcRedirectCallback(callbackUrl = callbackUrl)
@@ -872,7 +1502,7 @@ class AuthDemoActivity : AppCompatActivity() {
                     addWalletSelectionRow(
                         title = shortWalletAddress(wallet.address),
                         subtitle = walletSelectionSubtitle(wallet),
-                        leadingText = "0x",
+                        leadingText = walletLeadingText(wallet.type),
                         topMargin = dp(8),
                     ) {
                         onChoice(ManualWalletChoice.Existing(wallet.id))
@@ -1033,6 +1663,14 @@ class AuthDemoActivity : AppCompatActivity() {
             wallet.id.takeIf { it.isNotBlank() },
         ).joinToString(" / ")
 
+    private fun walletLeadingText(type: WalletType): String =
+        when (type) {
+            WalletType.Ethereum -> "0x"
+            WalletType.Solana -> "SOL"
+            WalletType.Tron -> "T"
+            WalletType.UNKNOWN_DEFAULT -> "?"
+        }
+
     private fun shortWalletAddress(address: String): String =
         if (address.length > 18) {
             "${address.take(10)}...${address.takeLast(6)}"
@@ -1119,11 +1757,13 @@ class AuthDemoActivity : AppCompatActivity() {
         copyWalletAddressButton.visibility = View.VISIBLE
         signatureStatusView.text = "Signature status: ready to sign."
         transactionStatusView.text = "Transaction status: ready to send."
-        appendLog("Wallet ready: ${wallet.address}")
+        renderWalletPanels(wallet)
+        appendLog("Wallet ready: ${wallet.type.wireValue} ${wallet.address}")
     }
 
     private fun renderSessionState() {
-        if (sdk.wallet.session.walletAddress == null) {
+        val activeWallet = sdk.wallet.activeWallet
+        if (activeWallet == null) {
             renderSessionStateBox()
             expiredSessionEvent?.let {
                 renderExpiredSession(it)
@@ -1141,14 +1781,15 @@ class AuthDemoActivity : AppCompatActivity() {
         openExplorerButton.visibility = View.GONE
 
         authStatusView.text = "Restored persisted wallet session"
-        walletAddressView.text = addressLabel("Wallet address", sdk.wallet.session.walletAddress)
+        walletAddressView.text = addressLabel("Wallet address", activeWallet.address)
         authCard.visibility = View.GONE
         codeStepContainer.visibility = View.GONE
         walletActionsContainer.visibility = View.VISIBLE
         copyWalletAddressButton.visibility = View.VISIBLE
+        renderWalletPanels(activeWallet)
     }
 
-    private fun renderExpiredSession(event: OMSWalletSessionExpiredEvent) {
+    private fun renderExpiredSession(event: OMSWalletExpiredSession) {
         val isNewEvent = expiredSessionEvent != event
         expiredSessionEvent = event
         renderSessionStateBox()
@@ -1157,10 +1798,12 @@ class AuthDemoActivity : AppCompatActivity() {
         authStatusView.text =
             buildString {
                 append("Wallet session expired. Sign in again")
-                event.session.auth?.email?.takeIf { it.isNotBlank() }?.let { email ->
-                    append(" as ")
-                    append(email)
-                }
+                event.session.auth.email
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { email ->
+                        append(" as ")
+                        append(email)
+                    }
                 append(".")
             }
         lastSignedMessage = null
@@ -1180,7 +1823,7 @@ class AuthDemoActivity : AppCompatActivity() {
         if (isNewEvent) {
             appendLog(
                 "Wallet session expired at ${event.expiredAt}: " +
-                    "wallet=${event.session.walletAddress ?: "none"} email=${event.session.auth?.email ?: "none"}",
+                    "wallet=${event.wallet?.address ?: "none"} email=${event.session.auth.email ?: "none"}",
             )
         }
     }
@@ -1246,29 +1889,31 @@ class AuthDemoActivity : AppCompatActivity() {
         val session = sdk.wallet.session
         val expiredEvent = expiredSessionEvent
         sessionStateCard.visibility =
-            if (session.walletAddress == null && expiredEvent == null) {
+            if (session == null && expiredEvent == null) {
                 View.GONE
             } else {
                 View.VISIBLE
             }
         sessionStateView.text =
-            if (expiredEvent != null && session.walletAddress == null) {
+            if (expiredEvent != null && session == null) {
                 buildString {
                     appendLine("expiredAt: ${expiredEvent.expiredAt}")
-                    appendLine("walletAddress: ${expiredEvent.session.walletAddress ?: "null"}")
-                    appendLine("expiresAt: ${expiredEvent.session.expiresAt ?: "null"}")
+                    appendLine("wallet: ${formatWallet(expiredEvent.wallet)}")
+                    appendLine("expiresAt: ${expiredEvent.session.expiresAt}")
                     appendLine("auth: ${formatSessionAuth(expiredEvent.session.auth)}")
-                    append("authEmail: ${expiredEvent.session.auth?.email ?: "null"}")
+                    append("authEmail: ${expiredEvent.session.auth.email ?: "null"}")
                 }
             } else {
                 buildString {
-                    appendLine("walletAddress: ${session.walletAddress ?: "null"}")
-                    appendLine("expiresAt: ${session.expiresAt ?: "null"}")
-                    appendLine("auth: ${formatSessionAuth(session.auth)}")
-                    append("authEmail: ${session.auth?.email ?: "null"}")
+                    appendLine("wallet: ${formatWallet(sdk.wallet.activeWallet)}")
+                    appendLine("expiresAt: ${session?.expiresAt ?: "null"}")
+                    appendLine("auth: ${formatSessionAuth(session?.auth)}")
+                    append("authEmail: ${session?.auth?.email ?: "null"}")
                 }
             }
     }
+
+    private fun formatWallet(wallet: Wallet?): String = wallet?.let { "${it.type.wireValue} ${it.address}" } ?: "null"
 
     private fun formatSessionAuth(auth: OMSWalletSessionAuth?): String =
         when (auth) {
@@ -1295,6 +1940,94 @@ class AuthDemoActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
 
+    private enum class SolanaAsset(
+        val label: String,
+    ) {
+        Sol("SOL"),
+        Usdc("USDC"),
+        Custom("Custom SPL token"),
+    }
+
+    private enum class TronAsset(
+        val label: String,
+    ) {
+        Trx("TRX"),
+        Usdt("USDT"),
+        Custom("Custom TRC-20"),
+    }
+
+    /** Network-specific settings for the Solana panel; Devnet is the default. */
+    private enum class SolanaNetworkConfig(
+        val network: SolanaNetwork,
+        val label: String,
+        val pickerLabel: String,
+        val sendLabel: String,
+        val usdcMint: String,
+        /** Solana Explorer `cluster` query parameter; mainnet is the explorer default. */
+        val explorerCluster: String?,
+        val solFaucetUrl: String?,
+        val usdcFaucetUrl: String?,
+    ) {
+        Devnet(
+            network = SolanaNetwork.Devnet,
+            label = "Devnet",
+            pickerLabel = "Devnet",
+            sendLabel = "Send on Solana Devnet",
+            usdcMint = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+            explorerCluster = "devnet",
+            solFaucetUrl = "https://faucet.solana.com/",
+            usdcFaucetUrl = "https://faucet.circle.com/",
+        ),
+        Mainnet(
+            network = SolanaNetwork.Mainnet,
+            label = "Mainnet",
+            pickerLabel = "Mainnet",
+            sendLabel = "Send on Solana mainnet",
+            usdcMint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            explorerCluster = null,
+            solFaucetUrl = null,
+            usdcFaucetUrl = null,
+        ),
+        ;
+
+        val isMainnet: Boolean get() = network == SolanaNetwork.Mainnet
+
+        fun explorerUrl(path: String): String = "https://explorer.solana.com/$path" + (explorerCluster?.let { "?cluster=$it" } ?: "")
+    }
+
+    /** Network-specific settings for the Tron panel; Nile is the default. */
+    private enum class TronNetworkConfig(
+        val network: TronNetwork,
+        val label: String,
+        val pickerLabel: String,
+        val sendLabel: String,
+        val explorerUrl: String,
+        val usdtContract: String,
+        val faucetUrl: String?,
+    ) {
+        Nile(
+            network = TronNetwork.Nile,
+            label = "Nile",
+            pickerLabel = "Nile testnet",
+            sendLabel = "Send on Tron Nile",
+            explorerUrl = "https://nile.tronscan.org/#",
+            usdtContract = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+            faucetUrl = "https://nileex.io/join/getJoinPage",
+        ),
+        Mainnet(
+            network = TronNetwork.Mainnet,
+            label = "Mainnet",
+            pickerLabel = "Mainnet",
+            sendLabel = "Send on Tron mainnet",
+            explorerUrl = "https://tronscan.org/#",
+            usdtContract = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+            faucetUrl = null,
+        ),
+        ;
+
+        val isMainnet: Boolean get() = network == TronNetwork.Mainnet
+    }
+
     private sealed interface ManualWalletChoice {
         data class Existing(
             val walletId: String,
@@ -1309,6 +2042,20 @@ class AuthDemoActivity : AppCompatActivity() {
         private const val AUTH_DEMO_MANUAL_WALLET_SELECTION_KEY = "manual_wallet_selection"
         private const val AUTH_DEMO_SESSION_LIFETIME_SECONDS_KEY = "session_lifetime_seconds"
         private val AUTH_DEMO_DEFAULT_SESSION_LIFETIME_SECONDS = WalletClient.DEFAULT_SESSION_LIFETIME_SECONDS.toString()
+        private val SELECTABLE_WALLET_TYPES = listOf(WalletType.Ethereum, WalletType.Solana, WalletType.Tron)
+        private const val SOLANA_NATIVE_ASSET = "SOL"
+        private const val SOL_DECIMALS = 9
+        private const val USDC_DECIMALS = 6
+        private const val TRX_DECIMALS = 6
+        private const val USDT_DECIMALS = 6
+
+        private fun walletTypeLabel(type: WalletType): String =
+            when (type) {
+                WalletType.Ethereum -> "Ethereum"
+                WalletType.Solana -> "Solana"
+                WalletType.Tron -> "Tron"
+                WalletType.UNKNOWN_DEFAULT -> type.wireValue
+            }
 
         private fun generateSecureRandomNonce(byteLength: Int = 32): String {
             val randomBytes = ByteArray(byteLength)

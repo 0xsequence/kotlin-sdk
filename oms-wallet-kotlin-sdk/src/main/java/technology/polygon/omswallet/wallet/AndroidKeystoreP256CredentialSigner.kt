@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal class AndroidKeystoreP256CredentialSigner(
     context: Context,
-    private val alias: String = DEFAULT_KEY_ALIAS,
-    nonceStoreName: String = DEFAULT_NONCE_STORE_NAME,
+    private val alias: String,
+    nonceStoreName: String,
 ) : CredentialSigner {
     override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
 
@@ -79,6 +79,21 @@ internal class AndroidKeystoreP256CredentialSigner(
         synchronized(nonceLock) {
             check(noncePreferences.edit().remove(alias).commit()) {
                 "Unable to clear OMS Wallet credential nonce"
+            }
+        }
+    }
+
+    /**
+     * Reads the key actually in the Keystore, not the cached ID, under the Keystore lock that also
+     * guards creating it, and deletes it only while it is [credentialId]. The nonce is kept.
+     */
+    override fun clearIfCredentialId(credentialId: String) {
+        synchronized(keyStoreLock) {
+            val store = keyStore()
+            val stored = store.getCertificate(alias)?.publicKey?.let(::credentialId)
+            cachedCredentialId = null
+            if (stored != null && stored.equals(credentialId, ignoreCase = true)) {
+                store.deleteEntry(alias)
             }
         }
     }
@@ -158,7 +173,5 @@ internal class AndroidKeystoreP256CredentialSigner(
         private const val SECP256R1 = "secp256r1"
         private const val SHA256_WITH_ECDSA = "SHA256withECDSA"
         private const val P256_FIELD_SIZE_BYTES = 32
-        private const val DEFAULT_KEY_ALIAS = "oms-wallet-webcrypto-p256"
-        private const val DEFAULT_NONCE_STORE_NAME = "oms-wallet-credential-nonces"
     }
 }

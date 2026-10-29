@@ -1,7 +1,16 @@
 package technology.polygon.omswallet.wallet
 
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import mockwebserver3.MockResponse
+import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import org.junit.Assert.assertTrue
+import technology.polygon.omswallet.OMSWalletExpiredSession
+import technology.polygon.omswallet.OMSWalletSessionChangeEvent
 import technology.polygon.omswallet.internal.generated.waas.CompleteAuthResponse
 import technology.polygon.omswallet.internal.generated.waas.CredentialInfo
 import technology.polygon.omswallet.internal.generated.waas.CredentialType
@@ -15,6 +24,7 @@ import technology.polygon.omswallet.internal.generated.waas.Wallet
 import technology.polygon.omswallet.internal.generated.waas.WalletType
 import technology.polygon.omswallet.internal.generated.waas.WebRpcJson
 import technology.polygon.omswallet.network.OMSWalletEnvironment
+import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import technology.polygon.omswallet.utils.OMSWalletBase64Url
@@ -46,6 +56,7 @@ internal fun walletFixture(
             when (type) {
                 WalletType.Ethereum -> NetworkFamily.EVM
                 WalletType.Solana -> NetworkFamily.Solana
+                WalletType.Tron -> NetworkFamily.Tron
                 WalletType.UNKNOWN_DEFAULT -> NetworkFamily.UNKNOWN_DEFAULT
             },
         keyOrigin = KeyOrigin.Enclave,
@@ -69,6 +80,8 @@ internal fun completeAuthResponseBody(
     identity: Identity = identityFixture(IdentityType.Email),
     email: String? = "user@example.com",
     page: Page? = null,
+    claimable: List<Wallet>? = null,
+    credentialExpiresAt: String = credentialFixture().expiresAt,
 ): String =
     WebRpcJson.encodeToString(
         CompleteAuthResponse(
@@ -76,7 +89,8 @@ internal fun completeAuthResponseBody(
             wallets = wallets,
             page = page,
             email = email,
-            credential = credentialFixture(),
+            credential = credentialFixture().copy(expiresAt = credentialExpiresAt),
+            claimable = claimable,
         ),
     )
 
@@ -117,10 +131,28 @@ internal fun fakeJwt(exp: Long): String {
     return "$header.$payload.signature"
 }
 
+internal const val TEST_SESSION_EXPIRES_AT: String = "2099-01-01T00:00:00Z"
+
+/** Public SDK wallet model for session snapshots; the stored type drives wallet-family checks. */
+internal fun testWallet(
+    id: String,
+    address: String,
+    type: technology.polygon.omswallet.models.WalletType = technology.polygon.omswallet.models.WalletType.Ethereum,
+    reference: String? = null,
+    keyOrigin: technology.polygon.omswallet.models.WalletKeyOrigin = technology.polygon.omswallet.models.WalletKeyOrigin.Enclave,
+): technology.polygon.omswallet.models.Wallet =
+    technology.polygon.omswallet.models.Wallet(
+        id = id,
+        type = type,
+        address = address,
+        reference = reference,
+        keyOrigin = keyOrigin,
+    )
+
 internal fun activeSessionSnapshot(): OMSWalletSessionSnapshot =
     OMSWalletSessionSnapshot(
-        walletId = "wallet-active",
-        walletAddress = "0xactive",
+        wallet = testWallet("wallet-active", "0xactive"),
+        expiresAt = TEST_SESSION_EXPIRES_AT,
         signerAddress = TEST_CREDENTIAL_ID,
         signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
         auth = emailSessionAuth(),
@@ -131,7 +163,7 @@ internal fun pendingOidcRedirectAuthFixture(): PendingOidcRedirectAuth =
         verifier = "stale-oidc-verifier",
         challenge = "stale-oidc-challenge",
         nonce = "stale-oidc-nonce",
-        authMode = OidcRedirectAuthMode.AuthCodePKCE,
+        authMode = OidcAuthMode.AuthCodePKCE,
         redirectUri = "omsclientkotlindemo://auth/callback",
         issuer = "https://issuer.example",
         projectId = "test-project-id",
@@ -149,13 +181,9 @@ internal fun expectedWalletSignatureHeader(
     signature: String = TEST_SIGNATURE,
     signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256,
 ): String =
-    WalletRequestSigner.buildWalletSignatureHeader(
-        signingAlgorithm = signingAlgorithm,
-        scope = scope,
-        credentialId = credentialId,
-        nonce = nonce,
-        signature = signature,
-    )
+    // Spelled out literally so the expected wire format is not derived from the production builder.
+    "OMS-Wallet-Signature: alg=\"${signingAlgorithm.wireValue}\", scope=\"$scope\", cred=\"$credentialId\"," +
+        " nonce=$nonce, sig=\"$signature\""
 
 internal fun uriOriginAndPath(url: String): String {
     val uri = URI(url)
@@ -280,7 +308,13 @@ internal class RecordingSessionExpiryScheduler : SessionExpiryScheduler {
         delayMillis: Long,
         action: () -> Unit,
     ): SessionExpiryTask {
-        val scheduledTask = ScheduledTask(delayMillis, action)
+        lateinit var scheduledTask: ScheduledTask
+        // A fired task is no longer pending, as with a real scheduler.
+        scheduledTask =
+            ScheduledTask(delayMillis) {
+                scheduledTasks -= scheduledTask
+                action()
+            }
         scheduledTasks += scheduledTask
         return SessionExpiryTask {
             cancelCalls += 1
@@ -289,7 +323,7 @@ internal class RecordingSessionExpiryScheduler : SessionExpiryScheduler {
     }
 }
 
-internal class RecordingSessionExpiryDispatcher : SessionExpiryDispatcher {
+internal class RecordingSessionChangeDispatcher : SessionChangeDispatcher {
     val actions = mutableListOf<() -> Unit>()
 
     override fun dispatch(action: () -> Unit) {
@@ -301,33 +335,67 @@ internal class RecordingSessionExpiryDispatcher : SessionExpiryDispatcher {
     }
 }
 
-internal class MockWebCryptoCredentialSigner(
-    private var available: Boolean = true,
-) : CredentialSigner {
-    override val signingAlgorithm: WalletSigningAlgorithm = WalletSigningAlgorithm.ECDSA_P256_SHA256
-    val credentialIdValue: String = TEST_CREDENTIAL_ID
-    val signatureValue: String = TEST_SIGNATURE
-    var signCalls: Int = 0
-        private set
+/** Drops background credential refreshes so tests that restore a session control every request. */
+internal val IgnoringCredentialRefreshLauncher = CredentialRefreshLauncher { }
 
-    override fun credentialId(): String {
-        available = true
-        return credentialIdValue
-    }
+/** Runs background credential refreshes synchronously on the launching thread. */
+internal val ImmediateCredentialRefreshLauncher = CredentialRefreshLauncher { block -> runBlocking { block() } }
 
-    override fun existingCredentialId(): String? = credentialIdValue.takeIf { available }
-
-    override fun nextNonce(): String = "42"
-
-    override fun sign(preimage: String): String {
-        signCalls += 1
-        assertTrue(preimage.contains("nonce: 42"))
-        return signatureValue
-    }
-
-    override fun hasCredential(): Boolean = available
-
-    override fun clear() {
-        available = false
-    }
+internal fun MockWebServer.enqueueJson(body: String) {
+    enqueue(
+        MockResponse
+            .Builder()
+            .code(200)
+            .body(body)
+            .build(),
+    )
 }
+
+internal fun RecordedRequest.utf8Body(): String = requireNotNull(body).utf8()
+
+internal fun RecordedRequest.jsonBody(): JsonObject = Json.parseToJsonElement(utf8Body()).jsonObject
+
+/** A [WalletClient] restored from a completed email session for [wallet]. */
+internal fun restoredTestWalletClient(
+    environment: OMSWalletEnvironment,
+    wallet: technology.polygon.omswallet.models.Wallet,
+    nonceValue: String,
+    credentialSigner: CredentialSigner = TrackingCredentialSigner(nonceValue = nonceValue),
+    signedRequestTimeoutMillis: Long = 30_000L,
+): WalletClient {
+    val client =
+        WalletClient.create(
+            publishableKey = "test-publishable-key",
+            projectId = "test-project-id",
+            environment = environment,
+            transport = OMSWalletHttpClient(),
+            signedRequestTimeoutMillis = signedRequestTimeoutMillis,
+            sessionStore =
+                InMemorySessionStore(
+                    snapshot =
+                        OMSWalletSessionSnapshot(
+                            wallet = wallet,
+                            expiresAt = TEST_SESSION_EXPIRES_AT,
+                            signerAddress = TEST_CREDENTIAL_ID,
+                            signerKeyType = WalletSigningAlgorithm.ECDSA_P256_SHA256,
+                            auth = emailSessionAuth(),
+                        ),
+                ),
+            credentialSigner = credentialSigner,
+            credentialRefreshLauncher = IgnoringCredentialRefreshLauncher,
+        )
+    assertTrue(client.restorePersistedSession())
+    return client
+}
+
+/** Records the session changes [WalletClient.onSessionChange] reports to a listener added now. */
+internal fun WalletClient.recordSessionChanges(): List<OMSWalletSessionChangeEvent> =
+    mutableListOf<OMSWalletSessionChangeEvent>().also { changes -> onSessionChange { changes += it } }
+
+/** The kinds of these changes in order, such as `Expired`, for comparing sequences. */
+internal val List<OMSWalletSessionChangeEvent>.kinds: List<String>
+    get() = map { it::class.simpleName.orEmpty() }
+
+/** The expired session of the last change, when that change is an expiry. */
+internal val List<OMSWalletSessionChangeEvent>.lastExpired: OMSWalletExpiredSession?
+    get() = (lastOrNull() as? OMSWalletSessionChangeEvent.Expired)?.expiredSession

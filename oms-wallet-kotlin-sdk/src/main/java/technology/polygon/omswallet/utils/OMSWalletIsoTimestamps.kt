@@ -1,7 +1,10 @@
 package technology.polygon.omswallet.utils
 
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
 import java.util.GregorianCalendar
+import java.util.Locale
 import java.util.TimeZone
 
 internal object OMSWalletIsoTimestamps {
@@ -9,6 +12,12 @@ internal object OMSWalletIsoTimestamps {
         Regex(
             """^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:?\d{2})$""",
         )
+
+    /** Formats [epochMillis] as an ISO-8601 UTC timestamp with milliseconds. */
+    fun formatEpochMillis(epochMillis: Long): String =
+        SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+            .format(Date(epochMillis))
 
     fun parseEpochMillis(value: String): Long? {
         val match = timestampPattern.matchEntire(value.trim()) ?: return null

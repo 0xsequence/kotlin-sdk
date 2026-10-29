@@ -25,6 +25,7 @@ enum class OMSWalletErrorCode(
     ValidationError("OMS_VALIDATION_ERROR"),
     StorageError("OMS_STORAGE_ERROR"),
     AttestationVerificationFailed("OMS_ATTESTATION_VERIFICATION_FAILED"),
+    WalletAddressAlreadyImported("OMS_WALLET_ADDRESS_ALREADY_IMPORTED"),
 }
 
 /**
@@ -34,12 +35,16 @@ enum class OMSWalletOperation(
     val id: String,
 ) {
     PendingWalletSelection("wallet.pendingWalletSelection"),
+    PendingWalletSelectionClaimAndSelectWallet("wallet.pendingWalletSelection.claimAndSelectWallet"),
     PendingWalletSelectionCreateAndSelectWallet("wallet.pendingWalletSelection.createAndSelectWallet"),
     PendingWalletSelectionSelectWallet("wallet.pendingWalletSelection.selectWallet"),
     IndexerGetBalances("indexer.getBalances"),
     IndexerGetSolanaBalances("indexer.getSolanaBalances"),
+    IndexerGetTronBalances("indexer.getTronBalances"),
     IndexerGetTransactionHistory("indexer.getTransactionHistory"),
     WalletCallContract("wallet.callContract"),
+    WalletCallTronContract("wallet.callTronContract"),
+    WalletClaimWallet("wallet.claimWallet"),
     WalletAuthorizeRemoteAccess("wallet.authorizeRemoteAccess"),
     WalletCompleteEmailAuth("wallet.completeEmailAuth"),
     WalletCreateWallet("wallet.createWallet"),
@@ -55,6 +60,8 @@ enum class OMSWalletOperation(
     WalletIsValidMessageSignature("wallet.isValidMessageSignature"),
     WalletIsValidSolanaMessageSignature("wallet.isValidSolanaMessageSignature"),
     WalletIsValidTypedDataSignature("wallet.isValidTypedDataSignature"),
+    WalletIsValidTronMessageSignature("wallet.isValidTronMessageSignature"),
+    WalletIsValidTronTypedDataSignature("wallet.isValidTronTypedDataSignature"),
     WalletInspectRemoteCredential("wallet.inspectRemoteCredential"),
     WalletListAccess("wallet.listAccess"),
     WalletListAccessPage("wallet.listAccessPage"),
@@ -63,11 +70,14 @@ enum class OMSWalletOperation(
     WalletRevokeAccess("wallet.revokeAccess"),
     WalletSendTransaction("wallet.sendTransaction"),
     WalletSendSolanaTransfer("wallet.sendSolanaTransfer"),
+    WalletSendTronTransaction("wallet.sendTronTransaction"),
     WalletSignInWithOidcIdToken("wallet.signInWithOidcIdToken"),
     WalletSignMessage("wallet.signMessage"),
     WalletSignSolanaMessage("wallet.signSolanaMessage"),
     WalletSignOut("wallet.signOut"),
     WalletSignTypedData("wallet.signTypedData"),
+    WalletSignTronMessage("wallet.signTronMessage"),
+    WalletSignTronTypedData("wallet.signTronTypedData"),
     WalletStartEmailAuth("wallet.startEmailAuth"),
     WalletStartOidcRedirectAuth("wallet.startOidcRedirectAuth"),
     WalletTransactionStatus("wallet.transactionStatus"),
@@ -75,11 +85,14 @@ enum class OMSWalletOperation(
 }
 
 /**
- * Remote OMS service that produced diagnostic failure details.
+ * Remote OMS service that produced diagnostic failure details. [wireValue] is the
+ * service identifier shared with the TypeScript and Swift SDKs.
  */
-enum class OMSWalletUpstreamService {
-    Waas,
-    Indexer,
+enum class OMSWalletUpstreamService(
+    val wireValue: String,
+) {
+    Waas("waas"),
+    Indexer("indexer"),
 }
 
 /**
@@ -94,6 +107,8 @@ data class OMSWalletUpstreamError(
     val code: String? = null,
     val message: String? = null,
     val status: Int? = null,
+    /** The service's reason for this error, when it gives one, for example why a request was invalid. */
+    val cause: String? = null,
 )
 
 /**
@@ -149,7 +164,8 @@ class OMSWalletRequestException(
         require(
             code == OMSWalletErrorCode.RequestFailed ||
                 code == OMSWalletErrorCode.HttpError ||
-                code == OMSWalletErrorCode.AuthCommitmentConsumed,
+                code == OMSWalletErrorCode.AuthCommitmentConsumed ||
+                code == OMSWalletErrorCode.WalletAddressAlreadyImported,
         ) {
             "OMSWalletRequestException requires a request error code"
         }
@@ -273,9 +289,9 @@ internal suspend fun <T> runOMSWalletOperation(
     } catch (throwable: WebRpcError) {
         throw throwable.toOMSWalletException(operation)
     } catch (throwable: WebRpcTransportException) {
-        val attestationFailure = throwable.attestationFailure(operation)
-        if (attestationFailure != null) {
-            throw attestationFailure
+        val sdkFailure = throwable.sdkFailure(operation)
+        if (sdkFailure != null) {
+            throw sdkFailure
         }
         throw OMSWalletRequestException(
             operation = operation,
@@ -303,6 +319,18 @@ private fun WebRpcError.toOMSWalletException(operation: OMSWalletOperation): OMS
     val normalizedMessage = normalizedMessage()
 
     return when {
+        errorKind == ErrorKind.ADDRESS_ALREADY_IMPORTED || error == "AddressAlreadyImported" -> {
+            OMSWalletRequestException(
+                code = OMSWalletErrorCode.WalletAddressAlreadyImported,
+                operation = operation,
+                status = 409,
+                retryable = false,
+                upstreamError = upstreamError,
+                message = normalizedMessage,
+                cause = this,
+            )
+        }
+
         errorKind == ErrorKind.COMMITMENT_CONSUMED -> {
             OMSWalletRequestException(
                 code = OMSWalletErrorCode.AuthCommitmentConsumed,
@@ -370,7 +398,7 @@ internal fun Throwable.toOMSWalletException(operation: OMSWalletOperation): OMSW
         }
 
         is WebRpcTransportException -> {
-            attestationFailure(operation)
+            sdkFailure(operation)
                 ?: OMSWalletRequestException(
                     operation = operation,
                     upstreamError = toWaasUpstreamError(),
@@ -484,8 +512,16 @@ private fun OMSWalletException.withOperation(operation: OMSWalletOperation): OMS
         }
     }
 
-private fun WebRpcTransportException.attestationFailure(operation: OMSWalletOperation): OMSWalletException? =
-    (cause as? OMSWalletAttestationException)?.let { failure ->
+/**
+ * SDK failures raised inside a WaaS transport: attestation failures, and the session-expired
+ * error raised when WaaS rejects the active session's credential (7202 KeyNotFound or 7203
+ * KeyExpired). The generated client wraps both in [WebRpcTransportException].
+ */
+private fun WebRpcTransportException.sdkFailure(operation: OMSWalletOperation): OMSWalletException? =
+    (
+        (cause as? OMSWalletAttestationException)
+            ?: (cause as? OMSWalletSessionException)?.takeIf { it.code == OMSWalletErrorCode.SessionExpired }
+    )?.let { failure ->
         if (failure.operation == operation) failure else failure.withOperation(operation)
     }
 
@@ -503,7 +539,14 @@ private fun WebRpcError.toWaasUpstreamError(status: Int? = normalizedStatus()): 
         code = normalizedCode(),
         message = normalizedMessage(),
         status = status,
+        cause = serviceCause(),
     )
+
+/**
+ * Only errors the service sent (code 0 and up) carry its reason in `cause`: the client's own transport
+ * errors (negative codes) put local details there, such as an unparsable response body.
+ */
+private fun WebRpcError.serviceCause(): String? = causeString.takeIf { code >= 0 && it.isNotEmpty() }
 
 private fun WebRpcError.normalizedCode(): String =
     if (error == "WebrpcBadResponse" && code == ErrorKind.UNKNOWN.code) {

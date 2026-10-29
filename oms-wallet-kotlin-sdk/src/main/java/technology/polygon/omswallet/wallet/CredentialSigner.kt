@@ -47,6 +47,15 @@ internal interface CredentialSigner {
     fun hasCredential(): Boolean
 
     fun clear()
+
+    /**
+     * Deletes the key only while it is [credentialId], for a session that ended on its own: a key a
+     * newer sign-in stored meanwhile is kept, and so is the nonce, whose later values only need to keep
+     * increasing.
+     */
+    fun clearIfCredentialId(credentialId: String) {
+        if (existingCredentialId()?.equals(credentialId, ignoreCase = true) == true) clear()
+    }
 }
 
 internal object MissingCredentialSigner : CredentialSigner {

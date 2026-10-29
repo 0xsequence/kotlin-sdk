@@ -29,7 +29,7 @@ Kotlin parity coverage:
     as `prj_project`, matching SDK runtime behavior
   - tested in `WalletRequestSignerVectorTest.completeAuthPayloadAndPreimageMatchParityVector()`
   - answer-hash parity vector for `challenge + code -> sha256 -> base64url(no padding) -> answer`
-  - tested in `WalletPayloadBuilderTest.completeAuthPayloadFromCodeMatchesParityVector()`
+  - tested in `WalletRequestSignerVectorTest.completeAuthPayloadAndPreimageMatchParityVector()`
 
 The `CompleteAuth` sections below stay documented here because they include the
 non-obvious answer-hash step that is easy to break independently of the generic

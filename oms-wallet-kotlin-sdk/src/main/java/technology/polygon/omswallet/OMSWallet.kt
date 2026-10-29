@@ -5,12 +5,15 @@ import okhttp3.OkHttpClient
 import technology.polygon.omswallet.indexer.IndexerClient
 import technology.polygon.omswallet.network.OMSWalletEnvironment
 import technology.polygon.omswallet.network.OMSWalletHttpClient
-import technology.polygon.omswallet.session.OMSWalletSession
+import technology.polygon.omswallet.session.OMSWalletSessionStateMachine
 import technology.polygon.omswallet.storage.AndroidOidcRedirectAuthStore
 import technology.polygon.omswallet.storage.AndroidSessionMetadataStore
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
+import technology.polygon.omswallet.wallet.AndroidForegroundRunner
 import technology.polygon.omswallet.wallet.AndroidKeystoreP256CredentialSigner
 import technology.polygon.omswallet.wallet.CredentialSigner
+import technology.polygon.omswallet.wallet.ForegroundRunner
+import technology.polygon.omswallet.wallet.ImmediateForegroundRunner
 import technology.polygon.omswallet.wallet.OidcRedirectAuthStore
 import technology.polygon.omswallet.wallet.WalletClient
 import java.net.URI
@@ -27,12 +30,13 @@ class OMSWallet private constructor(
     projectId: String?,
     environment: OMSWalletEnvironment?,
     okHttpClient: OkHttpClient,
-    walletSession: OMSWalletSession?,
+    walletSession: OMSWalletSessionStateMachine?,
     sessionStore: OMSWalletSessionMetadataStore?,
     oidcRedirectAuthStore: OidcRedirectAuthStore?,
     credentialSigner: CredentialSigner?,
     projectScopeKey: String?,
     walletImportTrustedPcr0s: Set<String>?,
+    foregroundRunner: ForegroundRunner,
 ) {
     private val resolvedProjectId: String = projectId ?: parsePublishableKey(publishableKey).projectId
     private val resolvedEnvironment: OMSWalletEnvironment =
@@ -52,11 +56,12 @@ class OMSWallet private constructor(
             credentialSigner = credentialSigner,
             projectScopeKey = projectScopeKey,
             walletImportTrustedPcr0s = walletImportTrustedPcr0s,
+            foregroundRunner = foregroundRunner,
         )
 
     val indexer: IndexerClient =
         IndexerClient.create(
-            publishableKey = publishableKey,
+            publishableKey = { wallet.currentPublishableKey },
             environment = resolvedEnvironment,
             transport = transport,
         )
@@ -101,6 +106,7 @@ class OMSWallet private constructor(
             ),
         projectScopeKey = scopedSessionSuffix(publishableKey),
         walletImportTrustedPcr0s = parsePublishableKey(publishableKey).walletImportTrustedPcr0s,
+        foregroundRunner = AndroidForegroundRunner(),
     )
 
     companion object {
@@ -110,12 +116,13 @@ class OMSWallet private constructor(
             projectId: String? = null,
             environment: OMSWalletEnvironment? = null,
             okHttpClient: OkHttpClient = OkHttpClient(),
-            walletSession: OMSWalletSession = OMSWalletSession(),
+            walletSession: OMSWalletSessionStateMachine = OMSWalletSessionStateMachine(),
             sessionStore: OMSWalletSessionMetadataStore? = null,
             oidcRedirectAuthStore: OidcRedirectAuthStore? = null,
             credentialSigner: CredentialSigner? = null,
             projectScopeKey: String? = null,
             walletImportTrustedPcr0s: Set<String>? = null,
+            foregroundRunner: ForegroundRunner = ImmediateForegroundRunner,
         ): OMSWallet =
             OMSWallet(
                 publishableKey = publishableKey,
@@ -128,6 +135,7 @@ class OMSWallet private constructor(
                 credentialSigner = credentialSigner,
                 projectScopeKey = projectScopeKey,
                 walletImportTrustedPcr0s = walletImportTrustedPcr0s,
+                foregroundRunner = foregroundRunner,
             )
 
         private fun projectIdFromPublishableKey(publishableKey: String): String = parsePublishableKey(publishableKey).projectId
@@ -147,7 +155,9 @@ class OMSWallet private constructor(
         private fun scopedOidcRedirectAuthFileName(publishableKey: String): String =
             scopedOidcRedirectAuthFileName(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
 
-        private fun scopedSessionSuffix(publishableKey: String): String =
+        /** The scope of [publishableKey]'s session: its wallet API origin and project, not the key itself. */
+        @JvmSynthetic
+        internal fun scopedSessionSuffix(publishableKey: String): String =
             scopedSessionSuffix(projectIdFromPublishableKey(publishableKey), environmentFromPublishableKey(publishableKey))
 
         internal fun scopedSessionFileName(
