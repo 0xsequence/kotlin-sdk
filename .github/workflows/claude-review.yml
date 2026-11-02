@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run Claude Code Review
-        uses: anthropics/claude-code-action@fd1c128679612beff4ca259c78021c506e8aa7a7 # v1.0.237
+        uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_GITHUB_ACTIONS }}
           github_token: ${{ github.token }}
@@ -57,7 +57,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run Claude Code Review
-        uses: anthropics/claude-code-action@fd1c128679612beff4ca259c78021c506e8aa7a7 # v1.0.237
+        uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY_GITHUB_ACTIONS }}
           github_token: ${{ github.token }}
