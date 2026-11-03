@@ -22,13 +22,13 @@ updates:
     labels:
       - "dependencies"
 
+  # No 14-day cooldown here: CI fails while this fixture is behind npm's latest Expo
+  # major.minor, so its updates must arrive as soon as Expo releases them.
   - package-ecosystem: "npm"
     directory: "/compatibility-tests/expo"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 1
-    cooldown:
-      default-days: 14
     labels:
       - "dependencies"
     groups:
