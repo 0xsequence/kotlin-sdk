@@ -32,10 +32,12 @@ updates:
           - "react"
           - "react-native"
 
+  # Mirrors the React Native SDK's supported-minimum fixture; check on the same weekly schedule.
   - package-ecosystem: "npm"
     directory: "/compatibility-tests/expo-min"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
     open-pull-requests-limit: 1
     labels:
       - "dependencies"
