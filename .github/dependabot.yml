@@ -6,6 +6,8 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
 
@@ -15,14 +17,21 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
 
+  # No cooldown here, not even Dependabot's 3-day default: CI fails while this fixture is
+  # behind npm's latest Expo major.minor, so its updates are proposed at the next daily check.
   - package-ecosystem: "npm"
     directory: "/compatibility-tests/expo"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 1
+    cooldown:
+      exclude:
+        - "*"
     labels:
       - "dependencies"
     groups:
@@ -32,11 +41,15 @@ updates:
           - "react"
           - "react-native"
 
+  # Mirrors the React Native SDK's supported-minimum fixture; check on the same weekly schedule.
   - package-ecosystem: "npm"
     directory: "/compatibility-tests/expo-min"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
     open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
     ignore:
