@@ -6,6 +6,8 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
 
@@ -15,6 +17,8 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
 
@@ -23,6 +27,8 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
     groups:
@@ -39,6 +45,8 @@ updates:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 1
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
     ignore:
