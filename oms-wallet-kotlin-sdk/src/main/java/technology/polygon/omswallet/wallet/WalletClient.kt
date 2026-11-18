@@ -4009,7 +4009,7 @@ private class WaasWalletGateway(
         email: String,
         requiredSessionRevision: Long,
     ): VerifierCommitment =
-        signedClient(requiredSessionRevision, allowCredentialCreation = true)
+        signedClient(requiredSessionRevision, allowCredentialCreation = true, minimumAttestationVersion = 2)
             .commitVerifier(
                 CommitVerifierRequest(
                     identityType = IdentityType.Email,
@@ -4025,7 +4025,7 @@ private class WaasWalletGateway(
         audience: String,
         requiredSessionRevision: Long,
     ): VerifierCommitment =
-        signedClient(requiredSessionRevision, allowCredentialCreation = true)
+        signedClient(requiredSessionRevision, allowCredentialCreation = true, minimumAttestationVersion = 2)
             .commitVerifier(
                 CommitVerifierRequest(
                     identityType = IdentityType.OIDC,
@@ -4047,7 +4047,7 @@ private class WaasWalletGateway(
         authMode: AuthMode,
         requiredSessionRevision: Long,
     ): VerifierCommitment =
-        signedClient(requiredSessionRevision, allowCredentialCreation = true)
+        signedClient(requiredSessionRevision, allowCredentialCreation = true, minimumAttestationVersion = 2)
             .commitVerifier(
                 CommitVerifierRequest(
                     identityType = IdentityType.OIDC,
@@ -4068,7 +4068,7 @@ private class WaasWalletGateway(
         sessionLifetimeSeconds: UInt,
         requiredSessionRevision: Long,
     ): WalletAuthCompletion =
-        signedClient(requiredSessionRevision)
+        signedClient(requiredSessionRevision, minimumAttestationVersion = 2)
             .completeAuth(
                 CompleteAuthRequest(
                     identityType = IdentityType.Email,
@@ -4089,7 +4089,7 @@ private class WaasWalletGateway(
         sessionLifetimeSeconds: UInt,
         requiredSessionRevision: Long,
     ): WalletAuthCompletion =
-        signedClient(requiredSessionRevision)
+        signedClient(requiredSessionRevision, minimumAttestationVersion = 2)
             .completeAuth(
                 CompleteAuthRequest(
                     identityType = IdentityType.OIDC,
@@ -4107,7 +4107,7 @@ private class WaasWalletGateway(
         sessionLifetimeSeconds: UInt,
         requiredSessionRevision: Long,
     ): WalletAuthCompletion =
-        signedClient(requiredSessionRevision)
+        signedClient(requiredSessionRevision, minimumAttestationVersion = 2)
             .completeAuth(
                 CompleteAuthRequest(
                     identityType = IdentityType.OIDC,
@@ -4613,26 +4613,40 @@ private class WaasWalletGateway(
         )
     }
 
+    /**
+     * [minimumAttestationVersion] makes the call attested when this environment pins enclave
+     * measurements; sign-in requires user-data version 2, which binds the signature header.
+     */
     private fun signedClient(
         requiredSessionRevision: Long,
         allowCredentialCreation: Boolean = false,
+        minimumAttestationVersion: Int? = null,
     ): WaasClient =
         WaasClient(
             baseUrl = environment.walletApiBaseUrl(),
-            transport = signedTransport(requiredSessionRevision, allowCredentialCreation),
+            transport =
+                if (minimumAttestationVersion != null && walletImportTrustedPcr0s != null) {
+                    attestedSignedTransport(
+                        requiredSessionRevision,
+                        allowCredentialCreation,
+                        walletImportTrustedPcr0s,
+                        minimumAttestationVersion,
+                    )
+                } else {
+                    signedTransport(requiredSessionRevision, allowCredentialCreation)
+                },
         )
 
     private fun walletImportClient(requiredSessionRevision: Long): WaasClient {
         require(walletImportTrustedPcr0s != null) { "Wallet import is unavailable for this WaaS environment" }
-        return WaasClient(
-            baseUrl = environment.walletApiBaseUrl(),
-            transport = attestedSignedTransport(requiredSessionRevision, walletImportTrustedPcr0s),
-        )
+        return signedClient(requiredSessionRevision, minimumAttestationVersion = 1)
     }
 
     private fun attestedSignedTransport(
         requiredSessionRevision: Long,
+        allowCredentialCreation: Boolean,
         trustedPcr0s: Set<String>,
+        minimumAttestationVersion: Int,
     ): LambdaWebRpcTransport =
         LambdaWebRpcTransport { baseUrl, path, body, headers ->
             val endpoint = resolveEndpoint(path)
@@ -4644,7 +4658,7 @@ private class WaasWalletGateway(
                         val authorization =
                             beforeSend {
                                 withContext(Dispatchers.IO) {
-                                    authorizeSignedRequest(requiredSessionRevision, false, endpoint, body)
+                                    authorizeSignedRequest(requiredSessionRevision, allowCredentialCreation, endpoint, body)
                                 }
                             }
                         val timeoutMillis = deadline.remainingMillisBeforeSend()
@@ -4671,10 +4685,12 @@ private class WaasWalletGateway(
                             encodedDocument = document,
                             method = "POST",
                             path = requestPath,
+                            signatureHeader = requestHeaders[OMSWalletEnvironment.walletSignatureHeaderName],
                             requestBody = body,
                             responseBody = response.body,
                             nonce = nonce,
                             trustedPcr0s = trustedPcr0s,
+                            minimumVersion = minimumAttestationVersion,
                         )
                         SignedResponse(authorization, response.statusCode, response.body)
                     }

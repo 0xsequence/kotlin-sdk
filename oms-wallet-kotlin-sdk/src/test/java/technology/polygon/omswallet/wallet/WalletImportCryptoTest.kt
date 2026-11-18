@@ -187,6 +187,47 @@ class WalletImportCryptoTest {
     }
 
     @Test
+    fun attestationVerifierBindsSignatureHeaderInUserDataV2() {
+        val now = 1_800_000_000_000L
+        val trustedPcr0 = ByteArray(48) { 0xaa.toByte() }
+        val trustedPcr0s = setOf(trustedPcr0.toHex())
+        val signatureHeader = "alg=\"ES256\", scope=\"prj_test\", cred=\"0x04ab\", nonce=1710000100, sig=\"0x22\""
+
+        fun verify(
+            version: Int = 2,
+            header: String?,
+            verificationHeader: String? = header,
+            minimumVersion: Int = 1,
+        ) =
+            verifySyntheticAttestation(
+                timestamp = now,
+                pcr0 = trustedPcr0,
+                nonce = "test-nonce",
+                requestBody = "{}",
+                responseBody = """{"verifier":"verifier-1"}""",
+                trustedPcr0s = trustedPcr0s,
+                now = now,
+                version = version,
+                signatureHeader = header,
+                verificationSignatureHeader = verificationHeader,
+                minimumVersion = minimumVersion,
+            )
+
+        // The certificate chain is checked after the binding, so reaching it proves the binding held.
+        expectAttestationFailure("does not use the AWS Nitro root") { verify(version = 1, header = signatureHeader) }
+        expectAttestationFailure("does not use the AWS Nitro root") { verify(header = signatureHeader, minimumVersion = 2) }
+        expectAttestationFailure("does not use the AWS Nitro root") { verify(header = null, minimumVersion = 2) }
+        expectAttestationFailure("not bound to the request and response") {
+            verify(header = signatureHeader, verificationHeader = signatureHeader.replace("0x22", "0x33"))
+        }
+        expectAttestationFailure("not bound to the request and response") { verify(header = signatureHeader, verificationHeader = null) }
+        expectAttestationFailure("user-data version is not supported") { verify(version = 3, header = signatureHeader) }
+        expectAttestationFailure("user-data version 1 is older than the required version 2") {
+            verify(version = 1, header = signatureHeader, minimumVersion = 2)
+        }
+    }
+
+    @Test
     fun attestationVerifierAcceptsRealNitroDocument() {
         // Real AWS Nitro document captured from WaaS /v1/WaasPublic/Status; shared with the Swift SDK fixture.
         val fixtureText =
@@ -197,22 +238,26 @@ class WalletImportCryptoTest {
 
         fun field(name: String): String = requireNotNull(fixture[name]).jsonPrimitive.content
 
-        AttestationVerifier.verify(
-            encodedDocument = field("encodedDocument").trim(),
-            method = field("method"),
-            path = field("path"),
-            requestBody = field("requestBody"),
-            responseBody = field("responseBody"),
-            nonce = field("nonce"),
-            trustedPcr0s = setOf(field("pcr0")),
-            nowMillis = Instant.parse(field("now")).toEpochMilli(),
-        )
+        val version =
+            AttestationVerifier.verify(
+                encodedDocument = field("encodedDocument").trim(),
+                method = field("method"),
+                path = field("path"),
+                signatureHeader = null,
+                requestBody = field("requestBody"),
+                responseBody = field("responseBody"),
+                nonce = field("nonce"),
+                trustedPcr0s = setOf(field("pcr0")),
+                nowMillis = Instant.parse(field("now")).toEpochMilli(),
+            )
+        assertEquals(1, version)
 
         expectAttestationFailure("PCR0 is not trusted") {
             AttestationVerifier.verify(
                 encodedDocument = field("encodedDocument").trim(),
                 method = field("method"),
                 path = field("path"),
+                signatureHeader = null,
                 requestBody = field("requestBody"),
                 responseBody = field("responseBody"),
                 nonce = field("nonce"),
@@ -229,6 +274,7 @@ class WalletImportCryptoTest {
                 encodedDocument = WalletImportBase64.encode(wronglyTagged.EncodeToBytes()),
                 method = field("method"),
                 path = field("path"),
+                signatureHeader = null,
                 requestBody = field("requestBody"),
                 responseBody = field("responseBody"),
                 nonce = field("nonce"),
@@ -261,42 +307,30 @@ class WalletImportCryptoTest {
         now: Long,
         verificationNonce: String = nonce,
         verificationResponseBody: String = responseBody,
+        version: Int = 1,
+        signatureHeader: String? = null,
+        verificationSignatureHeader: String? = signatureHeader,
+        minimumVersion: Int = 1,
     ) {
         val method = "POST"
         val path = "/v1/Waas/GetRecipientKey"
-        val preimage = "$method $path\n$requestBody\n$responseBody"
+        val preimage =
+            if (version == 1) {
+                "$method $path\n$requestBody\n$responseBody"
+            } else {
+                "$method $path\n${signatureHeader.orEmpty()}\n$requestBody\n$responseBody"
+            }
         val hash = WalletImportBase64.encode(MessageDigest.getInstance("SHA-256").digest(preimage.toByteArray()))
-        val protectedHeader = CBORObject.NewMap().apply { Add(1, -35) }.EncodeToBytes()
-        val pcrs = CBORObject.NewMap().apply { Add(0, pcr0) }
-        val payload =
-            CBORObject
-                .NewMap()
-                .apply {
-                    Add("digest", "SHA384")
-                    Add("timestamp", timestamp)
-                    Add("pcrs", pcrs)
-                    Add("certificate", byteArrayOf(1))
-                    Add("cabundle", CBORObject.NewArray().apply { Add(byteArrayOf(2)) })
-                    Add("user_data", "Sequence/1:$hash".toByteArray())
-                    Add("nonce", nonce.toByteArray())
-                }.EncodeToBytes()
-        val document =
-            CBORObject
-                .NewArray()
-                .apply {
-                    Add(protectedHeader)
-                    Add(CBORObject.NewMap())
-                    Add(payload)
-                    Add(ByteArray(96))
-                }.WithTag(18)
 
         verifyAttestation(
-            encodedDocument = WalletImportBase64.encode(document.EncodeToBytes()),
+            encodedDocument = syntheticAttestationDocument(timestamp, pcr0, nonce, "Sequence/$version:$hash"),
             requestBody = requestBody,
             responseBody = verificationResponseBody,
             nonce = verificationNonce,
             trustedPcr0s = trustedPcr0s,
             now = now,
+            signatureHeader = verificationSignatureHeader,
+            minimumVersion = minimumVersion,
         )
     }
 
@@ -307,15 +341,19 @@ class WalletImportCryptoTest {
         nonce: String,
         trustedPcr0s: Set<String>,
         now: Long,
+        signatureHeader: String? = null,
+        minimumVersion: Int = 1,
     ) {
         AttestationVerifier.verify(
             encodedDocument = encodedDocument,
             method = "POST",
             path = "/v1/Waas/GetRecipientKey",
+            signatureHeader = signatureHeader,
             requestBody = requestBody,
             responseBody = responseBody,
             nonce = nonce,
             trustedPcr0s = trustedPcr0s,
+            minimumVersion = minimumVersion,
             nowMillis = now,
         )
     }

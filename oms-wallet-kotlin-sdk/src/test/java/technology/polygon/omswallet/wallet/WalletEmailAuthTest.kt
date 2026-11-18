@@ -5,19 +5,24 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
+import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
+import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import technology.polygon.omswallet.OMSWalletAttestationException
 import technology.polygon.omswallet.OMSWalletErrorCode
 import technology.polygon.omswallet.OMSWalletException
 import technology.polygon.omswallet.OMSWalletOperation
+import technology.polygon.omswallet.OMSWalletSessionException
 import technology.polygon.omswallet.OMSWalletUpstreamService
 import technology.polygon.omswallet.OMSWalletValidationException
 import technology.polygon.omswallet.internal.generated.waas.AuthMode
@@ -39,6 +44,7 @@ import technology.polygon.omswallet.network.OMSWalletHttpClient
 import technology.polygon.omswallet.session.OMSWalletSessionSnapshot
 import technology.polygon.omswallet.storage.OMSWalletSessionMetadataStore
 import java.math.BigInteger
+import java.security.MessageDigest
 
 class WalletEmailAuthTest {
     private lateinit var server: MockWebServer
@@ -558,6 +564,62 @@ class WalletEmailAuthTest {
                 ),
                 requireNotNull(request.body).utf8(),
             )
+        }
+
+    @Test
+    fun startEmailAuthRejectsAttestationThatDoesNotBindTheSignatureHeader() =
+        runBlocking {
+            val pcr0 = ByteArray(48) { 0xaa.toByte() }
+            val responseBody = """{"verifier":"verifier-123","loginHint":"user@example.com","challenge":"challenge"}"""
+            // A v1 enclave attests only the bodies, so a relayed signature header would go unnoticed.
+            server.dispatcher =
+                object : Dispatcher() {
+                    override fun dispatch(request: RecordedRequest): MockResponse {
+                        val preimage = "POST ${request.target}\n${requireNotNull(request.body).utf8()}\n$responseBody"
+                        val hash = WalletImportBase64.encode(MessageDigest.getInstance("SHA-256").digest(preimage.toByteArray()))
+                        return MockResponse
+                            .Builder()
+                            .code(200)
+                            .addHeader(
+                                "X-Attestation-Document",
+                                syntheticAttestationDocument(
+                                    timestamp = System.currentTimeMillis(),
+                                    pcr0 = pcr0,
+                                    nonce = requireNotNull(request.headers["X-Attestation-Nonce"]),
+                                    userData = "Sequence/1:$hash",
+                                ),
+                            ).body(responseBody)
+                            .build()
+                    }
+                }
+            val client =
+                WalletClient.create(
+                    publishableKey = "test-publishable-key",
+                    projectId = "test-project-id",
+                    environment =
+                        OMSWalletEnvironment(
+                            walletApiUrl = server.url("/v1/Waas/").toString(),
+                            indexerGatewayUrl = server.url("/v1/IndexerGateway/").toString(),
+                        ),
+                    transport = OMSWalletHttpClient(),
+                    sessionStore = InMemorySessionStore(),
+                    credentialSigner = TrackingCredentialSigner(),
+                    walletImportTrustedPcr0s = setOf(pcr0.joinToString("") { "%02x".format(it) }),
+                )
+
+            val error =
+                assertThrows(OMSWalletAttestationException::class.java) {
+                    runBlocking { client.startEmailAuth("user@example.com") }
+                }
+
+            assertEquals(OMSWalletErrorCode.AttestationVerificationFailed, error.code)
+            assertTrue(requireNotNull(error.message).contains("user-data version 1 is older than the required version 2"))
+            assertEquals(1, server.requestCount)
+            assertNull(client.snapshotSession())
+            assertThrows(OMSWalletSessionException::class.java) {
+                runBlocking { client.completeEmailAuth("123456") }
+            }
+            assertEquals(1, server.requestCount)
         }
 
     @Test

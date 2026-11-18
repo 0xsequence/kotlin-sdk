@@ -17,16 +17,19 @@ internal object AttestationVerifier {
     private const val awsNitroRootSha256 = "641a0321a3e244efe456463195d606317ed7cdcc3c1756e09893f3c68f79bb5b"
     private const val maxAgeMillis = 5 * 60 * 1_000L
 
+    /** Verifies [encodedDocument] and returns the user-data version (1 or 2) it was bound with. */
     fun verify(
         encodedDocument: String,
         method: String,
         path: String,
+        signatureHeader: String?,
         requestBody: String,
         responseBody: String,
         nonce: String,
         trustedPcr0s: Set<String>,
+        minimumVersion: Int = 1,
         nowMillis: Long = System.currentTimeMillis(),
-    ) {
+    ): Int {
         try {
             val documentBytes = WalletImportBase64.decodeCanonical(encodedDocument, "attestation document")
             val decoded = CBORObject.DecodeFromBytes(documentBytes)
@@ -88,9 +91,24 @@ internal object AttestationVerifier {
             require(documentNonce.contentEquals(nonce.toByteArray(Charsets.UTF_8))) {
                 "WaaS attestation nonce does not match the request"
             }
-            val preimage = "${method.uppercase()} $path\n$requestBody\n$responseBody"
-            val hash = WalletImportBase64.encode(MessageDigest.getInstance("SHA-256").digest(preimage.toByteArray()))
-            require(userData.contentEquals("Sequence/1:$hash".toByteArray(Charsets.UTF_8))) {
+            val (prefix, hash) =
+                String(userData, Charsets.UTF_8).split(':', limit = 2).takeIf { it.size == 2 }
+                    ?: error("WaaS attestation user-data version is not supported")
+            val version =
+                when (prefix) {
+                    "Sequence/1" -> 1
+                    "Sequence/2" -> 2
+                    else -> error("WaaS attestation user-data version is not supported")
+                }
+            require(version >= minimumVersion) {
+                "WaaS attestation user-data version $version is older than the required version $minimumVersion"
+            }
+            val preimage =
+                when (version) {
+                    1 -> "${method.uppercase()} $path\n$requestBody\n$responseBody"
+                    else -> "${method.uppercase()} $path\n${signatureHeader.orEmpty()}\n$requestBody\n$responseBody"
+                }
+            require(hash == WalletImportBase64.encode(MessageDigest.getInstance("SHA-256").digest(preimage.toByteArray()))) {
                 "WaaS attestation is not bound to the request and response"
             }
 
@@ -111,6 +129,7 @@ internal object AttestationVerifier {
             verifier.initVerify(leaf.publicKey)
             verifier.update(signatureInput)
             require(verifier.verify(rawEcdsaSignatureToDer(signature))) { "WaaS attestation signature is invalid" }
+            return version
         } catch (exception: OMSWalletAttestationException) {
             throw exception
         } catch (exception: Exception) {
