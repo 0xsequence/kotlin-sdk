@@ -129,6 +129,14 @@ under `technology.polygon.omswallet`:
 
 ## Security Model
 
+Sign-in (`CommitVerifier` and `CompleteAuth`) and wallet import verify the AWS Nitro enclave
+attestation that the wallet API attaches to each response (`X-Attestation-Document`). Its user data is
+`Sequence/<version>:<base64 SHA-256>` over the method, path, request body, and response body; version 2
+also covers the exact `OMS-Wallet-Signature` header the SDK sent (or an empty line when there is none),
+so a relay cannot re-sign a sign-in with its own credential unnoticed. Sign-in requires version 2 and
+fails with `OMSWalletAttestationException` before any OTP or token is sent; wallet import accepts
+version 1 or 2.
+
 Completed wallet-session metadata is restored automatically when `OMSWallet` is
 created. Session restore does not store private signing material. Pending email
 OTP state is kept in memory. OIDC redirect state is stored only to complete the
@@ -519,7 +527,7 @@ persistent cleanup failure.
 
 ### Import a Wallet
 
-Wallet import verifies AWS Nitro enclave attestations against measurements managed by each OMS
+Wallet import, like sign-in, verifies AWS Nitro enclave attestations against measurements managed by each OMS
 environment. Development uses Nitro debug mode, whose all-zero PCR0 does not identify a specific
 enclave image; use only disposable test keys there. Staging and Production accept only the release
 measurements shipped by the SDK.
