@@ -1,5 +1,6 @@
 package technology.polygon.omswallet.wallet
 
+import com.upokecenter.cbor.CBORObject
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -399,3 +400,36 @@ internal val List<OMSWalletSessionChangeEvent>.kinds: List<String>
 /** The expired session of the last change, when that change is an expiry. */
 internal val List<OMSWalletSessionChangeEvent>.lastExpired: OMSWalletExpiredSession?
     get() = (lastOrNull() as? OMSWalletSessionChangeEvent.Expired)?.expiredSession
+
+/** A well-formed Nitro document that passes every check up to the certificate chain. */
+internal fun syntheticAttestationDocument(
+    timestamp: Long,
+    pcr0: ByteArray,
+    nonce: String,
+    userData: String,
+): String {
+    val protectedHeader = CBORObject.NewMap().apply { Add(1, -35) }.EncodeToBytes()
+    val pcrs = CBORObject.NewMap().apply { Add(0, pcr0) }
+    val payload =
+        CBORObject
+            .NewMap()
+            .apply {
+                Add("digest", "SHA384")
+                Add("timestamp", timestamp)
+                Add("pcrs", pcrs)
+                Add("certificate", byteArrayOf(1))
+                Add("cabundle", CBORObject.NewArray().apply { Add(byteArrayOf(2)) })
+                Add("user_data", userData.toByteArray())
+                Add("nonce", nonce.toByteArray())
+            }.EncodeToBytes()
+    val document =
+        CBORObject
+            .NewArray()
+            .apply {
+                Add(protectedHeader)
+                Add(CBORObject.NewMap())
+                Add(payload)
+                Add(ByteArray(96))
+            }.WithTag(18)
+    return WalletImportBase64.encode(document.EncodeToBytes())
+}
